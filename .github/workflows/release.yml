@@ -1,0 +1,48 @@
+# Release pipeline for scribe.
+#
+# Runs GoReleaser under the goreleaser-cross docker image, which ships the
+# C toolchains for darwin amd64/arm64 and linux amd64/arm64 needed because
+# scribe links go-sqlite3 (CGO + sqlite_fts5 build tag). Cross-compiling
+# CGO from a single host otherwise fails at the linker.
+#
+# Triggered on tag push. Requires:
+#   - HOMEBREW_TAP_GITHUB_TOKEN repo secret (PAT with repo:write on
+#     oliver-kriska/homebrew-scribe)  — used by goreleaser to publish the
+#     formula update.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Run GoReleaser in cross-compile container
+        run: |
+          docker run --rm \
+            -v "$PWD":/go/src/github.com/oliver-kriska/scribe \
+            -w /go/src/github.com/oliver-kriska/scribe \
+            -e GITHUB_TOKEN \
+            -e HOMEBREW_TAP_GITHUB_TOKEN \
+            ghcr.io/goreleaser/goreleaser-cross:v1.26.2-2 \
+            release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

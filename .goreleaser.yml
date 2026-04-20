@@ -1,0 +1,120 @@
+# goreleaser config for scribe.
+#
+# CGO is required because scribe depends on go-sqlite3 with the FTS5 build
+# tag. Cross-compiling CGO from a single host fails at the linker, so the
+# release pipeline (`.github/workflows/release.yml`) runs goreleaser inside
+# the `ghcr.io/goreleaser/goreleaser-cross` image, which ships the darwin
+# and linux C toolchains needed for all four target (GOOS, GOARCH) combos.
+#
+# Publish (inside the cross image — see the workflow):
+#   goreleaser release --clean
+#
+# Dry-run locally on a single host (native builds only, no publish):
+#   goreleaser release --snapshot --clean --skip=publish,sign
+
+version: 2
+
+project_name: scribe
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: scribe
+    main: ./cmd/scribe
+    binary: scribe
+    env:
+      - CGO_ENABLED=1
+    flags:
+      - -tags=sqlite_fts5
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    # Per-target cross-compiler selection. goreleaser-cross ships all four
+    # C toolchains; without these overrides go build falls back to the host
+    # `gcc` which can't assemble arm64.
+    overrides:
+      - goos: darwin
+        goarch: amd64
+        env:
+          - CC=o64-clang
+          - CXX=o64-clang++
+      - goos: darwin
+        goarch: arm64
+        env:
+          - CC=oa64-clang
+          - CXX=oa64-clang++
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=x86_64-linux-gnu-gcc
+          - CXX=x86_64-linux-gnu-g++
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=aarch64-linux-gnu-gcc
+          - CXX=aarch64-linux-gnu-g++
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE*
+      - install.sh
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: scribe
+    repository:
+      owner: oliver-kriska
+      name: homebrew-scribe
+      # Without this, goreleaser uses the workflow's GITHUB_TOKEN which is
+      # scoped only to the scribe repo and gets 403 on the tap.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    homepage: "https://github.com/oliver-kriska/scribe"
+    description: "LLM-managed personal knowledge base tooling"
+    license: MIT
+    dependencies:
+      - name: git
+      - name: sqlite
+    caveats: |
+      scribe expects several runtime dependencies beyond brew-installed ones:
+        * claude     (Claude Code CLI)
+        * ccrider    (Claude session recorder)
+        * qmd        (semantic search over the KB)
+        * trafilatura, jq, fzf (optional)
+
+      After installing:
+        scribe init --path ~/my-kb
+        scribe cron install
+        # macOS: grant Full Disk Access to the scribe binary for capture.
+    install: |
+      bin.install "scribe"
+    test: |
+      assert_match "scribe", shell_output("#{bin}/scribe --help 2>&1")

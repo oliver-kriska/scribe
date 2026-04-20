@@ -1,0 +1,135 @@
+package main
+
+import (
+	"context"
+	"embed"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+)
+
+//go:embed prompts/*.md
+var promptFS embed.FS
+
+// runClaude invokes `claude -p` with the given prompt and returns the output.
+// ErrRateLimit is returned when claude -p hits Anthropic rate limits.
+var ErrRateLimit = fmt.Errorf("rate limit hit")
+
+func runClaude(ctx context.Context, root, prompt, model string, tools []string, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	args := []string{
+		"-p", prompt,
+		"--no-session-persistence",
+		"--add-dir", root,
+		"--model", model,
+		// Disable all hooks to avoid noise and SessionEnd failures in headless mode.
+		"--settings", `{"hooks":{}}`,
+	}
+	if len(tools) > 0 {
+		args = append(args, "--allowedTools", strings.Join(tools, ","))
+	}
+
+	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	outStr := string(out)
+
+	// Check for rate limit indicators in output.
+	if isRateLimited(outStr) {
+		tail := tailLines(outStr, 5)
+		return tail, ErrRateLimit
+	}
+
+	if err != nil {
+		tail := tailLines(outStr, 15)
+		return tail, fmt.Errorf("claude -p: %w\n%s", err, tail)
+	}
+
+	return tailLines(outStr, 15), nil
+}
+
+// isRateLimited checks if claude output indicates a rate limit.
+func isRateLimited(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "rate limit") ||
+		strings.Contains(lower, "too many requests") ||
+		strings.Contains(lower, "429") ||
+		strings.Contains(lower, "overloaded")
+}
+
+// tailLines returns the last n non-empty lines from a string.
+func tailLines(s string, n int) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// loadPrompt reads an embedded prompt template and substitutes {{KEY}} placeholders.
+func loadPrompt(name string, vars map[string]string) (string, error) {
+	data, err := promptFS.ReadFile("prompts/" + name)
+	if err != nil {
+		return "", fmt.Errorf("load prompt %s: %w", name, err)
+	}
+	result := string(data)
+	for k, v := range vars {
+		result = strings.ReplaceAll(result, "{{"+k+"}}", v)
+	}
+	return result, nil
+}
+
+// runCmd runs a command and returns its trimmed stdout. Returns empty string on error.
+// Synchronous by design — used by callers that have no ambient context (cron helpers,
+// gitops, quick qmd status checks). If a caller needs cancellation, it can bypass this
+// wrapper and use exec.CommandContext directly.
+func runCmd(dir string, name string, args ...string) string {
+	cmd := exec.Command(name, args...) //nolint:noctx // sync wrapper; see doc comment
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// runCmdErr runs a command and returns stdout + error.
+// See runCmd doc for why this is non-context.
+func runCmdErr(dir string, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...) //nolint:noctx // sync wrapper; see doc comment
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+// logMsg prints a timestamped log message via log/slog.
+//
+// Kept as an adapter so the ~150 existing call sites don't need to move to
+// slog-native key/value form at once — the handler (see main.go) gives the
+// whole codebase slog's AddSource + JSON-capable output via one switch.
+// New call sites should use slog.Info/Warn/Error directly with key/value
+// pairs for structured output.
+func logMsg(script, format string, args ...any) {
+	slog.Info(fmt.Sprintf(format, args...), "script", script)
+}
+
+// fileExists checks if a path exists and is a file.
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// dirExists checks if a path exists and is a directory.
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}

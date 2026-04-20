@@ -1,0 +1,3 @@
+output/
+*.lock
+.DS_Store

@@ -1,0 +1,101 @@
+#!/bin/bash
+# Pre-commit hook for scribe KB
+# Validates: frontmatter on wiki articles, markdown lint, script syntax
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Use null-delimited output to handle spaces in filenames
+STAGED_FILES=()
+while IFS= read -r -d '' f; do
+    STAGED_FILES+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACM -z)
+
+if [ ${#STAGED_FILES[@]} -eq 0 ]; then
+    exit 0
+fi
+
+ERRORS=0
+
+# --- 1. Frontmatter validation on wiki .md files (skip raw/ + KB infra) ---
+WIKI_MD_FILES=()
+for f in "${STAGED_FILES[@]}"; do
+    case "$f" in
+        raw/*|.claude/*|output/*|.obsidian/*|cmd/*|log.md|scripts/*|CLAUDE.md|README.md) continue ;;
+    esac
+    # Skip underscore-prefixed infrastructure files (_index.md, _backlinks, _sessions_log).
+    base="${f##*/}"
+    case "$base" in _*) continue ;; esac
+    if [[ "$f" == *.md ]]; then
+        WIKI_MD_FILES+=("$REPO_ROOT/$f")
+    fi
+done
+
+if [ ${#WIKI_MD_FILES[@]} -gt 0 ]; then
+    echo "Checking frontmatter..."
+    if ! scribe validate "${WIKI_MD_FILES[@]}"; then
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
+# --- 2. Markdown lint (if available, non-blocking) ---
+if command -v markdownlint &>/dev/null; then
+    MD_FILES=()
+    for f in "${STAGED_FILES[@]}"; do
+        if [[ "$f" == *.md ]]; then
+            MD_FILES+=("$REPO_ROOT/$f")
+        fi
+    done
+
+    if [ ${#MD_FILES[@]} -gt 0 ]; then
+        echo "Running markdownlint..."
+        if ! markdownlint --config "$REPO_ROOT/.markdownlint.jsonc" "${MD_FILES[@]}" 2>/dev/null; then
+            echo "  (markdownlint warnings above — not blocking commit)"
+        fi
+    fi
+fi
+
+# --- 3. Shell script syntax check ---
+SH_FILES=()
+for f in "${STAGED_FILES[@]}"; do
+    if [[ "$f" == *.sh ]]; then
+        SH_FILES+=("$REPO_ROOT/$f")
+    fi
+done
+
+if [ ${#SH_FILES[@]} -gt 0 ]; then
+    echo "Checking shell syntax..."
+    for f in "${SH_FILES[@]}"; do
+        if ! bash -n "$f" 2>&1; then
+            echo "  $f: syntax error"
+            ERRORS=$((ERRORS + 1))
+        fi
+    done
+fi
+
+# --- 4. Python script syntax check ---
+PY_FILES=()
+for f in "${STAGED_FILES[@]}"; do
+    if [[ "$f" == *.py ]]; then
+        PY_FILES+=("$REPO_ROOT/$f")
+    fi
+done
+
+if [ ${#PY_FILES[@]} -gt 0 ]; then
+    echo "Checking Python syntax..."
+    for f in "${PY_FILES[@]}"; do
+        if ! python3 -m py_compile "$f" 2>&1; then
+            echo "  $f: syntax error"
+            ERRORS=$((ERRORS + 1))
+        fi
+    done
+fi
+
+# --- Result ---
+if [ "$ERRORS" -gt 0 ]; then
+    echo ""
+    echo "Pre-commit: $ERRORS check(s) failed. Fix errors or commit with --no-verify to skip."
+    exit 1
+fi
+
+echo "Pre-commit: all checks passed."

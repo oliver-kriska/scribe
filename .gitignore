@@ -1,0 +1,28 @@
+# Build output
+/scribe
+/bin/
+/dist/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Go
+/vendor/
+*.test
+*.out
+coverage.txt
+
+# Claude Code session state + research + drops (not for public repo)
+.claude/
+
+# Logs (scribe writes these under /tmp by default; keep local copies out)
+*.log
+/tmp/
+
+# Release workspace
+.goreleaser/

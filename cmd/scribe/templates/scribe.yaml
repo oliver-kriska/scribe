@@ -1,0 +1,130 @@
+# scribe.yaml — KB configuration
+# Written by `scribe init`. Edit by hand; re-run `scribe init --check` any time.
+
+# Owner context loaded into ~/.claude/CLAUDE.md so every Claude Code session
+# knows who you are and how to address your work.
+owner_name: "{{.OwnerName}}"
+owner_context: |
+{{.OwnerContextIndented}}
+
+# Domains this KB uses for the `domain:` frontmatter field. Validator rejects
+# domains not in this list. `personal` and `general` are always accepted on top.
+domains:
+{{range .Domains}}  - {{.}}
+{{end}}
+# Paths
+claude_projects_dir: ~/.claude/projects
+ccrider_db: ~/.config/ccrider/sessions.db
+lock_dir: /tmp
+
+# Default model for extraction / absorb claude -p calls
+default_model: sonnet
+
+sync:
+  max_extractions: 3
+  max_sessions: 3
+  max_absorb: 5
+  parallel_extractions: 3
+  checkpoint_interval: 5
+  # commit_debounce_minutes: suppresses auto-commit+push when the last KB
+  # commit was less than this many minutes ago. Useful on busy cron
+  # cadences (5min ingests → many tiny commits). Staged changes roll over
+  # to the next run. Default 0 = commit every run.
+  # commit_debounce_minutes: 30
+
+  # always_pull_before_sync: runs `git pull --rebase --autostash` at the
+  # start of `scribe sync` so teammates' committed pages appear in this
+  # run before extraction/absorb. Silent no-op if the KB isn't a git
+  # repo or has no remote. Failures (offline, auth, conflict) are
+  # non-fatal — sync continues. Default: true. Flip to false on air-
+  # gapped / offline laptops.
+  # always_pull_before_sync: true
+
+deep:
+  batch_max: 5
+
+# Identity harvesting filters for `scribe lint --identities`. Defaults
+# cover common Elixir module attributes (@doc, @behaviour, @moduletag)
+# and test email domains (example.com). Your entries ADD to the defaults
+# — they don't replace them. Write the bare token (no leading @).
+# identities:
+#   handle_stopwords:
+#     - my_custom_attr
+#     - another_noise_handle
+#   email_domain_stopwords:
+#     - internal-company-test.example
+
+# Absorb pipeline: raw/articles/*.md → wiki pages.
+# Leave a field unset to inherit the default (shown in comments below).
+absorb:
+  # Which raw articles auto-absorb during sync.
+  #   high   = only articles with `absorb: true` in frontmatter or a named
+  #            (non-"general") domain tag
+  #   medium = all unabsorbed raw articles (default)
+  #   low    = same as medium, reserved for future relaxations
+  strictness: medium              # default: medium
+  max_per_run: 5                  # default: 5
+
+  # Density classification thresholds. A raw article becomes:
+  #   brief    when word_count <  brief_threshold_words  AND heading_count <= brief_threshold_headings
+  #   dense    when word_count >= dense_threshold_words  OR  heading_count >= dense_threshold_headings
+  #   standard otherwise
+  # Dense sources use the two-pass (entity-first) absorb path.
+  dense_threshold_words: 2000     # default: 2000
+  dense_threshold_headings: 4     # default: 4
+  brief_threshold_words: 500      # default: 500
+  brief_threshold_headings: 1     # default: 1
+
+  # Models and timeouts for each absorb path.
+  pass1_model: haiku              # default: haiku (cheap entity-list pass)
+  pass2_model: ""                 # default: "" = inherit sync default_model
+  pass1_timeout_min: 3            # default: 3
+  pass2_timeout_min: 5            # default: 5
+  single_pass_timeout_min: 5      # default: 5
+
+  # Contextualize step: inserts a retrieval-context paragraph into each raw
+  # article before qmd embedding (Anthropic Contextual Retrieval pattern).
+  # Idempotent via wiki/_contextualized_log.json.
+  #
+  # provider:
+  #   anthropic — `claude -p` (Haiku ≈ $0.0001/doc). Default.
+  #   ollama    — local Ollama HTTP server. Free, offline.
+  #               Requires only `brew install ollama`. scribe auto-detects
+  #               the server and auto-pulls the model on first use.
+  # model (when provider=ollama), recommended Apr 2026:
+  #   gemma3:4b      — 3.3 GB, best speed/quality balance (default pick)
+  #   qwen3:4b       — richer prose, slightly more verbose
+  #   llama3.2:3b    — smaller, older-generation
+  #   phi4-mini:3.8b — reasoning-heavy
+  contextualize:
+    enabled: true                 # default: true
+    provider: anthropic           # default: anthropic (alt: ollama)
+    model: haiku                  # default: haiku (ollama: e.g. gemma3:4b)
+    ollama_url: http://localhost:11434
+    max_per_run: 20               # default: 20
+    timeout_sec: 90               # default: 90
+
+capture:
+  # iMessage handle used by self-chat URL capture. Override per-run via the
+  # SCRIBE_SELF_CHAT_ID environment variable.
+  self_chat_handle: "{{.SelfChatHandle}}"
+
+# Triage keyword categories for `scribe triage` (BM25 FTS5 scoring).
+# Edit any MATCH expression to tune to your stack. Weights multiply per hit.
+triage:
+  keywords:
+    decision: "decided OR chose OR tradeoff OR alternative"
+    architecture: "architecture OR \"design pattern\" OR strategy OR refactor"
+    research: "research OR paper OR benchmark OR measured OR compared"
+    learning: "learned OR realized OR mistake OR lesson OR insight"
+    evaluation: "evaluated OR verdict OR recommend OR comparison"
+    deep_work: "analysis OR investigation OR \"root cause\" OR audit"
+    code_pattern: "{{.CodePatternKeywords}}"
+  weights:
+    decision: 3
+    architecture: 2
+    research: 3
+    learning: 2
+    evaluation: 2
+    deep_work: 1
+    code_pattern: 1

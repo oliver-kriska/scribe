@@ -1,0 +1,75 @@
+version: "2"
+
+run:
+  tests: true
+  build-tags:
+    - sqlite_fts5
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - errorlint
+    - bodyclose
+    - noctx
+    - durationcheck
+    - nilerr
+    - fatcontext
+    - contextcheck
+    - copyloopvar
+    - forcetypeassert
+    - makezero
+    - gosec
+    - prealloc
+    - unconvert
+    - ineffassign
+    - unused
+    - misspell
+    - revive
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    misspell:
+      locale: US
+    gosec:
+      excludes:
+        - G104 # handled by errcheck
+        - G204 # subprocess with variable — intentional for claude/qmd/git; audit covers these
+        - G304 # file opened with variable path — scribe is a KB editor, intentional
+        - G306 # file mode 0644 — KB markdown/JSON must be user-editable
+        - G115 # integer overflow fd conversions in syscall.Flock are safe on all supported arches
+        - G404 # math/rand used for jitter, not security
+        - G703 # path traversal taint — scribe is a CLI that walks user-supplied KB paths
+        - G706 # log injection — output goes to local stdout / user's own run records
+        - G122 # filepath.Walk symlink TOCTOU — local KB, user-trusted paths
+        - G201 # SQL string formatting in triage.go — FTS5 MATCH can't be parameterized; scribe-owned inputs
+        - G701 # SQL injection taint — same reason as G201
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - forcetypeassert
+          - gosec
+        path: _test\.go
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/oliver-kriska/scribe)

@@ -1,0 +1,40 @@
+# Git hooks for scribe — managed by lefthook.
+# Install: `brew install lefthook && lefthook install`
+# Uninstall: `lefthook uninstall`
+#
+# Ships a minimum viable gate: mod-tidy drift, vet, gofmt. The pre-push gate
+# adds race-detected tests and golangci-lint (if installed locally). CGO and
+# sqlite_fts5 are mandatory for scribe — tests won't compile without them.
+
+pre-commit:
+  parallel: true
+  commands:
+    go-mod-tidy:
+      run: |
+        go mod tidy -diff 2>/dev/null || { echo "run go mod tidy"; exit 1; }
+    go-vet:
+      glob: "*.go"
+      run: go vet -tags sqlite_fts5 ./...
+    gofmt:
+      glob: "*.go"
+      run: |
+        unformatted=$(gofmt -l $(git ls-files '*.go'))
+        if [ -n "$unformatted" ]; then
+          echo "unformatted files — run gofmt -w:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+pre-push:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.go"
+      run: |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          golangci-lint run --timeout=3m --build-tags=sqlite_fts5
+        else
+          echo "golangci-lint not installed — skipping (brew install golangci-lint)"
+        fi
+    test-race:
+      run: go test -race -tags sqlite_fts5 -timeout=120s ./...
