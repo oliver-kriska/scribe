@@ -43,8 +43,11 @@ func (c *FDACmd) Run() error {
 	state := probeFDA()
 	// `--verify` is a one-shot for the current binary only. Returning before
 	// the multi-binary checks keeps the exit code semantics simple for
-	// scripts (exit 0 = this binary has FDA).
+	// scripts (exit 0 = this binary has FDA). Trim Targets to just the
+	// current inode so the printout doesn't show other binaries as "NOT
+	// GRANTED" — they weren't actually checked in this mode.
 	if c.Verify {
+		state.Targets = filterToCurrent(state.Targets)
 		printFDAStatus(state)
 		if !state.OK {
 			return fmt.Errorf("full disk access not granted for %s", selfBinaryPath())
@@ -71,6 +74,18 @@ func (c *FDACmd) Run() error {
 		return nil
 	}
 	return runFDAFlow(state)
+}
+
+// filterToCurrent keeps only the target whose Role == "current". Used by
+// `--verify`, which probes only the running binary and should not render
+// other inodes as "NOT GRANTED" when they were never tested.
+func filterToCurrent(ts []fdaTarget) []fdaTarget {
+	for _, t := range ts {
+		if t.Role == "current" {
+			return []fdaTarget{t}
+		}
+	}
+	return ts
 }
 
 // allTargetsLive is true when every listed binary has passed the FDA probe.
