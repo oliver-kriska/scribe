@@ -18,6 +18,8 @@
 
 **How to phrase the query.** Natural language beats keywords — the search already expands via vec + hyde. Lead with the concrete noun ("token rate limiter", "azure extraction") rather than the category ("performance", "reliability").
 
+**Follow the graph — one hop.** qmd returns flat ranked hits; it doesn't traverse wikilinks. After you read a top result, if it contains a `[[Wikilink]]` or a `related:` frontmatter entry that names a concept **central to the user's question** (not just incidental), fetch that neighbor with `mcp__plugin_qmd_qmd__get` before answering. Stop at one hop unless the second hop is clearly needed. This matches the progressive-disclosure-retrieval pattern (L2 = seed articles + 1–2 hops). Central-to-the-question is the bar — don't expand on every wikilink you see, or you'll drift off-topic and bloat context.
+
 **What "found nothing useful" means.** If a proactive search returns no relevant hits, report the gap: "The KB doesn't cover this yet — if the answer turns out to be reusable, it's a good candidate for a drop file."
 
 **How to contribute from other projects — drop files.** When a session in a non-KB project produces reusable knowledge, write a drop file to `.claude/{{.KBName}}/YYYY-MM-DD-{slug}.md` in the current project root with this frontmatter:
