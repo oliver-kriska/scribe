@@ -58,10 +58,32 @@ class Scribe < Formula
         scribe cron install           # macOS: LaunchAgents
                                       # Linux: prints crontab lines to paste
 
-      On macOS, grant Full Disk Access to #{bin}/scribe in
-      System Settings → Privacy & Security → Full Disk Access so that
-      `scribe capture` can read ~/Library/Messages/chat.db.
+      macOS — Full Disk Access for `scribe capture` (iMessage):
+        scribe fda                    # opens the FDA pane and walks you through
+                                      # use drag-and-drop from Finder if the
+                                      # "+ / Cmd-Shift-G" flow fails to register
+
+      Heads-up: until scribe ships with Developer ID codesigning, the FDA grant
+      is tied to the Cellar path + binary cdhash (both change on every
+      `brew upgrade scribe`). After an upgrade, `scribe capture` will start
+      failing with "operation not permitted" — just re-run `scribe fda`.
+      `scribe doctor` flags this situation explicitly.
     EOS
+  end
+
+  # post_install runs on fresh install and on `brew upgrade`. We use it to
+  # surface the FDA-is-now-broken message specifically on upgrade, since brew
+  # does not re-print `caveats` during upgrades and users otherwise hit a
+  # silent `capture` failure the next time cron fires.
+  def post_install
+    return unless OS.mac?
+    # The stable symlink at HOMEBREW_PREFIX/bin/scribe survives upgrades, but
+    # the Cellar target behind it (and its cdhash) changes. Any prior TCC
+    # grant is keyed to the *previous* Cellar inode and is therefore invalid.
+    ohai "Homebrew upgraded scribe to #{version}."
+    ohai "If iMessage capture was working before, macOS Full Disk Access is now"
+    ohai "invalidated (TCC is keyed to the binary cdhash, not the install path)."
+    ohai "Re-run:  scribe fda"
   end
 
   test do

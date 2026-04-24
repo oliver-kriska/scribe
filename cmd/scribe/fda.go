@@ -255,16 +255,25 @@ func printFDAStatus(s fdaState) {
 	fmt.Printf("  current-binary status: MISSING — %s\n", s.Reason)
 }
 
-// runFDAFlow drives the interactive path: open System Settings, wait for
-// the user, re-probe. Launchd-spawned invocations land on `--verify` and
-// skip this branch entirely.
+// runFDAFlow drives the interactive path: open System Settings, reveal each
+// binary in Finder so the user can drag it into the FDA list, then re-probe.
+// Launchd-spawned invocations land on `--verify` and skip this branch.
+//
+// UX note: the "+" / Cmd-Shift-G path-paste flow is unreliable on macOS 14+ —
+// it often accepts the Open click but silently does not add a row. Dragging
+// the binary from a Finder window is the most dependable method and is
+// therefore documented as step 1. Cmd-Shift-G is kept as a fallback.
 func runFDAFlow(s fdaState) error {
 	fmt.Println()
 	fmt.Println("Grant Full Disk Access to every listed scribe binary:")
 	fmt.Println()
 	fmt.Println("  1. System Settings opens in a moment (Privacy & Security → Full Disk Access).")
-	fmt.Println("  2. Click the + button.")
-	fmt.Println("  3. In the file picker press Cmd-Shift-G, paste one of these paths, Enter:")
+	fmt.Println("  2. A Finder window also opens with each scribe binary pre-selected.")
+	fmt.Println("     Drag the `scribe` icon directly onto the FDA list — this is the most")
+	fmt.Println("     reliable method on macOS 14+ (Sonoma/Sequoia).")
+	fmt.Println()
+	fmt.Println("     Fallback if drag-and-drop is awkward: click + in the FDA pane, press")
+	fmt.Println("     Cmd-Shift-G in the picker, paste one of these paths, Enter, Open:")
 	fmt.Println()
 	for _, t := range s.Targets {
 		if t.Live {
@@ -273,7 +282,10 @@ func runFDAFlow(s fdaState) error {
 		fmt.Printf("         %s   (%s)\n", t.Path, t.Role)
 	}
 	fmt.Println()
-	fmt.Println("  4. Enable the checkbox next to each added scribe.")
+	fmt.Println("  3. After the row appears in the FDA list, flip the toggle ON (blue/green).")
+	fmt.Println("     Being listed is not enough — the switch must be enabled.")
+	fmt.Println("  4. If the row never appears after clicking Open, that confirms the known")
+	fmt.Println("     picker bug — close the picker and use drag-and-drop instead.")
 	fmt.Println("  5. Return here — the probe retries every 3s for up to 2 minutes.")
 	fmt.Println()
 
@@ -281,6 +293,19 @@ func runFDAFlow(s fdaState) error {
 	if err := exec.Command("open", fdaSystemSettingsURL).Start(); err != nil { //nolint:noctx // interactive UI launcher, best-effort
 		fmt.Printf("  (could not auto-open System Settings: %v)\n", err)
 		fmt.Printf("  Open manually: %s\n\n", fdaSystemSettingsURL)
+	}
+
+	// Reveal each ungranted binary in a Finder window (`open -R`) so the user
+	// can drag it straight into the FDA list. This sidesteps the Cmd-Shift-G
+	// picker entirely — the flakiest part of the grant flow.
+	for _, t := range s.Targets {
+		if t.Live {
+			continue
+		}
+		if err := exec.Command("open", "-R", t.Path).Start(); err != nil { //nolint:noctx // interactive UI launcher, best-effort
+			// Non-fatal: the printed path is still usable manually.
+			fmt.Printf("  (could not reveal %s in Finder: %v)\n", t.Path, err)
+		}
 	}
 
 	// Poll for up to 2 minutes, re-checking every 3 seconds. Each iteration
