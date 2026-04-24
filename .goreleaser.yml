@@ -103,18 +103,53 @@ brews:
     dependencies:
       - name: git
       - name: sqlite
+      # Tap-qualified name: goreleaser renders this as
+      #   depends_on "neilberkman/tap/ccrider"
+      # so `brew install oliver-kriska/scribe/scribe` auto-taps neilberkman's
+      # tap and pulls ccrider too. Honza's install hit a [FAIL] wall on
+      # ccrider before this was declared.
+      - name: neilberkman/tap/ccrider
     caveats: |
-      scribe expects several runtime dependencies beyond brew-installed ones:
+      Runtime dependencies not on Homebrew — install these separately:
         * claude     (Claude Code CLI)
-        * ccrider    (Claude session recorder)
+                     curl -fsSL https://claude.ai/install.sh | bash
         * qmd        (semantic search over the KB)
-        * trafilatura, jq, fzf (optional)
+                     npm install -g @tobilu/qmd
+        * trafilatura (optional, URL → markdown)
+                     pipx install trafilatura
+        * jq, fzf    (optional)
+                     brew install jq fzf
+
+      Already installed by brew as dependencies: git, sqlite, ccrider.
 
       After installing:
         scribe init --path ~/my-kb
-        scribe cron install
-        # macOS: grant Full Disk Access to the scribe binary for capture.
+        scribe cron install           # macOS: LaunchAgents
+                                      # Linux: prints crontab lines
+
+      macOS — Full Disk Access for `scribe capture` (iMessage):
+        scribe fda                    # opens the FDA pane and walks you through
+                                      # drag-and-drop from Finder is the most
+                                      # reliable method on macOS 14+
+
+      Heads-up: until scribe ships with Developer ID codesigning, the FDA
+      grant is tied to the Cellar path + binary cdhash, which both change
+      on every `brew upgrade scribe`. After an upgrade, `scribe capture`
+      will start failing with "operation not permitted" — just re-run
+      `scribe fda`. `scribe doctor` flags this situation explicitly.
     install: |
       bin.install "scribe"
+    # custom_block is injected verbatim into the generated Formula. We use
+    # it to add a post_install hook that runs on every install AND upgrade
+    # (brew skips caveats on upgrade, so the re-grant nudge would otherwise
+    # reach only fresh installers).
+    custom_block: |
+      def post_install
+        return unless OS.mac?
+        ohai "Homebrew upgraded scribe."
+        ohai "If iMessage capture was working before, macOS Full Disk Access"
+        ohai "is now invalidated (TCC is keyed to the binary cdhash, not the"
+        ohai "install path). Re-run:  scribe fda"
+      end
     test: |
       assert_match "scribe", shell_output("#{bin}/scribe --help 2>&1")
