@@ -39,9 +39,9 @@ type depSpec struct {
 }
 
 var scribeDeps = []depSpec{
-	{Name: "claude", Binary: "claude", Required: true, Note: "Claude Code CLI — required for session extraction", Fix: "install Claude Code from https://claude.com/claude-code"},
-	{Name: "ccrider", Binary: "ccrider", Required: true, Note: "session database — required for `scribe triage`", Fix: "install ccrider (https://github.com/carlos-menezes/ccrider)"},
-	{Name: "qmd", Binary: "qmd", Required: true, Note: "semantic search index over the KB", Fix: "install qmd"},
+	{Name: "claude", Binary: "claude", Required: true, Note: "Claude Code CLI — required for session extraction", Fix: "curl -fsSL https://claude.ai/install.sh | bash"},
+	{Name: "ccrider", Binary: "ccrider", Required: true, Note: "session database — required for `scribe triage`", Fix: "brew install neilberkman/tap/ccrider"},
+	{Name: "qmd", Binary: "qmd", Required: true, Note: "semantic search index over the KB", Fix: "npm install -g @tobilu/qmd"},
 	{Name: "sqlite3", Binary: "sqlite3", Required: true, Note: "required by ccrider + capture", Fix: "brew install sqlite3 / apt install sqlite3"},
 	{Name: "git", Binary: "git", Required: true, Note: "KB auto-commit + cron sync", Fix: "install git"},
 	{Name: "trafilatura", Binary: "trafilatura", Required: false, Note: "URL → markdown (fallback: Jina Reader)", Fix: "pipx install trafilatura"},

@@ -36,9 +36,14 @@ class Scribe < Formula
   depends_on "git"
   depends_on "sqlite"
 
-  # Required by `scribe triage` (keyword expansion + preview). Optional deps
-  # (trafilatura, jq, fzf) are not listed so brew doesn't pull them on every
-  # install — the README explains how to add them if you use capture/triage.
+  # ccrider is the Claude-session recorder scribe reads via FTS5. It ships
+  # from neilberkman's tap; brew auto-taps on install.
+  depends_on "neilberkman/tap/ccrider"
+
+  # Not declared here (no brew formula exists): `claude` (install via
+  # `curl -fsSL https://claude.ai/install.sh | bash` or npm), `qmd`
+  # (semantic-search over the KB, install separately), `trafilatura`
+  # (optional, pip/pipx), `jq` and `fzf` (optional).
 
   def install
     bin.install "scribe"
@@ -46,12 +51,17 @@ class Scribe < Formula
 
   def caveats
     <<~EOS
-      scribe expects several runtime dependencies beyond brew-installed ones:
-        * claude     (Claude Code CLI — https://claude.com/claude-code)
-        * ccrider    (Claude session recorder)
+      Runtime dependencies not on Homebrew — install these separately:
+        * claude     (Claude Code CLI)
+                     curl -fsSL https://claude.ai/install.sh | bash
         * qmd        (semantic search over the KB)
+                     npm install -g @tobilu/qmd
         * trafilatura (optional, URL → markdown)
-        * jq, fzf   (optional)
+                     pipx install trafilatura
+        * jq, fzf    (optional)
+                     brew install jq fzf
+
+      Already installed by brew as dependencies: git, sqlite, ccrider.
 
       After installing:
         scribe init --path ~/my-kb
