@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -82,6 +83,9 @@ func renderStatus(w io.Writer, root string) error {
 	fmt.Fprintf(w, "  contextualized:   %d done, %d pending\n", len(cxLog), unContext)
 	fmt.Fprintf(w, "  absorbed:         %d done, %d pending\n", len(absorbLog), unAbsorb)
 	fmt.Fprintln(w)
+
+	// --- backlog: projects + sessions ---
+	renderBacklog(w, root, cfg)
 
 	// --- contextualize provider ---
 	cx := cfg.Absorb.Contextualize
@@ -280,4 +284,145 @@ func qmdIndexSize() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("size line not found")
+}
+
+// renderBacklog prints "what's not yet processed" so the user can
+// gauge how much work is left to bring the KB to a steady state.
+// Three sources of pending work outside raw/articles:
+//
+//  1. Projects in the manifest whose git SHA has moved since the
+//     last extraction (or that have never been extracted). Best-
+//     effort — projects with missing directories are silently
+//     skipped, matching projectsNeedingExtraction's behavior.
+//  2. Sessions in the ccrider DB not yet listed in
+//     wiki/_sessions_log.json. Counts only sessions that pass the
+//     pre-filter ceiling so mechanical/short sessions don't inflate
+//     the backlog.
+//  3. Pending drop files staged inside other projects'
+//     `.claude/scriptorium/` directories — these get collected at
+//     the start of `scribe sync` but show up here too so the user
+//     can spot accumulated drops without running a full sync.
+//
+// Each subsection is silenced if the underlying state file is
+// missing — a fresh KB shouldn't get a wall of "0 pending" lines.
+func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
+	type backlog struct {
+		label string
+		done  int
+		todo  int
+	}
+	var rows []backlog
+
+	// Projects.
+	if manifest, err := loadManifest(root); err == nil {
+		total := 0
+		needing := 0
+		for _, entry := range manifest.Projects {
+			if !dirExists(entry.Path) {
+				continue
+			}
+			total++
+			if entry.LastSHA == "" {
+				needing++
+				continue
+			}
+			if hasGit(entry.Path) {
+				cur := gitSHA(entry.Path)
+				if cur != "" && cur != entry.LastSHA {
+					needing++
+				}
+				continue
+			}
+			// Non-git projects: stat-walk fallback, conservative.
+			if entry.LastExtracted == "" {
+				needing++
+			}
+		}
+		if total > 0 {
+			rows = append(rows, backlog{label: "projects (extract):", done: total - needing, todo: needing})
+		}
+	}
+
+	// Sessions.
+	if cfg.CcriderDB != "" && fileExists(cfg.CcriderDB) {
+		processed := loadProcessedSessionIDs(filepath.Join(root, "wiki", "_sessions_log.json"))
+		total, ok := countSessionsInDB(cfg.CcriderDB)
+		if ok {
+			processedSet := make(map[string]struct{}, len(processed))
+			for _, id := range processed {
+				processedSet[id] = struct{}{}
+			}
+			pending := total - len(processedSet)
+			if pending < 0 {
+				pending = 0
+			}
+			rows = append(rows, backlog{label: "sessions (mine):", done: len(processedSet), todo: pending})
+		}
+	}
+
+	// Drop files staged in other projects.
+	if pending := countPendingDropFiles(root); pending > 0 {
+		rows = append(rows, backlog{label: "drop files:", done: 0, todo: pending})
+	}
+
+	if len(rows) == 0 {
+		return
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  backlog (run `scribe sync` to process):")
+	for _, r := range rows {
+		if r.done == 0 {
+			fmt.Fprintf(w, "    %-22s %d pending\n", r.label, r.todo)
+		} else {
+			fmt.Fprintf(w, "    %-22s %d done, %d pending\n", r.label, r.done, r.todo)
+		}
+	}
+}
+
+// countSessionsInDB reads the ccrider DB read-only and returns the
+// total number of sessions tracked. Returns (0, false) on any DB
+// error so the caller falls back to "no session backlog info" rather
+// than printing wrong numbers.
+func countSessionsInDB(dbPath string) (int, bool) {
+	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	if err != nil {
+		return 0, false
+	}
+	defer db.Close()
+	var n int
+	//nolint:noctx // status command is short-lived
+	if err := db.QueryRow("SELECT COUNT(*) FROM sessions").Scan(&n); err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// countPendingDropFiles walks the manifest's project paths and
+// counts unprocessed `.claude/scriptorium/*.md` drop files. A drop
+// file is "pending" if it exists; the sync sweep moves processed
+// files to `.claude/scriptorium/.processed/` so anything still at
+// the top level is awaiting absorption.
+func countPendingDropFiles(root string) int {
+	manifest, err := loadManifest(root)
+	if err != nil {
+		return 0
+	}
+	total := 0
+	for _, entry := range manifest.Projects {
+		dropDir := filepath.Join(entry.Path, ".claude", "scriptorium")
+		if !dirExists(dropDir) {
+			continue
+		}
+		files, err := os.ReadDir(dropDir)
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			if f.IsDir() || !strings.HasSuffix(f.Name(), ".md") {
+				continue
+			}
+			total++
+		}
+	}
+	return total
 }
