@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -98,7 +99,139 @@ func convertWithMarker(inputPath, _ string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read marker output: %w", err)
 	}
-	return strings.TrimSpace(string(data)), nil
+
+	// Image sidecar: marker writes images alongside the .md, with
+	// relative ![](image.png) refs. Without preservation those refs
+	// point at a tmp dir that gets deleted on defer. Copy the assets
+	// to raw/assets/<slug>/ in the KB and rewrite the links so the
+	// wiki retains the figures.
+	md := string(data)
+	if root, kbErr := kbDir(); kbErr == nil {
+		stem := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
+		md = preserveMarkerImages(md, filepath.Dir(mdPath), root, slugifyForAssets(stem))
+	}
+	return strings.TrimSpace(md), nil
+}
+
+// preserveMarkerImages copies image files marker emitted alongside the
+// markdown into raw/assets/<slug>/ and rewrites the relative refs
+// inside the markdown. Returns the rewritten markdown. Best-effort
+// throughout — if asset copying fails, the original markdown comes
+// back so absorb still gets text. Assets that don't appear in the
+// markdown are skipped (don't bloat the KB with unused files).
+func preserveMarkerImages(md, markerOutDir, kbRoot, slug string) string {
+	if slug == "" {
+		return md
+	}
+	refs := extractImageRefs(md)
+	if len(refs) == 0 {
+		return md
+	}
+	assetsDir := filepath.Join(kbRoot, "raw", "assets", slug)
+	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
+		return md
+	}
+	rewritten := md
+	for _, ref := range refs {
+		// Skip absolute URLs and data: URIs.
+		if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "data:") {
+			continue
+		}
+		src := filepath.Join(markerOutDir, ref)
+		if _, err := os.Stat(src); err != nil {
+			// marker didn't actually emit this file — leave the
+			// link in place; absorb will see it as a broken
+			// image, which is honest signal.
+			continue
+		}
+		dst := filepath.Join(assetsDir, filepath.Base(ref))
+		if err := copyFile(src, dst); err != nil {
+			continue
+		}
+		// Rewrite the link to a KB-relative path under raw/assets/.
+		rel := filepath.Join("..", "assets", slug, filepath.Base(ref))
+		rewritten = strings.ReplaceAll(rewritten, "]("+ref+")", "]("+rel+")")
+	}
+	return rewritten
+}
+
+// extractImageRefs pulls relative image paths out of a markdown body
+// using the standard ![alt](path) syntax. Skips empty paths and
+// duplicates.
+func extractImageRefs(md string) []string {
+	var refs []string
+	seen := map[string]bool{}
+	i := 0
+	for i < len(md) {
+		idx := strings.Index(md[i:], "![")
+		if idx < 0 {
+			break
+		}
+		i += idx
+		// Find closing of alt text.
+		altClose := strings.Index(md[i:], "](")
+		if altClose < 0 {
+			break
+		}
+		pathStart := i + altClose + 2
+		pathClose := strings.Index(md[pathStart:], ")")
+		if pathClose < 0 {
+			break
+		}
+		ref := md[pathStart : pathStart+pathClose]
+		ref = strings.TrimSpace(ref)
+		// Strip optional title quoted part: ![](foo.png "title")
+		if sp := strings.Index(ref, " "); sp > 0 {
+			ref = ref[:sp]
+		}
+		if ref != "" && !seen[ref] {
+			seen[ref] = true
+			refs = append(refs, ref)
+		}
+		i = pathStart + pathClose + 1
+	}
+	return refs
+}
+
+// copyFile is a minimal tee from src to dst with 0o644 permissions.
+// Used by image sidecar; we don't need anything fancier.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src) //nolint:gosec // src is inside our marker tmp dir
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644) //nolint:gosec // dst is inside our resolved KB
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// slugifyForAssets produces a filesystem-safe slug for raw/assets/.
+// Mirrors the title-slug logic but kept local to avoid re-coupling
+// convert_marker.go to ingest.go's slugify(). Lowercase ASCII alnum
+// plus "-".
+func slugifyForAssets(s string) string {
+	var sb strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			sb.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash {
+				sb.WriteRune('-')
+				prevDash = true
+			}
+		}
+	}
+	return strings.Trim(sb.String(), "-")
 }
 
 // findMarkerOutput locates the .md file marker wrote inside outputDir.

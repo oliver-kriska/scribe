@@ -78,6 +78,30 @@ func convertFile(path, ext string, data []byte, titleHint string) (*ConvertResul
 	// the Office family. We prefer it when available because of its
 	// benchmark lead on tables/equations/layout. Tier 0 only handles
 	// PDF (text-only) when marker is absent.
+	//
+	// Smart routing short-circuits trivial PDFs to tier 0 even when
+	// marker is installed — marker cold-loads ~3 GB on every
+	// invocation, which is wasted work for a 2-page receipt. Driven
+	// by ingest.smart_routing in scribe.yaml.
+	//
+	// If marker is missing and the user has opted into auto-install
+	// (SCRIBE_AUTO_INSTALL_TOOLS=1), lazy-bootstrap. The bootstrap
+	// downloads ~3 GB the first time, so we don't fire it unannounced.
+	if shouldRouteSmallPDFToTier0(ext, data) {
+		md, err := convertPDFTier0(data)
+		if err == nil {
+			return &ConvertResult{
+				Title:    pickTitle(titleHint, md, path),
+				Markdown: md,
+				Tier:     "tier0-smart",
+			}, nil
+		}
+		// Fall through on tier 0 failure (e.g., scanned PDF) so
+		// marker still gets a chance.
+	}
+	if !markerTierAvailable() {
+		_ = lazyBootstrapMarker() // best-effort; ignore error, fall through to tier 0
+	}
 	if markerTierAvailable() {
 		md, err := convertWithMarker(path, ext)
 		if err != nil {
@@ -133,6 +157,50 @@ func convertFile(path, ext string, data []byte, titleHint string) (*ConvertResul
 			Reason: "no converter registered for this extension",
 		}
 	}
+}
+
+// shouldRouteSmallPDFToTier0 returns true when a PDF is small enough
+// that marker's cold-load cost outweighs its quality advantage. Reads
+// thresholds from scribe.yaml ingest.smart_routing; falls back to
+// "no" when no KB is resolvable (tests, edge cases) so the dispatcher
+// keeps its existing behavior.
+//
+// Page-count probe is delegated to ledongthuc/pdf — the same library
+// tier 0 PDF conversion uses, so we're not pulling in extra deps.
+// We don't wrap it in a top-level pageCount() helper because the
+// only reader of page counts is this routing decision.
+func shouldRouteSmallPDFToTier0(ext string, data []byte) bool {
+	if ext != ".pdf" {
+		return false
+	}
+	cfg := loadIngestConfigBestEffort()
+	if cfg == nil || cfg.SmartRouting.Enabled == nil || !*cfg.SmartRouting.Enabled {
+		return false
+	}
+	if cfg.SmartRouting.MaxPDFBytes > 0 && int64(len(data)) > cfg.SmartRouting.MaxPDFBytes {
+		return false
+	}
+	if cfg.SmartRouting.MaxPDFPages > 0 {
+		pages := pdfPageCount(data)
+		if pages == 0 || pages > cfg.SmartRouting.MaxPDFPages {
+			return false
+		}
+	}
+	return true
+}
+
+// loadIngestConfigBestEffort returns the resolved IngestConfig for
+// the current KB, or nil when called outside one. Never panics.
+func loadIngestConfigBestEffort() *IngestConfig {
+	root, err := kbDir()
+	if err != nil {
+		return nil
+	}
+	cfg := loadConfig(root)
+	if cfg == nil {
+		return nil
+	}
+	return &cfg.Ingest
 }
 
 // pickTitle returns the first non-empty option among (override hint,

@@ -59,6 +59,17 @@ func convertPDFTier0(data []byte) (string, error) {
 	return out, nil
 }
 
+// pdfPageCount returns the number of pages in a PDF, or 0 on any
+// error. Used by smart-routing — a "0" result means "we can't tell,
+// fall through to marker" rather than "trust me, it's empty".
+func pdfPageCount(data []byte) int {
+	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return 0
+	}
+	return r.NumPage()
+}
+
 // convertHTMLTier0 converts HTML to markdown using JohannesKaufmann's
 // production-grade library (MIT, 3.6k stars). This replaces the existing
 // stripHTML regex chain in absorb.go for the explicit-conversion path.

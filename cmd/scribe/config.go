@@ -64,14 +64,30 @@ type ScribeConfig struct {
 // just claims the YAML key so config files written today survive the
 // future schema bump.
 type IngestConfig struct {
-	InboxPath  string             `yaml:"inbox_path"`
-	Marker     IngestMarkerConfig `yaml:"marker"`
-	Converters map[string]string  `yaml:"converters"`
+	InboxPath    string                   `yaml:"inbox_path"`
+	Marker       IngestMarkerConfig       `yaml:"marker"`
+	Converters   map[string]string        `yaml:"converters"`
+	SmartRouting IngestSmartRoutingConfig `yaml:"smart_routing"`
 }
 
 type IngestMarkerConfig struct {
 	TimeoutSeconds int   `yaml:"timeout_seconds"`
 	MPSFallback    *bool `yaml:"mps_fallback"`
+}
+
+// IngestSmartRoutingConfig sends "small" PDFs to tier 0 even when
+// marker is installed. Marker cold-loads ~3 GB of weights per
+// invocation; on a 2-page receipt that's 50× the runtime of
+// ledongthuc/pdf with no quality benefit. Defaults: 500 KB on disk
+// and 5 pages — both must be true to route to tier 0.
+//
+// Set Enabled to false in scribe.yaml to always use marker when
+// available (useful when batches are dominated by complex PDFs and
+// the cold-load cost gets amortized anyway).
+type IngestSmartRoutingConfig struct {
+	Enabled     *bool `yaml:"enabled"`
+	MaxPDFBytes int64 `yaml:"max_pdf_bytes"`
+	MaxPDFPages int   `yaml:"max_pdf_pages"`
 }
 
 func ingestDefaults() IngestConfig {
@@ -83,6 +99,11 @@ func ingestDefaults() IngestConfig {
 			MPSFallback:    &trueV,
 		},
 		Converters: map[string]string{},
+		SmartRouting: IngestSmartRoutingConfig{
+			Enabled:     &trueV,
+			MaxPDFBytes: 500 * 1024, // 500 KB
+			MaxPDFPages: 5,
+		},
 	}
 }
 
@@ -103,6 +124,15 @@ func applyIngestDefaults(cfg *IngestConfig) {
 	}
 	if cfg.Converters == nil {
 		cfg.Converters = d.Converters
+	}
+	if cfg.SmartRouting.Enabled == nil {
+		cfg.SmartRouting.Enabled = d.SmartRouting.Enabled
+	}
+	if cfg.SmartRouting.MaxPDFBytes <= 0 {
+		cfg.SmartRouting.MaxPDFBytes = d.SmartRouting.MaxPDFBytes
+	}
+	if cfg.SmartRouting.MaxPDFPages <= 0 {
+		cfg.SmartRouting.MaxPDFPages = d.SmartRouting.MaxPDFPages
 	}
 }
 
