@@ -54,6 +54,27 @@ type MarkerStats struct {
 	OCRPages       int     `json:"ocr_pages"`
 	OCRPct         float64 `json:"ocr_pct"`         // 0.0..1.0
 	ExtractionMode string  `json:"extraction_mode"` // "pdftext" | "ocr" | "mixed"
+	// Chapters mirrors marker's table_of_contents — the document
+	// outline parsed from the PDF. Empty for flat docs (no detected
+	// outline) and for short PDFs where chapter-aware absorb is
+	// overkill anyway. Phase 3A persists this as raw/articles/
+	// <slug>.toc.json alongside the article so chapter-aware absorb
+	// (Phase 3A.5) can chunk the body on real semantic boundaries
+	// instead of fixed-token windows.
+	Chapters []ChapterEntry `json:"chapters,omitempty"`
+}
+
+// ChapterEntry is one row from marker's table_of_contents. We intentionally
+// drop the polygon coordinates (only useful for visual layout debugging)
+// and keep just what the absorb chunker needs: title, level, and the
+// originating PDF page. Body offsets within the converted markdown get
+// filled in at sidecar-persist time, when we have the final markdown text.
+type ChapterEntry struct {
+	Title      string `json:"title"`
+	HeadingLvl int    `json:"heading_level"`         // 0 when marker couldn't classify
+	PageID     int    `json:"page_id"`               // 0-indexed page in the source PDF
+	BodyOffset int    `json:"body_offset,omitempty"` // byte offset into the article markdown
+	BodyLength int    `json:"body_length,omitempty"` // bytes from BodyOffset to next chapter
 }
 
 // convertWithMarker reads ingest config from the resolved KB root.
@@ -283,11 +304,27 @@ func readMarkerStats(mdPath string) *MarkerStats {
 		PageStats []struct {
 			TextExtractionMethod string `json:"text_extraction_method"`
 		} `json:"page_stats"`
+		TableOfContents []struct {
+			Title        string `json:"title"`
+			HeadingLevel *int   `json:"heading_level"` // pointer because marker emits explicit nulls
+			PageID       int    `json:"page_id"`
+		} `json:"table_of_contents"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil
 	}
 	stats := &MarkerStats{Pages: len(raw.PageStats)}
+	for _, e := range raw.TableOfContents {
+		level := 0
+		if e.HeadingLevel != nil {
+			level = *e.HeadingLevel
+		}
+		stats.Chapters = append(stats.Chapters, ChapterEntry{
+			Title:      strings.TrimSpace(e.Title),
+			HeadingLvl: level,
+			PageID:     e.PageID,
+		})
+	}
 	if stats.Pages == 0 {
 		return stats
 	}

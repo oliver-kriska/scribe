@@ -584,6 +584,17 @@ func (c *IngestFileCmd) Run() error {
 	sourceURL := "file:///" + filepath.Base(absPath)
 
 	rawPath, content := buildRawArticleWithStats(root, sourceURL, title, body, "local", c.Domain, c.Tag, stats)
+	// Phase 3A: TOC sidecar for chapter-aware absorb. Defer the
+	// actual write until the article is on disk so writeTOCSidecar
+	// can read the body to compute byte offsets.
+	defer func() {
+		if c.DryRun {
+			return
+		}
+		if err := writeTOCSidecar(rawPath, filepath.Base(absPath), stats); err != nil {
+			logMsg("ingest", "toc sidecar warning for %s: %v", filepath.Base(rawPath), err)
+		}
+	}()
 
 	if c.DryRun {
 		fmt.Printf("[dry-run] would write: %s\n", rawPath)

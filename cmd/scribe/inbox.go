@@ -175,6 +175,14 @@ func ingestInboxFile(root, full, processedDir string) (string, error) {
 		return "", fmt.Errorf("write article: %w", err)
 	}
 
+	// Phase 3A: persist the chapter outline alongside the article so
+	// chapter-aware absorb (3A.5) can splice the body on real
+	// boundaries instead of fixed-token windows. Best-effort — a
+	// sidecar miss never blocks ingestion.
+	if err := writeTOCSidecar(rawPath, filepath.Base(full), stats); err != nil {
+		logMsg("inbox", "toc sidecar warning for %s: %v", filepath.Base(rawPath), err)
+	}
+
 	// Move original to .processed/ — uses time-stamped name to avoid
 	// collisions when the same filename gets re-dropped later.
 	stamp := time.Now().UTC().Format("20060102-150405")
