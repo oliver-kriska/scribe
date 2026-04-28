@@ -158,6 +158,24 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 	// frontmatter once, reuse across all chapter runs.
 	sourceTitle := readArticleTitle(rawFile)
 
+	// Phase 3B: atomic-fact extraction (opt-in). Runs before pass-1
+	// so each chunk's pass-1 prompt can include its facts as
+	// grounding. Failures here fall through silently — pass-1 still
+	// works without facts, just less grounded. nil mergedFacts means
+	// "no facts available" and the {{FACTS}} placeholder renders empty.
+	var mergedFacts *MergedFacts
+	if shouldRunFactsPass(cfg) {
+		mf, err := s.runFactsPass(ctx, root, rawFile, rawName, runs, cfg)
+		if err != nil {
+			if errors.Is(err, ErrRateLimit) {
+				return err
+			}
+			logMsg("sync", "facts pass failed for %s (%v); proceeding with un-grounded pass-1", rawName, err)
+		} else {
+			mergedFacts = mf
+		}
+	}
+
 	logMsg("sync", "pass1 chaptered: %d chapters, parallel=%d for %s", len(chunks), parallel, rawName)
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(parallel)
@@ -171,6 +189,7 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 				return nil //nolint:nilerr // gctx canceled by another goroutine; quiet exit is intentional
 			}
 			r := runs[i]
+			factsBlock := formatFactsForPrompt(mergedFacts.factsForChapter(r.index))
 			prompt, err := loadPrompt("absorb-pass1-chapter.md", map[string]string{
 				"KB_DIR":        root,
 				"RAW_FILE":      rawFile,
@@ -178,6 +197,7 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 				"CHAPTER_TITLE": r.chunk.Title,
 				"SOURCE_TITLE":  sourceTitle,
 				"PLAN_FILE":     r.planJSON,
+				"FACTS":         factsBlock,
 			})
 			if err != nil {
 				return fmt.Errorf("load chapter prompt %d: %w", r.index, err)

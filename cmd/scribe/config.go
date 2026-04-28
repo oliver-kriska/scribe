@@ -270,6 +270,20 @@ type AbsorbConfig struct {
 	// default `true`.
 	ChapterAware     *bool `yaml:"chapter_aware"`
 	ChapterThreshold int   `yaml:"chapter_threshold"`
+
+	// AtomicFacts turns on Phase 3B atomic-fact extraction. When on
+	// (and the article qualifies for chaptered absorb), a per-chunk
+	// facts pass runs before pass-1; each chunk's atomic claims get
+	// merged into output/facts/<slug>.json AND injected into that
+	// chunk's pass-1 prompt as grounding evidence. Off by default
+	// because the cost is +1 cheap haiku call per chunk and the
+	// quality win has to land per-document — not a free lunch.
+	// FactsModel inherits from Pass1Model when empty; haiku is the
+	// recommended pin for the facts pass since the work is
+	// extraction, not reasoning.
+	AtomicFacts     *bool  `yaml:"atomic_facts"`
+	FactsModel      string `yaml:"facts_model"`
+	FactsTimeoutMin int    `yaml:"facts_timeout_min"`
 }
 
 // ContextualizeConfig controls the `scribe contextualize` pre-embed step.
@@ -310,6 +324,12 @@ func absorbDefaults() AbsorbConfig {
 		SinglePassTimeoutMin:   5,
 		ChapterAware:           &trueV,
 		ChapterThreshold:       3,
+		// AtomicFacts off by default. Users opt in by setting
+		// `absorb.atomic_facts: true` in scribe.yaml after they've
+		// verified chaptered absorb works on their corpus.
+		AtomicFacts:     nil,
+		FactsModel:      "haiku",
+		FactsTimeoutMin: 3,
 		Contextualize: ContextualizeConfig{
 			Enabled:    &trueV,
 			Provider:   "anthropic",
@@ -470,6 +490,18 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 	}
 	if cfg.ChapterThreshold <= 0 {
 		cfg.ChapterThreshold = d.ChapterThreshold
+	}
+	// AtomicFacts: nil means inherit default (which is also nil =
+	// off). We deliberately don't clobber an explicit `false` with
+	// the default. A user-set `true` survives.
+	if cfg.AtomicFacts == nil {
+		cfg.AtomicFacts = d.AtomicFacts
+	}
+	if cfg.FactsModel == "" {
+		cfg.FactsModel = d.FactsModel
+	}
+	if cfg.FactsTimeoutMin <= 0 {
+		cfg.FactsTimeoutMin = d.FactsTimeoutMin
 	}
 	if cfg.Contextualize.Enabled == nil {
 		cfg.Contextualize.Enabled = d.Contextualize.Enabled

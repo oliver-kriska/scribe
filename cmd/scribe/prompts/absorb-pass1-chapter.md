@@ -6,6 +6,12 @@ Chapter title: {{CHAPTER_TITLE}}
 Source PDF title: {{SOURCE_TITLE}}
 Plan output path: {{PLAN_FILE}}
 
+## Atomic facts already extracted for this chapter
+
+The block below was produced by an earlier pass against this same chunk. It is the verbatim claim pool. When you propose entities, every `key_claim` you list **must** correspond to a fact in this block (paraphrased OK, but the fact's substance must be there). If a fact doesn't fit any entity, drop it — not every fact deserves its own wiki page. Empty block means atomic-fact extraction was off or produced nothing; in that case fall back to reading the chunk fresh.
+
+{{FACTS}}
+
 ## Procedure
 
 1. Read **the chapter chunk file** end to end. Do **not** read the full raw article — your scope is this chapter.
