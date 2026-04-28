@@ -78,6 +78,9 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		"--model", a.model,
 		// No tools — this path is for pure text generation.
 		"--settings", `{"hooks":{}}`,
+		// Phase 3D.5: structured output → real token counts in the
+		// ledger. Same fallback strategy as runClaude.
+		"--output-format", "json",
 	}
 	started := time.Now()
 	op := opLabelFromContext(ctx)
@@ -92,13 +95,19 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		appendCostEntry(a.root, entry)
 	}()
 
+	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "claude", args...)
-	out, err := cmd.CombinedOutput()
-	outStr := string(out)
-	if isRateLimited(outStr) {
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	err := cmd.Run()
+	stdoutStr := stdoutBuf.String()
+	stderrStr := stderrBuf.String()
+	combined := stdoutStr + "\n" + stderrStr
+
+	if isRateLimited(combined) {
 		entry.OK = false
 		entry.ErrKind = "rate_limit"
-		return tailLines(outStr, 5), ErrRateLimit
+		return tailLines(combined, 5), ErrRateLimit
 	}
 	if err != nil {
 		entry.OK = false
@@ -110,10 +119,43 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		default:
 			entry.ErrKind = "other"
 		}
-		return tailLines(outStr, 15), fmt.Errorf("claude -p: %w", err)
+		return tailLines(combined, 15), fmt.Errorf("claude -p: %w", err)
 	}
+
+	var env claudeResultEnvelope
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(stdoutStr)), &env); jsonErr == nil && env.Type == "result" {
+		if env.Usage.InputTokens > 0 {
+			in := env.Usage.InputTokens
+			entry.InputTokens = &in
+		}
+		if env.Usage.OutputTokens > 0 {
+			out := env.Usage.OutputTokens
+			entry.OutputTokens = &out
+		}
+		if env.Usage.CacheReadInputTokens > 0 {
+			c := env.Usage.CacheReadInputTokens
+			entry.CacheReadTokens = &c
+		}
+		if env.TotalCostUSD > 0 {
+			cost := env.TotalCostUSD
+			entry.CostUSD = &cost
+		}
+		if env.IsError {
+			entry.OK = false
+			if isRateLimitSubtype(env.Subtype) {
+				entry.ErrKind = "rate_limit"
+				return env.Result, ErrRateLimit
+			}
+			entry.ErrKind = "other"
+			return env.Result, fmt.Errorf("claude -p: %s", env.Subtype)
+		}
+		entry.OK = true
+		return strings.TrimSpace(env.Result), nil
+	}
+
+	// Fall back to text mode if JSON parse fails.
 	entry.OK = true
-	return strings.TrimSpace(outStr), nil
+	return strings.TrimSpace(stdoutStr), nil
 }
 
 // --- ollama ---

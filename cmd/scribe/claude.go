@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -29,6 +31,12 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 		"--model", model,
 		// Disable all hooks to avoid noise and SessionEnd failures in headless mode.
 		"--settings", `{"hooks":{}}`,
+		// Phase 3D.5: structured output gives us real token counts
+		// and total_cost_usd from the result envelope. Falls back to
+		// the text-mode classifier if the JSON parse fails (e.g.
+		// older claude CLI without the flag, or claude crashed
+		// before emitting an envelope).
+		"--output-format", "json",
 	}
 	if len(tools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(tools, ","))
@@ -49,30 +57,32 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 		appendCostEntry(root, entry)
 	}()
 
+	// Capture stdout (the JSON envelope) and stderr (banner / tool
+	// noise / rate-limit messages from claude itself) separately so
+	// JSON parsing isn't poisoned by stderr lines. Combined view
+	// stays available for legacy text-mode fallback.
+	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	outStr := string(out)
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	err := cmd.Run()
+	stdoutStr := stdoutBuf.String()
+	stderrStr := stderrBuf.String()
+	combined := stdoutStr + "\n" + stderrStr
 
-	// Check for rate limit indicators in output.
-	if isRateLimited(outStr) {
-		tail := tailLines(outStr, 5)
+	// Rate-limit text detection runs first across the combined
+	// output. Some rate-limit responses come back as well-formed
+	// JSON envelopes with is_error=true; others crash claude before
+	// it emits one. The text matcher is the safety net.
+	if isRateLimited(combined) {
 		entry.OK = false
 		entry.ErrKind = "rate_limit"
-		return tail, ErrRateLimit
+		return tailLines(combined, 5), ErrRateLimit
 	}
 
 	if err != nil {
-		tail := tailLines(outStr, 15)
 		entry.OK = false
-		// Classify the failure kind so the ledger can tell apart
-		// real crashes from cascade noise. Cascade noise dominates
-		// during rate-limit storms — once a sibling errgroup goroutine
-		// returns ErrRateLimit, every other in-flight runClaude gets
-		// its context canceled and exec.CommandContext kills the
-		// process, surfacing "signal: killed" with no rate-limit
-		// string in the (truncated) output. Marking these as
-		// "canceled" instead of "other" keeps the ledger honest.
 		switch ctx.Err() {
 		case context.DeadlineExceeded:
 			entry.ErrKind = "timeout"
@@ -81,11 +91,54 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 		default:
 			entry.ErrKind = "other"
 		}
-		return tail, fmt.Errorf("claude -p: %w\n%s", err, tail)
+		return tailLines(combined, 15), fmt.Errorf("claude -p: %w\n%s", err, tailLines(combined, 15))
 	}
 
+	// Try to parse the JSON envelope. claude -p --output-format json
+	// emits one top-level object with usage and cost fields.
+	var env claudeResultEnvelope
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(stdoutStr)), &env); jsonErr == nil && env.Type == "result" {
+		// Capture token / cost numbers regardless of success/error
+		// status — even rate-limited or partial calls bill some
+		// input tokens and the user wants to see them.
+		if env.Usage.InputTokens > 0 {
+			in := env.Usage.InputTokens
+			entry.InputTokens = &in
+		}
+		if env.Usage.OutputTokens > 0 {
+			out := env.Usage.OutputTokens
+			entry.OutputTokens = &out
+		}
+		if env.Usage.CacheReadInputTokens > 0 {
+			c := env.Usage.CacheReadInputTokens
+			entry.CacheReadTokens = &c
+		}
+		if env.TotalCostUSD > 0 {
+			cost := env.TotalCostUSD
+			entry.CostUSD = &cost
+		}
+
+		if env.IsError {
+			entry.OK = false
+			if isRateLimitSubtype(env.Subtype) {
+				entry.ErrKind = "rate_limit"
+				return env.Result, ErrRateLimit
+			}
+			entry.ErrKind = "other"
+			return env.Result, fmt.Errorf("claude -p: %s", env.Subtype)
+		}
+
+		entry.OK = true
+		return env.Result, nil
+	}
+
+	// JSON parse failed. Either the CLI doesn't support
+	// --output-format json on this system or the output got
+	// mangled. Treat as text-mode success — the call exited 0 and
+	// no rate-limit signal — and let summarizeCosts fall back to
+	// char-based estimates for this row.
 	entry.OK = true
-	return tailLines(outStr, 15), nil
+	return tailLines(stdoutStr, 15), nil
 }
 
 // isRateLimited checks if claude output indicates a rate limit.

@@ -247,6 +247,96 @@ func TestIsRateLimited_NegativeCases(t *testing.T) {
 	}
 }
 
+func TestSummarizeCosts_PrefersActualUSDWhenPresent(t *testing.T) {
+	tmp := t.TempDir()
+	in1, out1 := int64(1000), int64(500)
+	cost1 := 0.015
+	for _, e := range []CostEntry{
+		// Two real-usage rows.
+		{Model: "haiku", DurationMS: 1000, OK: true, PromptChars: 4000, InputTokens: &in1, OutputTokens: &out1, CostUSD: &cost1},
+		{Model: "haiku", DurationMS: 1000, OK: true, PromptChars: 4000, InputTokens: &in1, OutputTokens: &out1, CostUSD: &cost1},
+		// One legacy row (no token data).
+		{Model: "haiku", DurationMS: 500, OK: true, PromptChars: 4000},
+	} {
+		appendCostEntry(tmp, e)
+	}
+	rows, err := summarizeCosts(tmp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row; got %+v", rows)
+	}
+	r := rows[0]
+	if r.CallsWithUsage != 2 || r.Calls != 3 {
+		t.Errorf("usage tally wrong: CallsWithUsage=%d Calls=%d", r.CallsWithUsage, r.Calls)
+	}
+	if r.InputTokens != 2000 || r.OutputTokens != 1000 {
+		t.Errorf("token rollup wrong: in=%d out=%d", r.InputTokens, r.OutputTokens)
+	}
+	if r.ActualUSD < 0.029 || r.ActualUSD > 0.031 {
+		t.Errorf("actual USD should be ~0.030; got %f", r.ActualUSD)
+	}
+	// Estimate covers only the unmeasured share (1 of 3 calls = 1/3
+	// of PromptChars). Should be small but non-zero.
+	if r.EstUSDHigh == 0 {
+		t.Errorf("expected non-zero estimate for unmeasured share; got %+v", r)
+	}
+}
+
+func TestSummarizeCosts_AllLegacyRowsKeepEstimates(t *testing.T) {
+	tmp := t.TempDir()
+	for i := 0; i < 5; i++ {
+		appendCostEntry(tmp, CostEntry{Model: "haiku", PromptChars: 8000, OK: true, DurationMS: 1000})
+	}
+	rows, err := summarizeCosts(tmp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := rows[0]
+	if r.CallsWithUsage != 0 {
+		t.Errorf("legacy-only data should not have usage entries; got %d", r.CallsWithUsage)
+	}
+	if r.ActualUSD != 0 {
+		t.Errorf("legacy-only data should not have ActualUSD; got %f", r.ActualUSD)
+	}
+	if r.EstUSDHigh == 0 {
+		t.Errorf("legacy-only data must have estimate; got %+v", r)
+	}
+}
+
+func TestFormatRowUSD_BranchSelection(t *testing.T) {
+	cases := []struct {
+		name   string
+		row    CostSummary
+		expect string
+	}{
+		{"real only", CostSummary{ActualUSD: 1.234}, "$1.2340"},
+		{"est only", CostSummary{EstUSDLow: 0.1, EstUSDHigh: 0.5}, "$0.1000-0.5000"},
+		{"mixed", CostSummary{ActualUSD: 1.0, EstUSDHigh: 0.5}, "$1.0000+~$0.50"},
+		{"none", CostSummary{}, "—"},
+	}
+	for _, tc := range cases {
+		got := formatRowUSD(tc.row)
+		if got != tc.expect {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.expect)
+		}
+	}
+}
+
+func TestIsRateLimitSubtype(t *testing.T) {
+	for _, sub := range []string{"rate_limit_exceeded", "QUOTA_EXCEEDED", "user_limit_reached"} {
+		if !isRateLimitSubtype(sub) {
+			t.Errorf("expected %q to match", sub)
+		}
+	}
+	for _, sub := range []string{"", "success", "error_max_turns"} {
+		if isRateLimitSubtype(sub) {
+			t.Errorf("did not expect %q to match", sub)
+		}
+	}
+}
+
 func TestModelRateUSDPerMillion_KnownModelsHavePrices(t *testing.T) {
 	for _, m := range []string{"haiku", "sonnet", "opus"} {
 		rate, ok := modelRateUSDPerMillion[m]

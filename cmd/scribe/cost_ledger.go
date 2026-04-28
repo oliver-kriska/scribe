@@ -57,6 +57,45 @@ type CostEntry struct {
 	// ErrKind classifies failures: rate_limit | timeout | other.
 	// Empty when OK is true.
 	ErrKind string `json:"err_kind,omitempty"`
+	// Phase 3D.5: token-accurate fields populated when claude -p is
+	// invoked with --output-format json and the envelope parses
+	// cleanly. Pointers so absent (legacy text-mode or failed
+	// parse) is distinguishable from zero (succeeded but no usage).
+	InputTokens     *int64   `json:"input_tokens,omitempty"`
+	OutputTokens    *int64   `json:"output_tokens,omitempty"`
+	CacheReadTokens *int64   `json:"cache_read_tokens,omitempty"`
+	CostUSD         *float64 `json:"cost_usd,omitempty"`
+}
+
+// claudeResultEnvelope mirrors the JSON shape claude -p emits with
+// --output-format json. Anthropic adds fields over time; we accept
+// unknown keys silently (json.Unmarshal default).
+type claudeResultEnvelope struct {
+	Type         string  `json:"type"`
+	Subtype      string  `json:"subtype"`
+	IsError      bool    `json:"is_error"`
+	DurationMS   int64   `json:"duration_ms"`
+	NumTurns     int     `json:"num_turns"`
+	Result       string  `json:"result"`
+	SessionID    string  `json:"session_id"`
+	TotalCostUSD float64 `json:"total_cost_usd"`
+	Usage        struct {
+		InputTokens              int64 `json:"input_tokens"`
+		OutputTokens             int64 `json:"output_tokens"`
+		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	} `json:"usage"`
+}
+
+// isRateLimitSubtype detects rate-limit errors from the JSON
+// envelope's subtype field. The subtype set varies across claude
+// versions; the substrings listed here cover what's been observed
+// since the JSON output mode landed.
+func isRateLimitSubtype(subtype string) bool {
+	lower := strings.ToLower(subtype)
+	return strings.Contains(lower, "rate") ||
+		strings.Contains(lower, "quota") ||
+		strings.Contains(lower, "limit")
 }
 
 // opLabelKey is a context.Context key for plumbing an op label
@@ -137,6 +176,14 @@ type CostSummary struct {
 	PromptChars      int64
 	EstUSDLow        float64
 	EstUSDHigh       float64
+	// Phase 3D.5: real numbers from --output-format json envelopes.
+	// CallsWithUsage tracks how many of Calls had token data; the
+	// rest fall back to the char-estimate brackets.
+	CallsWithUsage  int
+	InputTokens     int64
+	OutputTokens    int64
+	CacheReadTokens int64
+	ActualUSD       float64
 }
 
 // summarizeCosts reads every JSONL in output/costs/ within the
@@ -212,21 +259,41 @@ func summarizeCosts(root string, days int) ([]CostSummary, error) {
 			}
 			row.WallclockSeconds += float64(ce.DurationMS) / 1000.0
 			row.PromptChars += int64(ce.PromptChars)
+			// Phase 3D.5: real-number aggregation when present.
+			if ce.InputTokens != nil {
+				row.InputTokens += *ce.InputTokens
+				row.CallsWithUsage++
+			}
+			if ce.OutputTokens != nil {
+				row.OutputTokens += *ce.OutputTokens
+			}
+			if ce.CacheReadTokens != nil {
+				row.CacheReadTokens += *ce.CacheReadTokens
+			}
+			if ce.CostUSD != nil {
+				row.ActualUSD += *ce.CostUSD
+			}
 		}
 	}
 
-	// Compute USD estimates per row.
+	// Compute USD estimates per row only for the prompt-chars from
+	// calls WITHOUT token data — calls with real usage have their
+	// cost in row.ActualUSD already. We don't double-count.
 	for _, row := range byModel {
 		rate, ok := modelRateUSDPerMillion[row.Model]
 		if !ok {
 			continue
 		}
-		// Token estimate: 4 chars/token. Output is bracketed:
-		//   low:  output ≈ 0.25 × input
-		//   high: output ≈ 1.00 × input
-		// Brackets give the user a sense of uncertainty rather than
-		// a single false-precision number.
-		inTokens := float64(row.PromptChars) / 4.0
+		// PromptChars covers every call. To avoid double-counting,
+		// we compute the estimate only for the unmeasured share.
+		// callsWithoutUsage / totalCalls is the proportion of
+		// PromptChars that lacked token data.
+		if row.Calls == 0 {
+			continue
+		}
+		unmeasuredFrac := float64(row.Calls-row.CallsWithUsage) / float64(row.Calls)
+		unmeasuredChars := float64(row.PromptChars) * unmeasuredFrac
+		inTokens := unmeasuredChars / 4.0
 		row.EstUSDLow = (inTokens*rate[0] + inTokens*0.25*rate[1]) / 1_000_000.0
 		row.EstUSDHigh = (inTokens*rate[0] + inTokens*1.00*rate[1]) / 1_000_000.0
 	}
@@ -235,8 +302,12 @@ func summarizeCosts(root string, days int) ([]CostSummary, error) {
 	for _, row := range byModel {
 		out = append(out, *row)
 	}
+	// Sort by total USD (real + estimated high) descending. Real
+	// dominates when present, estimate kicks in for legacy rows.
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].EstUSDHigh > out[j].EstUSDHigh
+		ti := out[i].ActualUSD + out[i].EstUSDHigh
+		tj := out[j].ActualUSD + out[j].EstUSDHigh
+		return ti > tj
 	})
 	return out, nil
 }
@@ -267,30 +338,62 @@ func (c *CostCmd) Run() error {
 		window = fmt.Sprintf("last %d days", c.Days)
 	}
 	fmt.Printf("scribe cost — %s\n\n", window)
-	fmt.Printf("  %-10s  %6s  %6s  %6s  %6s  %6s  %10s  %14s  %18s\n",
-		"model", "calls", "ok", "cancl", "rate", "tmout", "wallclock", "prompt-chars", "est-usd (low–high)")
-	var totalCalls, totalOK, totalCanceled, totalRL, totalTimeout int
+	fmt.Printf("  %-10s  %6s  %6s  %6s  %6s  %6s  %10s  %12s  %12s  %12s\n",
+		"model", "calls", "ok", "cancl", "rate", "tmout", "wallclock", "in-tokens", "out-tokens", "usd")
+	var totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalUsage int
 	var totalSec float64
-	var totalChars int64
-	var totalLow, totalHigh float64
+	var totalIn, totalOut int64
+	var totalActual, totalLow, totalHigh float64
 	for _, r := range rows {
-		fmt.Printf("  %-10s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %14d  $%6.4f – $%6.4f\n",
-			r.Model, r.Calls, r.OK, r.Canceled, r.RateLimit, r.Timeout, r.WallclockSeconds, r.PromptChars, r.EstUSDLow, r.EstUSDHigh)
+		usd := formatRowUSD(r)
+		fmt.Printf("  %-10s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %12s\n",
+			r.Model, r.Calls, r.OK, r.Canceled, r.RateLimit, r.Timeout, r.WallclockSeconds, r.InputTokens, r.OutputTokens, usd)
 		totalCalls += r.Calls
 		totalOK += r.OK
 		totalCanceled += r.Canceled
 		totalRL += r.RateLimit
 		totalTimeout += r.Timeout
+		totalUsage += r.CallsWithUsage
 		totalSec += r.WallclockSeconds
-		totalChars += r.PromptChars
+		totalIn += r.InputTokens
+		totalOut += r.OutputTokens
+		totalActual += r.ActualUSD
 		totalLow += r.EstUSDLow
 		totalHigh += r.EstUSDHigh
 	}
-	fmt.Printf("  %-10s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %14d  $%6.4f – $%6.4f\n",
-		"TOTAL", totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalSec, totalChars, totalLow, totalHigh)
+	totalRow := CostSummary{
+		ActualUSD:      totalActual,
+		EstUSDLow:      totalLow,
+		EstUSDHigh:     totalHigh,
+		Calls:          totalCalls,
+		CallsWithUsage: totalUsage,
+	}
+	fmt.Printf("  %-10s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %12s\n",
+		"TOTAL", totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalSec, totalIn, totalOut, formatRowUSD(totalRow))
 	fmt.Println()
+	fmt.Printf("  Coverage: %d/%d calls reported real token usage (--output-format json).\n", totalUsage, totalCalls)
+	fmt.Println("  USD column: real total when usage is present; otherwise est range ~4 chars/token, out 0.25–1.00× in.")
 	fmt.Println("  cancl = sibling-canceled (rate-limit cascade).  rate = direct rate-limit response.")
-	fmt.Println("  tmout = ctx.DeadlineExceeded.  Estimates assume ~4 chars/token, output 0.25–1.00× input.")
-	fmt.Println("  Real token counts arrive once we switch claude -p to --output-format json.")
+	fmt.Println("  tmout = ctx.DeadlineExceeded.")
 	return nil
+}
+
+// formatRowUSD picks the most accurate dollar representation
+// available for a row. When all calls reported usage, we print the
+// real number; when none did, we print the estimate range; mixed
+// rows print "real $X + est $Y–$Z" so the user can see partial
+// instrumentation.
+func formatRowUSD(r CostSummary) string {
+	hasReal := r.ActualUSD > 0
+	hasEst := r.EstUSDLow > 0 || r.EstUSDHigh > 0
+	switch {
+	case hasReal && !hasEst:
+		return fmt.Sprintf("$%6.4f", r.ActualUSD)
+	case !hasReal && hasEst:
+		return fmt.Sprintf("$%6.4f-%.4f", r.EstUSDLow, r.EstUSDHigh)
+	case hasReal && hasEst:
+		return fmt.Sprintf("$%.4f+~$%.2f", r.ActualUSD, r.EstUSDHigh)
+	default:
+		return "—"
+	}
 }
