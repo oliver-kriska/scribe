@@ -178,6 +178,104 @@ func TestMergeChapterPlans_DefaultsDomainToGeneral(t *testing.T) {
 	}
 }
 
+func TestMergeChapterPlans_StampsSourceChapter(t *testing.T) {
+	tmp := t.TempDir()
+	plan0 := chapterPlan{
+		Chapter:  "Intro",
+		Entities: []absorbEntity{{Label: "Pattern A", Type: "pattern"}},
+	}
+	plan2 := chapterPlan{
+		Chapter:  "Method",
+		Entities: []absorbEntity{{Label: "Tool B", Type: "tool"}},
+	}
+	// Same label re-appearing later; first-seen chapter must win.
+	plan5 := chapterPlan{
+		Chapter:  "Result",
+		Entities: []absorbEntity{{Label: "Pattern A", Type: "pattern", KeyClaims: []string{"extra"}}},
+	}
+	runs := []chapterRun{
+		{index: 0, planJSON: writePlan(t, tmp, "00.json", plan0)},
+		{index: 2, planJSON: writePlan(t, tmp, "02.json", plan2)},
+		{index: 5, planJSON: writePlan(t, tmp, "05.json", plan5)},
+	}
+	merged, err := mergeChapterPlans("raw.md", runs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bySrc := map[string]int{}
+	for _, e := range merged.Entities {
+		if e.SourceChapter == nil {
+			t.Errorf("entity %q missing source_chapter", e.Label)
+			continue
+		}
+		bySrc[e.Label] = *e.SourceChapter
+	}
+	if bySrc["Pattern A"] != 0 {
+		t.Errorf("Pattern A source_chapter = %d, want 0 (first-seen wins)", bySrc["Pattern A"])
+	}
+	if bySrc["Tool B"] != 2 {
+		t.Errorf("Tool B source_chapter = %d, want 2", bySrc["Tool B"])
+	}
+}
+
+func TestMergedFacts_LoadMergedFacts_RoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	factsDir := filepath.Join(tmp, "output", "facts")
+	if err := os.MkdirAll(factsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mf := MergedFacts{
+		Version:     factsSchemaVersion,
+		RawFile:     "raw/articles/doc.md",
+		SourceTitle: "Doc",
+		Facts: []AtomicFact{
+			{ID: "c00-f1", Type: "claim", Claim: "x", Anchor: "y"},
+		},
+	}
+	data, _ := json.Marshal(mf)
+	if err := os.WriteFile(filepath.Join(factsDir, "doc.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadMergedFacts(tmp, "doc.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.SourceTitle != "Doc" || len(got.Facts) != 1 {
+		t.Fatalf("round-trip lost data: %+v", got)
+	}
+}
+
+func TestMergedFacts_LoadMergedFacts_MissingReturnsNil(t *testing.T) {
+	tmp := t.TempDir()
+	got, err := loadMergedFacts(tmp, "absent.md")
+	if err != nil {
+		t.Fatalf("missing file should not error; got %v", err)
+	}
+	if got != nil {
+		t.Errorf("missing file should return nil; got %+v", got)
+	}
+}
+
+func TestMergedFacts_LoadMergedFacts_VersionMismatchReturnsNil(t *testing.T) {
+	tmp := t.TempDir()
+	factsDir := filepath.Join(tmp, "output", "facts")
+	if err := os.MkdirAll(factsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Future schema version on disk — loader must shrug and return nil.
+	body := []byte(`{"version": 999, "facts": []}`)
+	if err := os.WriteFile(filepath.Join(factsDir, "future.json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadMergedFacts(tmp, "future.md")
+	if err != nil {
+		t.Fatalf("schema mismatch should not error; got %v", err)
+	}
+	if got != nil {
+		t.Errorf("schema mismatch should return nil; got %+v", got)
+	}
+}
+
 func TestMergeStringSet_PreservesOrderAndDedupes(t *testing.T) {
 	a := []string{"first", "second", "third"}
 	b := []string{"second", "fourth", "first", "fifth", " "}

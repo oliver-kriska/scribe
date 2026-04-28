@@ -280,6 +280,33 @@ func mergeFacts(rawFile, sourceTitle string, runs []chapterRun, factsPaths []str
 	return merged
 }
 
+// loadMergedFacts reads a previously-written facts file from
+// output/facts/<rawname>.json. Returns nil (no error) when the file
+// is absent — the caller is expected to treat "no facts file" as
+// equivalent to "facts pass disabled" and proceed un-grounded.
+//
+// Version mismatches also return nil: a future schema bump
+// shouldn't crash an absorb run that happens to find an old facts
+// file on disk. The next facts pass will overwrite it.
+func loadMergedFacts(root, rawName string) (*MergedFacts, error) {
+	path := filepath.Join(root, "output", "facts", strings.TrimSuffix(rawName, ".md")+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read facts: %w", err)
+	}
+	var m MergedFacts
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("parse facts: %w", err)
+	}
+	if m.Version != factsSchemaVersion {
+		return nil, nil
+	}
+	return &m, nil
+}
+
 // factsForChapter returns the facts for one chapter, or nil if no
 // facts exist for that chapter. Used by pass-1 chaptered to inject
 // per-chapter grounding into each chunk's prompt.

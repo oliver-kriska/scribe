@@ -309,6 +309,11 @@ func mergeChapterPlans(rawFile string, runs []chapterRun) (absorbPlan, error) {
 				continue
 			}
 			entCopy := ent
+			// Phase 3B.5: stamp the originating chapter so pass-2
+			// can pull the right fact slice. First-seen wins to
+			// match the dedup policy above.
+			idx := r.index
+			entCopy.SourceChapter = &idx
 			byLabel[label] = &entCopy
 			order = append(order, label)
 		}

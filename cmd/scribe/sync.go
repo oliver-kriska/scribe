@@ -1671,6 +1671,17 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	}
 	logMsg("sync", "pass2: %d entities, parallel=%d", len(plan.Entities), parallel)
 
+	// Phase 3B.5: load merged facts so each pass-2 prompt can be
+	// grounded against the chapter's verbatim claim pool. nil =
+	// no facts available (facts pass off, file absent, or schema
+	// mismatch); pass-2 still works, just without verbatim
+	// citations. A read error is logged but non-fatal — better to
+	// run un-grounded than abort the absorb.
+	mergedFacts, err := loadMergedFacts(root, rawName)
+	if err != nil {
+		logMsg("sync", "pass2: load facts failed for %s (%v); proceeding un-grounded", rawName, err)
+	}
+
 	// Per-target-label lock map so two entities aiming at the same wiki
 	// article (rare but possible when Pass 1 proposes variants) don't race.
 	var labelLocksMu gosync.Mutex
@@ -1701,6 +1712,13 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 			if keyClaims == "" {
 				keyClaims = "(none flagged)"
 			}
+			// Phase 3B.5: pull this entity's chapter slice from
+			// the merged facts (if available). nil → empty block,
+			// which the prompt template tolerates.
+			factsBlock := ""
+			if mergedFacts != nil && ent.SourceChapter != nil {
+				factsBlock = formatFactsForPrompt(mergedFacts.factsForChapter(*ent.SourceChapter))
+			}
 			pass2Prompt, err := loadPrompt("absorb-pass2.md", map[string]string{
 				"KB_DIR":            root,
 				"RAW_FILE":          rawFile,
@@ -1710,6 +1728,7 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 				"ENTITY_ONE_LINE":   ent.OneLine,
 				"ENTITY_KEY_CLAIMS": keyClaims,
 				"DOMAIN":            domain,
+				"FACTS":             factsBlock,
 			})
 			if err != nil {
 				return fmt.Errorf("load pass2 prompt: %w", err)
@@ -1757,6 +1776,12 @@ type absorbEntity struct {
 	Type      string   `json:"type"`
 	OneLine   string   `json:"one_line"`
 	KeyClaims []string `json:"key_claims"`
+	// SourceChapter records which chapter index in the chaptered
+	// pass-1 produced this entity. Used by Phase 3B.5 to slice the
+	// merged facts file when injecting verbatim claims into pass-2.
+	// Pointer so we can distinguish "chapter 0" from "no chapter
+	// info" — the legacy whole-article pass-1 path leaves it nil.
+	SourceChapter *int `json:"source_chapter,omitempty"`
 }
 
 // rawArticleOptsIntoAbsorb returns true if a raw article's frontmatter
