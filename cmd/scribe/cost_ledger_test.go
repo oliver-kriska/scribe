@@ -338,7 +338,7 @@ func TestParseClaudeResult_HappyPath(t *testing.T) {
 func TestParseClaudeResult_TrailingHookNoise(t *testing.T) {
 	// CMUX / SessionEnd hooks can leak text after the JSON.
 	stdout := `{"type":"result","subtype":"success","is_error":false,"result":"ok","usage":{"input_tokens":5,"output_tokens":3}}` + "\n" +
-		"SessionEnd hook [cmux] failed: Hook cancelled\n"
+		"SessionEnd hook [cmux] failed: Hook canceled\n" //nolint:misspell // fixture echoes US spelling; CMUX itself emits both spellings
 	env, ok := parseClaudeResult(stdout)
 	if !ok {
 		t.Fatal("trailing hook noise should not break parse")
