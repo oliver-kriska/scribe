@@ -1,8 +1,9 @@
 # Local Model Support — Planning Note
 
-Status: **planning, not yet started**
+Status: **Phase 4A done, Phase 4B groundwork done, Phase 4B wiring paused**
 Owner: Oliver
 Filed: 2026-04-28
+Last updated: 2026-04-28 (vacation pause; resume after week off)
 
 ## Why
 
@@ -132,4 +133,157 @@ A single user with a heavy Claude Code week might generate 100+ sessions. Withou
 
 ---
 
-This note is intentionally a plan, not a TODO list. The next concrete step is Phase 4A: wire the existing provider abstraction into `runFactsPass`. That's a one-day task once the current Phase 3 work settles. Do it then.
+## Progress log (most recent first)
+
+### 2026-04-28 — Phase 4B groundwork landed (commit `bf021fa`)
+
+Wiki action envelope schema + executor + 21 unit tests. Foundation
+ready for the prompt + goroutine wiring to land on top.
+
+Files:
+- `cmd/scribe/wiki_actions.go` — `WikiActionEnvelope`, `WikiAction`,
+  `applyWikiActions`, `validateActionPath`, `writeFileAtomic`,
+  `appendToFile`, `replaceSection`, `updateFrontmatter`,
+  `parseEnvelope`.
+- `cmd/scribe/wiki_actions_test.go` — every op happy + error path,
+  KB-rooting refusals, dry-run, partial-failure continuation.
+
+Ops supported in the envelope: `create`, `append`, `replace_section`,
+`update_frontmatter`. Sandboxed to the `wikiDirs` set; absolute paths
+and `..` traversal refused.
+
+### 2026-04-28 — Phase 4A landed (commit `c50207b` + `339734b`)
+
+Facts pass routes through `llmProviderGenerator`. Setting
+`absorb.facts_provider: ollama` in `scribe.yaml` keeps the per-chunk
+fact extraction off Anthropic quota with no other change.
+
+Validated end-to-end against `gemma3:4b` on `localhost:11434`:
+2 chapters in parallel, 18 facts merged in 24.77s, all type values
+valid (definition / claim / numeric / decision / citation). Zero
+Anthropic spend on the run.
+
+Integration test: `cmd/scribe/absorb_facts_integration_test.go`,
+build-tag `integration`. Runs only when ollama is up + gemma3:4b is
+pulled, otherwise t.Skip.
+
+Files touched:
+- `cmd/scribe/prompts/absorb-facts.md` — inlines `{{CHUNK_BODY}}`,
+  asks for stdout JSON only (no `Write` tool).
+- `cmd/scribe/absorb_facts.go` — `runFactsPass` reads chunk content,
+  calls `provider.Generate`, runs `extractJSON`, writes per-chunk
+  file directly.
+- `cmd/scribe/absorb_facts.go` — `extractJSON` walks brace depth
+  respecting strings/escapes; tolerates fenced JSON, preambles,
+  trailing prose, string-internal braces. 8 unit tests.
+- `cmd/scribe/config.go` — `AbsorbConfig.FactsProvider` (default
+  `"anthropic"`) + ollama+Claude-alias coherence fixup.
+
+### Earlier — Phase 3D.5, 3D, 3C, 3B, 3B.5
+
+See git log; all production-validated through the 2026-04-28 sync run
+(5 absorbs, 2 marker timeouts unrelated to this work).
+
+---
+
+## Resume plan (when Oliver returns from vacation)
+
+The next concrete step is Phase 4B layer 2: prompt + goroutine wiring
+on top of the foundation that landed in `bf021fa`. The foundation is
+green (CI passes, 522 tests, 0 lint, 0 vulnerabilities); start by
+running `make ci` to confirm nothing rotted while away.
+
+### Phase 4B layer 2 — Prompt + wiring
+
+1. Create `cmd/scribe/prompts/absorb-pass2-json.md`. Same job as
+   `absorb-pass2.md` but emits one `WikiActionEnvelope` JSON object
+   to stdout instead of using Read/Write/Edit/Glob/Grep tools. The
+   raw article body, plan JSON, neighboring article hints, and
+   facts block all need to inline into the prompt (no filesystem
+   access).
+
+   Pre-search hint to inline: for each entity in the plan, run a
+   wiki grep before pass-2 and pass the candidate paths + first 30
+   lines of any matches into the prompt. The model picks
+   "create new" vs "replace_section in <existing>" with that hint.
+
+2. Add `Pass2Mode string` to `AbsorbConfig` (default `"tools"`,
+   values `"tools" | "json"`). Auto-flip to `"json"` whenever
+   `Pass2Provider` is set to a non-anthropic provider — the tools
+   path doesn't work without claude -p.
+
+3. Add `Pass2Provider string` to `AbsorbConfig` (default
+   `"anthropic"`). Mirrors `FactsProvider` plumbing including the
+   ollama+Claude-alias coherence fixup.
+
+4. Branch in `absorbDenseTwoPass` (cmd/scribe/sync.go around line
+   1730 inside the goroutine):
+   - mode=tools → existing `runClaude` path (unchanged)
+   - mode=json → `provider.Generate` → `extractJSON` →
+     `parseEnvelope` → `applyWikiActions(root, env, ApplyOptions{
+     AllowOverwrite: true})`. Log the result counts; treat
+     `len(res.Errors) > 0` the same way the tools path treats a
+     non-zero claude exit (warn, continue).
+
+5. Tests:
+   - Unit: prompt-template loading with all placeholders filled
+   - Unit: pass-2 goroutine routes correctly based on Pass2Mode
+   - Integration (build-tag): drive a real pass-2 envelope through
+     ollama with gemma3:4b against a small raw article. Bigger model
+     (qwen2.5-coder:14b or mistral-small3:24b) probably needed for
+     reliable envelope generation; gemma3:4b may struggle on the
+     more elaborate JSON shape. Falling back to qwen3:4b is the
+     first thing to try if gemma3:4b misbehaves.
+
+6. Update `absorbDefaultYAMLBlock` to surface the new knobs
+   (commented-out, like Phase 4A's `facts_provider`).
+
+7. Validate against the same `2026-04-28-articles-context_engineering_*`
+   raw articles that already absorbed via the tools path, so we
+   have a quality baseline to compare against.
+
+### Phase 4B layer 3 — Quality tuning
+
+Once layer 2 lands and the round-trip works, the actual quality
+question opens: do the wiki articles produced via JSON envelope
+match the quality of the tool-using path? Spot-check by:
+- diffing the two output trees after running both modes against the
+  same raw article
+- checking the verbatim-citation rate (Phase 3B.5's `[c00-fN]` tags
+  in quotes)
+- counting orphaned wikilinks in the json-mode output (model can't
+  grep, so cross-reference links may go stale faster)
+
+If quality is meaningfully worse, the prompt's "neighbor hints"
+need richer context (more lines of nearby articles), or we accept
+that local-mode pass-2 is graceful-degradation rather than parity.
+
+### Phase 4C — Session mining
+
+Defer until 4B layer 2+3 prove out. Bigger schema (multiple wiki
+files + rolling memory + sessions log) so envelope expressiveness
+needs to grow first. The action types in `wiki_actions.go` already
+cover most of what mining writes, but session mining also touches
+`_sessions_log.json` — that's an indexes-only mutation that doesn't
+fit the wiki-dirs sandbox; it would need a separate
+`SessionsLogAction` op or a controlled escape hatch.
+
+### Backlog hygiene during vacation
+
+- 1290 pending sessions in ccrider DB (will keep growing while away)
+- 63 raw articles still pending absorb
+- 4 projects in extraction queue
+- 19 drop files
+
+The cron schedule continues running in the background; it will
+chip away at the backlog on Anthropic quota using the existing
+tools-path code. Returning from vacation, expect:
+- backlog smaller (cron drained some)
+- $20–40 in Anthropic spend (unavoidable until 4B ships)
+- contextualize and session-mine likely rate-limited at points,
+  which the existing rate-limit detection handles
+
+To minimize spend during the week away, an option is to disable
+the LaunchAgent before leaving:
+`launchctl unload ~/Library/LaunchAgents/com.scriptorium.*.plist`
+and re-enable on return.
