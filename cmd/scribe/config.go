@@ -73,6 +73,23 @@ type IngestConfig struct {
 type IngestMarkerConfig struct {
 	TimeoutSeconds int   `yaml:"timeout_seconds"`
 	MPSFallback    *bool `yaml:"mps_fallback"`
+	// Device pins the torch backend marker uses. Valid values:
+	//   "auto" (default) — let torch pick (MPS on Apple Silicon,
+	//                       CUDA on Linux+GPU, CPU otherwise). On
+	//                       macOS, scribe also enables a one-shot
+	//                       retry on CPU when the surya layout
+	//                       model crashes inside MPS (the
+	//                       `AcceleratorError: index out of bounds`
+	//                       signature observed against larger PDFs).
+	//   "cpu"             — force CPU. Slower but eliminates the
+	//                       MPS-crash class of failures entirely.
+	//                       Recommended for unattended cron drains
+	//                       on Apple Silicon.
+	//   "mps" / "cuda"    — force a specific GPU backend. No retry
+	//                       on crash; surfaced for power users who
+	//                       know their PDFs play nice with the
+	//                       layout model.
+	Device string `yaml:"device"`
 }
 
 // IngestSmartRoutingConfig sends "small" PDFs to tier 0 even when
@@ -97,6 +114,7 @@ func ingestDefaults() IngestConfig {
 		Marker: IngestMarkerConfig{
 			TimeoutSeconds: 300,
 			MPSFallback:    &trueV,
+			Device:         "auto",
 		},
 		Converters: map[string]string{},
 		SmartRouting: IngestSmartRoutingConfig{
@@ -121,6 +139,9 @@ func applyIngestDefaults(cfg *IngestConfig) {
 	}
 	if cfg.Marker.MPSFallback == nil {
 		cfg.Marker.MPSFallback = d.Marker.MPSFallback
+	}
+	if cfg.Marker.Device == "" {
+		cfg.Marker.Device = d.Marker.Device
 	}
 	if cfg.Converters == nil {
 		cfg.Converters = d.Converters

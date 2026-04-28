@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -70,6 +72,7 @@ func convertWithMarker(inputPath, _ string) (string, *MarkerStats, error) {
 	// missing yaml file.
 	timeout := time.Duration(defaultMarkerTimeoutSec) * time.Second
 	mpsFallback := true
+	device := "auto"
 	if root, kbErr := kbDir(); kbErr == nil {
 		cfg := loadConfig(root)
 		if cfg != nil {
@@ -78,6 +81,9 @@ func convertWithMarker(inputPath, _ string) (string, *MarkerStats, error) {
 			}
 			if cfg.Ingest.Marker.MPSFallback != nil {
 				mpsFallback = *cfg.Ingest.Marker.MPSFallback
+			}
+			if cfg.Ingest.Marker.Device != "" {
+				device = cfg.Ingest.Marker.Device
 			}
 		}
 	}
@@ -91,24 +97,7 @@ func convertWithMarker(inputPath, _ string) (string, *MarkerStats, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "marker_single", abs, "--output_dir", tmpDir, "--output_format", "markdown")
-	// Inherit stderr so the user sees marker's progress lines during a
-	// long conversion. stdout we discard — marker writes the actual
-	// markdown to disk, not stdout.
-	cmd.Stderr = os.Stderr
-	cmd.Env = markerEnv(os.Environ(), mpsFallback)
-
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return "", nil, fmt.Errorf("marker_single timed out after %s on %s (set ingest.marker.timeout_seconds in scribe.yaml to extend)", timeout, filepath.Base(abs))
-		}
-		return "", nil, fmt.Errorf("marker_single failed: %w", err)
-	}
-
-	mdPath, err := findMarkerOutput(tmpDir, abs)
+	mdPath, err := runMarkerWithDevice(abs, tmpDir, timeout, mpsFallback, device)
 	if err != nil {
 		return "", nil, err
 	}
@@ -133,6 +122,149 @@ func convertWithMarker(inputPath, _ string) (string, *MarkerStats, error) {
 	// nil stats and that's fine; the article still gets written.
 	stats := readMarkerStats(mdPath)
 	return strings.TrimSpace(md), stats, nil
+}
+
+// runMarkerWithDevice invokes marker_single with the configured device
+// preference and returns the path to its emitted markdown. Two run
+// strategies live here:
+//
+//   - device == "cpu" / "mps" / "cuda": single attempt, no retry. The
+//     user (or scribe.yaml) explicitly pinned the backend.
+//   - device == "auto": first attempt picks whatever torch defaults to.
+//     If marker exits non-zero AND the stderr matches the surya/MPS
+//     crash signature (AcceleratorError, "out of bounds" inside the
+//     vision encoder), retry once with TORCH_DEVICE=cpu. This is the
+//     graceful-degradation path — fast happy path, cheap recovery
+//     when the GPU detonates.
+//
+// The retry only applies on macOS; Linux/Windows users have stable
+// CUDA/CPU paths and don't need the safety net.
+func runMarkerWithDevice(absInput, tmpDir string, timeout time.Duration, mpsFallback bool, device string) (string, error) {
+	mdPath, stderr, err := runMarkerOnce(absInput, tmpDir, timeout, mpsFallback, device)
+	if err == nil {
+		return mdPath, nil
+	}
+
+	// On 'auto' macOS only: detect MPS crash signatures in stderr and
+	// retry on CPU. Any other failure (timeout, missing weights,
+	// corrupt PDF) bubbles up as-is so the quarantine path captures
+	// the right error.
+	if device == "auto" && runtime.GOOS == "darwin" && isMPSCrash(stderr) {
+		// Wipe the temp dir contents from the failed attempt — marker
+		// may have written partial state we don't want to mistake for
+		// success on findMarkerOutput. RemoveAll + recreate is cheap.
+		_ = os.RemoveAll(tmpDir)
+		if mkErr := os.MkdirAll(tmpDir, 0o755); mkErr != nil {
+			return "", fmt.Errorf("recreate tmp after mps crash: %w", mkErr)
+		}
+		fmt.Fprintln(os.Stderr, "scribe: marker MPS backend crashed; retrying on CPU (slower)")
+		mdPath, _, retryErr := runMarkerOnce(absInput, tmpDir, timeout, mpsFallback, "cpu")
+		if retryErr == nil {
+			return mdPath, nil
+		}
+		return "", fmt.Errorf("marker_single failed on CPU retry: %w (initial MPS failure: %s)", retryErr, err.Error())
+	}
+	return "", err
+}
+
+// runMarkerOnce executes a single marker_single invocation and returns
+// the markdown path on success, the captured stderr in any case (for
+// crash-pattern matching), and an error on non-zero exit.
+//
+// Stderr is dual-routed: streamed live to os.Stderr so the user sees
+// progress bars during a long conversion AND captured to a buffer so
+// the caller can pattern-match crash signatures for the retry decision.
+// Bounded buffer (~64 KB tail) keeps memory in check on multi-GB
+// document runs.
+func runMarkerOnce(absInput, tmpDir string, timeout time.Duration, mpsFallback bool, device string) (string, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	args := []string{absInput, "--output_dir", tmpDir, "--output_format", "markdown"}
+	// Only forward an explicit device flag when the user pinned one.
+	// 'auto' lets torch decide; 'cpu' on the retry path uses the env
+	// var rather than the flag because older marker releases didn't
+	// expose --device. TORCH_DEVICE is the universal lever.
+	cmd := exec.CommandContext(ctx, "marker_single", args...) //nolint:gosec // marker_single resolved from PATH; args are scribe-controlled
+	cmd.Env = markerEnvWithDevice(os.Environ(), mpsFallback, device)
+
+	var tail bytes.Buffer
+	cmd.Stderr = io.MultiWriter(os.Stderr, &boundedWriter{w: &tail, max: 64 * 1024})
+
+	runErr := cmd.Run()
+	stderr := tail.String()
+	if runErr != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", stderr, fmt.Errorf("marker_single timed out after %s on %s (set ingest.marker.timeout_seconds in scribe.yaml to extend)", timeout, filepath.Base(absInput))
+		}
+		return "", stderr, fmt.Errorf("marker_single failed: %w", runErr)
+	}
+	mdPath, findErr := findMarkerOutput(tmpDir, absInput)
+	if findErr != nil {
+		return "", stderr, findErr
+	}
+	return mdPath, stderr, nil
+}
+
+// boundedWriter keeps only the last `max` bytes of input. Used to cap
+// stderr capture so a noisy marker run (those infinite-looking
+// progress bars) doesn't balloon scribe's heap on a multi-GB PDF.
+// Trade-off accepted: pattern-matching looks at the tail of stderr,
+// which is where Python tracebacks land — happy path for our retry
+// decision.
+type boundedWriter struct {
+	w   *bytes.Buffer
+	max int
+}
+
+func (b *boundedWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	if n >= b.max {
+		b.w.Reset()
+		b.w.Write(p[n-b.max:]) //nolint:errcheck // bytes.Buffer.Write never errors
+		return n, nil
+	}
+	if b.w.Len()+n > b.max {
+		// Shift the existing tail forward to make room.
+		excess := (b.w.Len() + n) - b.max
+		dropped := make([]byte, excess)
+		_, _ = b.w.Read(dropped) // discard oldest bytes; bytes.Buffer.Read never errors on a non-empty buffer
+	}
+	b.w.Write(p) //nolint:errcheck // bytes.Buffer.Write never errors
+	return n, nil
+}
+
+// isMPSCrash matches the crash signatures we have observed when surya
+// detonates on Apple Silicon GPUs. Conservative: we only retry on
+// patterns specific to the layout/encoder path — not on every
+// AcceleratorError. The cost of a false negative (one quarantined
+// file the user has to retry manually) is much lower than the cost
+// of a false positive (re-running every transient error on CPU
+// silently).
+func isMPSCrash(stderr string) bool {
+	if stderr == "" {
+		return false
+	}
+	// Combinations we have seen in the wild:
+	//   "torch.AcceleratorError: index ... is out of bounds"
+	//   "RuntimeError: ... NDArray ..."
+	//   "Placeholder shape mismatches" inside surya
+	signals := []string{
+		"AcceleratorError",
+		"is out of bounds",
+		"NDArray",
+		"surya",
+	}
+	hits := 0
+	for _, s := range signals {
+		if strings.Contains(stderr, s) {
+			hits++
+		}
+	}
+	// Require at least two distinct signals so a transient
+	// "AcceleratorError" with a totally different cause doesn't
+	// trigger a wasted retry.
+	return hits >= 2
 }
 
 // readMarkerStats parses <stem>_meta.json that marker writes alongside
@@ -342,18 +474,33 @@ func findMarkerOutput(outputDir, inputPath string) (string, error) {
 // preserved unchanged unless they collide with our additions, in
 // which case our value wins (the user already opted in via config).
 func markerEnv(baseEnv []string, mpsFallback bool) []string {
-	if !mpsFallback {
-		return baseEnv
-	}
-	const key = "PYTORCH_ENABLE_MPS_FALLBACK"
-	out := make([]string, 0, len(baseEnv)+1)
+	return markerEnvWithDevice(baseEnv, mpsFallback, "auto")
+}
+
+// markerEnvWithDevice extends markerEnv with a TORCH_DEVICE override
+// when the caller pinned the backend (cpu/mps/cuda). On 'auto' we
+// emit no TORCH_DEVICE so torch picks the platform default. The MPS
+// fallback flag still applies on every macOS run regardless of
+// device choice — fallback is a per-op safety net, not a backend
+// switch.
+func markerEnvWithDevice(baseEnv []string, mpsFallback bool, device string) []string {
+	const fallbackKey = "PYTORCH_ENABLE_MPS_FALLBACK"
+	const deviceKey = "TORCH_DEVICE"
+
+	out := make([]string, 0, len(baseEnv)+2)
 	for _, kv := range baseEnv {
-		if strings.HasPrefix(kv, key+"=") {
+		if strings.HasPrefix(kv, fallbackKey+"=") || strings.HasPrefix(kv, deviceKey+"=") {
 			continue
 		}
 		out = append(out, kv)
 	}
-	out = append(out, key+"=1")
+	if mpsFallback {
+		out = append(out, fallbackKey+"=1")
+	}
+	switch device {
+	case "cpu", "mps", "cuda":
+		out = append(out, deviceKey+"="+device)
+	}
 	return out
 }
 

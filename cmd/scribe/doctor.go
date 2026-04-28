@@ -226,6 +226,11 @@ func checkConvert() []check {
 			Section: "convert", Name: "marker (tier 1)", Status: statusOK,
 			Detail: markerVersionLine(),
 		})
+		// Surface the device pin + retry policy so users can tell at
+		// a glance whether the unattended drain has the MPS-crash
+		// safety net in play. Only matters when marker is installed —
+		// no point reporting a knob that's never read.
+		out = append(out, markerDeviceCheck())
 	} else {
 		out = append(out, check{
 			Section: "convert", Name: "marker (tier 1)", Status: statusWarn,
@@ -283,6 +288,48 @@ func checkConvert() []check {
 		}
 	}
 	return out
+}
+
+// markerDeviceCheck reports the resolved marker device pin and whether
+// the auto-retry-on-MPS-crash safety net is active. Reads scribe.yaml
+// via loadConfig — defaults to "auto" so the row stays informative
+// even when the user hasn't customized scribe.yaml.
+func markerDeviceCheck() check {
+	device := "auto"
+	if root, err := kbDir(); err == nil {
+		if cfg := loadConfig(root); cfg != nil && cfg.Ingest.Marker.Device != "" {
+			device = cfg.Ingest.Marker.Device
+		}
+	}
+	switch device {
+	case "auto":
+		return check{
+			Section: "convert", Name: "marker device", Status: statusOK,
+			Detail: "auto (CPU retry on MPS crash — macOS only)",
+		}
+	case "cpu":
+		return check{
+			Section: "convert", Name: "marker device", Status: statusOK,
+			Detail: "cpu (forced — slower, no GPU crashes)",
+		}
+	case "mps":
+		return check{
+			Section: "convert", Name: "marker device", Status: statusWarn,
+			Detail: "mps (forced — surya may crash on some PDFs; no retry)",
+			Fix:    "set ingest.marker.device: auto in scribe.yaml for safety net",
+		}
+	case "cuda":
+		return check{
+			Section: "convert", Name: "marker device", Status: statusOK,
+			Detail: "cuda (forced)",
+		}
+	default:
+		return check{
+			Section: "convert", Name: "marker device", Status: statusWarn,
+			Detail: "unknown device: " + device,
+			Fix:    "valid: auto | cpu | mps | cuda",
+		}
+	}
 }
 
 // routePDF picks the doctor row description for PDF based on whether
