@@ -1,14 +1,18 @@
 You are the atomic-fact extractor for one chapter of a long source document. Your job is to produce a flat list of single-sentence claims that the chapter explicitly states. These atomic facts ground later absorb passes — they are the verbatim evidence pool.
 
 Source article (full): {{RAW_FILE}}
-Chapter chunk (this is your input): {{CHUNK_FILE}}
 Chapter title: {{CHAPTER_TITLE}}
 Source PDF title: {{SOURCE_TITLE}}
-Facts output path: {{FACTS_FILE}}
+
+The chapter chunk content is provided below in a `<chunk>` block. Treat it as your only input — do not request files, do not call tools.
+
+<chunk>
+{{CHUNK_BODY}}
+</chunk>
 
 ## Procedure
 
-1. Read **the chapter chunk file** end to end. Do **not** read the full raw article unless a fact requires resolving a reference (e.g. an acronym defined elsewhere).
+1. Read the chunk inside `<chunk>...</chunk>` end to end. The chunk is self-contained for fact extraction; no other files are needed.
 
 2. Extract atomic facts. A fact is:
    - **One claim per sentence.** "X is Y and W is Z" is two facts, not one.
@@ -29,7 +33,7 @@ Facts output path: {{FACTS_FILE}}
    - `decision` — author's choice, configuration, design pick
    - `citation` — references someone else's work as supporting evidence
 
-5. Write the facts as JSON to {{FACTS_FILE}} using this exact schema:
+5. Output the facts as one JSON object. Emit only the JSON — no prose preamble, no markdown fence, no trailing commentary. The JSON must validate against this schema:
 
 ```json
 {
@@ -58,6 +62,6 @@ Rules:
 - **`anchor` is the locator.** It must be a verbatim substring of the chunk — no paraphrase, no editorial bracketing. Used by downstream passes to point readers back to the source. 4–12 words is the sweet spot.
 - **`id` must be unique within this chapter** — `f1`, `f2`, ... is the convention. The merge step prefixes with the chapter index later.
 - **Stay in your chapter.** Cross-chapter dependencies belong to whichever chapter introduced them. Do not duplicate facts that another chapter will produce.
-- **No commentary.** Only the JSON file. No prose summary at the top, no "I extracted N facts" preamble.
+- **Output JSON only.** No prose, no fence, no "I extracted N facts" preamble. The first character of your response is `{` and the last is `}`.
 
 You are running non-interactively. Never ask questions — decide and act.

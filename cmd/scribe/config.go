@@ -291,6 +291,21 @@ type AbsorbConfig struct {
 	AtomicFacts     *bool  `yaml:"atomic_facts"`
 	FactsModel      string `yaml:"facts_model"`
 	FactsTimeoutMin int    `yaml:"facts_timeout_min"`
+
+	// FactsProvider routes the facts pass through llmProviderGenerator
+	// so users can keep this cheap-but-numerous pass off Anthropic
+	// quota. "anthropic" (default) uses `claude -p`; "ollama" uses
+	// the local Ollama HTTP server configured in
+	// Contextualize.OllamaURL. The facts pass is text-in/text-out
+	// (the prompt inlines the chunk and asks for one JSON document)
+	// so a 4–7B local model handles it without tool use.
+	//
+	// When provider=ollama, FactsModel should be an Ollama model name
+	// (e.g. "gemma3:4b", "qwen3:4b"). The same provider/model
+	// coherence check that contextualize uses applies here — Claude
+	// aliases get auto-swapped to the recommended local default with
+	// a log line so misconfiguration never silently no-ops.
+	FactsProvider string `yaml:"facts_provider"`
 }
 
 // ContextualizeConfig controls the `scribe contextualize` pre-embed step.
@@ -338,6 +353,7 @@ func absorbDefaults() AbsorbConfig {
 		AtomicFacts:     nil,
 		FactsModel:      "haiku",
 		FactsTimeoutMin: 3,
+		FactsProvider:   "anthropic",
 		Contextualize: ContextualizeConfig{
 			Enabled:    &trueV,
 			Provider:   "anthropic",
@@ -411,6 +427,19 @@ absorb:
     ollama_url: %s  # default: http://localhost:11434
     max_per_run: %d               # default: 20
     timeout_sec: %d               # default: 90
+
+  # Phase 3B atomic-fact extraction. Off by default — opt in once
+  # chaptered absorb is verified on your corpus.
+  # atomic_facts: true
+  # facts_model: %s              # default: haiku (for ollama: e.g. gemma3:4b)
+  # facts_timeout_min: %d           # default: 3
+  #
+  # facts_provider routes the per-chunk facts pass through the same
+  # provider abstraction as contextualize. The pass is text-in/JSON-out
+  # (no tools), which suits a 4–7B local model. Anthropic stays the
+  # default; flip to ollama to keep this cheap-but-numerous pass off
+  # Anthropic quota. ollama_url comes from absorb.contextualize above.
+  # facts_provider: %s         # default: anthropic (alternatives: ollama)
 `,
 		d.Strictness,
 		d.MaxPerRun,
@@ -428,6 +457,9 @@ absorb:
 		d.Contextualize.OllamaURL,
 		d.Contextualize.MaxPerRun,
 		d.Contextualize.TimeoutSec,
+		d.FactsModel,
+		d.FactsTimeoutMin,
+		d.FactsProvider,
 	)
 }
 
@@ -513,6 +545,20 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 	}
 	if cfg.FactsTimeoutMin <= 0 {
 		cfg.FactsTimeoutMin = d.FactsTimeoutMin
+	}
+	if cfg.FactsProvider == "" {
+		cfg.FactsProvider = d.FactsProvider
+	}
+	// Provider/model coherence for facts mirrors the contextualize check
+	// below: ollama + Claude alias is a misconfiguration, swap to the
+	// recommended local default and log so the user notices.
+	if strings.EqualFold(cfg.FactsProvider, "ollama") {
+		if cfg.FactsModel == "" || claudeModelAliases[strings.ToLower(cfg.FactsModel)] {
+			if cfg.FactsModel != "" {
+				logMsg("config", "absorb.facts_provider=ollama but facts_model=%q is a Claude alias — switching to %s (set an ollama model explicitly to silence this)", cfg.FactsModel, ollamaRecommendedModel)
+			}
+			cfg.FactsModel = ollamaRecommendedModel
+		}
 	}
 	if cfg.Contextualize.Enabled == nil {
 		cfg.Contextualize.Enabled = d.Contextualize.Enabled

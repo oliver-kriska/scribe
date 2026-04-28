@@ -145,12 +145,18 @@ func (s *SyncCmd) runFactsPass(ctx context.Context, root, rawFile, rawName strin
 		return nil, fmt.Errorf("mkdir facts dir: %w", err)
 	}
 
-	tools := []string{"Read", "Write", "Glob", "Grep"}
 	timeout := time.Duration(cfg.FactsTimeoutMin) * time.Minute
 	model := cfg.FactsModel
 	if model == "" {
 		model = cfg.Pass1Model
 	}
+
+	// Phase 4A: route facts through llmProviderGenerator so users can
+	// keep this pass off Anthropic quota. The prompt is text-in/JSON-out
+	// (no tools), which suits a 4–7B local model. anthropic stays the
+	// default — flipping facts_provider: ollama is a one-line
+	// scribe.yaml change.
+	provider := newLLMProvider(cfg.FactsProvider, model, cfg.Contextualize.OllamaURL, root)
 
 	// Same parallelism rule as the pass-1 chaptered fan-out — see
 	// runPass1Chaptered for why ChapterParallel matters here.
@@ -188,23 +194,39 @@ func (s *SyncCmd) runFactsPass(ctx context.Context, root, rawFile, rawName strin
 				return nil //nolint:nilerr // sibling goroutine canceled gctx; quiet exit
 			}
 			r := runs[i]
+			chunkBody, err := os.ReadFile(r.chunkMD)
+			if err != nil {
+				logMsg("sync", "facts chapter %d (%s) read chunk: %v", r.index, fmtChapterTitle(r.chunk.Title), err)
+				return nil
+			}
 			prompt, err := loadPrompt("absorb-facts.md", map[string]string{
 				"KB_DIR":        root,
 				"RAW_FILE":      rawFile,
-				"CHUNK_FILE":    r.chunkMD,
+				"CHUNK_BODY":    string(chunkBody),
 				"CHAPTER_TITLE": r.chunk.Title,
 				"SOURCE_TITLE":  sourceTitle,
-				"FACTS_FILE":    factsPaths[i],
 			})
 			if err != nil {
 				return fmt.Errorf("load facts prompt %d: %w", r.index, err)
 			}
-			if _, err := runClaude(withOpLabel(gctx, "absorb-facts"), root, prompt, model, tools, timeout); err != nil {
+			callCtx, cancel := context.WithTimeout(withOpLabel(gctx, "absorb-facts"), timeout)
+			out, err := provider.Generate(callCtx, prompt)
+			cancel()
+			if err != nil {
 				if errors.Is(err, ErrRateLimit) {
 					rateLimitOnce.Do(func() { rateLimited = true })
 					return err
 				}
 				logMsg("sync", "facts chapter %d (%s) failed: %v", r.index, fmtChapterTitle(r.chunk.Title), err)
+				return nil
+			}
+			jsonText, ok := extractJSON(out)
+			if !ok {
+				logMsg("sync", "facts chapter %d (%s): no JSON object in provider output (%d bytes)", r.index, fmtChapterTitle(r.chunk.Title), len(out))
+				return nil
+			}
+			if err := os.WriteFile(factsPaths[i], []byte(jsonText), 0o644); err != nil {
+				logMsg("sync", "facts chapter %d (%s) write: %v", r.index, fmtChapterTitle(r.chunk.Title), err)
 				return nil
 			}
 			return nil
@@ -327,6 +349,69 @@ func (m *MergedFacts) factsForChapter(chapterIndex int) []AtomicFact {
 		}
 	}
 	return out
+}
+
+// extractJSON locates the first balanced top-level JSON object inside a
+// freeform LLM response. Returns the substring and true on success,
+// "" + false when no balanced object is found.
+//
+// Why this exists: claude -p with --output-format json gives us a clean
+// envelope, but the facts pass goes through llmProviderGenerator (Phase
+// 4A) so the response is the model's raw text. Claude is well-behaved
+// even without the JSON envelope, but local models routinely:
+//
+//   - wrap JSON in a fenced code block (```json ... ```)
+//   - prepend "Sure, here is the JSON:" or "Here are the facts:"
+//   - append a trailing explanatory paragraph
+//   - emit smart quotes that break json.Unmarshal (we don't fix those —
+//     the prompt asks for ASCII; if the model ignores it, that's a model
+//     problem, not a parser problem)
+//
+// Strategy: find the first '{' and walk forward tracking brace depth,
+// respecting string literals and escapes. The first time depth returns
+// to zero, that's the end of the object. Anything before/after is
+// dropped. Non-JSON braces inside strings don't trip the counter.
+//
+// We don't json.Unmarshal here — the merge step (mergeFacts) already
+// tolerates a bad chunk-file by skipping it. extractJSON's job is
+// strictly "give me the object-shaped substring"; downstream parsers
+// decide whether the bytes are valid.
+func extractJSON(s string) (string, bool) {
+	start := strings.Index(s, "{")
+	if start < 0 {
+		return "", false
+	}
+	depth := 0
+	inString := false
+	escape := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if inString {
+			switch c {
+			case '\\':
+				escape = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1], true
+			}
+		}
+	}
+	return "", false
 }
 
 // formatFactsForPrompt renders a fact list as a compact text block

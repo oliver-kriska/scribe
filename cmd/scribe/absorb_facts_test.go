@@ -254,6 +254,54 @@ func TestApplyAbsorbDefaults_AtomicFactsExplicitFalsePreserved(t *testing.T) {
 	}
 }
 
+// Phase 4A: FactsProvider defaults to anthropic so existing scribe.yaml
+// files (no facts_provider key) keep using `claude -p` — we don't want
+// flipping providers to be a silent default change.
+func TestApplyAbsorbDefaults_FactsProviderDefaultsAnthropic(t *testing.T) {
+	cfg := AbsorbConfig{}
+	applyAbsorbDefaults(&cfg)
+	if cfg.FactsProvider != "anthropic" {
+		t.Errorf("FactsProvider default = %q, want anthropic", cfg.FactsProvider)
+	}
+}
+
+// Phase 4A: when the user picks ollama but leaves facts_model on a
+// Claude alias (e.g. they copied the contextualize section blindly),
+// applyAbsorbDefaults swaps to the recommended local default and logs.
+// Same coherence pattern as contextualize — without it, ollama would
+// receive "haiku" and silently 404 on every facts call.
+func TestApplyAbsorbDefaults_FactsOllamaSwapsClaudeAlias(t *testing.T) {
+	cfg := AbsorbConfig{FactsProvider: "ollama", FactsModel: "haiku"}
+	applyAbsorbDefaults(&cfg)
+	if cfg.FactsModel == "haiku" {
+		t.Errorf("ollama+haiku should auto-swap to %s, got %q", ollamaRecommendedModel, cfg.FactsModel)
+	}
+	if cfg.FactsModel != ollamaRecommendedModel {
+		t.Errorf("FactsModel after coherence fixup = %q, want %s", cfg.FactsModel, ollamaRecommendedModel)
+	}
+}
+
+func TestApplyAbsorbDefaults_FactsOllamaEmptyModelGetsDefault(t *testing.T) {
+	// Empty FactsModel + ollama → recommended model. The first
+	// applyAbsorbDefaults pass fills FactsModel from the haiku
+	// default; the coherence check then flips it because ollama+haiku
+	// is incoherent.
+	cfg := AbsorbConfig{FactsProvider: "ollama"}
+	applyAbsorbDefaults(&cfg)
+	if cfg.FactsModel != ollamaRecommendedModel {
+		t.Errorf("ollama with no model = %q, want %s", cfg.FactsModel, ollamaRecommendedModel)
+	}
+}
+
+func TestApplyAbsorbDefaults_FactsOllamaPreservesValidModel(t *testing.T) {
+	// User-set ollama model that isn't a Claude alias survives.
+	cfg := AbsorbConfig{FactsProvider: "ollama", FactsModel: "qwen3:4b"}
+	applyAbsorbDefaults(&cfg)
+	if cfg.FactsModel != "qwen3:4b" {
+		t.Errorf("valid ollama model should survive; got %q", cfg.FactsModel)
+	}
+}
+
 // ---- helpers ----
 
 func writeJSON(t *testing.T, dir, name string, v any) string {
@@ -283,3 +331,116 @@ func writeBytesPhase3B(t *testing.T, dir, name string, data []byte) string {
 
 // silence unused warning if reflect ever gets removed from a refactor
 var _ = reflect.DeepEqual
+
+// Phase 4A: extractJSON tolerates the assorted ways a local model can
+// pollute its response. Each case below has been seen in the wild from
+// either gemma3:4b, qwen3:4b, or llama3.2:3b — so the parser earns its
+// keep across the realistic local-model surface.
+
+func TestExtractJSON_PlainObject(t *testing.T) {
+	in := `{"facts":[{"id":"f1"}]}`
+	out, ok := extractJSON(in)
+	if !ok {
+		t.Fatal("expected ok=true on plain JSON")
+	}
+	if out != in {
+		t.Errorf("plain JSON should round-trip: got %q", out)
+	}
+}
+
+func TestExtractJSON_FencedJSON(t *testing.T) {
+	in := "```json\n{\"facts\": []}\n```\n"
+	out, ok := extractJSON(in)
+	if !ok {
+		t.Fatal("expected ok=true on fenced JSON")
+	}
+	var v map[string]any
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		t.Errorf("extracted text must parse as JSON: %v (got %q)", err, out)
+	}
+}
+
+func TestExtractJSON_LeadingPreamble(t *testing.T) {
+	in := "Sure, here are the facts you requested:\n\n{\"facts\": []}\n\nLet me know if you need anything else."
+	out, ok := extractJSON(in)
+	if !ok {
+		t.Fatal("expected ok=true with leading preamble")
+	}
+	if out != `{"facts": []}` {
+		t.Errorf("preamble should be stripped: got %q", out)
+	}
+}
+
+func TestExtractJSON_TrailingNoise(t *testing.T) {
+	in := `{"a":1}` + "\n\nThe above object captures the chapter's claims."
+	out, ok := extractJSON(in)
+	if !ok {
+		t.Fatal("expected ok=true with trailing noise")
+	}
+	if out != `{"a":1}` {
+		t.Errorf("trailing noise should be stripped: got %q", out)
+	}
+}
+
+func TestExtractJSON_NestedObject(t *testing.T) {
+	in := `text {"outer": {"inner": [1,2,{"k":"v"}]}, "z": "}"} tail`
+	out, ok := extractJSON(in)
+	if !ok {
+		t.Fatal("expected ok=true on nested object")
+	}
+	expected := `{"outer": {"inner": [1,2,{"k":"v"}]}, "z": "}"}`
+	if out != expected {
+		t.Errorf("nested object: got %q want %q", out, expected)
+	}
+}
+
+func TestExtractJSON_BraceInsideString(t *testing.T) {
+	// The closing brace inside the "claim" must NOT close the outer
+	// object. Same for the escaped quote — it must not open a new
+	// string-mode chunk.
+	in := `{"claim": "The function returns {\"ok\": true} on success"}`
+	out, ok := extractJSON(in)
+	if !ok {
+		t.Fatal("expected ok=true with brace inside string")
+	}
+	if out != in {
+		t.Errorf("string-internal braces should not close: got %q", out)
+	}
+}
+
+func TestExtractJSON_NoObject(t *testing.T) {
+	if _, ok := extractJSON("just prose, no JSON here"); ok {
+		t.Error("expected ok=false on prose-only input")
+	}
+	if _, ok := extractJSON(""); ok {
+		t.Error("expected ok=false on empty input")
+	}
+}
+
+func TestExtractJSON_UnterminatedObject(t *testing.T) {
+	// Brace depth never returns to zero — extractJSON should refuse
+	// rather than emit a half-object.
+	in := `{"facts": [`
+	if _, ok := extractJSON(in); ok {
+		t.Error("expected ok=false on unterminated object")
+	}
+}
+
+// Phase 4A: the absorbDefaultYAMLBlock template surfaces the new
+// facts_provider knob (commented-out) so users editing scribe.yaml
+// discover it without reading source. Guard against a future refactor
+// silently dropping the section.
+func TestAbsorbDefaultYAMLBlock_Phase4A(t *testing.T) {
+	block := absorbDefaultYAMLBlock()
+	wants := []string{
+		"atomic_facts: true",
+		"facts_model: haiku",
+		"facts_provider: anthropic",
+		"facts_timeout_min: 3",
+	}
+	for _, w := range wants {
+		if !strings.Contains(block, w) {
+			t.Errorf("absorbDefaultYAMLBlock missing %q", w)
+		}
+	}
+}
