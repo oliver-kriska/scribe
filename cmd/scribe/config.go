@@ -261,6 +261,15 @@ type AbsorbConfig struct {
 	Pass2Parallel          int                 `yaml:"pass2_parallel"`
 	SinglePassTimeoutMin   int                 `yaml:"single_pass_timeout_min"`
 	Contextualize          ContextualizeConfig `yaml:"contextualize"`
+
+	// ChapterAware turns on the Phase 3A.5 chapter-iteration path:
+	// when a raw article has a TOC sidecar with at least
+	// ChapterThreshold chapters, pass-1 fans out across chapters in
+	// parallel and merges the per-chapter plans before pass-2.
+	// Pointer so an explicit `false` in scribe.yaml wins over the
+	// default `true`.
+	ChapterAware     *bool `yaml:"chapter_aware"`
+	ChapterThreshold int   `yaml:"chapter_threshold"`
 }
 
 // ContextualizeConfig controls the `scribe contextualize` pre-embed step.
@@ -299,6 +308,8 @@ func absorbDefaults() AbsorbConfig {
 		Pass2TimeoutMin:        5,
 		Pass2Parallel:          3,
 		SinglePassTimeoutMin:   5,
+		ChapterAware:           &trueV,
+		ChapterThreshold:       3,
 		Contextualize: ContextualizeConfig{
 			Enabled:    &trueV,
 			Provider:   "anthropic",
@@ -453,6 +464,12 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 	}
 	if cfg.SinglePassTimeoutMin <= 0 {
 		cfg.SinglePassTimeoutMin = d.SinglePassTimeoutMin
+	}
+	if cfg.ChapterAware == nil {
+		cfg.ChapterAware = d.ChapterAware
+	}
+	if cfg.ChapterThreshold <= 0 {
+		cfg.ChapterThreshold = d.ChapterThreshold
 	}
 	if cfg.Contextualize.Enabled == nil {
 		cfg.Contextualize.Enabled = d.Contextualize.Enabled

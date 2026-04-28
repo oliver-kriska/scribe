@@ -1606,20 +1606,29 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	}
 	planFile := filepath.Join(plansDir, strings.TrimSuffix(rawName, ".md")+".json")
 
-	// Pass 1: plan entities via configured model (default haiku).
-	pass1Prompt, err := loadPrompt("absorb-pass1.md", map[string]string{
-		"KB_DIR":    root,
-		"RAW_FILE":  rawFile,
-		"PLAN_FILE": planFile,
-	})
-	if err != nil {
-		return fmt.Errorf("load pass1 prompt: %w", err)
-	}
-	pass1Tools := []string{"Read", "Write", "Glob", "Grep"}
-	pass1Timeout := time.Duration(cfg.Absorb.Pass1TimeoutMin) * time.Minute
 	ctx := context.Background()
-	if _, err := runClaude(ctx, root, pass1Prompt, cfg.Absorb.Pass1Model, pass1Tools, pass1Timeout); err != nil {
-		return fmt.Errorf("pass1: %w", err)
+
+	// Phase 3A.5 chaptered path: when a TOC sidecar exists with at
+	// least cfg.Absorb.ChapterThreshold chapters, fan pass-1 out
+	// across chapters in parallel and merge the per-chapter plans.
+	// Falls through to the legacy single-shot path on any disqualifier
+	// (no sidecar, too few chapters, ChapterAware disabled).
+	if chaptered, chunks, _ := shouldAbsorbChaptered(rawFile, cfg.Absorb); chaptered {
+		if err := s.runPass1Chaptered(ctx, root, rawFile, rawName, chunks, cfg.Absorb, planFile); err != nil {
+			if errors.Is(err, ErrRateLimit) {
+				return err
+			}
+			// Chapter pass had a non-rate-limit failure — fall back
+			// to whole-article pass-1 so the article still absorbs.
+			logMsg("sync", "chaptered pass1 failed for %s (%v); falling back to whole-article pass1", rawName, err)
+			if err := s.runPass1Whole(ctx, root, rawFile, planFile, cfg.Absorb); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := s.runPass1Whole(ctx, root, rawFile, planFile, cfg.Absorb); err != nil {
+			return err
+		}
 	}
 
 	// Parse plan JSON.
