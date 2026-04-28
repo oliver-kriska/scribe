@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -38,13 +39,29 @@ import (
 // that a malformed input doesn't hang an interactive session.
 const defaultMarkerTimeoutSec = 300
 
+// MarkerStats summarizes what marker did to a single document. It comes
+// from <stem>_meta.json which marker writes alongside the markdown.
+// Pages = total page_stats entries. OCRPages counts pages whose
+// text_extraction_method ≠ "pdftext" (marker uses "surya" / "ocr" /
+// "ocr_error" for OCR'd pages — anything non-pdftext means the layout
+// model handled the page, which is our confidence proxy). Tests can
+// inspect both raw maps; production callers usually only need the
+// derived ratio surfaced as `ocr_pct`.
+type MarkerStats struct {
+	Pages          int     `json:"pages"`
+	OCRPages       int     `json:"ocr_pages"`
+	OCRPct         float64 `json:"ocr_pct"`         // 0.0..1.0
+	ExtractionMode string  `json:"extraction_mode"` // "pdftext" | "ocr" | "mixed"
+}
+
 // convertWithMarker reads ingest config from the resolved KB root.
 // When called without a KB context (tests, edge cases), it falls back
-// to defaults — never panics on missing config.
-func convertWithMarker(inputPath, _ string) (string, error) {
+// to defaults — never panics on missing config. Returns the converted
+// markdown plus optional stats parsed from marker's meta.json.
+func convertWithMarker(inputPath, _ string) (string, *MarkerStats, error) {
 	abs, err := filepath.Abs(inputPath)
 	if err != nil {
-		return "", fmt.Errorf("abs path: %w", err)
+		return "", nil, fmt.Errorf("abs path: %w", err)
 	}
 
 	// Resolve marker config. kbDir() is how every other command finds
@@ -70,7 +87,7 @@ func convertWithMarker(inputPath, _ string) (string, error) {
 	// from there. Cleanup is deferred so a panic still removes the dir.
 	tmpDir, err := os.MkdirTemp("", "scribe-marker-*")
 	if err != nil {
-		return "", fmt.Errorf("mktemp: %w", err)
+		return "", nil, fmt.Errorf("mktemp: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -86,18 +103,18 @@ func convertWithMarker(inputPath, _ string) (string, error) {
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("marker_single timed out after %s on %s (set ingest.marker.timeout_seconds in scribe.yaml to extend)", timeout, filepath.Base(abs))
+			return "", nil, fmt.Errorf("marker_single timed out after %s on %s (set ingest.marker.timeout_seconds in scribe.yaml to extend)", timeout, filepath.Base(abs))
 		}
-		return "", fmt.Errorf("marker_single failed: %w", err)
+		return "", nil, fmt.Errorf("marker_single failed: %w", err)
 	}
 
 	mdPath, err := findMarkerOutput(tmpDir, abs)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	data, err := os.ReadFile(mdPath) //nolint:gosec // path is from a tmp dir we just created
 	if err != nil {
-		return "", fmt.Errorf("read marker output: %w", err)
+		return "", nil, fmt.Errorf("read marker output: %w", err)
 	}
 
 	// Image sidecar: marker writes images alongside the .md, with
@@ -110,7 +127,56 @@ func convertWithMarker(inputPath, _ string) (string, error) {
 		stem := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
 		md = preserveMarkerImages(md, filepath.Dir(mdPath), root, slugifyForAssets(stem))
 	}
-	return strings.TrimSpace(md), nil
+
+	// Pull OCR confidence proxy from marker's <stem>_meta.json. Best
+	// effort — older marker versions or partial outputs leave us with
+	// nil stats and that's fine; the article still gets written.
+	stats := readMarkerStats(mdPath)
+	return strings.TrimSpace(md), stats, nil
+}
+
+// readMarkerStats parses <stem>_meta.json that marker writes alongside
+// the markdown output. We only extract page count + extraction method
+// distribution — the file also has a debug_data_path and a verbose
+// table_of_contents we don't need. Returns nil on any parse failure;
+// callers must tolerate nil.
+func readMarkerStats(mdPath string) *MarkerStats {
+	stem := strings.TrimSuffix(filepath.Base(mdPath), ".md")
+	metaPath := filepath.Join(filepath.Dir(mdPath), stem+"_meta.json")
+	data, err := os.ReadFile(metaPath) //nolint:gosec // metaPath is in the same tmp dir we just created
+	if err != nil {
+		return nil
+	}
+	var raw struct {
+		PageStats []struct {
+			TextExtractionMethod string `json:"text_extraction_method"`
+		} `json:"page_stats"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	stats := &MarkerStats{Pages: len(raw.PageStats)}
+	if stats.Pages == 0 {
+		return stats
+	}
+	for _, p := range raw.PageStats {
+		// pdftext = digital text layer extraction. Anything else
+		// (surya, ocr, ocr_error) means the layout model had to
+		// handle the page — quality drops accordingly.
+		if p.TextExtractionMethod != "" && p.TextExtractionMethod != "pdftext" {
+			stats.OCRPages++
+		}
+	}
+	stats.OCRPct = float64(stats.OCRPages) / float64(stats.Pages)
+	switch stats.OCRPages {
+	case 0:
+		stats.ExtractionMode = "pdftext"
+	case stats.Pages:
+		stats.ExtractionMode = "ocr"
+	default:
+		stats.ExtractionMode = "mixed"
+	}
+	return stats
 }
 
 // preserveMarkerImages copies image files marker emitted alongside the

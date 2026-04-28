@@ -226,6 +226,23 @@ func ingestFetchAndWriteReturn(root, rawURL, overrideTitle string, tags []string
 // density and word_count are heuristically classified from body and embedded
 // in frontmatter so absorb can branch on them without recomputing.
 func buildRawArticle(root, rawURL, title, body, via, domain string, tags []string) (string, string) {
+	return buildRawArticleWithStats(root, rawURL, title, body, via, domain, tags, nil)
+}
+
+// buildRawArticleWithStats is the variant that accepts a *MarkerStats
+// payload from the convert dispatcher. When non-nil, additional keys
+// are emitted into the frontmatter so the absorb pass + downstream
+// readers know what kind of source they're looking at:
+//
+//	pages:           total page count
+//	extraction_mode: pdftext | mixed | ocr
+//	ocr_pct:         fraction of pages routed through OCR (0.0–1.0)
+//
+// Pure heuristics: a `pdftext` PDF is digital text and the markdown
+// is faithful; an `ocr` PDF passed through surya and the absorb
+// step should weight low-confidence claims accordingly. Phase 4's
+// dream cycle reads these to set article confidence.
+func buildRawArticleWithStats(root, rawURL, title, body, via, domain string, tags []string, stats *MarkerStats) (string, string) {
 	now := time.Now()
 	dateStr := now.Format("2006-01-02")
 	slug := slugify(title)
@@ -252,6 +269,12 @@ func buildRawArticle(root, rawURL, title, body, via, domain string, tags []strin
 	cfg := loadConfig(root)
 	words, density := classifyDensityWith(body, cfg.Absorb)
 
+	var extra string
+	if stats != nil && stats.Pages > 0 {
+		extra = fmt.Sprintf("pages: %d\nextraction_mode: %s\nocr_pct: %.2f\n",
+			stats.Pages, stats.ExtractionMode, stats.OCRPct)
+	}
+
 	fm := fmt.Sprintf(`---
 title: "%s"
 source_url: "%s"
@@ -262,9 +285,9 @@ domain: %s
 tags: %s
 word_count: %d
 density: %s
----
+%s---
 
-`, safeTitle, rawURL, dateStr, via, domain, tagLine, words, density)
+`, safeTitle, rawURL, dateStr, via, domain, tagLine, words, density, extra)
 
 	return path, fm + body + "\n"
 }

@@ -23,6 +23,10 @@ type ConvertResult struct {
 	Title    string
 	Markdown string
 	Tier     string // "tier0" or "marker", recorded so the caller can log/test.
+	// Stats carries OCR-confidence + page-count signals when the
+	// converter can supply them (currently marker only). nil when the
+	// path is HTML/text or tier 0 fallback. Callers are free to ignore.
+	Stats *MarkerStats
 }
 
 // ErrConvertUnsupported signals that no tier handles this extension on the
@@ -103,7 +107,7 @@ func convertFile(path, ext string, data []byte, titleHint string) (*ConvertResul
 		_ = lazyBootstrapMarker() // best-effort; ignore error, fall through to tier 0
 	}
 	if markerTierAvailable() {
-		md, err := convertWithMarker(path, ext)
+		md, stats, err := convertWithMarker(path, ext)
 		if err != nil {
 			return nil, fmt.Errorf("marker conversion: %w", err)
 		}
@@ -111,6 +115,7 @@ func convertFile(path, ext string, data []byte, titleHint string) (*ConvertResul
 			Title:    pickTitle(titleHint, md, path),
 			Markdown: md,
 			Tier:     "marker",
+			Stats:    stats,
 		}, nil
 	}
 
