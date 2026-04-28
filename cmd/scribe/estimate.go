@@ -184,7 +184,7 @@ func unprocessedForContextualize(root string) []string {
 // absorb log.
 func unprocessedForAbsorb(root string) []string {
 	rawDir := filepath.Join(root, "raw", "articles")
-	logMap := loadJSONMap(filepath.Join(root, "wiki", "_absorb_log.json"))
+	logMap, _ := loadAbsorbLog(filepath.Join(root, "wiki", "_absorb_log.json"))
 	entries, err := os.ReadDir(rawDir)
 	if err != nil {
 		return nil

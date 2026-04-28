@@ -116,10 +116,16 @@ func contextualizeThenAbsorb(root, rawPath string) error {
 	}
 
 	// Record in absorb log so subsequent sync runs skip this file.
+	// Phase 3C: typed log + sha so re-imports of the same file are
+	// detected on the next run.
 	absorbLogPath := filepath.Join(root, "wiki", "_absorb_log.json")
-	absorbLog := loadJSONMap(absorbLogPath)
-	absorbLog[filepath.Base(rawPath)] = time.Now().UTC().Format(time.RFC3339)
-	if err := saveJSONMap(absorbLogPath, absorbLog); err != nil {
+	absorbLog, _ := loadAbsorbLog(absorbLogPath)
+	if absorbLog == nil {
+		absorbLog = AbsorbLog{}
+	}
+	sha, _ := sha256File(rawPath)
+	absorbLog[filepath.Base(rawPath)] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
+	if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
 		logMsg("ingest", "warn: could not update _absorb_log.json: %v", err)
 	}
 

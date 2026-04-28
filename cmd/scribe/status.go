@@ -76,7 +76,7 @@ func renderStatus(w io.Writer, root string) error {
 
 	// --- contextualize + absorb progress ---
 	cxLog := loadJSONMap(filepath.Join(root, "wiki", "_contextualized_log.json"))
-	absorbLog := loadJSONMap(filepath.Join(root, "wiki", "_absorb_log.json"))
+	absorbLog, _ := loadAbsorbLog(filepath.Join(root, "wiki", "_absorb_log.json"))
 	unContext := len(unprocessedForContextualize(root))
 	unAbsorb := len(unprocessedForAbsorb(root))
 	fmt.Fprintf(w, "  contextualized:   %d done, %d pending\n", len(cxLog), unContext)

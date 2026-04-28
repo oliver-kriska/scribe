@@ -1434,9 +1434,12 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 	strictness := cfg.Absorb.Strictness
 	maxAbsorb := cfg.Absorb.MaxPerRun
 
-	// Load absorb log.
+	// Load absorb log (Phase 3C: typed, sha-aware).
 	absorbLogPath := filepath.Join(root, "wiki", "_absorb_log.json")
-	absorbLog := loadJSONMap(absorbLogPath)
+	absorbLog, err := loadAbsorbLog(absorbLogPath)
+	if err != nil {
+		return 0, fmt.Errorf("load absorb log: %w", err)
+	}
 
 	// Find unabsorbed articles.
 	entries, err := os.ReadDir(rawDir)
@@ -1451,16 +1454,37 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 			continue
 		}
 
-		// Already absorbed?
-		if _, ok := absorbLog[entry.Name()]; ok {
+		rawFile := filepath.Join(rawDir, entry.Name())
+
+		// Phase 3C: hash content + decide. A sha read error falls back
+		// to filename-only behavior (skip if seen, absorb if new) so a
+		// transient I/O hiccup can't strand an article.
+		sha, _ := sha256File(rawFile)
+		decision := checkAbsorbDecision(absorbLog, entry.Name(), sha)
+		switch decision {
+		case absorbDecisionSkipSameContent:
 			continue
+		case absorbDecisionSkipDupContent:
+			dup := findDupName(absorbLog, entry.Name(), sha)
+			logMsg("sync", "skipping %s (content duplicate of %s); not re-absorbing", entry.Name(), dup)
+			// Record so future runs short-circuit on name too. The
+			// shared-sha entry stays as a soft pointer to the canonical
+			// absorber; we deliberately don't auto-delete the
+			// duplicate raw file (no-knowledge-deletion rule).
+			absorbLog[entry.Name()] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
+			if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
+				logMsg("sync", "warn: could not persist _absorb_log.json: %v", err)
+			}
+			continue
+		case absorbDecisionRunRefresh:
+			logMsg("sync", "re-absorbing %s (content changed since last absorb)", entry.Name())
+		case absorbDecisionRun:
+			// fall through
 		}
 
 		if absorbed >= maxAbsorb {
 			break
 		}
-
-		rawFile := filepath.Join(rawDir, entry.Name())
 
 		// Unfetched stubs are zero-signal — skip absorb and route the URL to
 		// the parked-links list so the user can handle them manually.
@@ -1469,8 +1493,8 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 			if parkStubLink(root, rawFile) {
 				logMsg("sync", "parked unfetched stub %s → wiki/_unfetched-links.md", entry.Name())
 			}
-			absorbLog[entry.Name()] = time.Now().UTC().Format(time.RFC3339)
-			if err := saveJSONMap(absorbLogPath, absorbLog); err != nil {
+			absorbLog[entry.Name()] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
+			if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
 				logMsg("sync", "warn: could not persist _absorb_log.json: %v", err)
 			}
 			continue
@@ -1506,9 +1530,9 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 			continue
 		}
 
-		// Mark as absorbed.
-		absorbLog[entry.Name()] = time.Now().UTC().Format(time.RFC3339)
-		if err := saveJSONMap(absorbLogPath, absorbLog); err != nil {
+		// Mark as absorbed (with sha so the next run can detect drift).
+		absorbLog[entry.Name()] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
+		if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
 			logMsg("sync", "warn: could not persist _absorb_log.json: %v", err)
 		}
 

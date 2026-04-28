@@ -135,9 +135,13 @@ func (c *AbsorbCmd) Run() error {
 	}
 
 	absorbLogPath := filepath.Join(root, "wiki", "_absorb_log.json")
-	absorbLog := loadJSONMap(absorbLogPath)
-	absorbLog[filepath.Base(rawPath)] = time.Now().UTC().Format(time.RFC3339)
-	if err := saveJSONMap(absorbLogPath, absorbLog); err != nil {
+	absorbLog, _ := loadAbsorbLog(absorbLogPath)
+	if absorbLog == nil {
+		absorbLog = AbsorbLog{}
+	}
+	sha, _ := sha256File(rawPath)
+	absorbLog[filepath.Base(rawPath)] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
+	if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
 		logMsg("absorb", "warn: could not update _absorb_log.json: %v", err)
 	}
 
