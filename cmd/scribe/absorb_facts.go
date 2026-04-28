@@ -152,9 +152,14 @@ func (s *SyncCmd) runFactsPass(ctx context.Context, root, rawFile, rawName strin
 		model = cfg.Pass1Model
 	}
 
-	parallel := cfg.Pass2Parallel
+	// Same parallelism rule as the pass-1 chaptered fan-out — see
+	// runPass1Chaptered for why ChapterParallel matters here.
+	parallel := cfg.ChapterParallel
 	if parallel <= 0 {
-		parallel = 3
+		parallel = cfg.Pass2Parallel
+	}
+	if parallel <= 0 {
+		parallel = 2
 	}
 	if parallel > len(runs) {
 		parallel = len(runs)

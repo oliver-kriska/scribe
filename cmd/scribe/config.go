@@ -270,6 +270,13 @@ type AbsorbConfig struct {
 	// default `true`.
 	ChapterAware     *bool `yaml:"chapter_aware"`
 	ChapterThreshold int   `yaml:"chapter_threshold"`
+	// ChapterParallel caps concurrent claude -p calls during the
+	// chaptered fan-out (facts pass and pass-1 chapter pass). On a
+	// 60-chapter PDF the previous behavior of reusing Pass2Parallel
+	// stacked 3 facts + 3 pass-1 + 3 pass-2 in flight, which made
+	// rate-limit cascades easy to trigger. Default 2 is conservative
+	// enough that haiku's quotas hold even on long documents.
+	ChapterParallel int `yaml:"chapter_parallel"`
 
 	// AtomicFacts turns on Phase 3B atomic-fact extraction. When on
 	// (and the article qualifies for chaptered absorb), a per-chunk
@@ -324,6 +331,7 @@ func absorbDefaults() AbsorbConfig {
 		SinglePassTimeoutMin:   5,
 		ChapterAware:           &trueV,
 		ChapterThreshold:       3,
+		ChapterParallel:        2,
 		// AtomicFacts off by default. Users opt in by setting
 		// `absorb.atomic_facts: true` in scribe.yaml after they've
 		// verified chaptered absorb works on their corpus.
@@ -487,6 +495,9 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 	}
 	if cfg.ChapterAware == nil {
 		cfg.ChapterAware = d.ChapterAware
+	}
+	if cfg.ChapterParallel <= 0 {
+		cfg.ChapterParallel = d.ChapterParallel
 	}
 	if cfg.ChapterThreshold <= 0 {
 		cfg.ChapterThreshold = d.ChapterThreshold

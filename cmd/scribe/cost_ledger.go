@@ -130,6 +130,9 @@ type CostSummary struct {
 	Model            string
 	Calls            int
 	OK               int
+	Canceled         int
+	Timeout          int
+	RateLimit        int
 	WallclockSeconds float64
 	PromptChars      int64
 	EstUSDLow        float64
@@ -199,6 +202,14 @@ func summarizeCosts(root string, days int) ([]CostSummary, error) {
 			if ce.OK {
 				row.OK++
 			}
+			switch ce.ErrKind {
+			case "canceled":
+				row.Canceled++
+			case "timeout":
+				row.Timeout++
+			case "rate_limit":
+				row.RateLimit++
+			}
 			row.WallclockSeconds += float64(ce.DurationMS) / 1000.0
 			row.PromptChars += int64(ce.PromptChars)
 		}
@@ -256,25 +267,30 @@ func (c *CostCmd) Run() error {
 		window = fmt.Sprintf("last %d days", c.Days)
 	}
 	fmt.Printf("scribe cost — %s\n\n", window)
-	fmt.Printf("  %-10s  %6s  %6s  %10s  %14s  %18s\n", "model", "calls", "ok", "wallclock", "prompt-chars", "est-usd (low–high)")
-	var totalCalls, totalOK int
+	fmt.Printf("  %-10s  %6s  %6s  %6s  %6s  %6s  %10s  %14s  %18s\n",
+		"model", "calls", "ok", "cancl", "rate", "tmout", "wallclock", "prompt-chars", "est-usd (low–high)")
+	var totalCalls, totalOK, totalCanceled, totalRL, totalTimeout int
 	var totalSec float64
 	var totalChars int64
 	var totalLow, totalHigh float64
 	for _, r := range rows {
-		fmt.Printf("  %-10s  %6d  %6d  %9.1fs  %14d  $%6.4f – $%6.4f\n",
-			r.Model, r.Calls, r.OK, r.WallclockSeconds, r.PromptChars, r.EstUSDLow, r.EstUSDHigh)
+		fmt.Printf("  %-10s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %14d  $%6.4f – $%6.4f\n",
+			r.Model, r.Calls, r.OK, r.Canceled, r.RateLimit, r.Timeout, r.WallclockSeconds, r.PromptChars, r.EstUSDLow, r.EstUSDHigh)
 		totalCalls += r.Calls
 		totalOK += r.OK
+		totalCanceled += r.Canceled
+		totalRL += r.RateLimit
+		totalTimeout += r.Timeout
 		totalSec += r.WallclockSeconds
 		totalChars += r.PromptChars
 		totalLow += r.EstUSDLow
 		totalHigh += r.EstUSDHigh
 	}
-	fmt.Printf("  %-10s  %6d  %6d  %9.1fs  %14d  $%6.4f – $%6.4f\n",
-		"TOTAL", totalCalls, totalOK, totalSec, totalChars, totalLow, totalHigh)
+	fmt.Printf("  %-10s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %14d  $%6.4f – $%6.4f\n",
+		"TOTAL", totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalSec, totalChars, totalLow, totalHigh)
 	fmt.Println()
-	fmt.Println("  Estimates assume ~4 chars/token, output 0.25–1.00× input. Real")
-	fmt.Println("  token counts arrive once we switch claude -p to --output-format json.")
+	fmt.Println("  cancl = sibling-canceled (rate-limit cascade).  rate = direct rate-limit response.")
+	fmt.Println("  tmout = ctx.DeadlineExceeded.  Estimates assume ~4 chars/token, output 0.25–1.00× input.")
+	fmt.Println("  Real token counts arrive once we switch claude -p to --output-format json.")
 	return nil
 }

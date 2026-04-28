@@ -125,9 +125,18 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 	pass1Tools := []string{"Read", "Write", "Glob", "Grep"}
 	pass1Timeout := time.Duration(cfg.Pass1TimeoutMin) * time.Minute
 
-	parallel := cfg.Pass2Parallel
+	// Phase 3D follow-up: use ChapterParallel (default 2), not
+	// Pass2Parallel. The chaptered path can run alongside other
+	// claude calls in the same sync (sonnet pass-2, contextualize),
+	// so a lower per-fan-out cap reduces rate-limit cascades on
+	// long documents. Pass2Parallel is used as a fallback for
+	// configs written before Phase 3D.5 added the knob.
+	parallel := cfg.ChapterParallel
 	if parallel <= 0 {
-		parallel = 3
+		parallel = cfg.Pass2Parallel
+	}
+	if parallel <= 0 {
+		parallel = 2
 	}
 	if parallel > len(chunks) {
 		parallel = len(chunks)

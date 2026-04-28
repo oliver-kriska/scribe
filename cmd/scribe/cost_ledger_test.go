@@ -186,6 +186,36 @@ func TestOpLabel_NilContextSafe(t *testing.T) {
 	}
 }
 
+func TestSummarizeCosts_TallyByErrKind(t *testing.T) {
+	tmp := t.TempDir()
+	for _, e := range []CostEntry{
+		{Model: "haiku", DurationMS: 1000, OK: true},
+		{Model: "haiku", DurationMS: 0, OK: false, ErrKind: "canceled"},
+		{Model: "haiku", DurationMS: 0, OK: false, ErrKind: "canceled"},
+		{Model: "haiku", DurationMS: 600000, OK: false, ErrKind: "timeout"},
+		{Model: "haiku", DurationMS: 50, OK: false, ErrKind: "rate_limit"},
+		{Model: "haiku", DurationMS: 50, OK: false, ErrKind: "other"},
+	} {
+		appendCostEntry(tmp, e)
+	}
+	rows, err := summarizeCosts(tmp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	r := rows[0]
+	if r.OK != 1 || r.Canceled != 2 || r.Timeout != 1 || r.RateLimit != 1 {
+		t.Errorf("err-kind tally wrong: %+v", r)
+	}
+	// "other" doesn't fall into any specific bucket — that's fine,
+	// it shows up as Calls - (OK + Canceled + Timeout + RateLimit).
+	if r.Calls != 6 {
+		t.Errorf("Calls should still count every entry: %+v", r)
+	}
+}
+
 func TestModelRateUSDPerMillion_KnownModelsHavePrices(t *testing.T) {
 	for _, m := range []string{"haiku", "sonnet", "opus"} {
 		rate, ok := modelRateUSDPerMillion[m]

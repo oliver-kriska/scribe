@@ -65,12 +65,20 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 	if err != nil {
 		tail := tailLines(outStr, 15)
 		entry.OK = false
-		// Distinguish timeout (ctx.Err == context.DeadlineExceeded)
-		// from other process failures so the user can spot tuning
-		// problems vs. real errors in the ledger.
-		if ctx.Err() == context.DeadlineExceeded {
+		// Classify the failure kind so the ledger can tell apart
+		// real crashes from cascade noise. Cascade noise dominates
+		// during rate-limit storms — once a sibling errgroup goroutine
+		// returns ErrRateLimit, every other in-flight runClaude gets
+		// its context canceled and exec.CommandContext kills the
+		// process, surfacing "signal: killed" with no rate-limit
+		// string in the (truncated) output. Marking these as
+		// "canceled" instead of "other" keeps the ledger honest.
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
 			entry.ErrKind = "timeout"
-		} else {
+		case context.Canceled:
+			entry.ErrKind = "canceled"
+		default:
 			entry.ErrKind = "other"
 		}
 		return tail, fmt.Errorf("claude -p: %w\n%s", err, tail)
