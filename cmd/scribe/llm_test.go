@@ -23,7 +23,7 @@ func TestNewLLMProviderRouting(t *testing.T) {
 		{"unknown-backend", "anthropic/haiku"}, // graceful fallback
 	}
 	for _, tc := range cases {
-		got := newLLMProvider(tc.in, "haiku", "http://localhost:11434").Name()
+		got := newLLMProvider(tc.in, "haiku", "http://localhost:11434", "").Name()
 		if got != tc.want {
 			t.Errorf("newLLMProvider(%q).Name() = %q, want %q", tc.in, got, tc.want)
 		}

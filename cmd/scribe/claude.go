@@ -89,12 +89,37 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 }
 
 // isRateLimited checks if claude output indicates a rate limit.
+//
+// String matching is the only reliable signal short of switching to
+// claude -p --output-format json (deferred to a future phase). The
+// list below covers what's been observed in practice from the CLI
+// across 2025-2026: classic "rate limit", HTTP 429 echoes, the
+// Anthropic CLI's own quota-message variants ("usage limit",
+// "5-hour limit", "weekly limit"), and the catch-all "overloaded"
+// for transient API capacity. The check is case-insensitive.
+//
+// False positives here cost a single retry; false negatives let
+// errors land in the ledger as err_kind=other and pollute the
+// "other" bucket. Bias toward false positives.
 func isRateLimited(output string) bool {
 	lower := strings.ToLower(output)
-	return strings.Contains(lower, "rate limit") ||
-		strings.Contains(lower, "too many requests") ||
-		strings.Contains(lower, "429") ||
-		strings.Contains(lower, "overloaded")
+	for _, needle := range []string{
+		"rate limit",
+		"too many requests",
+		"429",
+		"overloaded",
+		"usage limit",
+		"5-hour limit",
+		"5 hour limit",
+		"weekly limit",
+		"quota exceeded",
+		"resource_exhausted",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // tailLines returns the last n non-empty lines from a string.

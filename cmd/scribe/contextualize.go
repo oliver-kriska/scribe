@@ -252,7 +252,7 @@ func contextualizeOne(root, rawPath, model string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	provider := newLLMProvider(cfg.Absorb.Contextualize.Provider, model, cfg.Absorb.Contextualize.OllamaURL)
+	provider := newLLMProvider(cfg.Absorb.Contextualize.Provider, model, cfg.Absorb.Contextualize.OllamaURL, root)
 	text, err := provider.Generate(ctx, prompt)
 	if err != nil {
 		return fmt.Errorf("%s: %w", provider.Name(), err)

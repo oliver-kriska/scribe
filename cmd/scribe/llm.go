@@ -29,15 +29,20 @@ type llmProviderGenerator interface {
 // newLLMProvider picks the provider backend based on scribe.yaml. Unknown
 // provider names fall back to anthropic with a log line so misconfiguration
 // never silently no-ops.
-func newLLMProvider(provider, model, ollamaURL string) llmProviderGenerator {
+//
+// kbRoot is forwarded to the anthropic provider so its claude calls can
+// land in output/costs/<day>.jsonl alongside calls from runClaude. Empty
+// kbRoot is tolerated — appendCostEntry no-ops on empty root, so callers
+// without a KB context (e.g. unit tests) keep working.
+func newLLMProvider(provider, model, ollamaURL, kbRoot string) llmProviderGenerator {
 	switch strings.ToLower(provider) {
 	case "ollama":
 		return &ollamaProvider{baseURL: ollamaURL, model: model}
 	case "anthropic", "":
-		return &anthropicProvider{model: model}
+		return &anthropicProvider{model: model, root: kbRoot}
 	default:
 		logMsg("llm", "unknown provider %q — falling back to anthropic", provider)
-		return &anthropicProvider{model: model}
+		return &anthropicProvider{model: model, root: kbRoot}
 	}
 }
 
@@ -49,10 +54,23 @@ func newLLMProvider(provider, model, ollamaURL string) llmProviderGenerator {
 // longer tasks (Sonnet) alike.
 type anthropicProvider struct {
 	model string
+	// root points at the KB so Generate can append a row to the cost
+	// ledger. Empty root means "don't track" — appendCostEntry no-ops
+	// on empty root and we don't drag a logger error through every
+	// pure-text generation. Tests construct providers without a KB.
+	root string
 }
 
 func (a *anthropicProvider) Name() string { return "anthropic/" + a.model }
 
+// Generate shells out to `claude -p` and writes one CostEntry to the
+// daily cost ledger so contextualize / contradictions / identity
+// passes show up alongside runClaude calls. The ledger write is a
+// deferred best-effort: errors there don't bubble to the caller.
+//
+// Op label is read from ctx via opLabelFromContext (same plumbing as
+// runClaude), so callers tagging their context propagate the label
+// here too. Untagged calls record an empty op field — still tracked.
 func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string, error) {
 	args := []string{
 		"-p", prompt,
@@ -61,15 +79,40 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		// No tools — this path is for pure text generation.
 		"--settings", `{"hooks":{}}`,
 	}
+	started := time.Now()
+	op := opLabelFromContext(ctx)
+	entry := CostEntry{
+		Timestamp:   started.UTC().Format(time.RFC3339),
+		Model:       a.model,
+		Op:          op,
+		PromptChars: len(prompt),
+	}
+	defer func() {
+		entry.DurationMS = time.Since(started).Milliseconds()
+		appendCostEntry(a.root, entry)
+	}()
+
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	out, err := cmd.CombinedOutput()
 	outStr := string(out)
 	if isRateLimited(outStr) {
+		entry.OK = false
+		entry.ErrKind = "rate_limit"
 		return tailLines(outStr, 5), ErrRateLimit
 	}
 	if err != nil {
+		entry.OK = false
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			entry.ErrKind = "timeout"
+		case context.Canceled:
+			entry.ErrKind = "canceled"
+		default:
+			entry.ErrKind = "other"
+		}
 		return tailLines(outStr, 15), fmt.Errorf("claude -p: %w", err)
 	}
+	entry.OK = true
 	return strings.TrimSpace(outStr), nil
 }
 

@@ -216,6 +216,37 @@ func TestSummarizeCosts_TallyByErrKind(t *testing.T) {
 	}
 }
 
+func TestIsRateLimited_NewPatterns(t *testing.T) {
+	for _, line := range []string{
+		"Error: rate limit exceeded",
+		"HTTP 429 Too Many Requests",
+		"the model is overloaded",
+		"You have hit your usage limit",
+		"5-hour limit reached, try again in 23 minutes",
+		"5 hour limit reached",
+		"weekly limit reached",
+		"Quota exceeded for this resource",
+		"resource_exhausted: please retry",
+	} {
+		if !isRateLimited(line) {
+			t.Errorf("expected isRateLimited to match %q", line)
+		}
+	}
+}
+
+func TestIsRateLimited_NegativeCases(t *testing.T) {
+	for _, line := range []string{
+		"",
+		"all good",
+		"connection refused",
+		"file not found",
+	} {
+		if isRateLimited(line) {
+			t.Errorf("did not expect isRateLimited to match %q", line)
+		}
+	}
+}
+
 func TestModelRateUSDPerMillion_KnownModelsHavePrices(t *testing.T) {
 	for _, m := range []string{"haiku", "sonnet", "opus"} {
 		rate, ok := modelRateUSDPerMillion[m]

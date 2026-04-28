@@ -66,6 +66,7 @@ func runIdentitiesCheck(outputMD string, dryRun bool) error {
 		cfg.Absorb.Contextualize.Provider,
 		cfg.Absorb.Contextualize.Model,
 		cfg.Absorb.Contextualize.OllamaURL,
+		root,
 	)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
