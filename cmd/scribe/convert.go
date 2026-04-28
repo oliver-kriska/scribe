@@ -90,7 +90,7 @@ func convertFile(path, ext string, data []byte, titleHint string) (*ConvertResul
 		}, nil
 	}
 
-	// Tier 0 fallback. Phase 1A ships .pdf only here.
+	// Tier 0 fallback. Phase 1B adds Go-native DOCX and EPUB.
 	switch ext {
 	case ".pdf":
 		md, err := convertPDFTier0(data)
@@ -102,10 +102,30 @@ func convertFile(path, ext string, data []byte, titleHint string) (*ConvertResul
 			Markdown: md,
 			Tier:     "tier0",
 		}, nil
-	case ".docx", ".epub", ".pptx", ".xlsx":
+	case ".docx":
+		md, err := convertDOCXTier0(data)
+		if err != nil {
+			return nil, fmt.Errorf("tier0 docx: %w", err)
+		}
+		return &ConvertResult{
+			Title:    pickTitle(titleHint, md, path),
+			Markdown: md,
+			Tier:     "tier0",
+		}, nil
+	case ".epub":
+		md, err := convertEPUBTier0(data)
+		if err != nil {
+			return nil, fmt.Errorf("tier0 epub: %w", err)
+		}
+		return &ConvertResult{
+			Title:    pickTitle(titleHint, md, path),
+			Markdown: md,
+			Tier:     "tier0",
+		}, nil
+	case ".pptx", ".xlsx":
 		return nil, &ErrConvertUnsupported{
 			Ext:    ext,
-			Reason: "marker_single not on PATH; install marker-pdf (`pipx install marker-pdf`) or wait for Phase 1B which adds Go-native DOCX/EPUB",
+			Reason: "marker_single not on PATH; install marker-pdf (`pipx install marker-pdf`) — tier 0 has no native PPTX/XLSX support",
 		}
 	default:
 		return nil, &ErrConvertUnsupported{

@@ -40,7 +40,70 @@ type ScribeConfig struct {
 	Capture    CaptureConfig    `yaml:"capture"`
 	Triage     TriageConfig     `yaml:"triage"`
 	Absorb     AbsorbConfig     `yaml:"absorb"`
+	Ingest     IngestConfig     `yaml:"ingest"`
 	Identities IdentitiesConfig `yaml:"identities"`
+}
+
+// IngestConfig controls the file-ingestion pipeline (Phase 1B+). All
+// fields are optional; zero values fall back to ingestDefaults().
+//
+// InboxPath is the directory `scribe sync` drains during Phase 1.5
+// (drop a file there, walk away, cron picks it up). Default
+// "raw/inbox" relative to the KB root. Subdirectories `.processed/`
+// and `.failed/` get auto-created for state tracking.
+//
+// Marker holds tier 1 (marker-pdf) settings. TimeoutSeconds caps a
+// single-file conversion. MPSFallback toggles
+// PYTORCH_ENABLE_MPS_FALLBACK=1 in the marker env — required to work
+// around the surya MPS instability on Apple Silicon. Defaults: 300s
+// timeout, MPS fallback on (macOS only; harmless elsewhere).
+//
+// Converters is a forward-compat map for the Phase 5 plugin system:
+// users will be able to override per-format with `pdf: marker | tier0
+// | docling | mineru`. Phase 1B reads no values from it; the field
+// just claims the YAML key so config files written today survive the
+// future schema bump.
+type IngestConfig struct {
+	InboxPath  string             `yaml:"inbox_path"`
+	Marker     IngestMarkerConfig `yaml:"marker"`
+	Converters map[string]string  `yaml:"converters"`
+}
+
+type IngestMarkerConfig struct {
+	TimeoutSeconds int   `yaml:"timeout_seconds"`
+	MPSFallback    *bool `yaml:"mps_fallback"`
+}
+
+func ingestDefaults() IngestConfig {
+	trueV := true
+	return IngestConfig{
+		InboxPath: "raw/inbox",
+		Marker: IngestMarkerConfig{
+			TimeoutSeconds: 300,
+			MPSFallback:    &trueV,
+		},
+		Converters: map[string]string{},
+	}
+}
+
+// applyIngestDefaults merges user overrides on top of ingestDefaults.
+// Mirrors applyAbsorbDefaults — zero-valued fields inherit, non-zero
+// values stick. Pointer fields (MPSFallback) only inherit when nil so
+// an explicit `false` in scribe.yaml wins.
+func applyIngestDefaults(cfg *IngestConfig) {
+	d := ingestDefaults()
+	if cfg.InboxPath == "" {
+		cfg.InboxPath = d.InboxPath
+	}
+	if cfg.Marker.TimeoutSeconds <= 0 {
+		cfg.Marker.TimeoutSeconds = d.Marker.TimeoutSeconds
+	}
+	if cfg.Marker.MPSFallback == nil {
+		cfg.Marker.MPSFallback = d.Marker.MPSFallback
+	}
+	if cfg.Converters == nil {
+		cfg.Converters = d.Converters
+	}
 }
 
 // IdentitiesConfig filters noise out of `scribe lint --identities`.
@@ -516,12 +579,14 @@ func loadConfig(root string) *ScribeConfig {
 		Deep:              DeepConfig{BatchMax: 5},
 		Capture:           CaptureConfig{SelfChatHandle: ""},
 		Absorb:            absorbDefaults(),
+		Ingest:            ingestDefaults(),
 	}
 
 	cfgPath := filepath.Join(root, "scribe.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		applyAbsorbDefaults(&cfg.Absorb)
+		applyIngestDefaults(&cfg.Ingest)
 		return cfg
 	}
 	_ = yaml.Unmarshal(data, cfg)
@@ -534,6 +599,7 @@ func loadConfig(root string) *ScribeConfig {
 	// Merge user overrides on top of absorb defaults (zero-valued fields
 	// inherit). Partial user config is legal and common.
 	applyAbsorbDefaults(&cfg.Absorb)
+	applyIngestDefaults(&cfg.Ingest)
 
 	// First-use backfill: if the on-disk scribe.yaml has no `absorb:` key,
 	// append the commented defaults block so the user can discover the knobs

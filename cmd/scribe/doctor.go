@@ -22,7 +22,7 @@ import (
 // Mac was asleep.
 type DoctorCmd struct {
 	JSON        bool          `help:"Emit structured JSON instead of text."`
-	Section     string        `help:"Run only one section: deps | config | cron | state | freshness | errors." enum:"deps,config,cron,state,freshness,errors," default:""`
+	Section     string        `help:"Run only one section: deps | config | cron | state | freshness | errors | convert." enum:"deps,config,cron,state,freshness,errors,convert," default:""`
 	ErrorWindow time.Duration `help:"How far back to scan run records for errors." default:"24h"`
 }
 
@@ -52,7 +52,7 @@ func (c *DoctorCmd) Run() error {
 	}
 	cfg := loadConfig(root)
 
-	sectionOrder := []string{"deps", "config", "cron", "state", "freshness", "errors"}
+	sectionOrder := []string{"deps", "config", "convert", "cron", "state", "freshness", "errors"}
 	var all []check
 	for _, name := range sectionOrder {
 		if c.Section != "" && c.Section != name {
@@ -63,6 +63,8 @@ func (c *DoctorCmd) Run() error {
 			all = append(all, checkDeps()...)
 		case "config":
 			all = append(all, checkConfig(root, cfg)...)
+		case "convert":
+			all = append(all, checkConvert()...)
 		case "cron":
 			all = append(all, checkCron(root)...)
 		case "state":
@@ -193,6 +195,114 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 	}
 
 	return out
+}
+
+// ---- Convert (file ingestion coverage) ----
+
+// checkConvert reports per-format conversion coverage. Each row tells
+// the user whether the format has a working path on this system, which
+// tier handles it, and what to install if the answer is "no path".
+//
+// The reasoning the matrix encodes:
+//
+//	HTML/MD/TXT             always green (in-process)
+//	PDF                     green if marker present (best quality);
+//	                        yellow if tier 0 only (text-only, no OCR)
+//	DOCX/EPUB               green if marker present;
+//	                        yellow if tier 0 only (Phase 1B Go-native, decent on
+//	                        common docs, weak on heavy styling)
+//	PPTX/XLSX               green if marker present;
+//	                        FAIL if marker absent (no tier 0 path)
+//
+// The marker probe also surfaces the binary version line so users can
+// tell at a glance whether they're on the version scribe was tested
+// against (relevant when Phase 5 starts pinning a known-good range).
+func checkConvert() []check {
+	var out []check
+
+	// Marker presence + version. Frames every other row's verdict.
+	if markerTierAvailable() {
+		out = append(out, check{
+			Section: "convert", Name: "marker (tier 1)", Status: statusOK,
+			Detail: markerVersionLine(),
+		})
+	} else {
+		out = append(out, check{
+			Section: "convert", Name: "marker (tier 1)", Status: statusWarn,
+			Detail: "not installed (tier 0 fallback active where supported)",
+			Fix:    "pipx install marker-pdf  # for top-quality PDF/DOCX/PPTX/XLSX/EPUB",
+		})
+	}
+
+	// Per-format coverage rows. routedTo describes what actually
+	// happens — not what the user might assume:
+	//   - "in-process" — never touches an external converter (.md, .txt)
+	//   - "tier 0 (html-to-markdown)" — always tier 0 (HTML special-cased)
+	//   - "marker | tier 0" — prefers marker, falls back to tier 0 PDF
+	//   - "marker only" — no tier 0 path at all
+	hasMarker := markerTierAvailable()
+	type formatRow struct {
+		ext       string
+		needName  string
+		routedTo  string
+		needsTool bool // true if format is unusable without marker
+	}
+	rows := []formatRow{
+		{".md", "markdown", "in-process passthrough", false},
+		{".txt", "plain text", "in-process passthrough", false},
+		{".html/.htm", "HTML", "tier 0 (html-to-markdown)", false},
+		{".pdf", "PDF", routePDF(hasMarker), false},
+		{".docx", "DOCX", routeDocOrEpub(hasMarker), false},
+		{".epub", "EPUB", routeDocOrEpub(hasMarker), false},
+		{".pptx", "PowerPoint", "marker only", true},
+		{".xlsx", "Excel", "marker only", true},
+	}
+	for _, r := range rows {
+		switch {
+		case strings.HasPrefix(r.routedTo, "in-process") || strings.HasPrefix(r.routedTo, "tier 0"):
+			out = append(out, check{
+				Section: "convert", Name: r.ext, Status: statusOK,
+				Detail: r.needName + " — " + r.routedTo,
+			})
+		case r.routedTo == "marker | tier 0":
+			out = append(out, check{
+				Section: "convert", Name: r.ext, Status: statusOK,
+				Detail: r.needName + " — marker (best quality)",
+			})
+		case r.routedTo == "marker only" && hasMarker:
+			out = append(out, check{
+				Section: "convert", Name: r.ext, Status: statusOK,
+				Detail: r.needName + " — marker (best quality)",
+			})
+		default:
+			out = append(out, check{
+				Section: "convert", Name: r.ext, Status: statusFail,
+				Detail: r.needName + " — no path on this system",
+				Fix:    "pipx install marker-pdf",
+			})
+		}
+	}
+	return out
+}
+
+// routePDF picks the doctor row description for PDF based on whether
+// marker is installed. Mirrors the runtime choice in convert.go: marker
+// preferred, tier 0 ledongthuc/pdf as fallback.
+func routePDF(hasMarker bool) string {
+	if hasMarker {
+		return "marker | tier 0"
+	}
+	return "tier 0 (text-only; install marker for tables/OCR)"
+}
+
+// routeDocOrEpub picks the doctor row description for DOCX/EPUB.
+// Tier 0 has Go-native parsers (Phase 1B) but is weaker than marker
+// on heavy styling; marker is preferred when present.
+func routeDocOrEpub(hasMarker bool) string {
+	if hasMarker {
+		return "marker | tier 0"
+	}
+	return "tier 0 (Go-native; install marker for richer styling)"
 }
 
 // ---- Cron ----
@@ -625,6 +735,7 @@ func printChecksText(all []check, root string) {
 	titles := map[string]string{
 		"deps":      "Dependencies:",
 		"config":    "Config:",
+		"convert":   "Convert (file ingestion):",
 		"cron":      "Cron (LaunchAgents):",
 		"state":     "State files:",
 		"freshness": "Freshness (from output/runs/):",

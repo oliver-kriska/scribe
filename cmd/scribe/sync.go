@@ -145,6 +145,19 @@ func (s *SyncCmd) Run() error {
 		}
 	}
 
+	// Phase 1.55b: Drain file inbox (raw/inbox/<file> → raw/articles/<slug>.md
+	// + originals moved to raw/inbox/.processed/). Routes through the convert
+	// dispatcher (tier 1 marker → tier 0 Go-native fallback). Failed
+	// conversions land in raw/inbox/.failed/<slug>/ with err.log so the user
+	// can inspect without losing the source file.
+	if !s.DryRun {
+		if drained, err := drainFileInbox(root); err != nil {
+			logMsg("sync", "file-inbox drain error: %v", err)
+		} else if drained > 0 {
+			logMsg("sync", "%d file(s) ingested from inbox", drained)
+		}
+	}
+
 	// Phase 1.6: Drain ingest inbox (queued URLs → raw/articles/).
 	if !s.DryRun {
 		if err := drainInbox(root, 0, false); err != nil {
