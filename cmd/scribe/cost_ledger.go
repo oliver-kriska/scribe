@@ -87,6 +87,30 @@ type claudeResultEnvelope struct {
 	} `json:"usage"`
 }
 
+// parseClaudeResult scans claude -p --output-format json stdout
+// line-by-line and returns the first line that parses as a result
+// envelope with type=="result". Returns (envelope, true) on hit,
+// (zero, false) on miss.
+//
+// Why line-scan instead of whole-buffer parse: claude emits a
+// single-line JSON object, but global hooks (CMUX session-end,
+// plugin postludes, --add-dir CLAUDE.md banners) can leak text
+// either before or after the envelope. A whole-buffer json.Unmarshal
+// fails on any trailing/leading byte. Line-scanning is forgiving.
+func parseClaudeResult(stdout string) (claudeResultEnvelope, bool) {
+	for _, line := range strings.Split(stdout, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "{") {
+			continue
+		}
+		var env claudeResultEnvelope
+		if err := json.Unmarshal([]byte(trimmed), &env); err == nil && env.Type == "result" {
+			return env, true
+		}
+	}
+	return claudeResultEnvelope{}, false
+}
+
 // isRateLimitSubtype detects rate-limit errors from the JSON
 // envelope's subtype field. The subtype set varies across claude
 // versions; the substrings listed here cover what's been observed

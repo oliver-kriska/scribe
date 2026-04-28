@@ -122,8 +122,8 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		return tailLines(combined, 15), fmt.Errorf("claude -p: %w", err)
 	}
 
-	var env claudeResultEnvelope
-	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(stdoutStr)), &env); jsonErr == nil && env.Type == "result" {
+	env, ok := parseClaudeResult(stdoutStr)
+	if ok {
 		if env.Usage.InputTokens > 0 {
 			in := env.Usage.InputTokens
 			entry.InputTokens = &in

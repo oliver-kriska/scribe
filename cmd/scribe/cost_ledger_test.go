@@ -324,6 +324,56 @@ func TestFormatRowUSD_BranchSelection(t *testing.T) {
 	}
 }
 
+func TestParseClaudeResult_HappyPath(t *testing.T) {
+	stdout := `{"type":"result","subtype":"success","is_error":false,"result":"ok","usage":{"input_tokens":10,"output_tokens":20},"total_cost_usd":0.001}`
+	env, ok := parseClaudeResult(stdout)
+	if !ok {
+		t.Fatal("expected parse to succeed")
+	}
+	if env.Result != "ok" || env.Usage.InputTokens != 10 || env.Usage.OutputTokens != 20 {
+		t.Errorf("envelope wrong: %+v", env)
+	}
+}
+
+func TestParseClaudeResult_TrailingHookNoise(t *testing.T) {
+	// CMUX / SessionEnd hooks can leak text after the JSON.
+	stdout := `{"type":"result","subtype":"success","is_error":false,"result":"ok","usage":{"input_tokens":5,"output_tokens":3}}` + "\n" +
+		"SessionEnd hook [cmux] failed: Hook cancelled\n"
+	env, ok := parseClaudeResult(stdout)
+	if !ok {
+		t.Fatal("trailing hook noise should not break parse")
+	}
+	if env.Usage.InputTokens != 5 {
+		t.Errorf("usage lost: %+v", env)
+	}
+}
+
+func TestParseClaudeResult_LeadingBannerNoise(t *testing.T) {
+	stdout := "Loading CLAUDE.md from /path...\n" +
+		"Plugin sync: 0 changes\n" +
+		`{"type":"result","subtype":"success","is_error":false,"result":"ok"}` + "\n"
+	env, ok := parseClaudeResult(stdout)
+	if !ok {
+		t.Fatal("leading banner should not break parse")
+	}
+	if env.Result != "ok" {
+		t.Errorf("envelope wrong: %+v", env)
+	}
+}
+
+func TestParseClaudeResult_NoEnvelopeReturnsFalse(t *testing.T) {
+	for _, stdout := range []string{
+		"",
+		"plain text response",
+		`{"type":"unknown","other":"value"}`,
+	} {
+		_, ok := parseClaudeResult(stdout)
+		if ok {
+			t.Errorf("did not expect parse to succeed on %q", stdout)
+		}
+	}
+}
+
 func TestIsRateLimitSubtype(t *testing.T) {
 	for _, sub := range []string{"rate_limit_exceeded", "QUOTA_EXCEEDED", "user_limit_reached"} {
 		if !isRateLimitSubtype(sub) {

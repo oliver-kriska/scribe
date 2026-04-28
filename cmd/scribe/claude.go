@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"embed"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -95,9 +94,13 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 	}
 
 	// Try to parse the JSON envelope. claude -p --output-format json
-	// emits one top-level object with usage and cost fields.
-	var env claudeResultEnvelope
-	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(stdoutStr)), &env); jsonErr == nil && env.Type == "result" {
+	// emits one top-level object on a single line, but hooks
+	// (SessionEnd, CMUX, plugin postlude) can leak text on
+	// surrounding lines that breaks a whole-buffer parse. Scan
+	// line-by-line for the first line that starts with `{` and
+	// unmarshals as a result envelope.
+	env, ok := parseClaudeResult(stdoutStr)
+	if ok {
 		// Capture token / cost numbers regardless of success/error
 		// status — even rate-limited or partial calls bill some
 		// input tokens and the user wants to see them.
