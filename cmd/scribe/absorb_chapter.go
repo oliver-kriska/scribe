@@ -53,7 +53,7 @@ func (s *SyncCmd) runPass1Whole(ctx context.Context, root, rawFile, planFile str
 	}
 	pass1Tools := []string{"Read", "Write", "Glob", "Grep"}
 	pass1Timeout := time.Duration(cfg.Pass1TimeoutMin) * time.Minute
-	if _, err := runClaude(ctx, root, pass1Prompt, cfg.Pass1Model, pass1Tools, pass1Timeout); err != nil {
+	if _, err := runClaude(withOpLabel(ctx, "absorb-pass1-whole"), root, pass1Prompt, cfg.Pass1Model, pass1Tools, pass1Timeout); err != nil {
 		return fmt.Errorf("pass1: %w", err)
 	}
 	return nil
@@ -202,7 +202,7 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 			if err != nil {
 				return fmt.Errorf("load chapter prompt %d: %w", r.index, err)
 			}
-			if _, err := runClaude(gctx, root, prompt, cfg.Pass1Model, pass1Tools, pass1Timeout); err != nil {
+			if _, err := runClaude(withOpLabel(gctx, "absorb-pass1-chapter"), root, prompt, cfg.Pass1Model, pass1Tools, pass1Timeout); err != nil {
 				if errors.Is(err, ErrRateLimit) {
 					rateLimitOnce.Do(func() { rateLimited = true })
 					return err

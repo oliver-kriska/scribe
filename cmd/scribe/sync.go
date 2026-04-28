@@ -831,7 +831,7 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 		"Bash(git log:*)", "Bash(git -C:*)", "Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
 	}
 	ctx := context.Background()
-	_, err = runClaude(ctx, root, prompt, s.Model, tools, 10*time.Minute)
+	_, err = runClaude(withOpLabel(ctx, "session-extract"), root, prompt, s.Model, tools, 10*time.Minute)
 	if err != nil {
 		return fmt.Errorf("claude extraction: %w", err)
 	}
@@ -1142,7 +1142,7 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 			}
 
 			ctx := context.Background()
-			_, err = runClaude(ctx, root, prompt, s.Model, tools, timeout)
+			_, err = runClaude(withOpLabel(ctx, "session-mine"), root, prompt, s.Model, tools, timeout)
 			if err != nil {
 				rl := errors.Is(err, ErrRateLimit)
 				results <- sessionResult{sessionID, false, rl, err}
@@ -1224,7 +1224,7 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 		}
 
 		ctx := context.Background()
-		_, err = runClaude(ctx, root, prompt, s.Model, tools, timeout)
+		_, err = runClaude(withOpLabel(ctx, "session-mine-batch"), root, prompt, s.Model, tools, timeout)
 		if err != nil {
 			if errors.Is(err, ErrRateLimit) {
 				logMsg("sync", "%s: rate limited — will resume next run (%d mined)", label, totalMined)
@@ -1607,7 +1607,7 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 	tools := []string{"Read", "Write", "Edit", "Glob", "Grep", "Bash(wc:*)"}
 	ctx := context.Background()
 	timeout := time.Duration(cfg.Absorb.SinglePassTimeoutMin) * time.Minute
-	_, err = runClaude(ctx, root, prompt, s.Model, tools, timeout)
+	_, err = runClaude(withOpLabel(ctx, "absorb-single"), root, prompt, s.Model, tools, timeout)
 	return err
 }
 
@@ -1763,7 +1763,7 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 			defer lock.Unlock()
 
 			logMsg("sync", "pass2 [%d/%d] writing %s", i+1, len(plan.Entities), ent.Label)
-			if _, err := runClaude(gctx, root, pass2Prompt, pass2Model, pass2Tools, pass2Timeout); err != nil {
+			if _, err := runClaude(withOpLabel(gctx, "absorb-pass2"), root, pass2Prompt, pass2Model, pass2Tools, pass2Timeout); err != nil {
 				if errors.Is(err, ErrRateLimit) {
 					rateLimitMu.Lock()
 					rateLimited = true

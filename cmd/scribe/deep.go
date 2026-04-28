@@ -124,7 +124,7 @@ func (d *DeepCmd) Run() error {
 		}
 
 		ctx := context.Background()
-		_, err = runClaude(ctx, root, prompt, d.Model, tools, 600*time.Second)
+		_, err = runClaude(withOpLabel(ctx, "deep-extract"), root, prompt, d.Model, tools, 600*time.Second)
 		if err != nil {
 			if errors.Is(err, ErrRateLimit) {
 				logMsg("deep", "  [%s] rate limited — stopping, will resume next run", relDir)

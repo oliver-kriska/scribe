@@ -194,7 +194,7 @@ func (s *SyncCmd) runFactsPass(ctx context.Context, root, rawFile, rawName strin
 			if err != nil {
 				return fmt.Errorf("load facts prompt %d: %w", r.index, err)
 			}
-			if _, err := runClaude(gctx, root, prompt, model, tools, timeout); err != nil {
+			if _, err := runClaude(withOpLabel(gctx, "absorb-facts"), root, prompt, model, tools, timeout); err != nil {
 				if errors.Is(err, ErrRateLimit) {
 					rateLimitOnce.Do(func() { rateLimited = true })
 					return err

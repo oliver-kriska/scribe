@@ -34,6 +34,21 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 		args = append(args, "--allowedTools", strings.Join(tools, ","))
 	}
 
+	// Phase 3D: start timer for the cost ledger. The deferred append
+	// fires regardless of return path so even errors get recorded.
+	started := time.Now()
+	op := opLabelFromContext(ctx)
+	entry := CostEntry{
+		Timestamp:   started.UTC().Format(time.RFC3339),
+		Model:       model,
+		Op:          op,
+		PromptChars: len(prompt),
+	}
+	defer func() {
+		entry.DurationMS = time.Since(started).Milliseconds()
+		appendCostEntry(root, entry)
+	}()
+
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
@@ -42,14 +57,26 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 	// Check for rate limit indicators in output.
 	if isRateLimited(outStr) {
 		tail := tailLines(outStr, 5)
+		entry.OK = false
+		entry.ErrKind = "rate_limit"
 		return tail, ErrRateLimit
 	}
 
 	if err != nil {
 		tail := tailLines(outStr, 15)
+		entry.OK = false
+		// Distinguish timeout (ctx.Err == context.DeadlineExceeded)
+		// from other process failures so the user can spot tuning
+		// problems vs. real errors in the ledger.
+		if ctx.Err() == context.DeadlineExceeded {
+			entry.ErrKind = "timeout"
+		} else {
+			entry.ErrKind = "other"
+		}
 		return tail, fmt.Errorf("claude -p: %w\n%s", err, tail)
 	}
 
+	entry.OK = true
 	return tailLines(outStr, 15), nil
 }
 

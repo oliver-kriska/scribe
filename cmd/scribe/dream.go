@@ -63,7 +63,7 @@ func (d *DreamCmd) Run() error {
 	}
 
 	ctx := context.Background()
-	_, err = runClaude(ctx, root, prompt, d.Model, tools, 3600*time.Second)
+	_, err = runClaude(withOpLabel(ctx, "dream"), root, prompt, d.Model, tools, 3600*time.Second)
 	if err != nil {
 		if errors.Is(err, ErrRateLimit) {
 			logMsg("dream", "rate limited — dream cycle interrupted, will retry next week")

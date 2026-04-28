@@ -197,7 +197,7 @@ func (a *AssessCmd) runTrack(ctx context.Context, root string, t assessTrack, en
 		"Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
 	}
 	timeout := time.Duration(a.Timeout) * time.Second
-	_, err = runClaude(ctx, root, prompt, a.Model, tools, timeout)
+	_, err = runClaude(withOpLabel(ctx, "assess-track"), root, prompt, a.Model, tools, timeout)
 	return err
 }
 
@@ -228,7 +228,7 @@ func (a *AssessCmd) runConsolidate(root string, entry *ProjectEntry, trackOuts m
 	// Consolidation gets a longer timeout because it writes multiple
 	// files (overview + possibly decisions + rolling entries + reindex).
 	timeout := time.Duration(a.Timeout*2) * time.Second
-	_, err = runClaude(context.Background(), root, prompt, a.Model, tools, timeout)
+	_, err = runClaude(withOpLabel(context.Background(), "assess-consolidate"), root, prompt, a.Model, tools, timeout)
 	return err
 }
 
