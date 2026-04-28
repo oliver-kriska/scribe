@@ -547,7 +547,28 @@ func (c *IngestFileCmd) Run() error {
 	}
 
 	ext := strings.ToLower(filepath.Ext(absPath))
-	title, body := normalizeForAbsorbWithPath(absPath, ext, string(data), c.Title)
+
+	// Direct dispatch through convertFile (instead of normalizeForAbsorbWithPath)
+	// so we can capture marker's MarkerStats and surface them in the
+	// raw article frontmatter — same wiring as the inbox drain path.
+	res, convErr := convertFile(absPath, ext, data, c.Title)
+	if convErr != nil {
+		return fmt.Errorf("convert: %w", convErr)
+	}
+	var (
+		title string
+		body  string
+		stats *MarkerStats
+	)
+	if res == nil {
+		// Plain-text passthrough — fall back to the legacy normalize so
+		// .md/.txt continue to behave the same.
+		title, body = normalizeForAbsorbWithPath(absPath, ext, string(data), c.Title)
+	} else {
+		title = res.Title
+		body = res.Markdown
+		stats = res.Stats
+	}
 	if body == "" {
 		return fmt.Errorf("convert: no body produced for %s — install marker-pdf for full format support, or use a supported tier 0 format (.md/.txt/.html/.pdf)", filepath.Base(absPath))
 	}
@@ -562,7 +583,7 @@ func (c *IngestFileCmd) Run() error {
 	// AbsorbCmd uses.
 	sourceURL := "file:///" + filepath.Base(absPath)
 
-	rawPath, content := buildRawArticle(root, sourceURL, title, body, "local", c.Domain, c.Tag)
+	rawPath, content := buildRawArticleWithStats(root, sourceURL, title, body, "local", c.Domain, c.Tag, stats)
 
 	if c.DryRun {
 		fmt.Printf("[dry-run] would write: %s\n", rawPath)
