@@ -12,12 +12,14 @@ import (
 	"time"
 )
 
-// IngestCmd groups URL capture operations. Default flow: queue a URL into the
-// inbox for later fetching. Drain processes the inbox. --now short-circuits
-// the queue and fetches synchronously.
+// IngestCmd groups URL and file capture operations. URL flow: queue a URL
+// into the inbox for later fetching, or --now to fetch synchronously.
+// File flow (Phase 1A): convert a local file via tier 1 marker (preferred)
+// or tier 0 Go-native and write the result into raw/articles/.
 type IngestCmd struct {
 	URL   IngestURLCmd   `cmd:"" help:"Queue a URL for ingestion (writes to output/inbox/, returns fast)."`
 	Drain IngestDrainCmd `cmd:"" help:"Process queued URLs from output/inbox/ into raw/articles/."`
+	File  IngestFileCmd  `cmd:"" help:"Convert and ingest a local file (PDF/DOCX/EPUB/HTML/TXT/MD). Mirrors the URL flow."`
 }
 
 // --- ingest URL ---
@@ -476,4 +478,92 @@ func slugify(s string) string {
 	s = slugifyRE.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	return s
+}
+
+// --- ingest file ---
+
+// IngestFileCmd converts a local file into raw/articles/ via the convert
+// dispatcher. Phase 1A handles .pdf/.html/.htm via tier 0 Go-native and
+// every supported format via tier 1 marker when installed. Plain-text
+// formats (.md/.txt) pass through unchanged.
+//
+// Flow mirrors IngestURLCmd: write into raw/articles/ → optionally
+// contextualize + absorb synchronously when --absorb is passed. The
+// inbox-watching variant (drop file in raw/inbox/ → cron drains it)
+// arrives in Phase 1B.
+type IngestFileCmd struct {
+	Path   string   `arg:"" help:"Path to a local file to ingest (md/txt/html/pdf, or anything marker handles when installed)."`
+	Title  string   `help:"Override the article title."`
+	Tag    []string `help:"Tag to add to frontmatter (repeatable)." short:"t"`
+	Domain string   `help:"Domain tag." default:"general"`
+	Absorb bool     `help:"Also contextualize + absorb synchronously after ingest." short:"a"`
+	DryRun bool     `help:"Print what would happen without writing." short:"n"`
+}
+
+func (c *IngestFileCmd) Run() error {
+	absPath, err := filepath.Abs(c.Path)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return fmt.Errorf("stat file: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%s is a directory", absPath)
+	}
+
+	root, err := kbDir()
+	if err != nil {
+		return err
+	}
+
+	data, err := os.ReadFile(absPath) //nolint:gosec // user-supplied source path; reading is the point
+	if err != nil {
+		return fmt.Errorf("read file: %w", err)
+	}
+
+	ext := strings.ToLower(filepath.Ext(absPath))
+	title, body := normalizeForAbsorbWithPath(absPath, ext, string(data), c.Title)
+	if body == "" {
+		return fmt.Errorf("convert: no body produced for %s — install marker-pdf for full format support, or use a supported tier 0 format (.md/.txt/.html/.pdf)", filepath.Base(absPath))
+	}
+	if title == "" {
+		title = strings.TrimSuffix(filepath.Base(absPath), ext)
+		title = strings.ReplaceAll(title, "-", " ")
+		title = strings.ReplaceAll(title, "_", " ")
+	}
+
+	// file:// URL keeps provenance honest in absorb-log without leaking
+	// the absorbing user's home directory into a public KB. Same shape
+	// AbsorbCmd uses.
+	sourceURL := "file:///" + filepath.Base(absPath)
+
+	rawPath, content := buildRawArticle(root, sourceURL, title, body, "local", c.Domain, c.Tag)
+
+	if c.DryRun {
+		fmt.Printf("[dry-run] would write: %s\n", rawPath)
+		fmt.Printf("  title:  %s\n", title)
+		fmt.Printf("  source: %s\n", sourceURL)
+		fmt.Printf("  bytes:  %d\n", len(content))
+		if c.Absorb {
+			fmt.Println("  next:   contextualize + absorb")
+		} else {
+			fmt.Println("  next:   (none, run scribe sync to absorb)")
+		}
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(rawPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir raw/articles: %w", err)
+	}
+	if err := os.WriteFile(rawPath, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write raw article: %w", err)
+	}
+	logMsg("ingest", "wrote %s", relPath(root, rawPath))
+
+	if !c.Absorb {
+		return nil
+	}
+	return contextualizeThenAbsorb(root, rawPath)
 }

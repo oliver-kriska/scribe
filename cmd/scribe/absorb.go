@@ -60,7 +60,10 @@ func (c *AbsorbCmd) Run() error {
 	}
 
 	ext := strings.ToLower(filepath.Ext(absPath))
-	title, body := normalizeForAbsorb(ext, string(data), c.Title)
+	title, body := normalizeForAbsorbWithPath(absPath, ext, string(data), c.Title)
+	if body == "" {
+		return fmt.Errorf("convert: no body produced for %s — see logs above (install marker-pdf for full format support)", filepath.Base(absPath))
+	}
 	if title == "" {
 		// Fall back to filename stem.
 		title = strings.TrimSuffix(filepath.Base(absPath), ext)
@@ -143,25 +146,63 @@ func (c *AbsorbCmd) Run() error {
 }
 
 // normalizeForAbsorb converts raw file bytes into a (title, body) pair
-// suitable for feeding buildRawArticle. Tag stripping for HTML is
-// intentionally simple — trafilatura is URL-oriented and we don't want a
-// Python dep for local files. The output feeds the LLM, which tolerates
-// lightly-formatted text.
+// suitable for feeding buildRawArticle. Plain-text formats are handled
+// in-process; binary/structured formats (.pdf, .html, .docx, .epub,
+// .pptx, .xlsx) route through convertFile, which picks tier 1 (marker)
+// when available or falls back to tier 0 Go-native converters.
+//
+// Errors from the converter (unsupported format, tool missing, etc.)
+// surface as an empty body — the caller (absorb.Run) is expected to
+// check len(body) and report the underlying error rather than feed a
+// blank article to the LLM. We swallow rather than propagate to keep
+// the function signature stable; convert errors are logged at logMsg
+// level for the user.
 func normalizeForAbsorb(ext, raw, overrideTitle string) (title, body string) {
+	return normalizeForAbsorbWithPath("", ext, raw, overrideTitle)
+}
+
+// normalizeForAbsorbWithPath is the variant absorb.Run calls when it
+// has a full path on disk (needed by tier 1 marker, which reads the
+// file itself rather than accepting bytes). Behavior matches
+// normalizeForAbsorb when path is empty.
+func normalizeForAbsorbWithPath(path, ext, raw, overrideTitle string) (title, body string) {
+	ext = strings.ToLower(ext)
 	switch ext {
 	case ".md", ".markdown":
 		title = firstMarkdownHeading(raw)
 		body = raw
-	case ".html", ".htm":
-		title = firstHTMLTitle(raw)
-		body = stripHTML(raw)
-	default:
-		// txt and unknowns: treat as prose, try first line as title.
+	case ".txt", "":
+		// Treat as prose, try first line as title.
 		title = firstNonEmptyLine(raw)
 		if len(title) > 120 {
 			title = title[:120]
 		}
 		body = raw
+	default:
+		// Structured formats: route through convertFile.
+		// We need a path for tier 1 marker; if the caller didn't
+		// provide one, fall back to the existing in-process HTML
+		// path so existing tests keep passing. Tier 0 PDF can
+		// work from bytes.
+		if path == "" && (ext == ".html" || ext == ".htm") {
+			title = firstHTMLTitle(raw)
+			body = stripHTML(raw)
+			break
+		}
+		res, err := convertFile(path, ext, []byte(raw), overrideTitle)
+		if err != nil {
+			logMsg("convert", "failed for %s: %v", filepath.Base(path), err)
+			return "", ""
+		}
+		if res == nil {
+			// Plain text passthrough signaled by the dispatcher.
+			title = firstNonEmptyLine(raw)
+			body = raw
+			break
+		}
+		title = res.Title
+		body = res.Markdown
+		logMsg("convert", "%s converted via %s (%d bytes md)", filepath.Base(path), res.Tier, len(body))
 	}
 
 	if overrideTitle != "" {
