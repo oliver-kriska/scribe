@@ -60,6 +60,7 @@ type CLI struct {
 	Skill          SkillCmd          `cmd:"" help:"Install or list the embedded scribe-kb agent skill bundle (Phase 7A)."`
 	Relations      RelationsCmd      `cmd:"" help:"Get/set/check typed relations between articles (Phase 6A)."`
 	Contradictions ContradictionsCmd `cmd:"" help:"Build/list/show/resolve the contradiction ledger (Phase 6B)."`
+	Stale          StaleCmd          `cmd:"" help:"Build/list/show the staleness ledger (Phase 6C)."`
 	Version        VersionCmd        `cmd:"" help:"Show version."`
 }
 

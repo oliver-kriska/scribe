@@ -22,7 +22,7 @@ import (
 // Mac was asleep.
 type DoctorCmd struct {
 	JSON        bool          `help:"Emit structured JSON instead of text."`
-	Section     string        `help:"Run only one section: deps | config | cron | state | freshness | errors | convert | contradictions | vault." enum:"deps,config,cron,state,freshness,errors,convert,contradictions,vault," default:""`
+	Section     string        `help:"Run only one section: deps | config | cron | state | freshness | errors | convert | contradictions | stale | vault." enum:"deps,config,cron,state,freshness,errors,convert,contradictions,stale,vault," default:""`
 	ErrorWindow time.Duration `help:"How far back to scan run records for errors." default:"24h"`
 }
 
@@ -52,7 +52,7 @@ func (c *DoctorCmd) Run() error {
 	}
 	cfg := loadConfig(root)
 
-	sectionOrder := []string{"deps", "config", "convert", "cron", "state", "freshness", "errors", "contradictions", "vault"}
+	sectionOrder := []string{"deps", "config", "convert", "cron", "state", "freshness", "errors", "contradictions", "stale", "vault"}
 	var all []check
 	for _, name := range sectionOrder {
 		if c.Section != "" && c.Section != name {
@@ -75,6 +75,8 @@ func (c *DoctorCmd) Run() error {
 			all = append(all, checkRecentErrors(root, time.Now(), c.ErrorWindow)...)
 		case "contradictions":
 			all = append(all, checkContradictions(root)...)
+		case "stale":
+			all = append(all, checkStale(root)...)
 		case "vault":
 			all = append(all, checkVaultScaffolding(root)...)
 		}

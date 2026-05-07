@@ -2,6 +2,22 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.8] — 2026-05-07
+
+### Phase 6C — Staleness ledger (v1: date + source signals)
+- New `wiki/_staleness.jsonl` ledger captures one entry per article that fires at least one signal. Two signals in v1: `date` (article's `updated:` is older than its type's half-life) and `source` (opt-in HEAD probe of `source_url:` returned 4xx/5xx or a network error).
+- Type half-lives (defaults, scribe.yaml override deferred): decision 180d, pattern 365d, solution 365d, research 90d, tool 365d, idea 90d, project 60d, anything else 365d. Articles with `status: superseded` (research or decision) are never date-stale.
+- `scribe stale build [--check-urls] [--max-urls N]` rebuilds the ledger. URL probes are off by default (network), capped at 100/run, parallel-bounded to 8. Idempotent — preserves `first_observed_at`. Removes the file when no entries remain.
+- `scribe stale list [--signal date|source] [--type ...]` prints triaged candidates. `scribe stale show <id-or-path>` prints the JSON entry.
+- `scribe doctor --section stale` summarises one warn line per active signal kind.
+- Ledger is a derived artifact — gitignore template + scriptorium .gitignore already cover it under `output/` patterns; explicit `wiki/_staleness.jsonl` ignore added to template.
+- Reference staleness (citing `[[X]]` where X has been superseded) ships in v2 once Phase 6A v2 LLM migrator populates typed `supersedes:` chains across the corpus.
+- **Known limitation**: scribe's own `lint --fix` and `tier write` bump `updated:` on every touch, so a freshly-backfilled KB will show 0 date-stale articles even when content is genuinely old. v2 will baseline against git-derived "last content change" instead. The signal becomes useful again as soon as the KB stops being mass-rewritten.
+
+### Doctor — `vault` section
+- New `scribe doctor --section vault` flags stray vault-tool scaffolding directories (`logseq/`, `pages/`) in a non-Logseq KB. Surfaces file count + directory size with a one-line `rm -rf … && echo … >> .gitignore` remediation.
+- Catches the case where Logseq ran once and left a thousand-file `bak/` autosave tree behind, which silently bloats the Obsidian graph and pads commit diffs.
+
 ## [0.2.7] — 2026-05-07
 
 ### Phase 6B — Contradiction ledger (v1: derived from typed edges)
