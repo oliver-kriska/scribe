@@ -2,6 +2,19 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.9] — 2026-05-07
+
+### Phase 7B — Declarative views (v1)
+- New `wiki/_views/<name>.scribe-view.yaml` files declare reusable KB slices: filter expression + sort spec + column projection. `scribe view <name>` evaluates the file and prints the result.
+- Schema (subset of Obsidian Bases semantics, scribe-flavored): `filters` (and/or/not tree with leaf clauses `{field, op, value}`), `sort` (per-field asc/desc), `view.columns` (positional), `view.limit`. Closed-set ops: `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `in`, `has`, `contains`, `exists`, `missing`. Mixed container/leaf shapes and unknown ops fail at parse time.
+- `scribe view --list` enumerates registered views with their `description:`. `scribe view <name> --show` dumps the parsed schema (no evaluation). `scribe view <name> --json | --csv` switches output format from the default Markdown table.
+- Frontmatter-only filters by design — no body content scan, no joins, no aggregates. Adding ops is a one-line switch arm; new shapes belong in v2.
+- Three reference views shipped in `scriptorium/wiki/_views/`: `active-decisions-enaia`, `stale-research`, `orphan-patterns`.
+- `--no-extract` shortcut not needed — sync's `--max=0` already does it.
+
+### Sync — `--max-absorb` flag
+- `scribe sync --max-absorb N` overrides `absorb.max_per_run` from scribe.yaml for a single run. Useful for one-shot backlog drains; default 0 keeps the config-driven behavior. `--dry-run --estimate` honors the override too.
+
 ## [0.2.8] — 2026-05-07
 
 ### Phase 6C — Staleness ledger (v1: date + source signals)

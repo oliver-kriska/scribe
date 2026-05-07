@@ -61,6 +61,7 @@ type CLI struct {
 	Relations      RelationsCmd      `cmd:"" help:"Get/set/check typed relations between articles (Phase 6A)."`
 	Contradictions ContradictionsCmd `cmd:"" help:"Build/list/show/resolve the contradiction ledger (Phase 6B)."`
 	Stale          StaleCmd          `cmd:"" help:"Build/list/show the staleness ledger (Phase 6C)."`
+	View           ViewCmd           `cmd:"" help:"Run declarative views over wiki frontmatter (Phase 7B)."`
 	Version        VersionCmd        `cmd:"" help:"Show version."`
 }
 
