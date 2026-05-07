@@ -1890,7 +1890,15 @@ func (s *SyncCmd) rebuildAndReindex(root string) error {
 		logMsg("sync", "%s", lastLine(out))
 	}
 
-	logMsg("sync", "index/backlinks/sections rebuilt")
+	// Contradiction ledger (Phase 6B). Cheap walk over typed
+	// `contradicts:` edges; merges with any prior ledger to preserve
+	// `first_observed_at` and resolution state across rebuilds.
+	out, _ = runCmdErr(root, scribeExe, "contradictions", "build")
+	if out != "" {
+		logMsg("sync", "%s", lastLine(out))
+	}
+
+	logMsg("sync", "index/backlinks/sections/contradictions rebuilt")
 
 	logMsg("sync", "reindexing qmd...")
 	out = runCmd(root, "qmd", "update")

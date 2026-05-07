@@ -25,41 +25,42 @@ var runStats map[string]any
 type CLI struct {
 	Root string `help:"Override KB root directory." type:"path" short:"C"`
 
-	Sync          SyncCmd          `cmd:"" help:"Discover, extract, mine sessions, absorb, reindex, commit."`
-	Lint          LintCmd          `cmd:"" help:"Run structural KB health checks."`
-	Validate      ValidateCmd      `cmd:"" help:"Validate YAML frontmatter in markdown files."`
-	Backlinks     BacklinksCmd     `cmd:"" help:"Rebuild _backlinks.json from wikilinks."`
-	Index         IndexCmd         `cmd:"" help:"Rebuild _index.md from disk."`
-	Orphans       OrphansCmd       `cmd:"" help:"Detect orphan articles and missing wikilinks."`
-	Triage        TriageCmd        `cmd:"" help:"Score sessions by knowledge density (FTS5)."`
-	Scan          ScanCmd          `cmd:"" help:"Pre-scan a project for extraction."`
-	Deep          DeepCmd          `cmd:"" help:"Deep-extract a project batch-by-directory."`
-	Capture       CaptureCmd       `cmd:"" help:"Capture iMessage self-chat URLs/notes into raw/articles/."`
-	Commit        CommitCmd        `cmd:"" help:"Auto-commit and push pending KB changes."`
-	Dream         DreamCmd         `cmd:"" help:"Run structured memory consolidation (4-phase dream cycle)."`
-	Link          LinkCmd          `cmd:"" help:"Link orphan articles to contextual hosts via See Also sections."`
-	Cron          CronCmd          `cmd:"" help:"Manage macOS LaunchAgents for scheduled KB jobs."`
-	Sessions      SessionsCmd      `cmd:"" help:"Debug and repair _sessions_log.json and the session pre-filter."`
-	Debug         DebugCmd         `cmd:"" help:"Low-level diagnostics (wikilinks, backlinks, frontmatter)."`
-	Ingest        IngestCmd        `cmd:"" help:"Ingest a URL into raw/articles/ (queue or synchronous)."`
-	Absorb        AbsorbCmd        `cmd:"" help:"Absorb a local file (md/txt/html) into the KB end-to-end: ingest → contextualize → absorb."`
-	Contextualize ContextualizeCmd `cmd:"" help:"Insert LLM-generated retrieval-context paragraph into raw articles for better qmd search."`
-	Status        StatusCmd        `cmd:"" help:"One-shot KB scoreboard: raw by density, absorb/contextualize progress, last sync, Ollama health."`
-	Init          InitCmd          `cmd:"" help:"Check dependencies, verify config, and prep a KB checkout."`
-	Hook          HookCmd          `cmd:"" help:"Claude Code lifecycle hooks (install via ~/.claude/settings.json)."`
-	Hot           HotCmd           `cmd:"" help:"Regenerate wiki/_hot.md context cache (deterministic, no LLM)."`
-	Write         WriteCmd         `cmd:"" help:"Create an article or append to rolling memory (CLI write surface for skills)."`
-	Watch         WatchCmd         `cmd:"" help:"Watch ccrider DB for new sessions (long-running, launchd-friendly)."`
-	Assess        AssessCmd        `cmd:"" help:"One-shot parallel deep assessment of a project (5 tracks + consolidation)."`
-	Doctor        DoctorCmd        `cmd:"" help:"Health check (deps, config, cron, state, run freshness). Read-only."`
-	InstallTools  InstallToolsCmd  `cmd:"" name:"install-tools" help:"Bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion."`
-	Fda           FDACmd           `cmd:"" name:"fda" help:"Probe macOS Full Disk Access for chat.db and guide the user through granting it."`
-	Cost          CostCmd          `cmd:"" help:"Summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger."`
-	Sections      SectionsCmd      `cmd:"" help:"Build/list/get section sidecars for wiki articles (Phase 5A)."`
-	Tier          TierCmd          `cmd:"" help:"Compute, set, or backfill index_tier for ranking (Phase 5B)."`
-	Skill         SkillCmd         `cmd:"" help:"Install or list the embedded scribe-kb agent skill bundle (Phase 7A)."`
-	Relations     RelationsCmd     `cmd:"" help:"Get/set/check typed relations between articles (Phase 6A)."`
-	Version       VersionCmd       `cmd:"" help:"Show version."`
+	Sync           SyncCmd           `cmd:"" help:"Discover, extract, mine sessions, absorb, reindex, commit."`
+	Lint           LintCmd           `cmd:"" help:"Run structural KB health checks."`
+	Validate       ValidateCmd       `cmd:"" help:"Validate YAML frontmatter in markdown files."`
+	Backlinks      BacklinksCmd      `cmd:"" help:"Rebuild _backlinks.json from wikilinks."`
+	Index          IndexCmd          `cmd:"" help:"Rebuild _index.md from disk."`
+	Orphans        OrphansCmd        `cmd:"" help:"Detect orphan articles and missing wikilinks."`
+	Triage         TriageCmd         `cmd:"" help:"Score sessions by knowledge density (FTS5)."`
+	Scan           ScanCmd           `cmd:"" help:"Pre-scan a project for extraction."`
+	Deep           DeepCmd           `cmd:"" help:"Deep-extract a project batch-by-directory."`
+	Capture        CaptureCmd        `cmd:"" help:"Capture iMessage self-chat URLs/notes into raw/articles/."`
+	Commit         CommitCmd         `cmd:"" help:"Auto-commit and push pending KB changes."`
+	Dream          DreamCmd          `cmd:"" help:"Run structured memory consolidation (4-phase dream cycle)."`
+	Link           LinkCmd           `cmd:"" help:"Link orphan articles to contextual hosts via See Also sections."`
+	Cron           CronCmd           `cmd:"" help:"Manage macOS LaunchAgents for scheduled KB jobs."`
+	Sessions       SessionsCmd       `cmd:"" help:"Debug and repair _sessions_log.json and the session pre-filter."`
+	Debug          DebugCmd          `cmd:"" help:"Low-level diagnostics (wikilinks, backlinks, frontmatter)."`
+	Ingest         IngestCmd         `cmd:"" help:"Ingest a URL into raw/articles/ (queue or synchronous)."`
+	Absorb         AbsorbCmd         `cmd:"" help:"Absorb a local file (md/txt/html) into the KB end-to-end: ingest → contextualize → absorb."`
+	Contextualize  ContextualizeCmd  `cmd:"" help:"Insert LLM-generated retrieval-context paragraph into raw articles for better qmd search."`
+	Status         StatusCmd         `cmd:"" help:"One-shot KB scoreboard: raw by density, absorb/contextualize progress, last sync, Ollama health."`
+	Init           InitCmd           `cmd:"" help:"Check dependencies, verify config, and prep a KB checkout."`
+	Hook           HookCmd           `cmd:"" help:"Claude Code lifecycle hooks (install via ~/.claude/settings.json)."`
+	Hot            HotCmd            `cmd:"" help:"Regenerate wiki/_hot.md context cache (deterministic, no LLM)."`
+	Write          WriteCmd          `cmd:"" help:"Create an article or append to rolling memory (CLI write surface for skills)."`
+	Watch          WatchCmd          `cmd:"" help:"Watch ccrider DB for new sessions (long-running, launchd-friendly)."`
+	Assess         AssessCmd         `cmd:"" help:"One-shot parallel deep assessment of a project (5 tracks + consolidation)."`
+	Doctor         DoctorCmd         `cmd:"" help:"Health check (deps, config, cron, state, run freshness). Read-only."`
+	InstallTools   InstallToolsCmd   `cmd:"" name:"install-tools" help:"Bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion."`
+	Fda            FDACmd            `cmd:"" name:"fda" help:"Probe macOS Full Disk Access for chat.db and guide the user through granting it."`
+	Cost           CostCmd           `cmd:"" help:"Summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger."`
+	Sections       SectionsCmd       `cmd:"" help:"Build/list/get section sidecars for wiki articles (Phase 5A)."`
+	Tier           TierCmd           `cmd:"" help:"Compute, set, or backfill index_tier for ranking (Phase 5B)."`
+	Skill          SkillCmd          `cmd:"" help:"Install or list the embedded scribe-kb agent skill bundle (Phase 7A)."`
+	Relations      RelationsCmd      `cmd:"" help:"Get/set/check typed relations between articles (Phase 6A)."`
+	Contradictions ContradictionsCmd `cmd:"" help:"Build/list/show/resolve the contradiction ledger (Phase 6B)."`
+	Version        VersionCmd        `cmd:"" help:"Show version."`
 }
 
 type VersionCmd struct{}

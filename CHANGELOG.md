@@ -4,6 +4,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [0.2.7] — 2026-05-07
 
+### Phase 6B — Contradiction ledger (v1: derived from typed edges)
+- New `wiki/_contradictions.jsonl` ledger built from typed `contradicts:` edges. Each entry pairs two articles canonically (sorted), assigns a stable FNV-1a pair ID, and tracks `first_observed_at` / `last_seen_at` / `resolved_at` / `resolution_note`. Symmetric A↔B edges collapse to one entry; one-directional edges still produce one entry with a single source.
+- `scribe contradictions build` rebuilds the ledger from disk. Idempotent — preserves `first_observed_at` across rebuilds, drops entries whose underlying edges are gone (deletes the file when empty). Wired into `scribe sync` next to `sections build`.
+- `scribe contradictions list` shows pair / resolved-state / first-observed / sources. `scribe contradictions show <id>` prints one entry. `scribe contradictions resolve <id> <note>` marks an entry resolved while keeping it on file as a paper trail.
+- `scribe doctor --section contradictions` warns once per unresolved pair. The intent is gentle nagging, not blocking commits.
+- Ledger is a derived artifact — added to gitignore template + scriptorium .gitignore.
+
+LLM pass-2 contradiction discovery (auto-detected, not just declared) ships in 6B v2.
+
 ### Phase 6A — Typed relations (v1: schema + manual surface)
 - Frontmatter gains 10 typed-edge keys: `supersedes, superseded_by, contradicts, applies_to, derived_from, instance_of, specializes, extends, cited_by, informs`. Each carries `[[Wikilink]]` payloads, same shape as `related:`. Untyped `related:` stays as the easy-out for genuinely loose connections.
 - Closed set per article type validated by `scribe lint`: decision (supersedes/superseded_by/contradicts), solution (applies_to/derived_from), pattern (instance_of/specializes/applies_to), research (extends/cited_by/informs), tool (derived_from), idea (instance_of).

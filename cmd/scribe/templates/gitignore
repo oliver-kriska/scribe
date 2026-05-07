@@ -2,5 +2,6 @@ output/
 *.lock
 .DS_Store
 
-# Derived KB artifacts (rebuild via `scribe sections build`)
+# Derived KB artifacts (rebuild via `scribe sections build` / `scribe contradictions build`)
 wiki/_sections/
+wiki/_contradictions.jsonl
