@@ -247,6 +247,25 @@ func TestIsRateLimited_NegativeCases(t *testing.T) {
 	}
 }
 
+// TestIsRateLimited_DocumentsContentPoisoningRisk documents *why* the
+// caller contract requires stderr-only input. These strings represent
+// real article content (technical writing about rate-limited APIs) and
+// the matcher correctly classifies them as rate-limit signals — which
+// is exactly the failure mode that stranded scribe sync runs before
+// the call-site fix. Treat this test as a pinned reminder: do not
+// pass stdout, model output, or article content to isRateLimited.
+func TestIsRateLimited_DocumentsContentPoisoningRisk(t *testing.T) {
+	for _, articleContent := range []string{
+		`Git's HTTP transport now handles HTTP 429 "Too Many Requests" responses.`,
+		`Designing for rate limits is a core part of any production API client.`,
+		`When the upstream returns 429, our backoff kicks in.`,
+	} {
+		if !isRateLimited(articleContent) {
+			t.Errorf("expected matcher to flag tech-writing snippet (this is the false-positive risk we're guarding against): %q", articleContent)
+		}
+	}
+}
+
 func TestSummarizeCosts_PrefersActualUSDWhenPresent(t *testing.T) {
 	tmp := t.TempDir()
 	in1, out1 := int64(1000), int64(500)

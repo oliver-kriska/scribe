@@ -104,7 +104,12 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 	stderrStr := stderrBuf.String()
 	combined := stdoutStr + "\n" + stderrStr
 
-	if isRateLimited(combined) {
+	// Rate-limit text-matching scans stderr only — see claude.go for
+	// the full rationale. Short version: ~10% of articles in the
+	// corpus discuss rate-limiting as a topic, and matching against
+	// the model's response content (stdout) produces catastrophic
+	// false positives that strand whole absorb runs.
+	if isRateLimited(stderrStr) {
 		entry.OK = false
 		entry.ErrKind = "rate_limit"
 		return tailLines(combined, 5), ErrRateLimit

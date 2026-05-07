@@ -70,11 +70,20 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 	stderrStr := stderrBuf.String()
 	combined := stdoutStr + "\n" + stderrStr
 
-	// Rate-limit text detection runs first across the combined
-	// output. Some rate-limit responses come back as well-formed
-	// JSON envelopes with is_error=true; others crash claude before
-	// it emits one. The text matcher is the safety net.
-	if isRateLimited(combined) {
+	// Rate-limit text detection runs first as a safety net for cases
+	// where claude crashes before emitting a JSON envelope. We scan
+	// **stderr only** — never stdout. Stdout carries the model's
+	// response (the result string, the JSON envelope), and ~10% of
+	// real-world articles in this corpus discuss rate-limiting as a
+	// topic ("HTTP 429", "rate limit", "quota exceeded"). Matching
+	// against that content produced massive false positives that
+	// stranded entire absorb/contextualize runs. Genuine API
+	// rate-limit responses come back as JSON envelopes with
+	// is_error=true and a rate-limit subtype, which is handled
+	// structurally below. CLI-banner rate-limit messages from the
+	// claude binary itself land in stderr — that's what we still
+	// match here.
+	if isRateLimited(stderrStr) {
 		entry.OK = false
 		entry.ErrKind = "rate_limit"
 		return tailLines(combined, 5), ErrRateLimit
@@ -170,6 +179,17 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 
 // isRateLimited checks if claude output indicates a rate limit.
 //
+// **Caller contract: only call on stderr, never on stdout or the model's
+// result content.** A meaningful slice of any tech corpus discusses
+// rate-limiting as a topic ("HTTP 429", "rate limit exceeded",
+// "quota exceeded"), so feeding stdout — which carries the model's
+// response — through this matcher produces catastrophic false positives
+// that strand entire absorb/contextualize runs. Genuine API rate-limit
+// responses surface structurally via the JSON envelope (is_error=true
+// + rate-limit subtype) and are handled separately by callers; this
+// function is only a safety net for CLI-banner errors that arrive on
+// stderr before the JSON envelope is emitted.
+//
 // String matching is the only reliable signal short of switching to
 // claude -p --output-format json (deferred to a future phase). The
 // list below covers what's been observed in practice from the CLI
@@ -180,7 +200,8 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 //
 // False positives here cost a single retry; false negatives let
 // errors land in the ledger as err_kind=other and pollute the
-// "other" bucket. Bias toward false positives.
+// "other" bucket. Bias toward false positives — but only over
+// stderr, where false positives are rare.
 func isRateLimited(output string) bool {
 	lower := strings.ToLower(output)
 	for _, needle := range []string{
