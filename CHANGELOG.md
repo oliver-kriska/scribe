@@ -2,6 +2,14 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.2] — 2026-05-07
+
+### Dependencies
+- `github.com/mattn/go-sqlite3` 1.14.42 → 1.14.44
+- `github.com/fsnotify/fsnotify` 1.9.0 → 1.10.1
+- `golang.org/x/net` 0.47.0 → 0.53.0 (indirect)
+- `golang.org/x/sys` 0.38.0 → 0.43.0 (indirect)
+
 ## [0.2.1] — 2026-05-07
 
 ### Capture
