@@ -2,6 +2,27 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.1] — 2026-05-07
+
+### Capture
+- `capture.self_chat_handles` (list) replaces `self_chat_handle` (singular). iMessage creates a distinct chat per address you message yourself with — accounts using both phone + Apple-ID email lost half their links to the unconfigured chat. Legacy singular still honored; `SCRIBE_SELF_CHAT_ID` env override now accepts comma-separated values.
+- macOS `handle` table fanout fix: each (id, service) pair gets its own ROWID. Capture now collects every ROWID per id and queries with `IN (?,?,...)` so messages joined via the iMessage-vs-SMS ROWID stop disappearing.
+
+### Fetch
+- arxiv-aware tier ahead of trafilatura/jina. Routes any `arxiv.org/{abs,pdf,html}/<id>` URL to the richest available source — `/html/<id>v1` first (full paper, ~1s), `/pdf/<id>` + marker fallback (universal, ~10–30s), jina last-resort. Frontmatter enriched with title/authors/published/categories from `export.arxiv.org/api/query`. Honors HTTP 429 Retry-After with one polite retry.
+
+### Absorb
+- Chapter-aware path now accepts the `headings` strategy, not just `toc`. Markdown articles with H1-H6 structure get chapter-paralleled pass-1 instead of falling through to a single 17K+ shot at haiku. Same `chapter_threshold: 3` gate applies.
+- Rate-limit matcher scoped to stderr only. Scanning combined stdout+stderr produced massive false positives whenever the model's response or article content discussed rate-limiting as a topic (~10% of real-world articles). Genuine API rate-limit *responses* still surface structurally via the JSON envelope.
+- `pass1_timeout_min` default bumped 3 → 5 minutes for the dense long-tail.
+- 1.5s polite pacing between successful contextualize calls — bursty Haiku quotas were stranding the rest of the queue mid-run.
+
+### Lint
+- `Frontmatter.Stack` is now `any` so list-valued `stack: [Go, SQLite, ...]` frontmatter parses cleanly. Lint also surfaces the actual yaml.v3 error instead of the catch-all "missing or invalid YAML frontmatter".
+
+### Observability
+- New `output/errors/<date>.jsonl` ledger captures full stderr/stdout tails (~50 lines each) when `claude -p` fails on non-rate-limit paths. Terminal output stays terse; debugging gets the context.
+
 ## [0.2.0] — 2026-04-28
 
 ### Ingest pipeline
