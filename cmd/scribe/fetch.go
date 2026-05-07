@@ -23,8 +23,9 @@ type fetchResult struct {
 }
 
 // fetchURL routes a URL through the appropriate fetcher and returns the result.
-// Order: FxTwitter for X/Twitter → trafilatura (local) → Jina Reader (fallback).
-// forced lets callers pin a specific fetcher ("fxtwitter", "trafilatura", "jina").
+// Order: arxiv-aware tier for arxiv.org → FxTwitter for X/Twitter → trafilatura
+// (local) → Jina Reader (fallback). forced lets callers pin a specific fetcher
+// ("fxtwitter", "trafilatura", "jina", "arxiv").
 func fetchURL(ctx context.Context, rawURL, forced string) (fetchResult, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme == "" {
@@ -37,6 +38,8 @@ func fetchURL(ctx context.Context, rawURL, forced string) (fetchResult, error) {
 	isTwitter := host == "x.com" || host == "twitter.com" || host == "mobile.twitter.com"
 
 	switch forced {
+	case "arxiv":
+		return fetchArxiv(ctx, rawURL)
 	case "fxtwitter":
 		return fetchFxTwitter(ctx, rawURL)
 	case "trafilatura":
@@ -47,6 +50,16 @@ func fetchURL(ctx context.Context, rawURL, forced string) (fetchResult, error) {
 		// fall through to auto logic
 	default:
 		return fetchResult{}, fmt.Errorf("unknown fetcher: %s", forced)
+	}
+
+	// arxiv tier — handles /abs, /pdf, /html forms and rewrites to the richest
+	// available source (HTML → PDF+marker), enriching with arxiv API metadata.
+	if isArxivURL(u) {
+		res, err := fetchArxiv(ctx, rawURL)
+		if err == nil {
+			return res, nil
+		}
+		logMsg("fetch", "arxiv tier failed for %s: %v (falling back to generic tiers)", rawURL, err)
 	}
 
 	if isTwitter {
