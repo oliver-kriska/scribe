@@ -10,8 +10,13 @@ import (
 )
 
 var (
-	requiredFields  = []string{"title", "type", "created", "updated", "domain", "confidence", "tags", "related", "sources"}
-	validTypes      = map[string]bool{"project": true, "tool": true, "person": true, "decision": true, "pattern": true, "solution": true, "research": true}
+	requiredFields = []string{"title", "type", "created", "updated", "domain", "confidence", "tags", "related", "sources"}
+	// validTypes mirrors the wikiDirs taxonomy: every directory under
+	// wikiDirs (config.go) needs a corresponding allowed type, otherwise
+	// content placed there fails lint by construction. "idea" was missing
+	// even though "ideas/" is in wikiDirs — the gap stranded any
+	// idea-typed article on every lint pass.
+	validTypes      = map[string]bool{"project": true, "tool": true, "person": true, "decision": true, "pattern": true, "solution": true, "research": true, "idea": true}
 	validConfidence = map[string]bool{"high": true, "medium": true, "low": true}
 	validAuthority  = map[string]bool{"canonical": true, "contextual": true, "opinion": true}
 
@@ -21,10 +26,13 @@ var (
 	validDomainsOverride map[string]bool
 
 	typeFields = map[string]map[string]map[string]bool{
-		"project":  {"status": {"active": true, "paused": true, "completed": true, "idea": true}},
-		"tool":     {"verdict": {"use": true, "evaluate": true, "skip": true}},
+		"project": {"status": {"active": true, "paused": true, "completed": true, "idea": true}},
+		"tool":    {"verdict": {"use": true, "evaluate": true, "skip": true}},
+		// "superseded" is shared between decision and research: a research
+		// note replaced by a newer plan has the same lifecycle shape as a
+		// decision rendered obsolete by a follow-on decision.
 		"decision": {"status": {"decided": true, "reconsidering": true, "superseded": true}},
-		"research": {"status": {"active": true, "completed": true, "stale": true}, "depth": {"shallow": true, "moderate": true, "deep": true}},
+		"research": {"status": {"active": true, "completed": true, "stale": true, "superseded": true}, "depth": {"shallow": true, "moderate": true, "deep": true}},
 	}
 
 	dateRE = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)

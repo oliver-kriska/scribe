@@ -2,6 +2,12 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.3] — 2026-05-07
+
+### Lint
+- `idea` added to `validTypes`. `ideas/` is in `wikiDirs` but the type was rejected, so any idea-typed article failed lint by construction.
+- `superseded` added to research's allowed status set, mirroring the same value already accepted for decision. A research note replaced by a follow-on plan has the same lifecycle shape as a superseded decision.
+
 ## [0.2.2] — 2026-05-07
 
 ### Dependencies
