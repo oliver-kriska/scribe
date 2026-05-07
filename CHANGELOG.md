@@ -2,6 +2,24 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.5] — 2026-05-07
+
+### Phase 5A — Section sidecar
+- New `wiki/_sections/<dir>/<slug>.json` parallel tree captures every wiki article's H1/H2/H3 structure (id, title, level, line range, byte range, token estimate). Anchor IDs follow Obsidian/Logseq `^slug` convention so wikilinks like `[[Article#^methods]]` work in either vault tool.
+- `scribe sections build` recomputes every sidecar (regex pass, no LLM, ~1s for 1500 articles). Wired into `scribe sync` next to `backlinks`/`index`.
+- `scribe sections list <article>` prints the section index. `scribe sections get <article> <id>` prints one section's body. Both accept either a file path or a frontmatter title.
+- Sidecars are derived artifacts — added to gitignore template + scriptorium .gitignore.
+
+### Phase 5B — Tiered index hint
+- New `index_tier:` frontmatter field with closed set `stub | brief | standard | deep | reference`. Computed from body word count + section count + (for raw articles) `fetched_via`. `index_tier_override:` lets a human pin a value that survives recomputes.
+- `scribe tier list [--tier X] [--missing]` shows tier per article with counts. `scribe tier compute <article>` prints the rationale (words, sections, computed value). `scribe tier set <article> <tier>` writes the override. `scribe tier write --missing-only|--all [-n]` backfills the computed tier into frontmatter.
+- Lint warns (not errors) on missing tier so the field rolls out without a flag-day migration.
+- `validate.go` rejects out-of-set values for `index_tier` and `index_tier_override`.
+
+### Phase 7C — Defuddle fetcher tier
+- New tier between trafilatura and jina in the cascade: `arxiv → fxtwitter → trafilatura → defuddle → jina`. Picks up JS-heavy modern sites where trafilatura returns empty. Optional dependency — silently skipped when `defuddle` isn't on PATH.
+- `--fetcher defuddle` is now a valid forced choice.
+
 ## [0.2.4] — 2026-05-07
 
 ### Capture

@@ -55,6 +55,8 @@ type CLI struct {
 	InstallTools  InstallToolsCmd  `cmd:"" name:"install-tools" help:"Bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion."`
 	Fda           FDACmd           `cmd:"" name:"fda" help:"Probe macOS Full Disk Access for chat.db and guide the user through granting it."`
 	Cost          CostCmd          `cmd:"" help:"Summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger."`
+	Sections      SectionsCmd      `cmd:"" help:"Build/list/get section sidecars for wiki articles (Phase 5A)."`
+	Tier          TierCmd          `cmd:"" help:"Compute, set, or backfill index_tier for ranking (Phase 5B)."`
 	Version       VersionCmd       `cmd:"" help:"Show version."`
 }
 

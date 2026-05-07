@@ -121,6 +121,17 @@ func (l *LintCmd) Run() error {
 			fmt.Printf("  WARN %s: bloated article (%d lines, should split at 150)\n", rel, lines)
 			warnings++
 		}
+
+		// Phase 5B: index_tier presence. Warn (not error) when the
+		// computed tier hasn't been written into frontmatter yet, so
+		// the field can roll out without a flag-day migration. Lint
+		// remains green; a follow-up `scribe tier write --missing-only`
+		// resolves the warning. Skip for rolling files (they don't
+		// participate in retrieval ranking the same way).
+		if fm != nil && !fm.Rolling && strings.TrimSpace(fm.IndexTier) == "" {
+			fmt.Printf("  WARN %s: index_tier missing (run `scribe tier write --missing-only`)\n", rel)
+			warnings++
+		}
 	}
 
 	// Phase 3: Orphans and missing pages

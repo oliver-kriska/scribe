@@ -1882,7 +1882,15 @@ func (s *SyncCmd) rebuildAndReindex(root string) error {
 		logMsg("sync", "%s", lastLine(out))
 	}
 
-	logMsg("sync", "index/backlinks rebuilt")
+	// Section sidecars (Phase 5A). Cheap regex pass over every article;
+	// runs alongside the existing index/backlinks rebuild so any wiki
+	// edit absorbed in this cycle is reflected in the section index.
+	out, _ = runCmdErr(root, scribeExe, "sections", "build")
+	if out != "" {
+		logMsg("sync", "%s", lastLine(out))
+	}
+
+	logMsg("sync", "index/backlinks/sections rebuilt")
 
 	logMsg("sync", "reindexing qmd...")
 	out = runCmd(root, "qmd", "update")

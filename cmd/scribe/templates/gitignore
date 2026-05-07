@@ -1,3 +1,6 @@
 output/
 *.lock
 .DS_Store
+
+# Derived KB artifacts (rebuild via `scribe sections build`)
+wiki/_sections/

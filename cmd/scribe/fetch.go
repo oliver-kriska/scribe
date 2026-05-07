@@ -23,9 +23,16 @@ type fetchResult struct {
 }
 
 // fetchURL routes a URL through the appropriate fetcher and returns the result.
-// Order: arxiv-aware tier for arxiv.org → FxTwitter for X/Twitter → trafilatura
-// (local) → Jina Reader (fallback). forced lets callers pin a specific fetcher
-// ("fxtwitter", "trafilatura", "jina", "arxiv").
+// Cascade order (Phase 7C):
+//
+//	arxiv-aware tier (arxiv.org only) → FxTwitter (x/twitter only) →
+//	trafilatura (local Python, ~80% of sites) → defuddle (local Node,
+//	better on JS-heavy SPAs) → Jina Reader (hosted-API last resort).
+//
+// Local-first, hosted-API-last shape preserved across the chain. Each
+// tier is optional: a missing binary or a hard fail falls through to
+// the next. forced lets callers pin a specific fetcher ("fxtwitter",
+// "trafilatura", "defuddle", "jina", "arxiv").
 func fetchURL(ctx context.Context, rawURL, forced string) (fetchResult, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme == "" {
@@ -44,6 +51,8 @@ func fetchURL(ctx context.Context, rawURL, forced string) (fetchResult, error) {
 		return fetchFxTwitter(ctx, rawURL)
 	case "trafilatura":
 		return fetchTrafilatura(ctx, rawURL)
+	case "defuddle":
+		return fetchDefuddle(ctx, rawURL)
 	case "jina":
 		return fetchJina(ctx, rawURL)
 	case "", "auto":
@@ -71,6 +80,13 @@ func fetchURL(ctx context.Context, rawURL, forced string) (fetchResult, error) {
 
 	// Try trafilatura first — local, fast, works for most articles.
 	if res, err := fetchTrafilatura(ctx, rawURL); err == nil && strings.TrimSpace(res.Body) != "" {
+		return res, nil
+	}
+
+	// Defuddle picks up JS-heavy modern sites where trafilatura returns
+	// empty. Optional — when not installed we skip silently and fall
+	// through to Jina.
+	if res, err := fetchDefuddle(ctx, rawURL); err == nil && strings.TrimSpace(res.Body) != "" {
 		return res, nil
 	}
 

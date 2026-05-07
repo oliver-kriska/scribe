@@ -183,6 +183,19 @@ func validateFile(root, path string) []string {
 		errs = append(errs, fmt.Sprintf("invalid authority: '%s' (expected: %s)", fm.Authority, strings.Join(keys, ", ")))
 	}
 
+	// Validate index_tier and index_tier_override (Phase 5B). Both
+	// optional — missing tier is a lint warning, not a validate error.
+	// A stored value outside the closed set is the failure mode that
+	// matters (a typo would shadow the computed value).
+	if fm.IndexTier != "" && !validIndexTiers[fm.IndexTier] {
+		keys := sortedKeys(validIndexTiers)
+		errs = append(errs, fmt.Sprintf("invalid index_tier: '%s' (expected: %s)", fm.IndexTier, strings.Join(keys, ", ")))
+	}
+	if fm.IndexTierOverride != "" && !validIndexTiers[fm.IndexTierOverride] {
+		keys := sortedKeys(validIndexTiers)
+		errs = append(errs, fmt.Sprintf("invalid index_tier_override: '%s' (expected: %s)", fm.IndexTierOverride, strings.Join(keys, ", ")))
+	}
+
 	// Validate dates. Go's YAML parser auto-converts YYYY-MM-DD to time.Time,
 	// so a time.Time value is already valid; only string values need regex
 	// checking (they arrived as quoted YAML scalars).

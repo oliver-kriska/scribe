@@ -960,6 +960,16 @@ type Frontmatter struct {
 	//   opinion — raw captures, tweets, excerpts; loses by default
 	// Absent = "contextual" for wiki pages, "opinion" for raw articles.
 	Authority string `yaml:"authority,omitempty"`
+	// IndexTier (Phase 5B) controls qmd ranking weight. Computed by
+	// scribe from body length, heading count, and article type unless
+	// the human pinned a specific value via IndexTierOverride.
+	//   stub      — ≤80 words OR fetched_via=stub; excluded from search
+	//   brief     — 81–199 words OR fxtwitter capture
+	//   standard  — 200–1999 words; ordinary article
+	//   deep      — 2000+ words OR ≥5 sections in sidecar
+	//   reference — explicit human marker for canonical artifacts
+	IndexTier         string `yaml:"index_tier,omitempty"`
+	IndexTierOverride string `yaml:"index_tier_override,omitempty"`
 }
 
 // parseFrontmatter extracts YAML frontmatter from markdown content.
