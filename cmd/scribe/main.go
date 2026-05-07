@@ -57,6 +57,7 @@ type CLI struct {
 	Cost          CostCmd          `cmd:"" help:"Summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger."`
 	Sections      SectionsCmd      `cmd:"" help:"Build/list/get section sidecars for wiki articles (Phase 5A)."`
 	Tier          TierCmd          `cmd:"" help:"Compute, set, or backfill index_tier for ranking (Phase 5B)."`
+	Skill         SkillCmd         `cmd:"" help:"Install or list the embedded scribe-kb agent skill bundle (Phase 7A)."`
 	Version       VersionCmd       `cmd:"" help:"Show version."`
 }
 

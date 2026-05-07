@@ -2,6 +2,15 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.6] — 2026-05-07
+
+### Phase 7A — Skill bundle
+- Embedded `scribe-kb` agent-skill bundle (7 files, ~30 KB): top-level `SKILL.md` + 6 reference docs (`FRONTMATTER`, `WIKILINKS`, `STRUCTURE`, `DROP_FILES`, `QUERY`, `COMPAT`). Follows the [agentskills.io specification](https://agentskills.io/specification) so any Claude Code / Codex CLI / OpenCode session can adopt it without per-vendor adaptation.
+- `scribe skill install [--target <dir>] [--check] [--force]` writes the embedded tree to `<KB-root>/.claude/skills/scribe-kb/` by default. Idempotent (SHA-256 short-circuit on unchanged files). Hand edits flagged with `<!-- scribe-skill: hand-edited, do not overwrite -->` are preserved unless `--force`.
+- `scribe skill install --check` reports drift between the embedded version and what's on disk. Non-zero exit on drift, suitable for pre-commit / CI.
+- `scribe skill list` prints the bundle contents (path + size).
+- Source of truth: `cmd/scribe/skills/scribe-kb/`. Update content there; embed picks it up on `make build`.
+
 ## [0.2.5] — 2026-05-07
 
 ### Phase 5A — Section sidecar
