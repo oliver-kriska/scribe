@@ -6,3 +6,8 @@ output/
 wiki/_sections/
 wiki/_contradictions.jsonl
 wiki/_staleness.jsonl
+
+# Phase 6A v2 classifier cache — derived from the source frontmatter,
+# safe to regenerate. Migration logs (wiki/_relations_migration_*.jsonl)
+# stay committed so revert works from any clone.
+wiki/_relations_classifier/

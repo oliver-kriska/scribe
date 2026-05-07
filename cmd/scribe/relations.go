@@ -197,11 +197,13 @@ func joinKinds(ks []RelationKind) string {
 // --assisted / revert) ships in a follow-up; this v1 surface is
 // strictly manual + integrity-checking.
 type RelationsCmd struct {
-	Get   RelationsGetCmd   `cmd:"" help:"Print typed edges from one article."`
-	Set   RelationsSetCmd   `cmd:"" help:"Add a typed edge to one article (idempotent)."`
-	Rm    RelationsRmCmd    `cmd:"" name:"rm" help:"Remove a typed edge from one article."`
-	Graph RelationsGraphCmd `cmd:"" help:"Print the typed neighborhood of one article."`
-	Check RelationsCheckCmd `cmd:"" help:"Audit bidirectional integrity across the KB."`
+	Get           RelationsGetCmd           `cmd:"" help:"Print typed edges from one article."`
+	Set           RelationsSetCmd           `cmd:"" help:"Add a typed edge to one article (idempotent)."`
+	Rm            RelationsRmCmd            `cmd:"" name:"rm" help:"Remove a typed edge from one article."`
+	Graph         RelationsGraphCmd         `cmd:"" help:"Print the typed neighborhood of one article."`
+	Check         RelationsCheckCmd         `cmd:"" help:"Audit bidirectional integrity across the KB."`
+	Migrate       RelationsMigrateCmd       `cmd:"" help:"LLM-classify related: entries into typed edges (Phase 6A v2)."`
+	MigrateRevert RelationsMigrateRevertCmd `cmd:"" name:"migrate-revert" help:"Undo a migration run by replaying its log."`
 }
 
 // RelationsGetCmd prints "<kind>  [[Target]]" lines for one article.

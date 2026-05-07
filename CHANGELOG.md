@@ -2,6 +2,17 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.10] — 2026-05-07
+
+### Phase 6A v2 — LLM relation classifier
+- New `scribe relations migrate` walks every wiki article with a non-empty `related:` list, batches the wikilinks per source, and asks the LLM to classify each into the closed set of typed kinds (`supersedes`, `applies_to`, etc.). High-confidence classifications move from `related:` to the typed field; everything else stays in `related:` as before.
+- Closed-set guarantees: post-parse validation rejects any kind not allowed for the source's `type:` (e.g. `supersedes` on a research article never writes). `--min-confidence` (default `medium`) skips low-confidence verdicts. `--no-reverse` opts out of auto-injecting the inverse edge on the target.
+- `--dry-run` previews without writing. `--assisted` prompts for `[Y/n]` per edge. `--limit N` caps articles per run for cost control. `--model` defaults to `haiku` (cheapest path that still produces well-formed JSON in our tests).
+- Per-article opt-out: `relations_locked: true` in frontmatter skips the article entirely. Hand-curated KBs can pin specific articles before running.
+- Audit trail: every change writes `wiki/_relations_migration_<ts>.jsonl` (committed). `scribe relations migrate-revert <log>` replays the file in reverse to undo a run — including the auto-reverse edges. Sidecar cache lives at `wiki/_relations_classifier/<source>.json` (gitignored) so re-runs short-circuit already-classified edges.
+- Reasoning rationale stored per-edge: model, confidence, and a one-line "why" survive in both the migration log and the classifier sidecar.
+- 11 unit tests covering candidate collection, dry-run no-op, threshold enforcement, kind rejection on type mismatch, null-kind preservation, log round-trip, and full revert.
+
 ## [0.2.9] — 2026-05-07
 
 ### Phase 7B — Declarative views (v1)
