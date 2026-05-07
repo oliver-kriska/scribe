@@ -2,6 +2,14 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.4] — 2026-05-07
+
+### Capture
+- Cross-device iMessage now captured. The self-chat query dropped `is_from_me = 1` and added DISTINCT. A user signed into iPhone (handle = phone) and Mac (handle = Apple-ID email) sends from one device to the other; the Mac's chat.db records `is_from_me = 0` even though it's the user's own message → previously the link was silently dropped on the receiving device.
+
+### Refetch
+- `rewriteRawArticleBody` now updates `title:` when the existing value is the URL-derived slug stub-capture stamps in. Slug = no whitespace inside the quotes; any space marks a human-edited title and is preserved. Past behavior left the slug forever even after a successful trafilatura/jina fetch returned a real `<title>`.
+
 ## [0.2.3] — 2026-05-07
 
 ### Lint

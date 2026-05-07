@@ -186,8 +186,14 @@ func (c *CaptureRefetchCmd) Run() error {
 }
 
 // rewriteRawArticleBody replaces the body of a stub raw article with a
-// freshly fetched one and updates `fetched_via:` in the frontmatter so
-// the article stops registering as a stub on subsequent passes.
+// freshly fetched one and updates `fetched_via:` (plus `title:` when the
+// existing title is the URL-derived slug) in the frontmatter so the
+// article stops registering as a stub on subsequent passes.
+//
+// Title is only overwritten when the existing value looks like a slug —
+// kebab-case with no spaces, the shape buildCaptureArticle stamps in
+// when no real title was available. A human-edited title (any whitespace
+// or quote in it) survives untouched.
 func rewriteRawArticleBody(path string, res fetchResult) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -203,18 +209,22 @@ func rewriteRawArticleBody(path string, res fetchResult) error {
 	}
 	fmBlock := s[3 : end+3]
 
-	// Replace fetched_via line.
 	lines := strings.Split(fmBlock, "\n")
 	foundVia := false
 	for i, line := range lines {
-		key, _, ok := splitFrontmatterLine(line)
+		key, val, ok := splitFrontmatterLine(line)
 		if !ok {
 			continue
 		}
-		if key == "fetched_via" {
+		switch key {
+		case "fetched_via":
 			lines[i] = "fetched_via: " + res.Via
 			foundVia = true
-			break
+		case "title":
+			if newTitle := strings.TrimSpace(res.Title); newTitle != "" && looksLikeSlugTitle(val) {
+				safe := strings.ReplaceAll(newTitle, `"`, `\"`)
+				lines[i] = `title: "` + safe + `"`
+			}
 		}
 	}
 	if !foundVia {
@@ -224,4 +234,22 @@ func rewriteRawArticleBody(path string, res fetchResult) error {
 
 	newContent := "---" + newFM + "\n---\n\n" + res.Body + "\n"
 	return os.WriteFile(path, []byte(newContent), 0o644)
+}
+
+// looksLikeSlugTitle reports whether a frontmatter title value is the
+// kebab-case URL slug stub-capture writes when no real page title was
+// available. Real human titles have spaces or punctuation that a slug
+// never carries, so any of those mark the title as user-edited.
+func looksLikeSlugTitle(raw string) bool {
+	t := strings.TrimSpace(raw)
+	t = strings.Trim(t, `"'`)
+	if t == "" {
+		return true
+	}
+	for _, r := range t {
+		if r == ' ' || r == '\t' {
+			return false
+		}
+	}
+	return true
 }

@@ -416,14 +416,25 @@ func readSelfChatMessages(selfChatIDs []string, since string) ([]chatMessage, er
 	// placeholders is a literal '?,?,...' built from strings.Repeat — no user
 	// input enters the SQL string, so the gosec G202 concatenation finding is
 	// a false positive here. Every dynamic value is bound through args.
+	//
+	// `is_from_me = 1` was dropped from the WHERE clause. The original
+	// intent was "only the user's own messages, not random correspondents"
+	// — but this query is already scoped to chats keyed off the user's
+	// own self-chat handles (single-participant chats by definition).
+	// The catch is that a single-participant chat can still have
+	// is_from_me=0 messages: when the user's iPhone (Apple-ID handle =
+	// phone) sends to their Mac (Apple-ID handle = email), the Mac's
+	// chat.db records the message with the iPhone as the sender →
+	// is_from_me=0 from the Mac's perspective even though it's still
+	// the user's own message. Filtering those out silently dropped
+	// every link sent from one device to another.
 	query := `
-		SELECT m.ROWID, m.text, m.attributedBody, m.date, m.is_from_me
+		SELECT DISTINCT m.ROWID, m.text, m.attributedBody, m.date, m.is_from_me
 		FROM message m
 		JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
 		JOIN chat_handle_join chj ON cmj.chat_id = chj.chat_id
 		WHERE chj.handle_id IN (` + placeholders + `)
 		  AND m.date > ?
-		  AND m.is_from_me = 1
 		ORDER BY m.date ASC
 	` //#nosec G202 -- placeholders are literal '?' chars, not user-controlled
 	//nolint:noctx // CLI top-level, no context propagation yet
