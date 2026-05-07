@@ -412,6 +412,16 @@ func resolveArticleArg(root, arg string) (string, error) {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
 		}
+		// scribe KBs sometimes carry parallel topic dirs at root AND
+		// under wiki/ (e.g. decisions/ next to wiki/decisions/). When
+		// the bare path doesn't resolve, try the wiki/ prefix before
+		// falling through to title lookup.
+		if !strings.HasPrefix(arg, "wiki/") {
+			candidate = filepath.Join(root, "wiki", arg)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		}
 	}
 
 	var matched string

@@ -970,6 +970,31 @@ type Frontmatter struct {
 	//   reference — explicit human marker for canonical artifacts
 	IndexTier         string `yaml:"index_tier,omitempty"`
 	IndexTierOverride string `yaml:"index_tier_override,omitempty"`
+
+	// Phase 6A typed relations. Each field replaces a slice of the
+	// generic `related:` list with a typed edge whose semantics
+	// `scribe lint --resolve` and Phase 6B contradiction detection
+	// can reason about. Type-specific allowed sets:
+	//   decision  — supersedes, superseded_by, contradicts
+	//   solution  — applies_to (pattern), derived_from (research)
+	//   pattern   — instance_of, specializes
+	//   research  — extends, cited_by, informs
+	// Untyped `related:` stays as the easy-out for genuinely loose
+	// connections. Each typed field carries [[Wikilinks]] just like
+	// related:; the typing is purely about what the edge *means*.
+	Supersedes   any `yaml:"supersedes,omitempty"`
+	SupersededBy any `yaml:"superseded_by,omitempty"`
+	Contradicts  any `yaml:"contradicts,omitempty"`
+	AppliesTo    any `yaml:"applies_to,omitempty"`
+	DerivedFrom  any `yaml:"derived_from,omitempty"`
+	InstanceOf   any `yaml:"instance_of,omitempty"`
+	Specializes  any `yaml:"specializes,omitempty"`
+	Extends      any `yaml:"extends,omitempty"`
+	CitedBy      any `yaml:"cited_by,omitempty"`
+	Informs      any `yaml:"informs,omitempty"`
+	// RelationsLocked tells the LLM relation migrator (Phase 6A v2)
+	// to leave this article alone. Useful for hand-curated cases.
+	RelationsLocked bool `yaml:"relations_locked,omitempty"`
 }
 
 // parseFrontmatter extracts YAML frontmatter from markdown content.

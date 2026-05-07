@@ -196,6 +196,9 @@ func validateFile(root, path string) []string {
 		errs = append(errs, fmt.Sprintf("invalid index_tier_override: '%s' (expected: %s)", fm.IndexTierOverride, strings.Join(keys, ", ")))
 	}
 
+	// Phase 6A: validate typed relations against per-type allowed set.
+	errs = append(errs, validateTypedRelations(fm)...)
+
 	// Validate dates. Go's YAML parser auto-converts YYYY-MM-DD to time.Time,
 	// so a time.Time value is already valid; only string values need regex
 	// checking (they arrived as quoted YAML scalars).

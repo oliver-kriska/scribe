@@ -2,6 +2,19 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.7] — 2026-05-07
+
+### Phase 6A — Typed relations (v1: schema + manual surface)
+- Frontmatter gains 10 typed-edge keys: `supersedes, superseded_by, contradicts, applies_to, derived_from, instance_of, specializes, extends, cited_by, informs`. Each carries `[[Wikilink]]` payloads, same shape as `related:`. Untyped `related:` stays as the easy-out for genuinely loose connections.
+- Closed set per article type validated by `scribe lint`: decision (supersedes/superseded_by/contradicts), solution (applies_to/derived_from), pattern (instance_of/specializes/applies_to), research (extends/cited_by/informs), tool (derived_from), idea (instance_of).
+- `scribe relations get|set|rm <article>` — manual editing surface with idempotent set, list-shape preservation, and per-type kind validation.
+- `scribe relations graph <article>` — prints typed neighborhood (outbound + inbound) for orientation before touching a heavily-referenced article.
+- `scribe relations check [--fix]` — bidirectional integrity audit. Verifies that every supersedes has a superseded_by, every instance_of has a specializes, etc. `--fix` auto-injects the missing reverse on the target's frontmatter.
+- New `relations_locked: true` frontmatter key reserved for the LLM migration step (Phase 6A v2): pre-commits which articles the migrator must skip.
+- `resolveArticleArg` now also tries `wiki/<arg>` so commands work whether the user passes `decisions/foo.md` or `wiki/decisions/foo.md` (KBs sometimes carry both).
+
+LLM-driven migration (`scribe relations migrate` and `--assisted` mode) ships in 6A v2.
+
 ## [0.2.6] — 2026-05-07
 
 ### Phase 7A — Skill bundle
