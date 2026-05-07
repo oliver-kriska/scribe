@@ -10,6 +10,41 @@ import (
 	"time"
 )
 
+func TestCheckVaultScaffolding_OkWhenClean(t *testing.T) {
+	dir := t.TempDir()
+	out := checkVaultScaffolding(dir)
+	if len(out) != 1 || out[0].Status != statusOK {
+		t.Fatalf("clean KB should report 1 ok check; got %+v", out)
+	}
+}
+
+func TestCheckVaultScaffolding_WarnPerStrayDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "logseq", "bak"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "logseq", "config.edn"), []byte(":x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "pages"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pages", "contents.md"), []byte("-"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := checkVaultScaffolding(dir)
+	warns := 0
+	for _, c := range out {
+		if c.Status == statusWarn {
+			warns++
+		}
+	}
+	if warns != 2 {
+		t.Errorf("expected 2 warns (logseq + pages); got %d (full: %+v)", warns, out)
+	}
+}
+
 // TestLoadRunRecords covers the critical path — doctor's freshness check is
 // only as good as this loader. The three things it must not get wrong:
 // (a) picking the newest ok record per command, (b) ignoring error records,

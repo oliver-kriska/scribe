@@ -22,7 +22,7 @@ import (
 // Mac was asleep.
 type DoctorCmd struct {
 	JSON        bool          `help:"Emit structured JSON instead of text."`
-	Section     string        `help:"Run only one section: deps | config | cron | state | freshness | errors | convert | contradictions." enum:"deps,config,cron,state,freshness,errors,convert,contradictions," default:""`
+	Section     string        `help:"Run only one section: deps | config | cron | state | freshness | errors | convert | contradictions | vault." enum:"deps,config,cron,state,freshness,errors,convert,contradictions,vault," default:""`
 	ErrorWindow time.Duration `help:"How far back to scan run records for errors." default:"24h"`
 }
 
@@ -52,7 +52,7 @@ func (c *DoctorCmd) Run() error {
 	}
 	cfg := loadConfig(root)
 
-	sectionOrder := []string{"deps", "config", "convert", "cron", "state", "freshness", "errors", "contradictions"}
+	sectionOrder := []string{"deps", "config", "convert", "cron", "state", "freshness", "errors", "contradictions", "vault"}
 	var all []check
 	for _, name := range sectionOrder {
 		if c.Section != "" && c.Section != name {
@@ -75,6 +75,8 @@ func (c *DoctorCmd) Run() error {
 			all = append(all, checkRecentErrors(root, time.Now(), c.ErrorWindow)...)
 		case "contradictions":
 			all = append(all, checkContradictions(root)...)
+		case "vault":
+			all = append(all, checkVaultScaffolding(root)...)
 		}
 	}
 
@@ -846,4 +848,85 @@ func printChecksJSON(all []check, root string) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(payload)
+}
+
+// checkVaultScaffolding flags directories from other vault tools that have
+// snuck into the KB. Logseq, in particular, will autosave a backup .md per
+// edit into logseq/bak/ — left alone, that tree grows to thousands of
+// orphan files that bloat the Obsidian graph and pad commit diffs.
+//
+// Detection is intentionally narrow: we report on dirs we are confident
+// the user does not need. The fix is "git rm + .gitignore", but the user
+// pulls the trigger.
+func checkVaultScaffolding(root string) []check {
+	var out []check
+	type probe struct {
+		rel    string
+		label  string
+		reason string
+	}
+	probes := []probe{
+		{rel: "logseq", label: "logseq/", reason: "Logseq autosave backups + config (logseq/bak/ grows ~1 file per edit)"},
+		{rel: "pages", label: "pages/", reason: "Logseq scaffolding directory (Obsidian uses the type-named dirs instead)"},
+	}
+	any := false
+	for _, p := range probes {
+		full := filepath.Join(root, p.rel)
+		info, err := os.Stat(full)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		any = true
+		fileCount, dirSize := dirStats(full)
+		detail := fmt.Sprintf("%s — %d files, %s — %s", p.label, fileCount, humanBytes(dirSize), p.reason)
+		out = append(out, check{
+			Section: "vault", Name: "stray-scaffolding", Status: statusWarn,
+			Detail: detail,
+			Fix:    fmt.Sprintf("rm -rf %s && echo '%s' >> .gitignore", p.label, p.label),
+		})
+	}
+	if !any {
+		out = append(out, check{
+			Section: "vault", Name: "scaffolding", Status: statusOK,
+			Detail: "no stray vault directories",
+		})
+	}
+	return out
+}
+
+// dirStats walks a directory and returns (file count, total bytes). Best
+// effort — silently skips entries it can't stat.
+func dirStats(dir string) (int, int64) {
+	var files int
+	var size int64
+	_ = filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil
+		}
+		if !info.IsDir() {
+			files++
+			size += info.Size()
+		}
+		return nil
+	})
+	return files, size
+}
+
+func humanBytes(n int64) string {
+	const (
+		_  = iota
+		KB = 1 << (10 * iota)
+		MB
+		GB
+	)
+	switch {
+	case n >= GB:
+		return fmt.Sprintf("%.1f GB", float64(n)/float64(GB))
+	case n >= MB:
+		return fmt.Sprintf("%.1f MB", float64(n)/float64(MB))
+	case n >= KB:
+		return fmt.Sprintf("%.1f KB", float64(n)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
