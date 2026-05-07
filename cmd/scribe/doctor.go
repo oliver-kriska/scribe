@@ -676,10 +676,10 @@ func fixHintForError(command, msg string) string {
 		return "run: scribe fda  (grants Full Disk Access interactively)"
 	case strings.Contains(lower, "no such module: fts5"):
 		return "rebuild with sqlite_fts5 tag: make install (or reinstall via brew)"
-	case strings.Contains(lower, "handle") && strings.Contains(lower, "not found in chat.db"):
-		return "fix capture.self_chat_handle in scribe.yaml"
+	case strings.Contains(lower, "self-chat handles") && strings.Contains(lower, "exist in chat.db"):
+		return "fix capture.self_chat_handles in scribe.yaml"
 	case strings.Contains(lower, "no self-chat handle configured"):
-		return "set capture.self_chat_handle in scribe.yaml or SCRIBE_SELF_CHAT_ID"
+		return "set capture.self_chat_handles in scribe.yaml or SCRIBE_SELF_CHAT_ID"
 	case strings.Contains(lower, "rate limit"):
 		return "wait out Anthropic rate-limit; scribe sync resumes automatically next run"
 	}

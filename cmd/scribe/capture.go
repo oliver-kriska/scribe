@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -93,15 +92,12 @@ func (c *CaptureCmd) Run() error {
 
 	logMsg("capture", "capturing since %s", since)
 
-	selfChatID := os.Getenv("SCRIBE_SELF_CHAT_ID")
-	if selfChatID == "" {
-		selfChatID = cfg.Capture.SelfChatHandle
-	}
-	if selfChatID == "" {
-		return fmt.Errorf("no self-chat handle configured\n\nSet one of:\n  scribe.yaml →\n    capture:\n      self_chat_handle: \"+1234567890\"\n  or env:\n    SCRIBE_SELF_CHAT_ID=\"+1234567890\"\n\nThe handle is the iMessage address you use to message yourself (phone or email)") //nolint:revive // multi-line error serves as user help text
+	selfChatIDs := resolveSelfChatHandles(cfg.Capture)
+	if len(selfChatIDs) == 0 {
+		return fmt.Errorf("no self-chat handle configured\n\nSet one of:\n  scribe.yaml →\n    capture:\n      self_chat_handles:\n        - \"+1234567890\"\n        - \"you@icloud.com\"\n  or env:\n    SCRIBE_SELF_CHAT_ID=\"+1234567890,you@icloud.com\"\n\nList every iMessage address you use to message yourself — phone numbers and emails each map to a distinct chat in chat.db") //nolint:revive // multi-line error serves as user help text
 	}
 
-	messages, err := readSelfChatMessages(selfChatID, since)
+	messages, err := readSelfChatMessages(selfChatIDs, since)
 	if err != nil {
 		return fmt.Errorf("read chat.db: %w", err)
 	}
@@ -315,9 +311,40 @@ type chatMessage struct {
 	IsFromMe       int
 }
 
+// resolveSelfChatHandles merges env override (comma-separated), the legacy
+// singular SelfChatHandle, and the SelfChatHandles list. Returned slice is
+// deduplicated and order-preserved.
+func resolveSelfChatHandles(c CaptureConfig) []string {
+	var raw []string
+	if env := os.Getenv("SCRIBE_SELF_CHAT_ID"); env != "" {
+		raw = append(raw, strings.Split(env, ",")...)
+	} else {
+		raw = append(raw, c.SelfChatHandles...)
+		if c.SelfChatHandle != "" {
+			raw = append(raw, c.SelfChatHandle)
+		}
+	}
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, h := range raw {
+		h = strings.TrimSpace(h)
+		if h == "" || seen[h] {
+			continue
+		}
+		seen[h] = true
+		out = append(out, h)
+	}
+	return out
+}
+
 // readSelfChatMessages opens chat.db read-only and returns self-sent messages
-// to the configured handle since the cutoff date.
-func readSelfChatMessages(selfChatID, since string) ([]chatMessage, error) {
+// to any of the configured handles since the cutoff date. Each handle maps to
+// a distinct chat in chat.db (phone-number chat vs Apple-ID-email chat), so
+// callers must pass every address they use to message themselves.
+func readSelfChatMessages(selfChatIDs []string, since string) ([]chatMessage, error) {
+	if len(selfChatIDs) == 0 {
+		return nil, fmt.Errorf("no self-chat handles supplied")
+	}
 	dbPath := filepath.Join(os.Getenv("HOME"), "Library", "Messages", "chat.db")
 	if !fileExists(dbPath) {
 		return nil, fmt.Errorf("chat.db not found at %s", dbPath)
@@ -329,21 +356,48 @@ func readSelfChatMessages(selfChatID, since string) ([]chatMessage, error) {
 	}
 	defer db.Close()
 
-	// Resolve handle ROWID for the configured self-chat ID.
-	var handleID int64
-	err = db.QueryRow("SELECT ROWID FROM handle WHERE id = ?", selfChatID).Scan(&handleID) //nolint:noctx // CLI top-level, no context propagation yet
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("handle %s not found in chat.db", selfChatID)
+	// Resolve handle ROWIDs. macOS stores one `handle` row per (id, service)
+	// pair — a single phone number typically has separate ROWIDs for iMessage
+	// and SMS. Pulling only the first row (QueryRow) silently dropped messages
+	// that happened to live in the chat keyed off the other ROWID, which is
+	// what hid 11 vacation links from the user. We now collect every ROWID
+	// for each handle id.
+	var handleIDs []int64
+	var missing []string
+	for _, id := range selfChatIDs {
+		//nolint:noctx // CLI top-level, no context propagation yet
+		rows, qerr := db.Query("SELECT ROWID FROM handle WHERE id = ?", id)
+		if qerr != nil {
+			msg := qerr.Error()
+			if strings.Contains(msg, "operation not permitted") || strings.Contains(msg, "unable to open") {
+				return nil, fmt.Errorf("query handle: %w\n\nfull disk access required. macOS blocks reads of ~/Library/Messages/chat.db without it.\nGrant it to the scribe binary:\n  System Settings → Privacy & Security → Full Disk Access → add %s\nFor LaunchAgent-driven captures, the binary itself needs the grant (inheriting from Terminal is not enough)", qerr, os.Args[0]) //nolint:revive // multi-line error serves as user help text
+			}
+			return nil, fmt.Errorf("query handle %s: %w", id, qerr)
 		}
-		// EPERM on chat.db means the process running scribe lacks Full Disk
-		// Access. Terminal typically has it; launchd-spawned processes do not,
-		// which is why scheduled captures fail silently when run from cron.
-		msg := err.Error()
-		if strings.Contains(msg, "operation not permitted") || strings.Contains(msg, "unable to open") {
-			return nil, fmt.Errorf("query handle: %w\n\nfull disk access required. macOS blocks reads of ~/Library/Messages/chat.db without it.\nGrant it to the scribe binary:\n  System Settings → Privacy & Security → Full Disk Access → add %s\nFor LaunchAgent-driven captures, the binary itself needs the grant (inheriting from Terminal is not enough)", err, os.Args[0]) //nolint:revive // multi-line error serves as user help text
+		var matched int
+		for rows.Next() {
+			var rowid int64
+			if scanErr := rows.Scan(&rowid); scanErr != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan handle %s: %w", id, scanErr)
+			}
+			handleIDs = append(handleIDs, rowid)
+			matched++
 		}
-		return nil, fmt.Errorf("query handle: %w", err)
+		if rerr := rows.Err(); rerr != nil {
+			rows.Close()
+			return nil, fmt.Errorf("iterate handle %s: %w", id, rerr)
+		}
+		rows.Close()
+		if matched == 0 {
+			missing = append(missing, id)
+		}
+	}
+	for _, id := range missing {
+		logMsg("capture", "self-chat handle %q not found in chat.db (skipping)", id)
+	}
+	if len(handleIDs) == 0 {
+		return nil, fmt.Errorf("none of the configured self-chat handles exist in chat.db: %s", strings.Join(selfChatIDs, ", "))
 	}
 
 	sinceTime, err := time.Parse("2006-01-02", since)
@@ -352,17 +406,28 @@ func readSelfChatMessages(selfChatID, since string) ([]chatMessage, error) {
 	}
 	sinceApple := (sinceTime.UTC().Unix() - appleEpochOffset) * 1_000_000_000
 
-	//nolint:noctx // CLI top-level, no context propagation yet
-	rows, err := db.Query(`
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(handleIDs)), ",")
+	args := make([]any, 0, len(handleIDs)+1)
+	for _, h := range handleIDs {
+		args = append(args, h)
+	}
+	args = append(args, sinceApple)
+
+	// placeholders is a literal '?,?,...' built from strings.Repeat — no user
+	// input enters the SQL string, so the gosec G202 concatenation finding is
+	// a false positive here. Every dynamic value is bound through args.
+	query := `
 		SELECT m.ROWID, m.text, m.attributedBody, m.date, m.is_from_me
 		FROM message m
 		JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
 		JOIN chat_handle_join chj ON cmj.chat_id = chj.chat_id
-		WHERE chj.handle_id = ?
+		WHERE chj.handle_id IN (` + placeholders + `)
 		  AND m.date > ?
 		  AND m.is_from_me = 1
 		ORDER BY m.date ASC
-	`, handleID, sinceApple)
+	` //#nosec G202 -- placeholders are literal '?' chars, not user-controlled
+	//nolint:noctx // CLI top-level, no context propagation yet
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query messages: %w", err)
 	}

@@ -105,9 +105,13 @@ absorb:
     timeout_sec: 90               # default: 90
 
 capture:
-  # iMessage handle used by self-chat URL capture. Override per-run via the
-  # SCRIBE_SELF_CHAT_ID environment variable.
-  self_chat_handle: "{{.SelfChatHandle}}"
+  # iMessage handles used by self-chat URL capture. Each handle maps to a
+  # distinct chat in chat.db — most accounts have at least two: a phone
+  # number and an Apple ID email. List them all here, or capture will
+  # silently skip messages sent to the non-listed chat.
+  # Override per-run via SCRIBE_SELF_CHAT_ID="phone,email" (comma-separated).
+  self_chat_handles:
+    - "{{.SelfChatHandle}}"
 
 # Triage keyword categories for `scribe triage` (BM25 FTS5 scoring).
 # Edit any MATCH expression to tune to your stack. Weights multiply per hit.

@@ -653,7 +653,17 @@ func (t TriageConfig) Resolve() (keywords map[string]string, weights map[string]
 
 // CaptureConfig holds settings for `scribe capture` (iMessage self-chat).
 type CaptureConfig struct {
+	// SelfChatHandle is the legacy singular form. Still honored, but new
+	// configs should prefer SelfChatHandles. When both are set the lists are
+	// merged and deduplicated.
 	SelfChatHandle string `yaml:"self_chat_handle"`
+
+	// SelfChatHandles lists every iMessage address the user sends to
+	// themselves. Most accounts have at least two: a phone number and an
+	// Apple ID email. Each maps to a distinct chat in chat.db, so capture
+	// must query all of them or it silently skips messages sent to the
+	// non-configured chat.
+	SelfChatHandles []string `yaml:"self_chat_handles"`
 
 	// SkipDomains: URLs containing any of these substrings are ignored during
 	// capture. Useful for non-content hosts (short-form video, audiobook
