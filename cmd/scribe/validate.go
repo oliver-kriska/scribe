@@ -126,11 +126,14 @@ func validateFile(root, path string) []string {
 
 	raw, err := parseFrontmatterRaw(content)
 	if err != nil {
-		return []string{"missing or invalid YAML frontmatter"}
+		return []string{fmt.Sprintf("invalid YAML frontmatter: %v", err)}
 	}
 	fm, err := parseFrontmatter(content)
 	if err != nil {
-		return []string{"missing or invalid YAML frontmatter"}
+		// Distinguish struct-typing failures from outright missing
+		// frontmatter so the user can spot the problematic field
+		// instead of hunting for a delimiter that's already there.
+		return []string{fmt.Sprintf("frontmatter fails struct validation: %v", err)}
 	}
 
 	var errs []string

@@ -16,6 +16,12 @@ import (
 // only needs the first few thousand chars to identify source + topics.
 const maxRawArticleBytesForContextualize = 20_000
 
+// contextualizePaceDelay is the polite pause between successful
+// contextualize calls. Anthropic's haiku quota is bursty and a tight
+// loop hits 429 within ~15 calls on small accounts; 1.5s lets a single
+// sync run drain a larger queue without the rate-limit early-break.
+const contextualizePaceDelay = 1500 * time.Millisecond
+
 // ContextualizeCmd inserts an LLM-generated "Retrieval context" paragraph
 // between the frontmatter and body of each raw/articles/*.md file. This
 // implements Anthropic's Contextual Retrieval pattern (Sep 2024) in a
@@ -124,6 +130,12 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 			logMsg("contextualize", "warn: could not persist log: %v", err)
 		}
 		processed++
+
+		// Polite pacing — Anthropic's haiku quota is bursty and a tight
+		// loop hits 429 within ~15 calls on small accounts. 1.5s between
+		// successful calls keeps a single sync run flowing without the
+		// rate-limit early-break that strands the rest of the queue.
+		time.Sleep(contextualizePaceDelay)
 	}
 
 	// Flush final state even if nothing new processed (picks up marker-only
@@ -195,6 +207,7 @@ func contextualizeWikiArticles(root string, limit int, model string, dryRun, for
 			logMsg("contextualize", "warn: could not persist log: %v", err)
 		}
 		processed++
+		time.Sleep(contextualizePaceDelay)
 	}
 
 	if !dryRun {

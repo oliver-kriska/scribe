@@ -340,13 +340,17 @@ func absorbDefaults() AbsorbConfig {
 		BriefThresholdHeadings: 1,
 		Pass1Model:             "haiku",
 		Pass2Model:             "", // inherit sync model
-		Pass1TimeoutMin:        3,
-		Pass2TimeoutMin:        5,
-		Pass2Parallel:          3,
-		SinglePassTimeoutMin:   5,
-		ChapterAware:           &trueV,
-		ChapterThreshold:       3,
-		ChapterParallel:        2,
+		// Pass1 default bumped 3→5 because dense long-form articles (~17K
+		// chars, 200+ lines) reliably timed out on haiku at 3 min and got
+		// SIGKILLed mid-stream — costing the call without delivering an
+		// entity list. Existing scribe.yaml entries pinning 3 still win.
+		Pass1TimeoutMin:      5,
+		Pass2TimeoutMin:      5,
+		Pass2Parallel:        3,
+		SinglePassTimeoutMin: 5,
+		ChapterAware:         &trueV,
+		ChapterThreshold:     3,
+		ChapterParallel:      2,
 		// AtomicFacts off by default. Users opt in by setting
 		// `absorb.atomic_facts: true` in scribe.yaml after they've
 		// verified chaptered absorb works on their corpus.
@@ -401,7 +405,7 @@ absorb:
   # Models and timeouts for each absorb path.
   pass1_model: %s              # default: haiku (cheap entity-list pass)
   pass2_model: ""                 # default: "" = inherit default_model
-  pass1_timeout_min: %d            # default: 3
+  pass1_timeout_min: %d            # default: 5
   pass2_timeout_min: %d            # default: 5
   single_pass_timeout_min: %d      # default: 5
 
@@ -939,7 +943,13 @@ type Frontmatter struct {
 	Aliases any    `yaml:"aliases,omitempty"`
 	Status  string `yaml:"status,omitempty"`
 	Rolling bool   `yaml:"rolling,omitempty"`
-	Stack   string `yaml:"stack,omitempty"`
+	// Stack is intentionally `any`: scaffolding (project overview frontmatter,
+	// LLM-written drops) sometimes ships it as a YAML list (`stack: [Go, ...]`)
+	// and sometimes as a plain string ("Go + SQLite + CGO"). Both shapes are
+	// valid in the corpus today; the lint pass walks frontmatter as raw maps,
+	// so the typed struct only needs to *accept* the value, not normalize it.
+	// Fields like Tags/Related/Sources use the same approach.
+	Stack   any    `yaml:"stack,omitempty"`
 	Verdict string `yaml:"verdict,omitempty"`
 	Problem string `yaml:"problem,omitempty"`
 	Depth   string `yaml:"depth,omitempty"`

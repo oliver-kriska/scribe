@@ -174,6 +174,51 @@ func appendCostEntry(root string, entry CostEntry) {
 	fmt.Fprintln(f, string(data))
 }
 
+// ErrorRecord captures the noisy context behind a claude -p failure that
+// `logMsg` deliberately keeps short for terminal readability. Written to
+// output/errors/<date>.jsonl alongside the compact CostEntry — same
+// timestamp, same op, but with the full stderr/stdout tails the user
+// needs when something actually breaks.
+type ErrorRecord struct {
+	Timestamp   string `json:"timestamp"`
+	Op          string `json:"op"`
+	Model       string `json:"model,omitempty"`
+	ErrKind     string `json:"err_kind"` // timeout|rate_limit|other
+	DurationMS  int64  `json:"duration_ms,omitempty"`
+	PromptChars int    `json:"prompt_chars,omitempty"`
+	Err         string `json:"err"`
+	StderrTail  string `json:"stderr_tail,omitempty"` // up to ~50 lines
+	StdoutTail  string `json:"stdout_tail,omitempty"`
+}
+
+// appendErrorRecord writes one ErrorRecord to the day's error log.
+// Same best-effort contract as appendCostEntry: silent on I/O failure.
+//
+// Files live under <root>/output/errors/<YYYY-MM-DD>.jsonl. Rate-limit
+// failures intentionally aren't logged here — they're expected,
+// self-resolving, and would otherwise drown out real bugs in the file.
+func appendErrorRecord(root string, rec ErrorRecord) {
+	if root == "" || rec.ErrKind == "rate_limit" {
+		return
+	}
+	dir := filepath.Join(root, "output", "errors")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	day := time.Now().UTC().Format("2006-01-02")
+	dayFile := filepath.Join(dir, day+".jsonl")
+	f, err := os.OpenFile(dayFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return
+	}
+	fmt.Fprintln(f, string(data))
+}
+
 // modelRateUSDPerMillion maps model alias → (input, output) USD per
 // 1M tokens. Sourced from Anthropic's public pricing as of late
 // 2025; out-of-band models default to zero (no estimate produced).

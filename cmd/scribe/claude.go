@@ -90,6 +90,19 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 		default:
 			entry.ErrKind = "other"
 		}
+		// Stash the full tails in output/errors/ so the terminal can stay
+		// terse while debugging still has the context it needs.
+		appendErrorRecord(root, ErrorRecord{
+			Timestamp:   started.UTC().Format(time.RFC3339),
+			Op:          op,
+			Model:       model,
+			ErrKind:     entry.ErrKind,
+			DurationMS:  time.Since(started).Milliseconds(),
+			PromptChars: len(prompt),
+			Err:         err.Error(),
+			StderrTail:  tailLines(stderrStr, 50),
+			StdoutTail:  tailLines(stdoutStr, 50),
+		})
 		return tailLines(combined, 15), fmt.Errorf("claude -p: %w\n%s", err, tailLines(combined, 15))
 	}
 
@@ -128,6 +141,17 @@ func runClaude(ctx context.Context, root, prompt, model string, tools []string, 
 				return env.Result, ErrRateLimit
 			}
 			entry.ErrKind = "other"
+			appendErrorRecord(root, ErrorRecord{
+				Timestamp:   started.UTC().Format(time.RFC3339),
+				Op:          op,
+				Model:       model,
+				ErrKind:     entry.ErrKind,
+				DurationMS:  time.Since(started).Milliseconds(),
+				PromptChars: len(prompt),
+				Err:         "claude -p subtype=" + env.Subtype,
+				StderrTail:  tailLines(stderrStr, 50),
+				StdoutTail:  tailLines(stdoutStr, 50),
+			})
 			return env.Result, fmt.Errorf("claude -p: %s", env.Subtype)
 		}
 
