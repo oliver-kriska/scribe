@@ -30,6 +30,7 @@ type SyncCmd struct {
 	Extract      string `help:"Extract one specific project." name:"extract"`
 	Changed      string `help:"Show changed files for a project." name:"changed"`
 	Max          int    `help:"Max projects to extract per run." default:"3"`
+	MaxAbsorb    int    `help:"Override scribe.yaml absorb.max_per_run for this run (0 = use config default)." name:"max-absorb" default:"0"`
 	Model        string `help:"Claude model to use." default:"sonnet"`
 	Sessions     bool   `help:"Mine Claude Code sessions."`
 	SessionsMax  int    `help:"Max sessions per run." name:"sessions-max" default:"3"`
@@ -73,6 +74,11 @@ func (s *SyncCmd) Run() error {
 
 	// --dry-run --estimate: print token estimate and exit without running.
 	if s.DryRun && s.Estimate {
+		// Apply CLI overrides to cfg so the estimate reflects the run
+		// the user actually intends, not the scribe.yaml defaults.
+		if s.MaxAbsorb > 0 {
+			cfg.Absorb.MaxPerRun = s.MaxAbsorb
+		}
 		ests := estimateSync(root, cfg)
 		printEstimate(ests)
 		return nil
@@ -1433,6 +1439,9 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 	cfg := loadConfig(root)
 	strictness := cfg.Absorb.Strictness
 	maxAbsorb := cfg.Absorb.MaxPerRun
+	if s.MaxAbsorb > 0 {
+		maxAbsorb = s.MaxAbsorb
+	}
 
 	// Load absorb log (Phase 3C: typed, sha-aware).
 	absorbLogPath := filepath.Join(root, "wiki", "_absorb_log.json")
