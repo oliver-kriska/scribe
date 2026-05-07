@@ -871,14 +871,14 @@ func checkVaultScaffolding(root string) []check {
 		{rel: "logseq", label: "logseq/", reason: "Logseq autosave backups + config (logseq/bak/ grows ~1 file per edit)"},
 		{rel: "pages", label: "pages/", reason: "Logseq scaffolding directory (Obsidian uses the type-named dirs instead)"},
 	}
-	any := false
+	found := false
 	for _, p := range probes {
 		full := filepath.Join(root, p.rel)
 		info, err := os.Stat(full)
 		if err != nil || !info.IsDir() {
 			continue
 		}
-		any = true
+		found = true
 		fileCount, dirSize := dirStats(full)
 		detail := fmt.Sprintf("%s — %d files, %s — %s", p.label, fileCount, humanBytes(dirSize), p.reason)
 		out = append(out, check{
@@ -887,7 +887,7 @@ func checkVaultScaffolding(root string) []check {
 			Fix:    fmt.Sprintf("rm -rf %s && echo '%s' >> .gitignore", p.label, p.label),
 		})
 	}
-	if !any {
+	if !found {
 		out = append(out, check{
 			Section: "vault", Name: "scaffolding", Status: statusOK,
 			Detail: "no stray vault directories",
@@ -903,7 +903,7 @@ func dirStats(dir string) (int, int64) {
 	var size int64
 	_ = filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
 		if err != nil || info == nil {
-			return nil
+			return nil //nolint:nilerr // best-effort traversal; skip unreadable entries
 		}
 		if !info.IsDir() {
 			files++

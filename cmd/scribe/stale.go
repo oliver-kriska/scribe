@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -299,18 +300,18 @@ func readStalenessLedger(root string) ([]StalenessEntry, error) {
 // entries in-place. Network errors and 4xx/5xx responses both register
 // the source signal; only 2xx and 3xx are considered alive.
 //
-// `max` caps probes so a 10k-article KB doesn't fire-hose remote sites.
-// The intent is "occasional weekly recompute" not "exhaustive crawl."
-func probeStaleURLs(entries []StalenessEntry, max int, timeout time.Duration, nowStamp string) {
-	if max <= 0 {
-		max = 100
+// `maxProbes` caps probes so a 10k-article KB doesn't fire-hose remote
+// sites. The intent is "occasional weekly recompute" not "exhaustive crawl."
+func probeStaleURLs(entries []StalenessEntry, maxProbes int, timeout time.Duration, nowStamp string) {
+	if maxProbes <= 0 {
+		maxProbes = 100
 	}
 	if timeout == 0 {
 		timeout = 5 * time.Second
 	}
 	client := &http.Client{
 		Timeout: timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return http.ErrUseLastResponse
 			}
@@ -326,7 +327,7 @@ func probeStaleURLs(entries []StalenessEntry, max int, timeout time.Duration, no
 		if entries[i].SourceURL == "" || !strings.HasPrefix(entries[i].SourceURL, "http") {
 			continue
 		}
-		if probed >= max {
+		if probed >= maxProbes {
 			break
 		}
 		probed++
@@ -335,7 +336,9 @@ func probeStaleURLs(entries []StalenessEntry, max int, timeout time.Duration, no
 		go func(idx int) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			req, err := http.NewRequest("HEAD", entries[idx].SourceURL, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, "HEAD", entries[idx].SourceURL, nil)
 			if err != nil {
 				return
 			}
@@ -466,7 +469,7 @@ func containsString(ss []string, want string) bool {
 	return slices.Contains(ss, want)
 }
 
-// checkStale is the doctor section — one warn per signal kind, summarised.
+// checkStale is the doctor section — one warn per signal kind, summarized.
 func checkStale(root string) []check {
 	entries, err := readStalenessLedger(root)
 	if err != nil {
