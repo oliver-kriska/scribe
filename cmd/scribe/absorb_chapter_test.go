@@ -43,11 +43,34 @@ func TestShouldAbsorbChaptered_RequiresAllSignals(t *testing.T) {
 		}
 	})
 
-	t.Run("no sidecar short-circuits", func(t *testing.T) {
+	t.Run("no sidecar but enough headings still triggers (headings strategy)", func(t *testing.T) {
+		// Body has 4 H1 headings — chunker should fall through to
+		// "headings" strategy and the dispatcher must accept it now
+		// that single-shot pass-1 is no longer the catch-all for
+		// non-PDF articles.
 		cfg := AbsorbConfig{ChapterAware: &trueV, ChapterThreshold: 3}
-		ok, _, _ := shouldAbsorbChaptered(rawPath, cfg)
+		ok, chunks, strategy := shouldAbsorbChaptered(rawPath, cfg)
+		if !ok {
+			t.Fatal("expected chaptered path to fire on headings-only article")
+		}
+		if strategy != "headings" {
+			t.Errorf("strategy = %q, want headings", strategy)
+		}
+		if len(chunks) < 3 {
+			t.Errorf("expected ≥3 chunks, got %d", len(chunks))
+		}
+	})
+
+	t.Run("flat article (no headings, no sidecar) short-circuits", func(t *testing.T) {
+		flatPath := filepath.Join(tmp, "flat.md")
+		flat := "---\ntitle: x\n---\nJust prose with no headings, all one paragraph.\n"
+		if err := os.WriteFile(flatPath, []byte(flat), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg := AbsorbConfig{ChapterAware: &trueV, ChapterThreshold: 3}
+		ok, _, _ := shouldAbsorbChaptered(flatPath, cfg)
 		if ok {
-			t.Error("expected false without sidecar")
+			t.Error("expected false on flat article with no chunkable structure")
 		}
 	})
 

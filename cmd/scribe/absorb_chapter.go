@@ -60,19 +60,21 @@ func (s *SyncCmd) runPass1Whole(ctx context.Context, root, rawFile, planFile str
 }
 
 // shouldAbsorbChaptered decides whether to take the chapter-aware
-// path. Three signals must align:
+// path. Two signals must align:
 //
 //  1. AbsorbConfig.ChapterAware is true (default true; users opt out
 //     via scribe.yaml `absorb.chapter_aware: false`).
-//  2. A TOC sidecar exists for the raw article.
-//  3. Sidecar has at least cfg.ChapterThreshold chapters AND the
-//     chunker confirms it can produce that many chunks. The chunker
-//     guard catches the edge case where the TOC has 30 entries but
-//     only 2 resolved to body offsets (sidecar with too many
-//     phantom titles).
+//  2. ChunkArticle returns either "toc" (PDF-marker sidecar) or
+//     "headings" (markdown H1-H6 split) AND the chunk count is at
+//     least cfg.ChapterThreshold. "headings" was originally rejected
+//     here, which meant any HTML/blog/arxiv article — anything that
+//     didn't pass through marker-pdf — fell through to a single 17K+
+//     pass-1 call to haiku and reliably timed out or triggered
+//     compaction. Accepting "headings" lets the chunker do its job
+//     across the whole corpus.
 //
 // Returning false here means the caller falls through to the legacy
-// single-shot pass-1 path, exactly the same behavior as Phase 3A.
+// single-shot pass-1 path.
 func shouldAbsorbChaptered(rawFile string, cfg AbsorbConfig) (bool, []Chunk, string) {
 	if cfg.ChapterAware == nil || !*cfg.ChapterAware {
 		return false, nil, ""
@@ -82,14 +84,11 @@ func shouldAbsorbChaptered(rawFile string, cfg AbsorbConfig) (bool, []Chunk, str
 		threshold = 3
 	}
 
-	if !articleHasTOCSidecar(rawFile) {
-		return false, nil, ""
-	}
 	strategy, chunks, err := ChunkArticle(rawFile)
 	if err != nil {
 		return false, nil, ""
 	}
-	if strategy != "toc" {
+	if strategy != "toc" && strategy != "headings" {
 		return false, nil, ""
 	}
 	if len(chunks) < threshold {
