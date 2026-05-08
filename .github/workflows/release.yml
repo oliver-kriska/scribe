@@ -19,7 +19,12 @@ on:
   workflow_dispatch:
     # Manual trigger to backfill a release for an existing tag when the
     # automatic push trigger was suppressed (e.g. >3 tags pushed at once).
-    # Run with: gh workflow run release.yml --ref vX.Y.Z
+    # Run from main with the tag as input:
+    #   gh workflow run release.yml --ref main -f tag=vX.Y.Z
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.2.7)"
+        required: true
 
 permissions:
   contents: write
@@ -31,6 +36,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Set up Go
