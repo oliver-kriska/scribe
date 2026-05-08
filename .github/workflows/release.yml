@@ -16,6 +16,10 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    # Manual trigger to backfill a release for an existing tag when the
+    # automatic push trigger was suppressed (e.g. >3 tags pushed at once).
+    # Run with: gh workflow run release.yml --ref vX.Y.Z
 
 permissions:
   contents: write
