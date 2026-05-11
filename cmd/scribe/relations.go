@@ -58,15 +58,20 @@ var allTypedRelations = []RelationKind{
 // typed-relation keys that are valid on that article type. validate.go
 // uses this to flag mis-applied edges (e.g. `supersedes:` on a
 // research article).
+//
+// `specializes` and `instance_of` are universally meaningful — a
+// research paper can specialize another, a tool can be an instance of
+// a pattern, etc. — so they're permitted on every type that can sit in
+// a hierarchy.
 var allowedRelationsByType = map[string][]RelationKind{
-	"decision": {RelSupersedes, RelSupersededBy, RelContradicts},
-	"solution": {RelAppliesTo, RelDerivedFrom},
+	"decision": {RelSupersedes, RelSupersededBy, RelContradicts, RelInstanceOf, RelSpecializes},
+	"solution": {RelAppliesTo, RelDerivedFrom, RelInstanceOf, RelSpecializes},
 	"pattern":  {RelInstanceOf, RelSpecializes, RelAppliesTo},
-	"research": {RelExtends, RelCitedBy, RelInforms},
-	"tool":     {RelDerivedFrom},
-	"project":  {},
+	"research": {RelExtends, RelCitedBy, RelInforms, RelInstanceOf, RelSpecializes},
+	"tool":     {RelDerivedFrom, RelInstanceOf, RelSpecializes},
+	"project":  {RelInstanceOf, RelSpecializes},
 	"person":   {},
-	"idea":     {RelInstanceOf},
+	"idea":     {RelInstanceOf, RelSpecializes},
 }
 
 // inverseRelations names each edge's reverse for bidirectional

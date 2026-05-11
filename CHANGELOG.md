@@ -2,6 +2,14 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.11] — 2026-05-11
+
+### Lint — relax per-type relation allowlist
+- `specializes` and `instance_of` are now permitted on `decision`, `solution`, `research`, `tool`, `project`, `idea` (previously restricted, in some cases empty). Both kinds are universally meaningful: a research paper can specialize another research paper; a tool can be an instance of a pattern; a decision can specialize a broader decision.
+- Motivation: the Phase 6A v2 LLM relation classifier produced semantically valid `specializes`/`instance_of` edges across these types, which the old per-type schema then flagged as errors. Real-world classifications matched the relaxed schema.
+- `pattern` and `person` allowlists unchanged.
+- No data migration required — existing typed edges in scriptorium frontmatter immediately validate clean.
+
 ## [0.2.10] — 2026-05-07
 
 ### Phase 6A v2 — LLM relation classifier
