@@ -64,7 +64,8 @@ func (m *Manifest) save() error {
 	return os.Rename(tmp, m.path)
 }
 
-// isIgnored checks if a path is in the ignored list or too shallow.
+// isIgnored checks if a path is in the ignored list, too shallow, or under a
+// macOS TCC-protected location whose first access would prompt the user.
 func (m *Manifest) isIgnored(path string) bool {
 	parts := strings.Split(path, "/")
 	nonEmpty := 0
@@ -76,7 +77,43 @@ func (m *Manifest) isIgnored(path string) bool {
 	if nonEmpty < 4 {
 		return true
 	}
+	if isTCCProtected(path) {
+		return true
+	}
 	return slices.Contains(m.IgnoredPaths, path)
+}
+
+// tccProtectedSubdirs are top-level $HOME subdirectories gated by macOS TCC.
+// Walking under any of these triggers a per-service consent prompt
+// (Downloads, Desktop, Documents, Pictures = Photos, Library = AppData/iCloud,
+// Music, Movies). Auto-discovered Claude Code projects rooted in any of these
+// are almost always accidental — a one-off `claude` invocation in ~/Downloads
+// shouldn't conscript the entire folder into the KB pipeline.
+var tccProtectedSubdirs = []string{
+	"Downloads",
+	"Desktop",
+	"Documents",
+	"Pictures",
+	"Movies",
+	"Music",
+	"Library",
+}
+
+// isTCCProtected reports whether path is at or under a TCC-protected
+// $HOME subdirectory.
+func isTCCProtected(path string) bool {
+	home := os.Getenv("HOME")
+	if home == "" {
+		return false
+	}
+	clean := filepath.Clean(path)
+	for _, sub := range tccProtectedSubdirs {
+		root := filepath.Join(home, sub)
+		if clean == root || strings.HasPrefix(clean, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveDomain determines the domain for a project path.

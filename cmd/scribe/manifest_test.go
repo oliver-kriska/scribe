@@ -42,11 +42,14 @@ func TestProjectName_EnvOverride(t *testing.T) {
 	}
 }
 
-// TestManifestIsIgnored covers the two rules for path skipping:
+// TestManifestIsIgnored covers the rules for path skipping:
 // (1) fewer than 4 non-empty segments = too shallow, ignored;
-// (2) exact match in IgnoredPaths list = ignored. Both exist to keep
-// scribe sync from wasting cycles on root-level dirs or opted-out repos.
+// (2) exact match in IgnoredPaths list = ignored;
+// (3) under a macOS TCC-protected $HOME subdir = ignored (otherwise
+// auto-discovering a stray Claude session in ~/Downloads triggers a
+// chain of TCC consent prompts the user never asked for).
 func TestManifestIsIgnored(t *testing.T) {
+	t.Setenv("HOME", "/Users/x")
 	m := &Manifest{
 		IgnoredPaths: []string{"/Users/x/Projects/scratch"},
 	}
@@ -60,6 +63,12 @@ func TestManifestIsIgnored(t *testing.T) {
 		{"/tmp", true},                      // 1 segment, too shallow
 		{"", true},                          // empty path
 		{"/a/b/c/d/e/f/g", false},           // deep path, not in list
+		{"/Users/x/Downloads/Lukas/Session/2/transcript/output", true},      // TCC: Downloads
+		{"/Users/x/Documents/notes/repo", true},                             // TCC: Documents
+		{"/Users/x/Desktop/scratch/repo", true},                             // TCC: Desktop
+		{"/Users/x/Pictures/lib", true},                                     // TCC: Photos
+		{"/Users/x/Library/Mobile Documents/com~apple~CloudDocs/foo", true}, // TCC: iCloud via Library
+		{"/Users/x/Music/anything/at/all", true},                            // TCC: Music
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
