@@ -93,6 +93,15 @@ func (a *anthropicProvider) Name() string { return "anthropic/" + a.model }
 // runClaude), so callers tagging their context propagate the label
 // here too. Untagged calls record an empty op field — still tracked.
 func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string, error) {
+	// Daily anthropic output-token ceiling: same gate runClaude uses.
+	// Local-provider Generate paths (ollamaProvider) skip this — the
+	// ceiling tracks Anthropic quota only.
+	if cfg := loadConfig(a.root); cfg != nil {
+		if err := checkBudget(a.root, cfg.Sync.DailyAnthropicOutputTokenCeiling); err != nil {
+			return "", err
+		}
+	}
+
 	args := []string{
 		"-p", prompt,
 		"--no-session-persistence",
@@ -107,6 +116,7 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 	op := opLabelFromContext(ctx)
 	entry := CostEntry{
 		Timestamp:   started.UTC().Format(time.RFC3339),
+		Provider:    "anthropic",
 		Model:       a.model,
 		Op:          op,
 		PromptChars: len(prompt),
@@ -437,6 +447,7 @@ func (o *ollamaProvider) generate(ctx context.Context, prompt string, jsonMode b
 	op := opLabelFromContext(ctx)
 	entry := CostEntry{
 		Timestamp:   started.UTC().Format(time.RFC3339),
+		Provider:    "ollama",
 		Model:       "ollama/" + o.model,
 		Op:          op,
 		PromptChars: len(prompt),

@@ -666,6 +666,13 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 					// the remaining not-yet-started extractions are skipped.
 					return err
 				}
+				if errors.Is(err, ErrDailyBudgetExhausted) {
+					logMsg("sync", " [%s] daily anthropic budget ceiling reached — stopping extraction (%v)", pname, err)
+					mu.Lock()
+					rateLimited = true
+					mu.Unlock()
+					return err
+				}
 				logMsg("sync", " [%s] extraction failed: %v", pname, err)
 				return nil
 			}
@@ -1150,7 +1157,10 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 			ctx := context.Background()
 			_, err = runClaude(withOpLabel(ctx, "session-mine"), root, prompt, s.Model, tools, timeout)
 			if err != nil {
-				rl := errors.Is(err, ErrRateLimit)
+				// Treat the daily-budget ceiling like a rate-limit so
+				// the session-mine batch stops gracefully and the next
+				// day's cron picks up where this run left off.
+				rl := errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted)
 				results <- sessionResult{sessionID, false, rl, err}
 				return
 			}
@@ -1535,6 +1545,10 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 				logMsg("sync", "rate limited during absorb — will resume next run")
 				break
 			}
+			if errors.Is(absorbErr, ErrDailyBudgetExhausted) {
+				logMsg("sync", "daily anthropic budget ceiling reached during absorb — stopping cleanly (%v)", absorbErr)
+				break
+			}
 			logMsg("sync", "absorb failed for %s: %v", entry.Name(), absorbErr)
 			continue
 		}
@@ -1648,7 +1662,7 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	// (no sidecar, too few chapters, ChapterAware disabled).
 	if chaptered, chunks, _ := shouldAbsorbChaptered(rawFile, cfg.Absorb); chaptered {
 		if err := s.runPass1Chaptered(ctx, root, rawFile, rawName, chunks, cfg.Absorb, planFile); err != nil {
-			if errors.Is(err, ErrRateLimit) {
+			if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
 				return err
 			}
 			// Chapter pass had a non-rate-limit failure — fall back
@@ -1755,6 +1769,7 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	g.SetLimit(parallel)
 
 	var rateLimited bool
+	var budgetExhausted bool
 	var rateLimitMu gosync.Mutex
 
 	for i, ent := range plan.Entities {
@@ -1814,6 +1829,17 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 						rateLimitMu.Unlock()
 						return err
 					}
+					if errors.Is(err, ErrDailyBudgetExhausted) {
+						// Treat the daily-budget ceiling as a stop-the-world
+						// signal: same shape as rate-limit, the outer caller
+						// commits progress and exits clean. Tracked
+						// separately so the aggregator preserves the
+						// distinct error for log fidelity.
+						rateLimitMu.Lock()
+						budgetExhausted = true
+						rateLimitMu.Unlock()
+						return err
+					}
 					// One-shot corrective retry. The Phase 4B layer 2 e2e
 					// runs showed local models occasionally wrap the
 					// envelope in prose or code fences. A second pass
@@ -1829,6 +1855,43 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 						return nil
 					}
 				}
+				// Defense-in-depth: strip fabricated [cNN-fM] citation
+				// brackets the model invented despite the prompt's "don't
+				// fabricate IDs" rule. The valid set is whatever the facts
+				// pass produced for this raw article; when facts is off or
+				// the file is absent, mergedFacts is nil and every bracket
+				// strips (matching the prompt's drop-the-bracket fallback).
+				if mergedFacts != nil {
+					validIDs := make(map[string]bool, len(mergedFacts.Facts))
+					for _, f := range mergedFacts.Facts {
+						validIDs[f.ID] = true
+					}
+					var totalStripped int
+					for i := range env.Actions {
+						if env.Actions[i].Content == "" {
+							continue
+						}
+						cleaned, stripped := stripUnknownFactIDs(env.Actions[i].Content, validIDs)
+						env.Actions[i].Content = cleaned
+						totalStripped += len(stripped)
+					}
+					if totalStripped > 0 {
+						logMsg("sync", "pass2 entity %q: stripped %d fabricated fact-ID bracket(s)", ent.Label, totalStripped)
+					}
+				} else {
+					var totalStripped int
+					for i := range env.Actions {
+						if env.Actions[i].Content == "" {
+							continue
+						}
+						cleaned, stripped := stripUnknownFactIDs(env.Actions[i].Content, nil)
+						env.Actions[i].Content = cleaned
+						totalStripped += len(stripped)
+					}
+					if totalStripped > 0 {
+						logMsg("sync", "pass2 entity %q: stripped %d fact-ID bracket(s) (facts pass not run for this article)", ent.Label, totalStripped)
+					}
+				}
 				res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
 				if err != nil {
 					logMsg("sync", "pass2 entity %q: apply actions: %v", ent.Label, err)
@@ -1842,7 +1905,7 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 				return nil
 			}
 			if _, err := runClaude(withOpLabel(gctx, "absorb-pass2"), root, pass2Prompt, pass2Model, pass2Tools, pass2Timeout); err != nil {
-				if errors.Is(err, ErrRateLimit) {
+				if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
 					rateLimitMu.Lock()
 					rateLimited = true
 					rateLimitMu.Unlock()
@@ -1856,6 +1919,9 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 		})
 	}
 	if err := g.Wait(); err != nil {
+		if budgetExhausted {
+			return ErrDailyBudgetExhausted
+		}
 		if rateLimited {
 			return ErrRateLimit
 		}

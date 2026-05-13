@@ -37,6 +37,13 @@ import (
 type CostEntry struct {
 	// Timestamp when the call started. RFC3339 UTC for greppability.
 	Timestamp string `json:"timestamp"`
+	// Provider names the backend that ran the call: "anthropic" for
+	// claude -p (runClaude + anthropicProvider), "ollama" for local
+	// Ollama, etc. Empty on legacy entries written before this field
+	// existed — those came from runClaude/anthropicProvider only, so
+	// the daily-budget reader treats empty as "anthropic" for
+	// backwards-compat.
+	Provider string `json:"provider,omitempty"`
 	// Model is the alias passed to claude -p (haiku, sonnet, opus).
 	// Stored verbatim so users can tell when a config change shifted
 	// model choice.

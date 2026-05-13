@@ -758,6 +758,20 @@ type SyncConfig struct {
 	// false if the KB lives somewhere you don't want network calls (air-
 	// gapped laptops, offline laptops on cron).
 	AlwaysPullBeforeSync *bool `yaml:"always_pull_before_sync"`
+
+	// DailyAnthropicOutputTokenCeiling is a hard backstop against
+	// runaway Anthropic spend. When the sum of output_tokens in
+	// today's output/costs/<date>.jsonl (anthropic provider only)
+	// reaches this number, further runClaude / anthropicProvider
+	// calls abort with ErrDailyBudgetExhausted. Sync's outer loop
+	// catches that and exits cleanly so cron doesn't crashloop.
+	// Local-provider calls (ollama, llama.cpp) are exempt.
+	// Zero (default) disables the ceiling entirely. After the
+	// 2026-05-11 runaway (~7M output tokens in 35 hours), a sensible
+	// production value for daily background crons is ~2_000_000.
+	// SCRIBE_BYPASS_BUDGET=1 in the environment bypasses the check
+	// for one-off manual runs that knowingly need to exceed it.
+	DailyAnthropicOutputTokenCeiling int64 `yaml:"daily_anthropic_output_token_ceiling"`
 }
 
 type DeepConfig struct {
