@@ -306,6 +306,24 @@ type AbsorbConfig struct {
 	// aliases get auto-swapped to the recommended local default with
 	// a log line so misconfiguration never silently no-ops.
 	FactsProvider string `yaml:"facts_provider"`
+
+	// Pass2Mode picks the pass-2 protocol. "tools" (default) keeps the
+	// historical `claude -p` path with Read/Write/Edit/Glob/Grep tool
+	// access. "json" switches to the Phase 4B JSON-action-envelope
+	// path: the model emits one WikiActionEnvelope JSON document, Go
+	// applies the file mutations through applyWikiActions. The json
+	// mode is what makes pass-2 local-model friendly.
+	//
+	// Auto-flip: when Pass2Provider is set to anything other than
+	// "anthropic", Pass2Mode is forced to "json" — the tools path
+	// only works with claude -p.
+	Pass2Mode string `yaml:"pass2_mode"`
+
+	// Pass2Provider routes pass-2 through llmProviderGenerator (json
+	// mode) or `claude -p` (tools mode). Default "anthropic". Setting
+	// "ollama" automatically engages json mode and reuses
+	// Contextualize.OllamaURL just like FactsProvider does.
+	Pass2Provider string `yaml:"pass2_provider"`
 }
 
 // ContextualizeConfig controls the `scribe contextualize` pre-embed step.
@@ -358,6 +376,8 @@ func absorbDefaults() AbsorbConfig {
 		FactsModel:      "haiku",
 		FactsTimeoutMin: 3,
 		FactsProvider:   "anthropic",
+		Pass2Mode:       "tools",
+		Pass2Provider:   "anthropic",
 		Contextualize: ContextualizeConfig{
 			Enabled:    &trueV,
 			Provider:   "anthropic",
@@ -444,6 +464,16 @@ absorb:
   # default; flip to ollama to keep this cheap-but-numerous pass off
   # Anthropic quota. ollama_url comes from absorb.contextualize above.
   # facts_provider: %s         # default: anthropic (alternatives: ollama)
+
+  # Phase 4B pass-2 JSON-envelope mode. The default "tools" path uses
+  # `+"`claude -p`"+` with Read/Write/Edit/Glob/Grep. Setting pass2_mode=json
+  # (or pass2_provider to a non-anthropic provider) switches pass-2 to
+  # an inlined prompt that emits one WikiActionEnvelope JSON document;
+  # scribe applies the file mutations itself. This makes pass-2 work
+  # against local Ollama models (no tool-use needed).
+  # pass2_mode: %s              # default: tools (alternatives: json)
+  # pass2_provider: %s          # default: anthropic (alternatives: ollama)
+  # pass2_model: ""                # for ollama: e.g. qwen2.5-coder:14b
 `,
 		d.Strictness,
 		d.MaxPerRun,
@@ -464,6 +494,8 @@ absorb:
 		d.FactsModel,
 		d.FactsTimeoutMin,
 		d.FactsProvider,
+		d.Pass2Mode,
+		d.Pass2Provider,
 	)
 }
 
@@ -562,6 +594,29 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 				logMsg("config", "absorb.facts_provider=ollama but facts_model=%q is a Claude alias — switching to %s (set an ollama model explicitly to silence this)", cfg.FactsModel, ollamaRecommendedModel)
 			}
 			cfg.FactsModel = ollamaRecommendedModel
+		}
+	}
+	if cfg.Pass2Provider == "" {
+		cfg.Pass2Provider = d.Pass2Provider
+	}
+	if cfg.Pass2Mode == "" {
+		cfg.Pass2Mode = d.Pass2Mode
+	}
+	// Auto-flip mode to json whenever provider is not anthropic — the
+	// tools path requires `claude -p`, so a local-provider config with
+	// pass2_mode left at "tools" would silently no-op. Log so the user
+	// notices the override.
+	if !strings.EqualFold(cfg.Pass2Provider, "anthropic") && !strings.EqualFold(cfg.Pass2Mode, "json") {
+		logMsg("config", "absorb.pass2_provider=%q forces pass2_mode=json (was %q)", cfg.Pass2Provider, cfg.Pass2Mode)
+		cfg.Pass2Mode = "json"
+	}
+	// Provider/model coherence: ollama + Claude alias swap, same as facts.
+	if strings.EqualFold(cfg.Pass2Provider, "ollama") {
+		if cfg.Pass2Model == "" || claudeModelAliases[strings.ToLower(cfg.Pass2Model)] {
+			if cfg.Pass2Model != "" {
+				logMsg("config", "absorb.pass2_provider=ollama but pass2_model=%q is a Claude alias — switching to %s (set an ollama model explicitly to silence this)", cfg.Pass2Model, ollamaRecommendedModel)
+			}
+			cfg.Pass2Model = ollamaRecommendedModel
 		}
 	}
 	if cfg.Contextualize.Enabled == nil {
@@ -760,7 +815,15 @@ func loadConfig(root string) *ScribeConfig {
 		applyIngestDefaults(&cfg.Ingest)
 		return cfg
 	}
-	_ = yaml.Unmarshal(data, cfg)
+	// loadConfig used to swallow yaml.Unmarshal errors silently, which
+	// meant a single duplicate key (e.g. "pass2_timeout_min" defined twice)
+	// wiped every overridden field back to defaults with zero warning. Log
+	// the failure so misconfiguration surfaces immediately — but still fall
+	// through with defaults rather than crash, so a broken config doesn't
+	// take down the whole binary.
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		logMsg("config", "scribe.yaml has errors — falling back to defaults: %v", err)
+	}
 
 	// Expand ~ in paths.
 	cfg.ClaudeProjectsDir = expandHome(cfg.ClaudeProjectsDir)

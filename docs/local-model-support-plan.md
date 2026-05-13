@@ -1,9 +1,9 @@
 # Local Model Support — Planning Note
 
-Status: **Phase 4A done, Phase 4B groundwork done, Phase 4B wiring paused**
+Status: **Phase 4A in production; Phase 4B layer 2 validated end-to-end on local qwen2.5-coder:14b (9/9 envelopes parsed and applied, zero anthropic spend); reliability fixes #1–5 from the post-test review shipped; layer 3 quality tuning still pending**
 Owner: Oliver
 Filed: 2026-04-28
-Last updated: 2026-04-28 (vacation pause; resume after week off)
+Last updated: 2026-05-13 (Phase 4B layer 2 e2e validated on ollama; reliability fixes 1–5 landed)
 
 ## Why
 
@@ -135,6 +135,128 @@ A single user with a heavy Claude Code week might generate 100+ sessions. Withou
 
 ## Progress log (most recent first)
 
+### 2026-05-13 (afternoon) — Layer 2 e2e validated + reliability fixes
+
+End-to-end runs against `2026-05-13-linkedin-x-tooling-comparison-may-2026.md`
+in a clean test KB:
+
+| run | provider/model | entities | parsed OK | applied OK | wallclock |
+|---|---|---|---|---|---|
+| anthropic/sonnet (tools) | 12/12 | n/a | 12 | ~5 min |
+| anthropic/sonnet (json) | 12/12 | 12 | 12 | ~5 min |
+| **ollama/qwen2.5-coder:14b (json + format:"json")** | 9/9 | **9** | **9** | ~19 min |
+
+Reliability fixes shipped post-test (commit pending):
+
+1. `loadConfig` logs yaml.Unmarshal errors (`config.go`) — was silent;
+   one duplicate key wiped the whole absorb block. Surfaced during this
+   round's debugging.
+2. `ollamaProvider` now records cost-ledger entries with token counts
+   and durations (`llm.go`). Local pass-2 shows up in `scribe cost`
+   alongside anthropic calls.
+3. New `jsonModeProvider` interface + `ollamaProvider.GenerateJSON`
+   sets Ollama's `format: "json"` flag. qwen2.5-coder:14b now emits
+   parseable envelopes 9/9 first try (vs 8/8 without the flag — same
+   pass rate on this corpus, but the runtime constraint matters more
+   for smaller models).
+4. `{{TODAY}}` placeholder added to the json prompt and inlined in
+   `absorbDenseTwoPass`. Fixes the local-model date-hallucination
+   (`created: 2023-10-06` before, `created: 2026-05-13` after).
+5. One-shot corrective retry on `parseEnvelope` failure via new
+   `runPass2JSONOnce` helper. Installed but not triggered in any of
+   the validation runs — `format: "json"` was sufficient on qwen.
+
+Prompt tightening for known local-model misbehavior:
+
+- Explicit "YAML frontmatter, NOT TOML `+++`" instruction.
+- "`related:` must be wikilink strings `"[[X]]"`, not bare strings."
+- "Do NOT fabricate `[c00-fN]` IDs when the facts block is empty."
+
+Remaining local-model quirks (not blocking; tracked):
+
+- qwen2.5-coder:14b still emits `related:` as bare YAML flow
+  sequence `[[A]], [[B]]` instead of quoted `"[[A]]"`. yaml.v3 parses
+  this as nested-list. The wiki backlink walker may or may not cope.
+- qwen ignored the "don't fabricate IDs" instruction in the validation
+  run with no facts pass. Switching on `atomic_facts: true` produces
+  the real ID set the model can reference; otherwise drop the fact-ID
+  bracket entirely.
+
+Both look like instruction-resistance issues that vary by model. The
+Perplexity research prompt (saved separately) targets exactly this
+question: which Ollama models actually follow nested YAML/markdown
+instructions inside a JSON envelope.
+
+### 2026-05-13 — Phase 4B layer 2 wired
+
+Files:
+- `cmd/scribe/prompts/absorb-pass2-json.md` — new prompt. Inlines raw
+  article body, plan JSON, facts block, and entity fields; instructs
+  the model to emit exactly one `WikiActionEnvelope` JSON object to
+  stdout (no tools, no prose, no fences).
+- `cmd/scribe/config.go` — `AbsorbConfig.Pass2Mode` (default `tools`)
+  and `Pass2Provider` (default `anthropic`). Coherence: any non-
+  anthropic provider auto-flips mode to `json`; ollama + Claude alias
+  swaps to `ollamaRecommendedModel` with a log line, same shape as
+  Phase 4A's facts plumbing.
+- `cmd/scribe/sync.go` — `absorbDenseTwoPass` branches on the mode in
+  the per-entity goroutine: tools path is unchanged; json path runs
+  `provider.Generate` → `extractJSON` → `parseEnvelope` →
+  `applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})`
+  and logs applied/error counts.
+- `cmd/scribe/absorb_pass2_json_test.go` — defaults + coherence +
+  prompt-placeholder coverage.
+
+Reused without modification: `extractJSON`, `parseEnvelope`,
+`applyWikiActions`, `newLLMProvider`, `Contextualize.OllamaURL`.
+Deliberately deferred: the "pre-search wiki for entity neighbors and
+inline hint paths" idea from the original layer-2 list. Layer 3
+(quality tuning) is where neighbor hints come in if envelope output
+turns out to miss cross-references.
+
+Flip on: in `scribe.yaml`,
+```yaml
+absorb:
+  pass2_provider: ollama
+  pass2_model: qwen2.5-coder:14b  # or mistral-small3:24b; gemma3:4b last resort
+```
+Mode auto-flips to `json`. `pass2_mode: json` with `pass2_provider:
+anthropic` is also valid — useful for measuring envelope quality
+against the tools path on the same model.
+
+### 2026-05-12 — Token-budget audit; facts pass cut over to ollama
+
+Trigger: overnight cron drained ~12% of weekly Claude Max quota and ~56% of a 4-hour session before wake-up. Heavy LaunchAgents (`com.scribe.sync-projects`, `com.scribe.sync-sessions`) unloaded; lockfiles released.
+
+Yesterday's `output/costs/2026-05-11.jsonl` rolled up:
+
+| op | calls | output tokens | wall time |
+|---|---:|---:|---:|
+| absorb-pass2 | 734 | 2.6M | 17.9 h |
+| absorb-pass1-chapter | 658 | 2.1M | 10.1 h |
+| absorb-facts | 657 | 2.1M | 6.3 h |
+| absorb-single | 3 | 26K | 0.2 h |
+| session-mine | 3 | 48K | 0.3 h |
+| session-extract | 3 | 47K | 0.3 h |
+| contextualize | 16 | 17K | 0.1 h |
+| **Total OK** | **2,074** | **~7M** | **~35 h** |
+| Failed (retries) | 11,220 | — | 40 min |
+
+11,220 fast-failing retries (likely rate-limited / claude-missing-from-PATH) is itself a fix candidate — they're not free even when they don't reach the model.
+
+Facts pass cutover landed in `scriptorium/scribe.yaml`:
+
+```yaml
+absorb:
+  atomic_facts: true
+  facts_provider: ollama
+  facts_model: gemma3:4b
+```
+
+Ollama is running (`/opt/homebrew/opt/ollama/bin/ollama serve`, `gemma3:4b` pulled). Expected next-run reclaim: the 6.3h / 2.1M-token facts share, ~30% of total spend.
+
+Pass-1 chapter (10.1h) + pass-2 (17.9h) = 28h / 4.7M output tokens still on Anthropic — that's the prize for Phase 4B layer 2.
+
 ### 2026-04-28 — Phase 4B groundwork landed (commit `bf021fa`)
 
 Wiki action envelope schema + executor + 21 unit tests. Foundation
@@ -186,14 +308,27 @@ See git log; all production-validated through the 2026-04-28 sync run
 
 ---
 
-## Resume plan (when Oliver returns from vacation)
+## Resume plan
 
 The next concrete step is Phase 4B layer 2: prompt + goroutine wiring
-on top of the foundation that landed in `bf021fa`. The foundation is
-green (CI passes, 522 tests, 0 lint, 0 vulnerabilities); start by
-running `make ci` to confirm nothing rotted while away.
+on top of the foundation that landed in `bf021fa`. Start by running
+`make ci` to confirm the tree is still green before changing anything,
+then work the layer-2 list below.
 
-### Phase 4B layer 2 — Prompt + wiring
+**Pre-flight before touching code:**
+1. Re-enable Ollama if it stopped:
+   `brew services start ollama && curl -s http://localhost:11434/api/tags | jq .`
+2. Verify a successful facts-pass run since 2026-05-12 — grep
+   `output/costs/$(date +%F).jsonl` for `ollamaProvider` /
+   ollama-model entries, confirm absorb-facts duration dropped to
+   sub-second per call.
+3. Heavy LaunchAgents are unloaded as of 2026-05-12. Decide whether to
+   re-enable before or after layer 2 lands — re-enabling before just
+   resumes the Anthropic burn on pass-1 + pass-2.
+
+### Phase 4B layer 2 — Prompt + wiring  ✅ landed 2026-05-13
+
+Original work list, marked up with what shipped:
 
 1. Create `cmd/scribe/prompts/absorb-pass2-json.md`. Same job as
    `absorb-pass2.md` but emits one `WikiActionEnvelope` JSON object
@@ -268,22 +403,23 @@ cover most of what mining writes, but session mining also touches
 fit the wiki-dirs sandbox; it would need a separate
 `SessionsLogAction` op or a controlled escape hatch.
 
-### Backlog hygiene during vacation
+### Operational notes (post-2026-05-12)
 
-- 1290 pending sessions in ccrider DB (will keep growing while away)
-- 63 raw articles still pending absorb
-- 4 projects in extraction queue
-- 19 drop files
+Heavy crons stay disabled until 4B layer 2 ships:
 
-The cron schedule continues running in the background; it will
-chip away at the backlog on Anthropic quota using the existing
-tools-path code. Returning from vacation, expect:
-- backlog smaller (cron drained some)
-- $20–40 in Anthropic spend (unavoidable until 4B ships)
-- contextualize and session-mine likely rate-limited at points,
-  which the existing rate-limit detection handles
+```sh
+launchctl unload ~/Library/LaunchAgents/com.scribe.sync-projects.plist
+launchctl unload ~/Library/LaunchAgents/com.scribe.sync-sessions.plist
+```
 
-To minimize spend during the week away, an option is to disable
-the LaunchAgent before leaving:
-`launchctl unload ~/Library/LaunchAgents/com.scriptorium.*.plist`
-and re-enable on return.
+Light crons still running (no `claude -p` calls): `ingest-drain`,
+`commit`, `auto-commit`, `lint`, `apply-identities`, `dream` (weekly),
+`capture-imessage`, `capture-refetch`, `watch`.
+
+Re-enable with `launchctl load <plist>` once 4B layer 2 lands and a
+day of cost-ledger data shows pass-2 wall time has dropped.
+
+Concurrent guardrail to consider adding alongside 4B: a daily output-
+token ceiling in `runClaude` that aborts further Anthropic calls when
+`output/costs/<today>.jsonl` crosses a configured limit. Belt-and-
+braces against another runaway like 2026-05-11.

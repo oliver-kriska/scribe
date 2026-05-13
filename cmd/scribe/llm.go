@@ -26,6 +26,27 @@ type llmProviderGenerator interface {
 	Name() string
 }
 
+// jsonModeProvider is the optional interface a provider implements when it
+// supports a structured-output mode for prompts that must return one JSON
+// document. Callers that know they want JSON (e.g. pass-2 envelope mode)
+// type-assert and prefer GenerateJSON when available; everything else stays
+// on Generate. Anthropic intentionally doesn't implement this — `claude -p`
+// already returns clean text and the prompt itself enforces shape.
+type jsonModeProvider interface {
+	GenerateJSON(ctx context.Context, prompt string) (string, error)
+}
+
+// generateMaybeJSON dispatches to GenerateJSON when the provider supports
+// it, falling back to Generate otherwise. Centralized so the call sites
+// (absorbDenseTwoPass, future envelope callers) don't repeat the type
+// assertion.
+func generateMaybeJSON(ctx context.Context, p llmProviderGenerator, prompt string) (string, error) {
+	if jp, ok := p.(jsonModeProvider); ok {
+		return jp.GenerateJSON(ctx, prompt)
+	}
+	return p.Generate(ctx, prompt)
+}
+
 // newLLMProvider picks the provider backend based on scribe.yaml. Unknown
 // provider names fall back to anthropic with a log line so misconfiguration
 // never silently no-ops.
@@ -37,7 +58,7 @@ type llmProviderGenerator interface {
 func newLLMProvider(provider, model, ollamaURL, kbRoot string) llmProviderGenerator {
 	switch strings.ToLower(provider) {
 	case "ollama":
-		return &ollamaProvider{baseURL: ollamaURL, model: model}
+		return &ollamaProvider{baseURL: ollamaURL, model: model, root: kbRoot}
 	case "anthropic", "":
 		return &anthropicProvider{model: model, root: kbRoot}
 	default:
@@ -172,15 +193,25 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 type ollamaProvider struct {
 	baseURL string
 	model   string
+	// root is the KB so Generate / GenerateJSON can append a cost-ledger
+	// row alongside anthropic-provider calls. Empty root means "don't
+	// track" — appendCostEntry no-ops on empty root, which is what test
+	// constructors without a KB context want.
+	root string
 }
 
 func (o *ollamaProvider) Name() string { return "ollama/" + o.model }
 
 // ollamaRequest mirrors the shape Ollama's /api/generate expects.
+// Format is the structured-output flag — "json" forces the model to
+// emit exactly one JSON document. Models without explicit grammar
+// support still benefit because Ollama's runtime falls back to
+// token-level constraint when format=json is set.
 type ollamaRequest struct {
 	Model   string         `json:"model"`
 	Prompt  string         `json:"prompt"`
 	Stream  bool           `json:"stream"`
+	Format  string         `json:"format,omitempty"`
 	Options map[string]any `json:"options,omitempty"`
 }
 
@@ -189,6 +220,10 @@ type ollamaResponse struct {
 	Done     bool   `json:"done"`
 	// Ollama returns error in a top-level "error" field on 4xx/5xx.
 	Error string `json:"error,omitempty"`
+	// Token counts used for the cost ledger. Ollama emits these on
+	// every successful /api/generate response.
+	PromptEvalCount int `json:"prompt_eval_count,omitempty"`
+	EvalCount       int `json:"eval_count,omitempty"`
 }
 
 // ensureReady checks that Ollama is reachable and the requested model is
@@ -355,6 +390,24 @@ var (
 )
 
 func (o *ollamaProvider) Generate(ctx context.Context, prompt string) (string, error) {
+	return o.generate(ctx, prompt, false)
+}
+
+// GenerateJSON forces Ollama into structured-output mode by setting
+// `format: "json"` on the /api/generate request. Models that support it
+// (all current Ollama-served Llama/Qwen/Gemma/Mistral variants) will
+// produce exactly one JSON document with no preamble, no markdown
+// fences, no trailing prose. Smaller models in particular benefit —
+// gemma3:4b emits malformed envelopes ~30% of the time under plain
+// text, near zero under format:"json".
+func (o *ollamaProvider) GenerateJSON(ctx context.Context, prompt string) (string, error) {
+	return o.generate(ctx, prompt, true)
+}
+
+// generate is the shared implementation behind Generate and GenerateJSON.
+// jsonMode toggles Ollama's structured-output flag; everything else
+// (cost-ledger row, error handling, ensureReady) is identical.
+func (o *ollamaProvider) generate(ctx context.Context, prompt string, jsonMode bool) (string, error) {
 	if err := o.ensureReady(ctx); err != nil {
 		return "", err
 	}
@@ -367,13 +420,36 @@ func (o *ollamaProvider) Generate(ctx context.Context, prompt string) (string, e
 		// a source is pathologically long.
 		Options: map[string]any{"num_ctx": 8192, "temperature": 0.3},
 	}
+	if jsonMode {
+		reqBody.Format = "json"
+	}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
+	// Cost-ledger plumbing mirrors anthropicProvider. Ollama calls have
+	// no USD cost, but recording duration + token counts makes the local
+	// path show up in `scribe cost` alongside anthropic calls — without
+	// this the daily ledger silently underreports work that's moved
+	// off Anthropic quota.
+	started := time.Now()
+	op := opLabelFromContext(ctx)
+	entry := CostEntry{
+		Timestamp:   started.UTC().Format(time.RFC3339),
+		Model:       "ollama/" + o.model,
+		Op:          op,
+		PromptChars: len(prompt),
+	}
+	defer func() {
+		entry.DurationMS = time.Since(started).Milliseconds()
+		appendCostEntry(o.root, entry)
+	}()
+
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
+		entry.OK = false
+		entry.ErrKind = "other"
 		return "", fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -381,24 +457,46 @@ func (o *ollamaProvider) Generate(ctx context.Context, prompt string) (string, e
 	client := &http.Client{Timeout: 10 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
+		entry.OK = false
+		entry.ErrKind = "other"
 		return "", fmt.Errorf("ollama http: %w — is Ollama running at %s?", err, o.baseURL)
 	}
 	defer resp.Body.Close()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
+		entry.OK = false
+		entry.ErrKind = "other"
 		return "", fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode >= 400 {
+		entry.OK = false
+		entry.ErrKind = "other"
 		return "", fmt.Errorf("ollama %d: %s", resp.StatusCode, string(data))
 	}
 
 	var or ollamaResponse
 	if err := json.Unmarshal(data, &or); err != nil {
+		entry.OK = false
+		entry.ErrKind = "other"
 		return "", fmt.Errorf("decode response: %w (body=%s)", err, string(data))
 	}
 	if or.Error != "" {
+		entry.OK = false
+		entry.ErrKind = "other"
 		return "", fmt.Errorf("ollama: %s", or.Error)
+	}
+	entry.OK = true
+	// Ollama returns token counts in eval_count + prompt_eval_count
+	// when set on the response struct. Wire those into the ledger so
+	// `scribe cost` rolls them up like the anthropic counterparts.
+	if or.PromptEvalCount > 0 {
+		in := int64(or.PromptEvalCount)
+		entry.InputTokens = &in
+	}
+	if or.EvalCount > 0 {
+		out := int64(or.EvalCount)
+		entry.OutputTokens = &out
 	}
 	return strings.TrimSpace(or.Response), nil
 }

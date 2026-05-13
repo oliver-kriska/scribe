@@ -1695,6 +1695,27 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	pass2Timeout := time.Duration(cfg.Absorb.Pass2TimeoutMin) * time.Minute
 	pass2Tools := []string{"Read", "Write", "Edit", "Glob", "Grep", "Bash(wc:*)"}
 
+	// Phase 4B layer 2: pass2_mode=json runs the JSON-action-envelope
+	// path through llmProviderGenerator instead of `claude -p`. The
+	// inlined-everything prompt + envelope executor live in
+	// prompts/absorb-pass2-json.md and wiki_actions.go respectively.
+	pass2JSONMode := strings.EqualFold(cfg.Absorb.Pass2Mode, "json")
+	var pass2Provider llmProviderGenerator
+	var rawBodyForPrompt, planJSONForPrompt string
+	if pass2JSONMode {
+		pass2Provider = newLLMProvider(cfg.Absorb.Pass2Provider, pass2Model, cfg.Absorb.Contextualize.OllamaURL, root)
+		// Preload the raw article body and plan JSON once; every
+		// pass-2 goroutine inlines the same blobs (only the entity
+		// fields differ).
+		if data, err := os.ReadFile(rawFile); err == nil {
+			rawBodyForPrompt = string(data)
+		} else {
+			return fmt.Errorf("pass2 json: read raw article: %w", err)
+		}
+		planJSONForPrompt = string(planBytes)
+		logMsg("sync", "pass2 mode=json provider=%s model=%s", pass2Provider.Name(), pass2Model)
+	}
+
 	parallel := cfg.Absorb.Pass2Parallel
 	if parallel <= 0 {
 		parallel = 3
@@ -1752,7 +1773,8 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 			if mergedFacts != nil && ent.SourceChapter != nil {
 				factsBlock = formatFactsForPrompt(mergedFacts.factsForChapter(*ent.SourceChapter))
 			}
-			pass2Prompt, err := loadPrompt("absorb-pass2.md", map[string]string{
+			promptName := "absorb-pass2.md"
+			vars := map[string]string{
 				"KB_DIR":            root,
 				"RAW_FILE":          rawFile,
 				"PLAN_FILE":         planFile,
@@ -1762,7 +1784,18 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 				"ENTITY_KEY_CLAIMS": keyClaims,
 				"DOMAIN":            domain,
 				"FACTS":             factsBlock,
-			})
+			}
+			if pass2JSONMode {
+				promptName = "absorb-pass2-json.md"
+				vars["RAW_BODY"] = rawBodyForPrompt
+				vars["PLAN_JSON"] = planJSONForPrompt
+				// Many local models lack date awareness and hallucinate
+				// `created:` values from training-data era. Inline today's
+				// date so the prompt's "use this exact value" instruction
+				// has a concrete literal to substitute.
+				vars["TODAY"] = time.Now().UTC().Format("2006-01-02")
+			}
+			pass2Prompt, err := loadPrompt(promptName, vars)
 			if err != nil {
 				return fmt.Errorf("load pass2 prompt: %w", err)
 			}
@@ -1772,6 +1805,42 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 			defer lock.Unlock()
 
 			logMsg("sync", "pass2 [%d/%d] writing %s", i+1, len(plan.Entities), ent.Label)
+			if pass2JSONMode {
+				env, err := runPass2JSONOnce(gctx, pass2Provider, pass2Prompt, pass2Timeout)
+				if err != nil {
+					if errors.Is(err, ErrRateLimit) {
+						rateLimitMu.Lock()
+						rateLimited = true
+						rateLimitMu.Unlock()
+						return err
+					}
+					// One-shot corrective retry. The Phase 4B layer 2 e2e
+					// runs showed local models occasionally wrap the
+					// envelope in prose or code fences. A second pass
+					// with a sharper instruction recovers most of those
+					// without burning much extra wallclock. Anthropic
+					// rarely needs the retry but pays a small premium
+					// for the safety net.
+					logMsg("sync", "pass2 entity %q: first attempt failed (%v) — retrying with corrective prompt", ent.Label, err)
+					correctivePrompt := pass2Prompt + "\n\n## CORRECTION\n\nYour previous response could not be parsed as a JSON envelope. Output ONLY one JSON object matching WikiActionEnvelope. No prose. No markdown fences. No explanation. The object is the entire response.\n"
+					env, err = runPass2JSONOnce(gctx, pass2Provider, correctivePrompt, pass2Timeout)
+					if err != nil {
+						logMsg("sync", "pass2 entity %q: retry also failed: %v", ent.Label, err)
+						return nil
+					}
+				}
+				res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+				if err != nil {
+					logMsg("sync", "pass2 entity %q: apply actions: %v", ent.Label, err)
+					return nil
+				}
+				if len(res.Errors) > 0 {
+					logMsg("sync", "pass2 entity %q: %d applied, %d errors: %s", ent.Label, len(res.Applied), len(res.Errors), strings.Join(res.Errors, "; "))
+				} else {
+					logMsg("sync", "pass2 entity %q: applied %d action(s)", ent.Label, len(res.Applied))
+				}
+				return nil
+			}
 			if _, err := runClaude(withOpLabel(gctx, "absorb-pass2"), root, pass2Prompt, pass2Model, pass2Tools, pass2Timeout); err != nil {
 				if errors.Is(err, ErrRateLimit) {
 					rateLimitMu.Lock()
@@ -1794,6 +1863,27 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 		return err
 	}
 	return nil
+}
+
+// runPass2JSONOnce is one call of the pass-2 envelope path: dispatch to
+// the provider (preferring GenerateJSON when supported — see
+// generateMaybeJSON), extract the JSON document from whatever wrapping
+// the model added, and parse it as a WikiActionEnvelope. Returns the
+// envelope or an error that the caller decides whether to retry.
+// Stays a free function (not a method) because it has no dependency on
+// SyncCmd state — just provider + prompt + timeout.
+func runPass2JSONOnce(parent context.Context, provider llmProviderGenerator, prompt string, timeout time.Duration) (WikiActionEnvelope, error) {
+	callCtx, cancel := context.WithTimeout(withOpLabel(parent, "absorb-pass2"), timeout)
+	defer cancel()
+	out, err := generateMaybeJSON(callCtx, provider, prompt)
+	if err != nil {
+		return WikiActionEnvelope{}, err
+	}
+	jsonText, ok := extractJSON(out)
+	if !ok {
+		return WikiActionEnvelope{}, fmt.Errorf("no JSON envelope in provider output (%d bytes)", len(out))
+	}
+	return parseEnvelope(jsonText)
 }
 
 // absorbPlan mirrors the JSON schema emitted by prompts/absorb-pass1.md.
