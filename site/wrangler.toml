@@ -1,0 +1,20 @@
+name = "getscribe"
+compatibility_date = "2025-01-15"
+
+# Static-assets-only Worker. No `main` script — wrangler serves files
+# from `public/` directly. Adding a worker script later is opt-in.
+[assets]
+directory = "./public"
+not_found_handling = "404-page"
+
+# Custom domain bindings. Both must resolve via Cloudflare DNS for the
+# zone (already true — zone getscribe.dev is active on this account).
+# `custom_domain = true` lets Cloudflare manage the SSL cert + DNS A/AAAA
+# records automatically; no manual DNS edit needed.
+[[routes]]
+pattern = "getscribe.dev"
+custom_domain = true
+
+[[routes]]
+pattern = "www.getscribe.dev"
+custom_domain = true

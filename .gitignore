@@ -26,3 +26,12 @@ coverage.txt
 
 # Release workspace
 .goreleaser/
+
+# Secrets — never commit
+.env
+
+# site/ — source-only, no JS toolchain in repo
+/site/.wrangler/
+/site/node_modules/
+/site/package.json
+/site/package-lock.json

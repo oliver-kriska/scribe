@@ -33,6 +33,7 @@ install.sh           curl-piped installer
 Makefile             build/install/test with -tags sqlite_fts5
 Justfile             dev shortcuts
 .goreleaser.yml      release pipeline
+site/                getscribe.dev marketing page (Cloudflare Workers, static assets only — no JS toolchain in repo)
 ```
 
 One Go package under `cmd/scribe/`. No internal/ split yet — keep it that way until the package breaks 3000 LOC or a second binary is needed.
@@ -56,15 +57,15 @@ make check        # test + vet
 
 ## Key external surfaces
 
-| Input | Path | Notes |
-|---|---|---|
-| ccrider sessions DB | `~/.config/ccrider/sessions.db` | FTS5, read-only access |
-| Claude Code session folders | `~/.claude/projects/*` | keyed by project cwd |
-| iMessage chat DB | `~/Library/Messages/chat.db` | needs Full Disk Access |
-| scribe user config | `~/.config/scribe/config.yaml` | global defaults |
-| pending sessions queue | `~/.config/scribe/pending-sessions.txt` | drained by `sync --sessions` |
-| LaunchAgents | `~/Library/LaunchAgents/com.scribe.*.plist` | installed by `cron install` |
-| KB root | `$SCRIBE_KB` or `scribe.yaml` in cwd | every command resolves this first |
+| Input                       | Path                                        | Notes                             |
+| --------------------------- | ------------------------------------------- | --------------------------------- |
+| ccrider sessions DB         | `~/.config/ccrider/sessions.db`             | FTS5, read-only access            |
+| Claude Code session folders | `~/.claude/projects/*`                      | keyed by project cwd              |
+| iMessage chat DB            | `~/Library/Messages/chat.db`                | needs Full Disk Access            |
+| scribe user config          | `~/.config/scribe/config.yaml`              | global defaults                   |
+| pending sessions queue      | `~/.config/scribe/pending-sessions.txt`     | drained by `sync --sessions`      |
+| LaunchAgents                | `~/Library/LaunchAgents/com.scribe.*.plist` | installed by `cron install`       |
+| KB root                     | `$SCRIBE_KB` or `scribe.yaml` in cwd        | every command resolves this first |
 
 Everything under `$SCRIBE_KB` belongs to the user's private KB repo and is never committed from this codebase.
 
@@ -90,6 +91,60 @@ Everything under `$SCRIBE_KB` belongs to the user's private KB repo and is never
 ## Release
 
 GoReleaser builds darwin/linux × amd64/arm64 via the workflow in `.github/`. Tag and push to trigger. The Homebrew formula in `Formula/` is updated by the same release.
+
+---
+
+## Marketing site — getscribe.dev
+
+The `site/` subfolder hosts the page served at <https://getscribe.dev> via
+**Cloudflare Workers static assets**. The repo intentionally contains only
+HTML/CSS — `package.json`, `node_modules`, and `.wrangler/` are gitignored,
+because we don't want any npm dependencies in the binary's source tree.
+
+```
+site/
+├── wrangler.toml      # static-assets-only Worker, custom-domain routes
+├── public/
+│   └── index.html     # the page itself
+└── README.md
+```
+
+**Worker name:** `getscribe`
+**Account:** `<REDACTED>` (IdeaX)
+**Zone:** `getscribe.dev` (already on Cloudflare DNS for this account)
+**Routes:** `getscribe.dev` and `www.getscribe.dev` are bound as
+`custom_domain = true` — Cloudflare auto-manages DNS records and the SSL
+cert; no manual DNS edits needed when the routes change.
+
+### Deploy
+
+Wrangler is a **global** install on the dev machine, not a project dep:
+
+```sh
+npm install --global --ignore-scripts wrangler@latest
+```
+
+(`--ignore-scripts` skips wrangler's transitive `sharp` postinstall, which
+fails to build from source on Node 25 because it asks for `node-addon-api`.)
+
+Credentials live in repo-root `.env` (gitignored):
+
+```
+export CLOUDFLARE_API_TOKEN="..."
+export CLOUDFLARE_ACCOUNT_ID="<REDACTED>"
+```
+
+To push a change:
+
+```sh
+set -a; source .env; set +a          # load creds
+cd site
+wrangler deploy
+```
+
+`wrangler dev` serves locally on port 8787 for iteration. `wrangler tail`
+streams edge logs. The page embeds a Plausible analytics snippet — no other
+runtime JS lives in the source.
 
 ---
 

@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>scribe — your knowledge base, written by your tools</title>
+  <meta name="description" content="A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable." />
+  <!-- Privacy-friendly analytics by Plausible -->
+  <script async src="https://plausible.io/js/pa-SplqFtwNmkspNbht9wwlS.js"></script>
+  <script>
+    window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+    plausible.init()
+  </script>
+  <style>
+    :root {
+      --bg: #0e0f12;
+      --bg-soft: #14161b;
+      --bg-card: #181a20;
+      --border: #262932;
+      --text: #e6e8ec;
+      --text-dim: #9ba0aa;
+      --text-faint: #6b6f78;
+      --accent: #ffb86b;
+      --accent-2: #7dd3fc;
+      --green: #6ee7a7;
+      --red: #ff8a8a;
+      --code-bg: #0a0b0e;
+      --mono: ui-monospace, "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --serif: "Iowan Old Style", "Palatino", "Georgia", serif;
+      --max: 980px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    a {
+      color: var(--accent-2);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(125, 211, 252, 0.25);
+      transition: border-color 0.15s;
+    }
+    a:hover { border-bottom-color: var(--accent-2); }
+
+    .container {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* HERO */
+    .hero {
+      padding: 96px 0 64px;
+      border-bottom: 1px solid var(--border);
+      background:
+        radial-gradient(ellipse at top, rgba(255, 184, 107, 0.07), transparent 60%),
+        radial-gradient(ellipse at bottom right, rgba(125, 211, 252, 0.05), transparent 50%);
+    }
+    .hero .eyebrow {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-family: var(--serif);
+      font-size: clamp(40px, 6vw, 64px);
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      margin: 0 0 20px;
+      color: var(--text);
+    }
+    .hero h1 .accent { color: var(--accent); font-style: italic; }
+    .hero .lede {
+      font-size: 20px;
+      line-height: 1.55;
+      color: var(--text-dim);
+      max-width: 720px;
+      margin: 0 0 36px;
+    }
+    .hero .cta {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      transition: all 0.15s;
+      font-family: var(--sans);
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #1a1208;
+      border-color: var(--accent);
+    }
+    .btn-primary:hover { background: #ffc788; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text);
+    }
+    .btn-ghost:hover { border-color: var(--text-dim); }
+    .btn { border-bottom: 1px solid var(--border); }
+    .btn-primary { border-bottom-color: var(--accent); }
+
+    /* SECTIONS */
+    section {
+      padding: 80px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    section:last-of-type { border-bottom: none; }
+
+    h2 {
+      font-family: var(--serif);
+      font-size: 36px;
+      line-height: 1.15;
+      letter-spacing: -0.01em;
+      margin: 0 0 8px;
+    }
+    .section-sub {
+      color: var(--text-dim);
+      font-size: 17px;
+      max-width: 680px;
+      margin: 0 0 48px;
+    }
+
+    h3 {
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 18px;
+      margin: 0 0 8px;
+      color: var(--text);
+      letter-spacing: -0.005em;
+    }
+    h3 .num {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--accent);
+      width: 28px;
+    }
+
+    p { margin: 0 0 16px; color: var(--text-dim); }
+    p.tight { margin-bottom: 8px; }
+
+    /* PIPELINE */
+    .pipeline {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 720px) {
+      .pipeline { grid-template-columns: 1fr 1fr; }
+    }
+    .stage {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .stage::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--accent);
+      opacity: 0.6;
+    }
+    .stage h3 { color: var(--text); margin-bottom: 12px; }
+    .stage p { font-size: 15px; }
+    .stage .src {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-faint);
+      margin-top: 12px;
+    }
+
+    /* FEATURE GRID */
+    .features {
+      display: grid;
+      gap: 28px;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 720px) {
+      .features { grid-template-columns: 1fr 1fr; }
+    }
+    .feature {
+      padding: 28px;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .feature .icon {
+      font-family: var(--mono);
+      font-size: 22px;
+      color: var(--accent);
+      margin-bottom: 12px;
+      display: block;
+    }
+    .feature h3 { margin-bottom: 10px; font-size: 19px; }
+    .feature p { color: var(--text-dim); font-size: 15px; margin-bottom: 0; }
+
+    /* CODE / TERMINAL */
+    pre.terminal, pre.code {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 22px;
+      font-family: var(--mono);
+      font-size: 13.5px;
+      line-height: 1.65;
+      color: var(--text);
+      overflow-x: auto;
+      margin: 16px 0 28px;
+    }
+    pre.terminal { color: #d6dae0; }
+    pre.terminal .prompt { color: var(--accent); user-select: none; }
+    pre.terminal .comment { color: var(--text-faint); }
+    pre.terminal .out { color: var(--text-dim); }
+    pre.terminal .ok { color: var(--green); }
+    pre.terminal .err { color: var(--red); }
+    pre.terminal .arg { color: var(--accent-2); }
+
+    code {
+      font-family: var(--mono);
+      font-size: 0.92em;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--text);
+    }
+    p code, li code { color: var(--accent); background: rgba(255, 184, 107, 0.07); }
+
+    /* USE CASES */
+    .uc {
+      display: grid;
+      gap: 24px;
+      grid-template-columns: 1fr;
+    }
+    .use-case {
+      padding: 24px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .use-case .scenario {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .use-case h4 {
+      margin: 0 0 12px;
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .use-case p { font-size: 15px; margin-bottom: 0; }
+    .use-case .arrow {
+      display: inline-block;
+      color: var(--text-faint);
+      margin: 0 6px;
+    }
+
+    /* COMPARISON */
+    table.compare {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin: 24px 0;
+    }
+    table.compare th, table.compare td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    table.compare thead th {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      font-weight: normal;
+    }
+    table.compare tr.scribe {
+      background: rgba(255, 184, 107, 0.04);
+    }
+    table.compare tr.scribe td:first-child { color: var(--accent); font-weight: 600; }
+    .yes { color: var(--green); }
+    .no { color: var(--red); opacity: 0.7; }
+    .partial { color: var(--text-faint); }
+
+    /* CALLOUT */
+    .callout {
+      border-left: 3px solid var(--accent);
+      padding: 16px 22px;
+      background: var(--bg-soft);
+      border-radius: 0 10px 10px 0;
+      margin: 24px 0;
+    }
+    .callout p { margin: 0; color: var(--text); font-style: italic; }
+    .callout cite {
+      display: block;
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--text-faint);
+      font-style: normal;
+      font-family: var(--mono);
+    }
+
+    /* FOOTER */
+    footer {
+      padding: 48px 0 64px;
+      border-top: 1px solid var(--border);
+      color: var(--text-faint);
+      font-size: 13px;
+      text-align: center;
+    }
+    footer a { color: var(--text-dim); border-bottom-color: transparent; }
+    footer a:hover { color: var(--text); }
+
+    /* MISC */
+    .pill {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      background: rgba(110, 231, 167, 0.1);
+      color: var(--green);
+      border: 1px solid rgba(110, 231, 167, 0.25);
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .pill-warn {
+      background: rgba(255, 184, 107, 0.08);
+      color: var(--accent);
+      border-color: rgba(255, 184, 107, 0.25);
+    }
+
+    ul.clean { padding-left: 20px; margin: 0 0 16px; color: var(--text-dim); }
+    ul.clean li { margin-bottom: 8px; }
+    ul.clean li::marker { color: var(--text-faint); }
+
+    .grid-3 {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 720px) {
+      .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    }
+    .stat {
+      padding: 22px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      text-align: center;
+    }
+    .stat .num {
+      display: block;
+      font-family: var(--serif);
+      font-size: 36px;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .stat .lbl {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+  <header class="hero">
+    <div class="container">
+      <div class="eyebrow">scribe — v0.2.12 · single-binary Go CLI</div>
+      <h1>Your knowledge base,<br/><span class="accent">written by your tools.</span></h1>
+      <p class="lede">
+        scribe is a personal, LLM-written knowledge base that grows itself. It
+        mines your git repos, Claude Code sessions, and self-sent links, then
+        compiles a curated, semantically searchable wiki — cross-project,
+        cron-driven, and capable of running fully local on Ollama with zero
+        API spend.
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/oliver-kriska/scribe">View on GitHub →</a>
+        <a class="btn btn-ghost" href="#install">Install</a>
+        <a class="btn btn-ghost" href="#how">How it works</a>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="container">
+      <h2>Why most KBs fail</h2>
+      <p class="section-sub">
+        Note-taking tools assume you'll do the writing. RAG stacks store chunks
+        with no curation layer. Per-session memory tools live behind one agent
+        and forget the next time you open a different project. Meanwhile, every
+        decision, rejected library, and solved bug from your day is already
+        captured somewhere — in your commits, your Claude Code transcripts, the
+        URLs you text yourself. scribe is the daemon that turns that exhaust
+        into a compiled, cross-project wiki.
+      </p>
+
+      <div class="grid-3">
+        <div class="stat">
+          <span class="num">884</span>
+          <span class="lbl">files in maintainer's KB after 2 weeks of normal work</span>
+        </div>
+        <div class="stat">
+          <span class="num">$0</span>
+          <span class="lbl">API spend possible — full pipeline runs on local Ollama</span>
+        </div>
+        <div class="stat">
+          <span class="num">0</span>
+          <span class="lbl">manual notes typed to produce that KB</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="container">
+      <h2>How it works</h2>
+      <p class="section-sub">
+        Four input streams feed a two-pass extraction pipeline that writes
+        plain-markdown articles into a wiki you own. <code>qmd</code> indexes
+        the result for semantic search. Cron drives the whole loop.
+      </p>
+
+      <div class="pipeline">
+        <div class="stage">
+          <h3><span class="num">01</span>Capture</h3>
+          <p>Four input streams, all running on cron with no human in the loop.</p>
+          <div class="src">
+            git repos · Claude Code sessions (via ccrider's FTS5 index) · iMessage self-chat URLs · drop files
+          </div>
+        </div>
+        <div class="stage">
+          <h3><span class="num">02</span>Triage</h3>
+          <p>BM25 keyword density scoring rejects boilerplate sessions <em>before</em> any LLM call. Cheap sessions cost nothing.</p>
+          <div class="src">
+            scribe triage — deterministic, &lt;1s
+          </div>
+        </div>
+        <div class="stage">
+          <h3><span class="num">03</span>Absorb</h3>
+          <p>Two-pass extraction. Pass 1 grounds atomic facts; pass 2 fans dense sources out into multiple entity-first wiki pages — never one summary per source.</p>
+          <div class="src">
+            anthropic claude · or local ollama (gemma3, qwen3, llama3.2)
+          </div>
+        </div>
+        <div class="stage">
+          <h3><span class="num">04</span>Compile &amp; index</h3>
+          <p>Auto-generated wikilinks, backlinks JSON, retrieval-context paragraphs spliced into every article so semantic search catches implicit entities. <code>qmd</code> reindexes.</p>
+          <div class="src">
+            wiki/ · _backlinks.json · _index.md · _hot.md
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>What makes scribe different</h2>
+      <p class="section-sub">
+        Four things that, taken together, no other tool in this neighborhood
+        provides.
+      </p>
+
+      <div class="features">
+        <div class="feature">
+          <span class="icon">⟶</span>
+          <h3>Claude Code becomes context-aware across sessions</h3>
+          <p>
+            <code>scribe init</code> writes a block into <code>~/.claude/CLAUDE.md</code> that
+            tells Claude to query your KB via qmd's MCP server <em>before</em>
+            recommending a library, proposing an architecture, or reproducing a
+            pattern. No more re-explaining context every session. No more
+            Claude suggesting the library you already evaluated and rejected
+            six weeks ago.
+          </p>
+        </div>
+
+        <div class="feature">
+          <span class="icon">↻</span>
+          <h3>Runs itself on cron</h3>
+          <p>
+            <code>scribe cron install</code> drops a set of macOS LaunchAgents (or
+            paste-ready crontab lines on Linux). Hourly auto-commits, 2-hourly
+            project extraction, 3×/day session mining, weekly Dream cycle for
+            consolidation. Set up once, then go back to your regular work.
+          </p>
+        </div>
+
+        <div class="feature">
+          <span class="icon">⊕</span>
+          <h3>Knowledge compounds across projects</h3>
+          <p>
+            Research, decisions, rejected tools, solved bugs, reusable patterns
+            — all in one cross-project KB, not siloed per repo. Hit the same
+            problem in project B that you solved in project A six weeks ago,
+            and the old solution surfaces automatically.
+          </p>
+        </div>
+
+        <div class="feature">
+          <span class="icon">⌂</span>
+          <h3>Fully local-capable, zero API spend</h3>
+          <p>
+            Every pipeline stage — contextualize, atomic facts, pass-2 absorb —
+            can route through <a href="https://ollama.com">Ollama</a> via the
+            new <code>pass2_mode: json</code> + <code>pass2_provider: ollama</code> knobs (v0.2.11).
+            <code>scribe doctor --section localmode</code> validates the setup before
+            you kick off a sync.
+          </p>
+        </div>
+
+        <div class="feature">
+          <span class="icon">⎙</span>
+          <h3>Plain markdown you own</h3>
+          <p>
+            The KB is a git repo of plain markdown files with YAML frontmatter.
+            Push it to your own GitHub, Gitea, or Forgejo. Open it in Obsidian,
+            VS Code, vim, or mdbook. Grep it with ripgrep. No vendor lock-in,
+            no cloud account, no subscription. If scribe disappears tomorrow,
+            you still have everything.
+          </p>
+        </div>
+
+        <div class="feature">
+          <span class="icon">⚙</span>
+          <h3>Typed graph, not just tags</h3>
+          <p>
+            Articles connect via typed edges — <code>supersedes</code>, <code>contradicts</code>,
+            <code>specializes</code>, <code>derived_from</code>, <code>extends</code>, and more.
+            <code>scribe relations migrate</code> uses an LLM to classify
+            existing <code>related:</code> links into the typed schema. Contradiction
+            and staleness ledgers nag you (gently) about KB hygiene.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Install in 60 seconds</h2>
+      <p class="section-sub">macOS or Linux. Single binary. CGO + FTS5 baked in.</p>
+
+      <div id="install"></div>
+      <pre class="terminal"><span class="comment"># Homebrew (macOS, Linux/Linuxbrew)</span>
+<span class="prompt">$</span> brew tap oliver-kriska/scribe
+<span class="prompt">$</span> brew install oliver-kriska/scribe/scribe
+
+<span class="comment"># Or shell installer</span>
+<span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh | bash
+
+<span class="comment"># Bootstrap your KB</span>
+<span class="prompt">$</span> scribe init <span class="arg">--path</span> ~/my-kb
+<span class="prompt">$</span> cd ~/my-kb
+<span class="prompt">$</span> scribe cron install
+<span class="out">→ installed 14 LaunchAgents</span>
+<span class="prompt">$</span> scribe doctor
+<span class="ok">✓</span> deps  <span class="ok">✓</span> config  <span class="ok">✓</span> cron  <span class="ok">✓</span> freshness  <span class="ok">✓</span> localmode</pre>
+
+      <p>That's it. Cron will start populating the KB the next time you commit code, finish a Claude Code session, or text yourself a link.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>What it actually feels like</h2>
+      <p class="section-sub">Real loops from two weeks of the maintainer's normal use.</p>
+
+      <div class="uc">
+        <div class="use-case">
+          <div class="scenario">Cross-project memory</div>
+          <h4>Evaluated a Go cron library for project A → two weeks later, started a different Go CLI</h4>
+          <p>Claude Code automatically pulled the prior evaluation from the KB and skipped re-researching the alternatives. <code>tools/quantum.md</code> already had <code>verdict: skip</code> and the reason.</p>
+        </div>
+
+        <div class="use-case">
+          <div class="scenario">Pattern reuse</div>
+          <h4>Hit an Oban worker idempotency bug → wrote the fix into <code>wiki/patterns/idempotent-worker-skeleton.md</code></h4>
+          <p>Three days later, different Phoenix project, same pattern surfaced without asking. <code>qmd query "oban idempotency pattern"</code> returns it from any directory.</p>
+        </div>
+
+        <div class="use-case">
+          <div class="scenario">Bookmark recall</div>
+          <h4>Texted yourself a link about FTS5 MATCH syntax (not parameterizable)</h4>
+          <p>Six weeks later, SQL-injection lint fired on a different project; the KB had the exact answer and the workaround. The bookmark went from your Messages thread to <code>raw/articles/</code> to a wiki article without a single manual step.</p>
+        </div>
+
+        <div class="use-case">
+          <div class="scenario">Session mining</div>
+          <h4>Fixed a tricky LiveView reconnect loop with Claude Code at 3pm</h4>
+          <p>By 3:30, <code>scribe sync --sessions</code> had mined the session via ccrider's FTS5 index, extracted root cause + fix + tradeoff into <code>wiki/learnings/why-my-liveview-reconnect-loops.md</code>, cross-linked it to <code>wiki/patterns/phoenix-scope-based-auth.md</code>, and auto-committed.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Run it locally for $0 <span class="pill">v0.2.11+</span></h2>
+      <p class="section-sub">
+        Every LLM stage in the absorb pipeline can route through Ollama. No
+        Anthropic key required.
+      </p>
+
+      <pre class="code"><span style="color:#9ba0aa"># scribe.yaml</span>
+absorb:
+  contextualize:
+    provider: ollama
+    model: gemma3:4b           <span style="color:#6b6f78"># 3.3 GB, best speed/quality on Apple Silicon</span>
+
+  atomic_facts: true
+  facts_provider: ollama
+  facts_model: gemma3:4b
+
+  pass2_mode: json             <span style="color:#6b6f78"># inlines a WikiActionEnvelope JSON prompt</span>
+  pass2_provider: ollama       <span style="color:#6b6f78"># scribe applies file mutations itself</span>
+  pass2_model: qwen2.5-coder:14b</pre>
+
+      <pre class="terminal"><span class="prompt">$</span> scribe doctor <span class="arg">--section</span> localmode
+<span class="ok">✓</span> ollama daemon reachable at http://localhost:11434
+<span class="ok">✓</span> pass-2 model qwen2.5-coder:14b is pulled
+<span class="ok">✓</span> atomic_facts is on (required for ollama pass-2 — prevents fact-ID fabrication)
+<span class="ok">✓</span> sync.daily_anthropic_output_token_ceiling configured (2,000,000)
+
+<span class="prompt">$</span> scribe sync
+<span class="out">→ 3 projects extracted, 12 articles absorbed, 0 anthropic tokens used</span></pre>
+
+      <p>scribe auto-pulls models on first use. Zero manual <code>ollama pull</code> needed.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Search from anywhere</h2>
+      <p class="section-sub">
+        <code>qmd</code> indexes the KB for semantic search; works from any
+        terminal in any directory.
+      </p>
+
+      <pre class="terminal"><span class="prompt">$</span> qmd query <span class="arg">"how did I solve the oban idempotency bug last quarter"</span>
+<span class="out">wiki/patterns/idempotent-worker-skeleton.md         (score 0.84)</span>
+<span class="out">  → use Oban.Pro Unique with :args fingerprint, fall back to advisory lock</span>
+<span class="out">  → linked from: 3 projects, 2 learnings</span>
+<span class="out"></span>
+<span class="out">wiki/learnings/oban-pro-uniqueness-trap.md          (score 0.71)</span>
+<span class="out">  → :args hash collisions when payload contains floats</span>
+
+<span class="prompt">$</span> qmd query <span class="arg">"have I evaluated cron libraries for go"</span>
+<span class="out">wiki/tools/robfig-cron.md                            verdict: use</span>
+<span class="out">wiki/tools/quantum-erlang.md                         verdict: skip</span>
+<span class="out">wiki/decisions/picked-robfig-cron-over-quantum.md   2026-04-09</span></pre>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>How scribe compares</h2>
+      <p class="section-sub">Snapshot 2026-04-21. Everything moves; check the source repos before deciding.</p>
+
+      <table class="compare">
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Session mining</th>
+            <th>Cron-driven</th>
+            <th>Density pre-filter</th>
+            <th>Two-pass absorb</th>
+            <th>Multi-project</th>
+            <th>Local-mode</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="scribe">
+            <td>scribe</td>
+            <td class="yes">✓ ccrider FTS5</td>
+            <td class="yes">✓ LaunchAgents</td>
+            <td class="yes">✓ BM25 triage</td>
+            <td class="yes">✓ fan-out</td>
+            <td class="yes">✓</td>
+            <td class="yes">✓ Ollama / llama.cpp</td>
+          </tr>
+          <tr>
+            <td>claude-memory-compiler</td>
+            <td class="partial">every session, no filter</td>
+            <td class="no">opportunistic</td>
+            <td class="no">— ($115 / 20min, issue #3)</td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+          </tr>
+          <tr>
+            <td>nvk/llm-wiki</td>
+            <td class="no">—</td>
+            <td class="no">one-shot /assess</td>
+            <td class="no">n/a</td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+            <td class="no">—</td>
+          </tr>
+          <tr>
+            <td>basic-memory</td>
+            <td class="no">— (issue #669 since Mar)</td>
+            <td class="no">cron suggested</td>
+            <td class="no">n/a</td>
+            <td class="no">—</td>
+            <td class="yes">✓ projects</td>
+            <td class="no">—</td>
+          </tr>
+          <tr>
+            <td>RAG (LangChain, LlamaIndex)</td>
+            <td class="no">—</td>
+            <td class="no">indexing only</td>
+            <td class="no">n/a</td>
+            <td class="partial">chunks only</td>
+            <td class="yes">✓</td>
+            <td class="partial">varies</td>
+          </tr>
+          <tr>
+            <td>Obsidian / Notion</td>
+            <td class="no">manual</td>
+            <td class="no">—</td>
+            <td class="no">n/a</td>
+            <td class="no">—</td>
+            <td class="partial">manual</td>
+            <td class="no">n/a</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <p>scribe is the wiki the LLM writes <em>for</em> you, sitting on top of raw sources kept verbatim. RAG retrieves chunks; scribe gives you a curated, named-entity wiki you can also grep.</p>
+        <cite>— project README, "where scribe's niche is"</cite>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>The whole command surface</h2>
+      <p class="section-sub">28 subcommands, all in one binary. Here are the ones you'll actually type.</p>
+
+      <pre class="terminal"><span class="prompt">$</span> scribe init                    <span class="comment"># bootstrap a KB</span>
+<span class="prompt">$</span> scribe sync                    <span class="comment"># discover → extract → absorb → reindex</span>
+<span class="prompt">$</span> scribe sync --sessions         <span class="comment"># mine Claude Code sessions</span>
+<span class="prompt">$</span> scribe sync --estimate         <span class="comment"># token estimate, no LLM calls</span>
+<span class="prompt">$</span> scribe capture                 <span class="comment"># pull self-iMessaged URLs as bookmarks</span>
+<span class="prompt">$</span> scribe ingest url <foo>        <span class="comment"># queue-less URL absorb</span>
+<span class="prompt">$</span> scribe absorb &lt;file&gt;           <span class="comment"># absorb a local md/txt/html file</span>
+<span class="prompt">$</span> scribe status                  <span class="comment"># KB scoreboard</span>
+<span class="prompt">$</span> scribe dream                   <span class="comment"># weekly memory consolidation</span>
+<span class="prompt">$</span> scribe relations migrate       <span class="comment"># LLM-classify related: into typed edges</span>
+<span class="prompt">$</span> scribe contradictions list     <span class="comment"># unresolved factual disagreements</span>
+<span class="prompt">$</span> scribe stale list              <span class="comment"># articles past their type's half-life</span>
+<span class="prompt">$</span> scribe view active-decisions   <span class="comment"># declarative views over frontmatter</span>
+<span class="prompt">$</span> scribe doctor                  <span class="comment"># deps + config + cron + freshness</span>
+<span class="prompt">$</span> scribe cost                    <span class="comment"># claude -p USD estimate from cost ledger</span></pre>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Built on tools you probably already use</h2>
+      <ul class="clean">
+        <li><a href="https://github.com/neilberkman/ccrider">ccrider</a> — FTS5 index over Claude Code sessions; scribe runs BM25 against it for triage</li>
+        <li><a href="https://github.com/tobi/qmd">qmd</a> — semantic search over markdown; scribe reindexes after every run, exposes via MCP</li>
+        <li><a href="https://ollama.com">Ollama</a> / llama.cpp — local LLM runtime for the zero-API-spend path</li>
+        <li><a href="https://www.anthropic.com/claude-code">Claude Code</a> — for the hot-path extraction calls (and as the consumer of the resulting KB via MCP)</li>
+        <li>git — every KB is a plain git repo; <code>scribe commit</code> auto-commits hourly</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>Get started</h2>
+      <p class="section-sub">
+        scribe is open-source, MIT-licensed, free to use. Built by a maintainer
+        who's been running it on his own laptop for months.
+      </p>
+
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/oliver-kriska/scribe">View on GitHub →</a>
+        <a class="btn btn-ghost" href="https://github.com/oliver-kriska/scribe#install">Installation guide</a>
+        <a class="btn btn-ghost" href="https://github.com/oliver-kriska/scribe/blob/main/CHANGELOG.md">Changelog</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>scribe — MIT licensed · single-binary Go CLI · v0.2.12 · <a href="https://github.com/oliver-kriska/scribe">github.com/oliver-kriska/scribe</a></p>
+    </div>
+  </footer>
+
+</body>
+</html>
