@@ -2,6 +2,31 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.12] — 2026-05-14
+
+Local-mode production readiness. The Phase 4B + followup work shipped in 0.2.11 made the absorb pipeline runnable end-to-end against local Ollama models; this release closes the operational gaps so the heavy crons (`com.scribe.sync-projects`, `com.scribe.sync-sessions`) can resume running safely against the new stack.
+
+### Doctor — `localmode` section
+- New `scribe doctor --section localmode` validates the absorb pipeline's local-provider knobs against the runtime environment so misconfigurations surface *before* a 20-min sync wastes wallclock.
+- Four checks: ollama daemon reachable at `absorb.contextualize.ollama_url`; `absorb.pass2_model` actually pulled locally (parses `/api/tags`); `absorb.atomic_facts` is on when `pass2_provider=ollama` (model fabricates `[cN-fM]` citations without ground-truth fact IDs to cite); `sync.daily_anthropic_output_token_ceiling` is configured (recommended ≥2_000_000 after the 2026-05-11 runaway).
+- A single 2s `/api/tags` probe is shared across the checks that need the model list. `SCRIBE_DOCTOR_SKIP_OLLAMA=1` skips the network call for offline CI.
+- Doctor enumerates the section in `--section` help and runs by default.
+
+### Config — `SCRIBE_PASS2_{MODE,PROVIDER,MODEL}` env overrides
+- Three new env vars let one-shot scripts flip pass-2 routing without mutating `scribe.yaml`. Empty values are no-ops. The existing auto-flip-to-json-when-provider-is-not-anthropic logic still wins, so a misconfigured `SCRIBE_PASS2_MODE=tools` combined with `SCRIBE_PASS2_PROVIDER=ollama` still engages json mode with a log line.
+- Use case: `scripts/absorb-compare.sh` now switches modes per run via env var instead of `sed`-editing the yaml + a `scribe.yaml.bak` restore-on-trap. One source of truth, no half-rolled-back state on crash.
+
+### scribe.yaml scaffold — surface every local-mode knob
+- `scribe init` template (`templates/scribe.yaml`) and `absorbDefaultYAMLBlock()` now emit commented hints for every knob that landed in 0.2.11: `pass2_parallel`, `pass2_mode`, `pass2_provider`, `atomic_facts`, `facts_model`, `facts_timeout_min`, `facts_provider`, and the new `sync.daily_anthropic_output_token_ceiling`. Users editing scribe.yaml by hand can now discover the full local-mode surface without reading source.
+- `pass1_timeout_min` template value bumped 3 → 5 to match the in-code default (the bump landed in 0.2.11's `absorbDefaults()` after dense long-form articles SIGKILLed on haiku at 3 min).
+
+### Lint
+- `// #nosec G101` on `budgetBypassEnv = "SCRIBE_BYPASS_BUDGET"` — gosec G101 flagged the env-var-name literal as a "potential hardcoded credential" because the string contains `BUDGET`. It is not a credential; the comment documents the rationale and keeps `make ci` green.
+
+### Verified empirically against scriptorium
+- Fact-ID stripper: 0 fabricated `[cNN-fM]` brackets survived a real `gemma3:27b` + `atomic_facts` absorb run (10 entities, 63 real facts, 42 distinct cited IDs). The defense-in-depth path fired once mid-run on entity "AuthoredUp" and stripped 2 brackets cleanly.
+- Budget ceiling: with `daily_anthropic_output_token_ceiling: 1000` and today's anthropic output already at 19,499 tokens, sync aborted on the first claude-extraction call with `daily anthropic output-token ceiling reached: used 19499 / limit 1000` and exited 0 (cron-safe). `SCRIBE_BYPASS_BUDGET=1` bypasses cleanly. Production value set to 2_000_000 in scriptorium before re-enabling heavy crons.
+
 ## [0.2.11] — 2026-05-11
 
 ### Lint — relax per-type relation allowlist

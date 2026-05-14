@@ -40,6 +40,16 @@ sync:
   # gapped / offline laptops.
   # always_pull_before_sync: true
 
+  # daily_anthropic_output_token_ceiling: hard backstop against runaway
+  # Anthropic spend. When today's anthropic output_tokens cross this
+  # number, further claude -p calls abort with ErrDailyBudgetExhausted;
+  # sync's outer loop logs and exits 0 so cron doesn't crashloop. Local-
+  # provider calls (ollama) are exempt. SCRIBE_BYPASS_BUDGET=1 in the
+  # environment bypasses for one-off manual runs. Zero (default) disables
+  # the ceiling. After the 2026-05-11 runaway (~7M output tokens in 35h)
+  # a sensible production value is ~2_000_000.
+  # daily_anthropic_output_token_ceiling: 0
+
 deep:
   batch_max: 5
 
@@ -78,9 +88,33 @@ absorb:
   # Models and timeouts for each absorb path.
   pass1_model: haiku              # default: haiku (cheap entity-list pass)
   pass2_model: ""                 # default: "" = inherit sync default_model
-  pass1_timeout_min: 3            # default: 3
+  pass1_timeout_min: 5            # default: 5
   pass2_timeout_min: 5            # default: 5
+  pass2_parallel: 3               # default: 3 (chapters per pass2 run; drop to 1 for slow local models)
   single_pass_timeout_min: 5      # default: 5
+
+  # Phase 3B atomic-fact extraction. Off by default — opt in once
+  # chaptered absorb is verified on your corpus.
+  # atomic_facts: true
+  # facts_model: haiku              # default: haiku (for ollama: e.g. gemma3:4b)
+  # facts_timeout_min: 3            # default: 3
+  #
+  # facts_provider routes the per-chunk facts pass through the same
+  # provider abstraction as contextualize. The pass is text-in/JSON-out
+  # (no tools), which suits a 4-7B local model. Anthropic stays the
+  # default; flip to ollama to keep this cheap-but-numerous pass off
+  # Anthropic quota. ollama_url comes from absorb.contextualize below.
+  # facts_provider: anthropic       # default: anthropic (alternatives: ollama)
+
+  # Phase 4B pass-2 JSON-envelope mode. The default "tools" path uses
+  # `claude -p` with Read/Write/Edit/Glob/Grep. Setting pass2_mode=json
+  # (or pass2_provider to a non-anthropic provider) switches pass-2 to
+  # an inlined prompt that emits one WikiActionEnvelope JSON document;
+  # scribe applies the file mutations itself. This makes pass-2 work
+  # against local Ollama models (no tool-use needed).
+  # pass2_mode: tools               # default: tools (alternatives: json)
+  # pass2_provider: anthropic       # default: anthropic (alternatives: ollama)
+  # pass2_model: ""                 # for ollama: e.g. qwen2.5-coder:14b
 
   # Contextualize step: inserts a retrieval-context paragraph into each raw
   # article before qmd embedding (Anthropic Contextual Retrieval pattern).

@@ -63,7 +63,7 @@ const budgetCacheTTL = 30 * time.Second
 // budgetBypassEnv is the env var that disables the budget check
 // entirely for one-off runs. Exported as a const so tests can flip it
 // without typo risk.
-const budgetBypassEnv = "SCRIBE_BYPASS_BUDGET"
+const budgetBypassEnv = "SCRIBE_BYPASS_BUDGET" // #nosec G101 -- env var name, not a credential
 
 // checkBudget returns nil unless today's anthropic output-token sum
 // has reached limit. A zero limit disables the check; SCRIBE_BYPASS_BUDGET=1

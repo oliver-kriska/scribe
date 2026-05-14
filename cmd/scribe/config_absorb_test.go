@@ -213,6 +213,84 @@ func TestHasTopLevelKey(t *testing.T) {
 	}
 }
 
+// TestPass2EnvOverrides verifies that SCRIBE_PASS2_{MODE,PROVIDER,MODEL}
+// env vars override the corresponding scribe.yaml absorb fields. Used by
+// scripts/absorb-compare.sh to flip mode without mutating yaml.
+func TestPass2EnvOverrides(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `owner_name: Test
+absorb:
+  pass2_mode: tools
+  pass2_provider: anthropic
+  pass2_model: ""
+`
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SCRIBE_PASS2_MODE", "json")
+	t.Setenv("SCRIBE_PASS2_PROVIDER", "ollama")
+	t.Setenv("SCRIBE_PASS2_MODEL", "qwen2.5-coder:14b")
+	cfg := loadConfig(tmp)
+	if cfg.Absorb.Pass2Mode != "json" {
+		t.Errorf("Pass2Mode = %q, want json (env override)", cfg.Absorb.Pass2Mode)
+	}
+	if cfg.Absorb.Pass2Provider != "ollama" {
+		t.Errorf("Pass2Provider = %q, want ollama (env override)", cfg.Absorb.Pass2Provider)
+	}
+	if cfg.Absorb.Pass2Model != "qwen2.5-coder:14b" {
+		t.Errorf("Pass2Model = %q, want qwen2.5-coder:14b (env override)", cfg.Absorb.Pass2Model)
+	}
+}
+
+// TestPass2EnvOverridesEmptyNoop confirms an empty env var is a no-op and
+// scribe.yaml's value wins.
+func TestPass2EnvOverridesEmptyNoop(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `owner_name: Test
+absorb:
+  pass2_mode: tools
+  pass2_provider: anthropic
+`
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SCRIBE_PASS2_MODE", "")
+	t.Setenv("SCRIBE_PASS2_PROVIDER", "")
+	t.Setenv("SCRIBE_PASS2_MODEL", "")
+	cfg := loadConfig(tmp)
+	if cfg.Absorb.Pass2Mode != "tools" {
+		t.Errorf("Pass2Mode = %q, want tools (yaml wins on empty env)", cfg.Absorb.Pass2Mode)
+	}
+	if cfg.Absorb.Pass2Provider != "anthropic" {
+		t.Errorf("Pass2Provider = %q, want anthropic (yaml wins on empty env)", cfg.Absorb.Pass2Provider)
+	}
+}
+
+// TestPass2EnvAutoFlipStillWins verifies the post-override auto-flip
+// catches a misconfigured SCRIBE_PASS2_MODE=tools with a non-anthropic
+// provider — the env's "tools" loses to the auto-flip to "json".
+func TestPass2EnvAutoFlipStillWins(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `owner_name: Test
+absorb:
+  pass2_provider: anthropic
+`
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// User sets MODE=tools but PROVIDER=ollama via env — auto-flip should
+	// pull mode back to json with a log line.
+	t.Setenv("SCRIBE_PASS2_MODE", "tools")
+	t.Setenv("SCRIBE_PASS2_PROVIDER", "ollama")
+	cfg := loadConfig(tmp)
+	if cfg.Absorb.Pass2Mode != "json" {
+		t.Errorf("auto-flip should override SCRIBE_PASS2_MODE=tools to json when provider=ollama, got %q", cfg.Absorb.Pass2Mode)
+	}
+	if cfg.Absorb.Pass2Provider != "ollama" {
+		t.Errorf("Pass2Provider = %q, want ollama", cfg.Absorb.Pass2Provider)
+	}
+}
+
 // TestClassifyDensityWithConfig checks that user-tuned thresholds change
 // the classification boundary.
 func TestClassifyDensityWithConfig(t *testing.T) {

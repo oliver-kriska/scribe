@@ -10,6 +10,81 @@ import (
 	"time"
 )
 
+// TestCheckLocalMode_NoOllamaProvider: when pass2_provider != ollama,
+// only the anthropic-ceiling INFO/WARN applies. Ollama checks must
+// not run (no network calls in CI).
+func TestCheckLocalMode_NoOllamaProvider(t *testing.T) {
+	cfg := &ScribeConfig{
+		Absorb: AbsorbConfig{Pass2Provider: "anthropic"},
+		Sync:   SyncConfig{DailyAnthropicOutputTokenCeiling: 2_000_000},
+	}
+	out := checkLocalMode(cfg)
+	if len(out) != 0 {
+		t.Errorf("anthropic provider + ceiling set should produce 0 findings, got %+v", out)
+	}
+}
+
+// TestCheckLocalMode_NoCeiling: ceiling=0 alone surfaces a warn so
+// users know they have no backstop after the 2026-05-11 runaway.
+func TestCheckLocalMode_NoCeiling(t *testing.T) {
+	cfg := &ScribeConfig{
+		Absorb: AbsorbConfig{Pass2Provider: "anthropic"},
+		Sync:   SyncConfig{DailyAnthropicOutputTokenCeiling: 0},
+	}
+	out := checkLocalMode(cfg)
+	if len(out) != 1 || out[0].Name != "anthropic_ceiling" || out[0].Status != statusWarn {
+		t.Errorf("want one warn 'anthropic_ceiling', got %+v", out)
+	}
+}
+
+// TestCheckLocalMode_OllamaPass2WithoutAtomicFacts: when pass-2 is
+// routed through ollama but atomic_facts is off, surface a warn — the
+// model fabricates [cN-fM] citations without ground-truth fact IDs.
+// Skips the ollama network probe via env var so the test runs offline.
+func TestCheckLocalMode_OllamaPass2WithoutAtomicFacts(t *testing.T) {
+	t.Setenv("SCRIBE_DOCTOR_SKIP_OLLAMA", "1")
+	cfg := &ScribeConfig{
+		Absorb: AbsorbConfig{
+			Pass2Provider: "ollama",
+			Pass2Model:    "gemma3:27b",
+			AtomicFacts:   nil,
+		},
+		Sync: SyncConfig{DailyAnthropicOutputTokenCeiling: 2_000_000},
+	}
+	out := checkLocalMode(cfg)
+	gotAtomic := false
+	for _, c := range out {
+		if c.Name == "atomic_facts_with_ollama" && c.Status == statusWarn {
+			gotAtomic = true
+		}
+	}
+	if !gotAtomic {
+		t.Errorf("expected atomic_facts_with_ollama warn, got %+v", out)
+	}
+}
+
+// TestCheckLocalMode_OllamaPass2WellConfigured: ollama provider +
+// atomic_facts on + ceiling set should produce zero findings (the
+// ollama-daemon and pass2_model_pulled checks are skipped via env).
+func TestCheckLocalMode_OllamaPass2WellConfigured(t *testing.T) {
+	t.Setenv("SCRIBE_DOCTOR_SKIP_OLLAMA", "1")
+	trueV := true
+	cfg := &ScribeConfig{
+		Absorb: AbsorbConfig{
+			Pass2Provider: "ollama",
+			Pass2Model:    "gemma3:27b",
+			AtomicFacts:   &trueV,
+		},
+		Sync: SyncConfig{DailyAnthropicOutputTokenCeiling: 2_000_000},
+	}
+	out := checkLocalMode(cfg)
+	for _, c := range out {
+		if c.Status == statusWarn || c.Status == statusFail {
+			t.Errorf("well-configured KB should produce no warn/fail, got %+v", c)
+		}
+	}
+}
+
 func TestCheckVaultScaffolding_OkWhenClean(t *testing.T) {
 	dir := t.TempDir()
 	out := checkVaultScaffolding(dir)

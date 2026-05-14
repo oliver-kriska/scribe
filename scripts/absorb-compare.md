@@ -27,12 +27,13 @@ KBs. Not part of the test suite; not run by cron.
 ## Requirements
 
 - Run from a KB root (the directory holding `scribe.yaml`).
-- Your `scribe.yaml` must contain one uncommented `pass2_mode:` line
-  somewhere under the `absorb:` block. If it doesn't, the script
-  aborts with instructions. Adding `pass2_mode: tools` to the
-  absorb block is a one-time setup step.
 - `jq`, `sed`, `diff`, `find`, `rsync`, `awk`, `comm` on PATH.
 - The target raw article already exists under `raw/articles/`.
+
+The script switches modes via the `SCRIBE_PASS2_MODE` env var
+(introduced alongside `SCRIBE_PASS2_PROVIDER` and `SCRIBE_PASS2_MODEL`).
+No `scribe.yaml` edits needed — the env vars override whatever the
+yaml says for the duration of the run.
 
 ## Usage
 
@@ -56,22 +57,22 @@ SCRIBE_BIN=./bin/scribe scripts/absorb-compare.sh raw/articles/<file>
 
 ## What it mutates
 
-While running, the script rewrites `pass2_mode` in `scribe.yaml`,
-deletes the target file's entry from `wiki/_absorb_log.json`, and
-replaces the wiki/output trees between runs from a baseline snapshot.
-A `trap EXIT` handler restores everything before the script exits.
+While running, the script exports `SCRIBE_PASS2_MODE` for each sync
+invocation (`scribe.yaml` is never touched), deletes the target
+file's entry from `wiki/_absorb_log.json`, and replaces the
+wiki/output trees between runs from a baseline snapshot. A
+`trap EXIT` handler restores everything before the script exits.
 
 If the script crashes mid-run:
 
 ```sh
-mv scribe.yaml.bak scribe.yaml
 rsync -a --delete /tmp/scribe-compare-<pid>/baseline/wiki/ wiki/
 # similar for projects/, research/, output/, etc.
 ```
 
 The baseline snapshot is the authoritative pre-run state. As long as
-`scribe.yaml.bak` and `/tmp/scribe-compare-<pid>/baseline/` exist, the
-KB can always be returned to its starting state.
+`/tmp/scribe-compare-<pid>/baseline/` exists, the KB can be returned
+to its starting state.
 
 ## Output
 

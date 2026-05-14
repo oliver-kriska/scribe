@@ -10,23 +10,16 @@
 #
 # REQUIRES:
 #   - Run from the KB root (the directory holding scribe.yaml).
-#   - scribe.yaml has an uncommented `pass2_mode:` line somewhere
-#     under the `absorb:` block. If absent, the script aborts with
-#     instructions — adding the line is a one-time setup step.
 #   - jq, sed, diff, find, awk available on PATH.
 #   - scribe binary on PATH or invoked via SCRIBE_BIN=/path/to/scribe.
 #
 # MUTATES STATE while running:
-#   - rewrites pass2_mode in scribe.yaml (restored at end)
+#   - sets SCRIBE_PASS2_MODE in the scribe sync env (no yaml mutation)
 #   - deletes the target file's entry from wiki/_absorb_log.json so
 #     it re-absorbs (restored at end)
 #   - the wiki/ tree (snapshotted to OUT_DIR/baseline, restored
 #     between runs and at end)
 #   - the output/{plans,facts,absorb-facts}/ trees (restored too)
-#
-# A scribe.yaml.bak file is kept alongside scribe.yaml until the
-# script exits cleanly. If the script crashes mid-run, restore by
-# hand: `mv scribe.yaml.bak scribe.yaml`.
 #
 # USAGE: scripts/absorb-compare.sh <raw-file>
 #   <raw-file>  Path to a markdown file already in raw/articles/.
@@ -75,10 +68,6 @@ case "$RAW_FILE" in
 esac
 RAW_BASE="$(basename "$RAW_FILE")"
 
-# pass2_mode must exist in scribe.yaml so sed has something to swap.
-grep -Eq '^[[:space:]]+pass2_mode:[[:space:]]+(tools|json)' scribe.yaml \
-    || abort "scribe.yaml has no uncommented pass2_mode under absorb: — add one (e.g. \"  pass2_mode: tools\") and rerun"
-
 mkdir -p "$OUT_DIR"
 echo "[$(date -u +%FT%TZ)] absorb-compare starting"
 echo "  raw file:  $RAW_BASE"
@@ -118,8 +107,7 @@ restore_state() {
 
 # --- restore-on-exit guard --------------------------------------------
 
-cp scribe.yaml scribe.yaml.bak
-trap 'echo "[$(date -u +%FT%TZ)] restoring state"; restore_state baseline 2>/dev/null || true; [ -f scribe.yaml.bak ] && mv scribe.yaml.bak scribe.yaml; if [ -z "${KEEP_OUT:-}" ]; then rm -rf "$OUT_DIR"; fi' EXIT
+trap 'echo "[$(date -u +%FT%TZ)] restoring state"; restore_state baseline 2>/dev/null || true; if [ -z "${KEEP_OUT:-}" ]; then rm -rf "$OUT_DIR"; fi' EXIT
 
 # --- baseline snapshot ------------------------------------------------
 
@@ -127,12 +115,6 @@ echo "[$(date -u +%FT%TZ)] snapshotting baseline"
 snapshot_state baseline
 
 # --- one run per mode -------------------------------------------------
-
-set_pass2_mode() {
-    local mode="$1"
-    sed -i.tmp -E "s/^([[:space:]]+pass2_mode:[[:space:]]+)(tools|json).*/\1$mode/" scribe.yaml
-    rm -f scribe.yaml.tmp
-}
 
 # Remove the target file's entry from wiki/_absorb_log.json so the
 # next sync run actually re-absorbs it. jq's `del(...)` is a no-op
@@ -148,13 +130,12 @@ forget_absorb_entry() {
 
 run_mode() {
     local mode="$1"
-    echo "[$(date -u +%FT%TZ)] mode=$mode: restoring baseline + setting pass2_mode"
+    echo "[$(date -u +%FT%TZ)] mode=$mode: restoring baseline"
     restore_state baseline
-    set_pass2_mode "$mode"
     forget_absorb_entry
 
     echo "[$(date -u +%FT%TZ)] mode=$mode: running scribe sync (this will take a while)"
-    "$SCRIBE_BIN" sync >"$OUT_DIR/$mode.log" 2>&1 || {
+    SCRIBE_PASS2_MODE="$mode" "$SCRIBE_BIN" sync >"$OUT_DIR/$mode.log" 2>&1 || {
         echo "WARN: scribe sync exited non-zero (see $OUT_DIR/$mode.log)" >&2
     }
 

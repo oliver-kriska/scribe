@@ -427,6 +427,7 @@ absorb:
   pass2_model: ""                 # default: "" = inherit default_model
   pass1_timeout_min: %d            # default: 5
   pass2_timeout_min: %d            # default: 5
+  pass2_parallel: %d               # default: 3 (chapters per pass2 run; drop to 1 for slow local models)
   single_pass_timeout_min: %d      # default: 5
 
   # Contextualize step: inserts a retrieval-context paragraph into each raw
@@ -484,6 +485,7 @@ absorb:
 		d.Pass1Model,
 		d.Pass1TimeoutMin,
 		d.Pass2TimeoutMin,
+		d.Pass2Parallel,
 		d.SinglePassTimeoutMin,
 		enabled,
 		d.Contextualize.Provider,
@@ -601,6 +603,24 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 	}
 	if cfg.Pass2Mode == "" {
 		cfg.Pass2Mode = d.Pass2Mode
+	}
+	// Env overrides for pass-2 routing. Useful for one-shot A/B scripts
+	// like scripts/absorb-compare.sh that need to flip mode/provider/model
+	// without mutating scribe.yaml. Empty values are ignored. The auto-
+	// flip below still wins over a mis-set SCRIBE_PASS2_MODE — e.g.
+	// SCRIBE_PASS2_MODE=tools + SCRIBE_PASS2_PROVIDER=ollama still
+	// engages json mode with a log line.
+	if env := os.Getenv("SCRIBE_PASS2_MODE"); env != "" {
+		logMsg("config", "SCRIBE_PASS2_MODE=%q overriding absorb.pass2_mode=%q", env, cfg.Pass2Mode)
+		cfg.Pass2Mode = env
+	}
+	if env := os.Getenv("SCRIBE_PASS2_PROVIDER"); env != "" {
+		logMsg("config", "SCRIBE_PASS2_PROVIDER=%q overriding absorb.pass2_provider=%q", env, cfg.Pass2Provider)
+		cfg.Pass2Provider = env
+	}
+	if env := os.Getenv("SCRIBE_PASS2_MODEL"); env != "" {
+		logMsg("config", "SCRIBE_PASS2_MODEL=%q overriding absorb.pass2_model=%q", env, cfg.Pass2Model)
+		cfg.Pass2Model = env
 	}
 	// Auto-flip mode to json whenever provider is not anthropic — the
 	// tools path requires `claude -p`, so a local-provider config with

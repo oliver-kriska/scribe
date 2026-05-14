@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,7 +23,7 @@ import (
 // Mac was asleep.
 type DoctorCmd struct {
 	JSON        bool          `help:"Emit structured JSON instead of text."`
-	Section     string        `help:"Run only one section: deps | config | cron | state | freshness | errors | convert | contradictions | stale | vault." enum:"deps,config,cron,state,freshness,errors,convert,contradictions,stale,vault," default:""`
+	Section     string        `help:"Run only one section: deps | config | cron | state | freshness | errors | convert | contradictions | stale | vault | localmode." enum:"deps,config,cron,state,freshness,errors,convert,contradictions,stale,vault,localmode," default:""`
 	ErrorWindow time.Duration `help:"How far back to scan run records for errors." default:"24h"`
 }
 
@@ -52,7 +53,7 @@ func (c *DoctorCmd) Run() error {
 	}
 	cfg := loadConfig(root)
 
-	sectionOrder := []string{"deps", "config", "convert", "cron", "state", "freshness", "errors", "contradictions", "stale", "vault"}
+	sectionOrder := []string{"deps", "config", "localmode", "convert", "cron", "state", "freshness", "errors", "contradictions", "stale", "vault"}
 	var all []check
 	for _, name := range sectionOrder {
 		if c.Section != "" && c.Section != name {
@@ -63,6 +64,8 @@ func (c *DoctorCmd) Run() error {
 			all = append(all, checkDeps()...)
 		case "config":
 			all = append(all, checkConfig(root, cfg)...)
+		case "localmode":
+			all = append(all, checkLocalMode(cfg)...)
 		case "convert":
 			all = append(all, checkConvert()...)
 		case "cron":
@@ -198,6 +201,95 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 		out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusOK, Detail: "installed"})
 	default:
 		out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusWarn, Detail: "scribe block not found", Fix: "scribe init"})
+	}
+
+	return out
+}
+
+// ---- Local-mode coherence ----
+
+// checkLocalMode validates the absorb pipeline's local-provider knobs
+// against the runtime environment. Misconfigured KBs surface here
+// before a 20-min sync wastes wallclock: ollama daemon offline, the
+// chosen model never pulled, atomic_facts left off when the pass-2
+// provider is ollama (which fabricates fact-IDs without grounding),
+// or no anthropic budget ceiling configured after the 2026-05-11
+// runaway. One /api/tags probe is shared across the checks that need
+// the model list. SCRIBE_DOCTOR_SKIP_OLLAMA=1 skips the network call
+// for offline CI.
+func checkLocalMode(cfg *ScribeConfig) []check {
+	var out []check
+	pass2Ollama := strings.EqualFold(cfg.Absorb.Pass2Provider, "ollama")
+	if !pass2Ollama {
+		// No local mode to validate. Only the anthropic-ceiling INFO
+		// applies in that branch — emit it and return.
+		if cfg.Sync.DailyAnthropicOutputTokenCeiling == 0 {
+			out = append(out, check{
+				Section: "localmode", Name: "anthropic_ceiling",
+				Status: statusWarn,
+				Detail: "no daily_anthropic_output_token_ceiling configured",
+				Fix:    "add sync.daily_anthropic_output_token_ceiling: 2000000 to scribe.yaml (or larger). After the 2026-05-11 runaway this is the recommended backstop.",
+			})
+		}
+		return out
+	}
+
+	url := cfg.Absorb.Contextualize.OllamaURL
+	if url == "" {
+		url = "http://localhost:11434"
+	}
+	model := cfg.Absorb.Pass2Model
+
+	if os.Getenv("SCRIBE_DOCTOR_SKIP_OLLAMA") != "1" {
+		probe := &ollamaProvider{baseURL: url}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		models, err := probe.listedModels(ctx)
+		switch {
+		case err != nil:
+			out = append(out, check{
+				Section: "localmode", Name: "ollama_daemon",
+				Status: statusWarn,
+				Detail: "unreachable at " + url + ": " + err.Error(),
+				Fix:    "brew services start ollama",
+			})
+		default:
+			out = append(out, check{
+				Section: "localmode", Name: "ollama_daemon",
+				Status: statusOK, Detail: url,
+			})
+			if model != "" && !probe.modelListContains(models, model) {
+				out = append(out, check{
+					Section: "localmode", Name: "pass2_model_pulled",
+					Status: statusWarn,
+					Detail: "absorb.pass2_model=" + model + " not present locally",
+					Fix:    "ollama pull " + model,
+				})
+			} else if model != "" {
+				out = append(out, check{
+					Section: "localmode", Name: "pass2_model_pulled",
+					Status: statusOK, Detail: model,
+				})
+			}
+		}
+	}
+
+	if cfg.Absorb.AtomicFacts == nil || !*cfg.Absorb.AtomicFacts {
+		out = append(out, check{
+			Section: "localmode", Name: "atomic_facts_with_ollama",
+			Status: statusWarn,
+			Detail: "absorb.pass2_provider=ollama but atomic_facts is off — model will fabricate [cN-fM] citations without ground-truth fact IDs to cite",
+			Fix:    "set absorb.atomic_facts: true in scribe.yaml so pass-2 has real fact IDs to ground its citations",
+		})
+	}
+
+	if cfg.Sync.DailyAnthropicOutputTokenCeiling == 0 {
+		out = append(out, check{
+			Section: "localmode", Name: "anthropic_ceiling",
+			Status: statusWarn,
+			Detail: "no daily_anthropic_output_token_ceiling configured",
+			Fix:    "add sync.daily_anthropic_output_token_ceiling: 2000000 to scribe.yaml. After the 2026-05-11 runaway this is the recommended backstop.",
+		})
 	}
 
 	return out
