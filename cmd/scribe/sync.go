@@ -857,14 +857,30 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 		return fmt.Errorf("load extract prompt: %w", err)
 	}
 
-	tools := []string{
-		"Read", "Write", "Edit", "Glob", "Grep",
-		"Bash(git log:*)", "Bash(git -C:*)", "Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
-	}
 	ctx := context.Background()
-	_, err = runClaude(withOpLabel(ctx, "session-extract"), root, prompt, s.Model, tools, 10*time.Minute)
-	if err != nil {
-		return fmt.Errorf("claude extraction: %w", err)
+
+	// Phase 4F dispatch. The envelope path skips the legacy `claude
+	// -p` invocation entirely — Go gathered the same context already
+	// (drops, KB CLAUDE.md, project README/CLAUDE, changed files, doc
+	// dirs) inside runExtractEnvelope, so the inlined `prompt` from
+	// the legacy template above is discarded for this branch. The
+	// envelope prompt loads from extract-{anthropic,ollama}.md and
+	// gets its own FILES_CONTENT.
+	cfg := loadConfig(root)
+	if strings.EqualFold(cfg.Extract.Mode, "envelope") {
+		_ = prompt // legacy tool-mode prompt unused in envelope path
+		if _, err := runExtractEnvelope(ctx, root, cfg, manifest, pname, entry, changed); err != nil {
+			return fmt.Errorf("extract envelope: %w", err)
+		}
+	} else {
+		tools := []string{
+			"Read", "Write", "Edit", "Glob", "Grep",
+			"Bash(git log:*)", "Bash(git -C:*)", "Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
+		}
+		_, err = runClaude(withOpLabel(ctx, "session-extract"), root, prompt, s.Model, tools, 10*time.Minute)
+		if err != nil {
+			return fmt.Errorf("claude extraction: %w", err)
+		}
 	}
 
 	// Post-extraction lint on changed files.

@@ -2,6 +2,29 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.16] — 2026-05-14
+
+Two follow-up fixes to the 100%-Ollama landing in 0.2.14. Closes the last `claude -p` callsite that fired during a normal `scribe sync` run, and stops the auto-flip log lines from repeating on every `loadConfig`.
+
+### Fix — project extraction was still hitting Anthropic
+
+- `extractProject` (sync.go) was the last `runClaude` callsite in the normal sync flow. Even with `llm.provider: ollama` set in `scribe.yaml`, sync silently billed Anthropic for every project's extraction step — `ollama ps` stayed empty during sync runs because none of the actual LLM work was hitting the local server.
+- New `ExtractConfig` (`extract:` block in scribe.yaml) routes the per-project extraction step the same way dream/assess/deep do. Fields: `provider`, `model`, `ollama_url`, `mode` (tools | envelope), `max_file_chars`, `max_total_chars`, `timeout_min`, `num_ctx`. Defaults inherit from `llm:`.
+- Auto-flip: non-anthropic provider forces `mode: envelope` (legacy tools path requires `claude -p`).
+- New `cmd/scribe/extract_envelope.go` mirrors `deep_orchestrator.go` at project granularity. Go gathers the context (drops → KB `CLAUDE.md` → project `CLAUDE.md`/`README` → changed files → doc dirs), inlines it into a bounded prompt under `MaxTotalChars` (default 32 K), the model emits one `EnvelopeV2`, scribe applies through `applyWikiActions`.
+- New `prompts/extract-anthropic.md` (preserves the legacy tool-mode prompt) and `prompts/extract-ollama.md` (envelope-mode JSON-out prompt) — picked by `promptForProvider("extract", …)`.
+- Verified end-to-end against scriptorium: `xuku-enaia-main` (0 changed files) and `phd_knowledge-temp` extracted via gemma3:12b @ num_ctx=16384, ~1 minute per project, 3-4 envelope actions applied each, zero Anthropic calls.
+
+### Fix — auto-flip log lines flooded sync output
+
+- The "<op>.provider forces mode=…" log lines fired on every `loadConfig` call. A single `scribe sync` calls `loadConfig` 5+ times across its subcommand entry points, so the same 5 lines printed 25-30 times per run; subprocess scribes (lint, scan, index) added another batch per spawn.
+- New `logAutoFlipOnce(key, …)` (config.go) prints each (op, provider) auto-flip exactly once per process. Mutex-guarded map keyed by `<op>:<provider>` so a config that flips multiple ops still surfaces every meaningful state change.
+- New `SCRIBE_QUIET_CONFIG=1` env var suppresses every auto-flip log call. `runCmdErr` automatically sets it when the spawned binary's basename is `scribe`, so child processes inherit silence without affecting unrelated tools (`qmd`, `git`).
+- Net effect on scriptorium's `scribe sync` output: the 5 auto-flip lines that previously printed 25-30 times per run now print exactly once at startup. Subprocess output (lint warnings, sections-build stats) is unaffected.
+
+### Tests
+- 5 new tests in `ollama_followup_test.go`: `extract` joins the inheritance + auto-flip + num_ctx-fallback test matrix that already covered dream/assess/deep/session-mine/relations; `TestLogAutoFlipOnce_DedupesPerKey` locks the dedup contract.
+
 ## [0.2.15] — 2026-05-14
 
 Codex CLI project discovery. `scribe sync --discover` now walks `~/.codex/sessions/` alongside `~/.claude/projects/`, picking up projects you've only ever touched from Codex. Discovery only — Codex session *mining* is a separate, larger track (deferred behind the 100%-Ollama session-mine envelope).

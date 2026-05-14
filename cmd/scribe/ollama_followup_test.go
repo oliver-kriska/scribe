@@ -490,6 +490,81 @@ func TestApplyDefaults_InheritsLLMModelEverywhere(t *testing.T) {
 	if r.Model != "gemma3:12b" {
 		t.Errorf("relations.Model = %q, want gemma3:12b", r.Model)
 	}
+
+	e := ExtractConfig{}
+	applyExtractDefaults(&e, llm)
+	if e.Model != "gemma3:12b" {
+		t.Errorf("extract.Model = %q, want gemma3:12b", e.Model)
+	}
+	if !strings.EqualFold(e.Mode, "envelope") {
+		t.Errorf("extract.Mode = %q, want envelope (auto-flip on non-anthropic)", e.Mode)
+	}
+}
+
+// Phase 4F port — sync's project-extract step now has an envelope mode
+// that runs against any llmProviderGenerator. Auto-flip and num_ctx
+// inheritance must work the same way as dream/assess/deep.
+
+func TestApplyExtractDefaults_AutoFlipModeOnOllama(t *testing.T) {
+	cfg := ExtractConfig{Mode: "tools"}
+	applyExtractDefaults(&cfg, LLMConfig{Provider: "ollama", Model: "gemma3:12b"})
+	if !strings.EqualFold(cfg.Mode, "envelope") {
+		t.Errorf("Mode = %q, want envelope after auto-flip", cfg.Mode)
+	}
+}
+
+func TestApplyExtractDefaults_NumCtxFallbackChain(t *testing.T) {
+	cases := []struct {
+		name   string
+		opVal  int
+		llmCtx int
+		want   int
+	}{
+		{"empty everywhere defaults to 16384", 0, 0, 16384},
+		{"llm.num_ctx inherits when op empty", 0, 24576, 24576},
+		{"per-op value wins over llm.num_ctx", 32768, 24576, 32768},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := ExtractConfig{NumCtx: c.opVal}
+			applyExtractDefaults(&cfg, LLMConfig{NumCtx: c.llmCtx})
+			if cfg.NumCtx != c.want {
+				t.Errorf("NumCtx = %d, want %d", cfg.NumCtx, c.want)
+			}
+		})
+	}
+}
+
+// logAutoFlipOnce is the dedupe for the auto-flip messages — fires once
+// per (key, value) pair per process. Sync used to call loadConfig 5+
+// times per run, which printed the same 5 auto-flip lines 5+ times.
+
+func TestLogAutoFlipOnce_DedupesPerKey(t *testing.T) {
+	// Reset per-test so prior tests in the package don't leak state.
+	autoFlipLoggedMu.Lock()
+	autoFlipLogged = map[string]bool{}
+	autoFlipLoggedMu.Unlock()
+
+	const key = "test-key:value"
+	logAutoFlipOnce(key, "test", "first call should print")
+	autoFlipLoggedMu.Lock()
+	if !autoFlipLogged[key] {
+		t.Error("first call did not register key in autoFlipLogged map")
+	}
+	autoFlipLoggedMu.Unlock()
+
+	// Second call must be a no-op for the same key. We can't easily
+	// intercept logMsg output, but if the map state stayed true the
+	// branch is correct — subsequent calls early-return.
+	logAutoFlipOnce(key, "test", "second call should NOT print")
+
+	// Different key should be allowed to fire.
+	logAutoFlipOnce("other-key", "test", "different key, should print")
+	autoFlipLoggedMu.Lock()
+	if !autoFlipLogged["other-key"] {
+		t.Error("different key did not register")
+	}
+	autoFlipLoggedMu.Unlock()
 }
 
 func TestApplyDefaults_PerOpModelWinsOverLLM(t *testing.T) {

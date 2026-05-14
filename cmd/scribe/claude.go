@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	gosync "sync"
 	"time"
@@ -327,6 +328,15 @@ func runCmdErr(dir string, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...) //nolint:noctx // sync wrapper; see doc comment
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	// When the spawned command is scribe itself (most callers — lint,
+	// scan, index, backlinks, sections build, contradictions build,
+	// triage, etc.), suppress the auto-flip config log lines in the
+	// child so the parent's sync log doesn't echo the same 6 lines per
+	// subprocess. Plain logMsg output from the child is unaffected;
+	// only logAutoFlipOnce respects this env var.
+	if filepath.Base(name) == "scribe" {
+		cmd.Env = append(os.Environ(), "SCRIBE_QUIET_CONFIG=1")
 	}
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err

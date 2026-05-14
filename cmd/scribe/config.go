@@ -8,9 +8,45 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	gosync "sync"
 
 	"gopkg.in/yaml.v3"
 )
+
+// autoFlipLogged dedupes the "<op>.provider forces mode=X" log lines so
+// the auto-flip notice fires exactly once per (key, value) pair per
+// process. loadConfig gets called from every subcommand entry point;
+// without dedup, a single `scribe sync` printed 5 lines for every
+// loadConfig call (15-30 lines per real run).
+var (
+	autoFlipLoggedMu gosync.Mutex
+	autoFlipLogged   = map[string]bool{}
+)
+
+// logAutoFlipOnce prints `msg` (formatted with args) the first time it
+// is called with a given `key` in this process. Subsequent calls with
+// the same key are silent. The key should be specific enough to
+// distinguish meaningful state changes (e.g. "dream:provider=ollama"
+// changes are worth logging once; the same flip from the same value
+// every minute is noise).
+//
+// SCRIBE_QUIET_CONFIG=1 suppresses every call. Sync sets the env var on
+// child processes (lint, scan, backlinks, index) so the parent's sync
+// log doesn't echo the same 6 config lines per subprocess. End users
+// can also set it manually for very quiet cron output.
+func logAutoFlipOnce(key, script, msg string, args ...any) {
+	if os.Getenv("SCRIBE_QUIET_CONFIG") == "1" {
+		return
+	}
+	autoFlipLoggedMu.Lock()
+	if autoFlipLogged[key] {
+		autoFlipLoggedMu.Unlock()
+		return
+	}
+	autoFlipLogged[key] = true
+	autoFlipLoggedMu.Unlock()
+	logMsg(script, msg, args...)
+}
 
 // wikiDirs lists all content directories in the KB.
 var wikiDirs = []string{
@@ -60,6 +96,7 @@ type ScribeConfig struct {
 	Dream       DreamConfig       `yaml:"dream"`
 	Assess      AssessConfig      `yaml:"assess"`
 	DeepIngest  DeepIngestConfig  `yaml:"deep_ingest"`
+	Extract     ExtractConfig     `yaml:"extract"`
 	Meta        MetaConfig        `yaml:"meta"`
 }
 
@@ -153,6 +190,39 @@ type AssessConfig struct {
 	// path. The assess prompt inlines top docs + source tree + git
 	// log so 32768 is the recommended floor on Ollama; smaller
 	// projects fit in 16384.
+	NumCtx int `yaml:"num_ctx"`
+}
+
+// ExtractConfig routes the per-project extraction step inside
+// `scribe sync`. Phase 4F port: extractProject historically ran
+// `claude -p` with full tool access (Read/Write/Edit/Glob/Grep) to
+// read the project, cross-reference the wiki, and write articles.
+// Envelope mode mirrors deep_orchestrator — Go gathers the context
+// (CLAUDE.md, README, changed files, drops), inlines it into one
+// bounded prompt, and applies a single EnvelopeV2 back.
+//
+// Auto-flip: non-anthropic provider forces Mode=envelope because the
+// tools path requires `claude -p`.
+type ExtractConfig struct {
+	Provider  string `yaml:"provider"`
+	Model     string `yaml:"model"`
+	OllamaURL string `yaml:"ollama_url"`
+	// Mode picks "tools" (legacy claude -p path) or "envelope" (Phase
+	// 4F orchestrator). Empty defaults to "tools" for backward compat.
+	Mode string `yaml:"mode"`
+	// MaxFileChars caps the per-file body length inlined into the
+	// envelope prompt. Default 8192 — keeps the prompt under control
+	// even when a project has a long README.
+	MaxFileChars int `yaml:"max_file_chars"`
+	// MaxTotalChars caps the whole files block. Default 32000 —
+	// pairs with NumCtx 16384 default. Files are read in priority
+	// order (drops → CLAUDE.md → README → docs → changed) and stop
+	// when the cap is hit.
+	MaxTotalChars int `yaml:"max_total_chars"`
+	// TimeoutMin caps a single envelope-mode call. Default 10 minutes.
+	TimeoutMin int `yaml:"timeout_min"`
+	// NumCtx overrides the global LLMConfig.NumCtx for the envelope
+	// path. Default 16384 — fits the typical project context window.
 	NumCtx int `yaml:"num_ctx"`
 }
 
@@ -338,7 +408,7 @@ func applyDreamDefaults(cfg *DreamConfig, llm LLMConfig) {
 		cfg.NumCtx = 16384
 	}
 	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "orchestrator") {
-		logMsg("config", "dream.provider=%q forces mode=orchestrator (was %q)", cfg.Provider, cfg.Mode)
+		logAutoFlipOnce("dream:"+cfg.Provider, "config", "dream.provider=%q forces mode=orchestrator (was %q)", cfg.Provider, cfg.Mode)
 		cfg.Mode = "orchestrator"
 	}
 	cfg.Provider, cfg.Model = coerceProviderModel("dream", cfg.Provider, cfg.Model)
@@ -376,7 +446,7 @@ func applyAssessDefaults(cfg *AssessConfig, llm LLMConfig) {
 		cfg.NumCtx = 32768
 	}
 	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
-		logMsg("config", "assess.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
+		logAutoFlipOnce("assess:"+cfg.Provider, "config", "assess.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
 		cfg.Mode = "envelope"
 	}
 	cfg.Provider, cfg.Model = coerceProviderModel("assess", cfg.Provider, cfg.Model)
@@ -411,10 +481,54 @@ func applyDeepIngestDefaults(cfg *DeepIngestConfig, llm LLMConfig) {
 		cfg.NumCtx = 16384
 	}
 	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
-		logMsg("config", "deep_ingest.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
+		logAutoFlipOnce("deep_ingest:"+cfg.Provider, "config", "deep_ingest.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
 		cfg.Mode = "envelope"
 	}
 	cfg.Provider, cfg.Model = coerceProviderModel("deep_ingest", cfg.Provider, cfg.Model)
+}
+
+// applyExtractDefaults fills ExtractConfig (Phase 4F). Same shape as
+// Dream/Assess/Deep — Mode defaults to tools for backward compat, but
+// a non-anthropic provider auto-flips to envelope.
+func applyExtractDefaults(cfg *ExtractConfig, llm LLMConfig) {
+	if cfg.Provider == "" {
+		cfg.Provider = llm.Provider
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+	}
+	if cfg.Model == "" {
+		cfg.Model = llm.Model
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = llm.OllamaURL
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = "http://localhost:11434"
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = "tools"
+	}
+	if cfg.MaxFileChars <= 0 {
+		cfg.MaxFileChars = 8192
+	}
+	if cfg.MaxTotalChars <= 0 {
+		cfg.MaxTotalChars = 32000
+	}
+	if cfg.TimeoutMin <= 0 {
+		cfg.TimeoutMin = 10
+	}
+	if cfg.NumCtx <= 0 {
+		cfg.NumCtx = llm.NumCtx
+	}
+	if cfg.NumCtx <= 0 {
+		cfg.NumCtx = 16384
+	}
+	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
+		logAutoFlipOnce("extract:"+cfg.Provider, "config", "extract.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
+		cfg.Mode = "envelope"
+	}
+	cfg.Provider, cfg.Model = coerceProviderModel("extract", cfg.Provider, cfg.Model)
 }
 
 // applySessionMineDefaults fills SessionMineConfig + the Phase 4C
@@ -458,7 +572,7 @@ func applySessionMineDefaults(cfg *SessionMineConfig, llm LLMConfig) {
 	}
 	// Non-anthropic provider has no MCP support → force envelope mode.
 	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
-		logMsg("config", "session_mine.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
+		logAutoFlipOnce("session_mine:"+cfg.Provider, "config", "session_mine.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
 		cfg.Mode = "envelope"
 	}
 	cfg.Provider, cfg.Model = coerceProviderModel("session_mine", cfg.Provider, cfg.Model)
@@ -1200,7 +1314,7 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 	// pass2_mode left at "tools" would silently no-op. Log so the user
 	// notices the override.
 	if !strings.EqualFold(cfg.Pass2Provider, "anthropic") && !strings.EqualFold(cfg.Pass2Mode, "json") {
-		logMsg("config", "absorb.pass2_provider=%q forces pass2_mode=json (was %q)", cfg.Pass2Provider, cfg.Pass2Mode)
+		logAutoFlipOnce("absorb.pass2:"+cfg.Pass2Provider, "config", "absorb.pass2_provider=%q forces pass2_mode=json (was %q)", cfg.Pass2Provider, cfg.Pass2Mode)
 		cfg.Pass2Mode = "json"
 	}
 	// Provider/model coherence: ollama + Claude alias swap, same as facts.
@@ -1433,6 +1547,7 @@ func loadConfig(root string) *ScribeConfig {
 		applyDreamDefaults(&cfg.Dream, cfg.LLM)
 		applyAssessDefaults(&cfg.Assess, cfg.LLM)
 		applyDeepIngestDefaults(&cfg.DeepIngest, cfg.LLM)
+		applyExtractDefaults(&cfg.Extract, cfg.LLM)
 		applyMetaDefaults(&cfg.Meta)
 		return cfg
 	}
@@ -1464,6 +1579,7 @@ func loadConfig(root string) *ScribeConfig {
 	applyDreamDefaults(&cfg.Dream, cfg.LLM)
 	applyAssessDefaults(&cfg.Assess, cfg.LLM)
 	applyDeepIngestDefaults(&cfg.DeepIngest, cfg.LLM)
+	applyExtractDefaults(&cfg.Extract, cfg.LLM)
 	applyMetaDefaults(&cfg.Meta)
 
 	// First-use backfill: if the on-disk scribe.yaml has no `absorb:` key,
