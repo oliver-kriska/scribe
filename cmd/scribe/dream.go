@@ -26,12 +26,22 @@ func (d *DreamCmd) Run() error {
 	today := time.Now().Format("2006-01-02")
 	preCount := countArticles(root)
 
-	logMsg("dream", "starting dream cycle (%d articles, model: %s)", preCount, d.Model)
+	// In orchestrator mode the resolved provider/model live on
+	// cfg.Dream (filled by applyDreamDefaults). The d.Model CLI flag
+	// only feeds the legacy monolithic `claude -p` path. Reporting the
+	// CLI default ("sonnet") regardless of mode caused the misleading
+	// "starting dream cycle (… model: sonnet)" log even on a 100%-
+	// Ollama config.
+	effectiveModel := d.Model
+	if strings.EqualFold(cfg.Dream.Mode, "orchestrator") {
+		effectiveModel = fmt.Sprintf("%s/%s", cfg.Dream.Provider, cfg.Dream.Model)
+	}
+	logMsg("dream", "starting dream cycle (%d articles, model: %s, mode: %s)", preCount, effectiveModel, cfg.Dream.Mode)
 
 	if d.DryRun {
 		logMsg("dream", "DRY RUN — would run 4-phase dream cycle on %d articles", preCount)
 		logMsg("dream", "estimated duration: 15-45 minutes")
-		logMsg("dream", "model: %s", d.Model)
+		logMsg("dream", "model: %s", effectiveModel)
 		return nil
 	}
 
@@ -48,28 +58,39 @@ func (d *DreamCmd) Run() error {
 	}
 	defer releaseLock(lf)
 
-	// Load prompt and run claude -p
-	prompt, err := loadPrompt("dream.md", map[string]string{
-		"KB_DIR": root,
-		"DATE":   today,
-	})
-	if err != nil {
-		return fmt.Errorf("load dream prompt: %w", err)
-	}
-
-	tools := []string{
-		"Read", "Write", "Edit", "Glob", "Grep",
-		"Bash(wc:*)", "Bash(ls:*)", "Bash(find:*)",
-	}
-
 	ctx := context.Background()
-	_, err = runClaude(withOpLabel(ctx, "dream"), root, prompt, d.Model, tools, 3600*time.Second)
-	if err != nil {
-		if errors.Is(err, ErrRateLimit) {
-			logMsg("dream", "rate limited — dream cycle interrupted, will retry next week")
-			return nil
+
+	// Phase 4D dispatch: orchestrator mode runs the LLM as a single
+	// bounded envelope subtask while Go does the file walking and
+	// index work itself. Monolithic mode keeps the historical
+	// hour-long `claude -p` path with full tool access.
+	if strings.EqualFold(cfg.Dream.Mode, "orchestrator") {
+		if err := runDreamOrchestrator(ctx, root, cfg, today); err != nil {
+			return fmt.Errorf("dream orchestrator: %w", err)
 		}
-		return fmt.Errorf("dream claude -p: %w", err)
+	} else {
+		// Load prompt and run claude -p
+		prompt, err := loadPrompt("dream.md", map[string]string{
+			"KB_DIR": root,
+			"DATE":   today,
+		})
+		if err != nil {
+			return fmt.Errorf("load dream prompt: %w", err)
+		}
+
+		tools := []string{
+			"Read", "Write", "Edit", "Glob", "Grep",
+			"Bash(wc:*)", "Bash(ls:*)", "Bash(find:*)",
+		}
+
+		_, err = runClaude(withOpLabel(ctx, "dream"), root, prompt, d.Model, tools, 3600*time.Second)
+		if err != nil {
+			if errors.Is(err, ErrRateLimit) {
+				logMsg("dream", "rate limited — dream cycle interrupted, will retry next week")
+				return nil
+			}
+			return fmt.Errorf("dream claude -p: %w", err)
+		}
 	}
 
 	// Post-dream validation

@@ -1105,8 +1105,12 @@ func recordBatchOutcome(root, label string, sessionIDs []string) {
 
 // mineSessionBatches processes session IDs with bounded parallelism.
 // Returns total mined and whether a rate limit was hit.
-// For parallel > 1, each session gets its own claude -p call.
-// For parallel == 1 (large sessions), runs serially.
+//
+// Phase 4C: when cfg.SessionMine.Mode == "envelope" (auto-flipped for
+// non-anthropic providers), each session goes through the Go
+// orchestrator path: Go fetches the transcript, the LLM emits one
+// EnvelopeV2, scribe applies it. Otherwise the legacy tools path runs
+// (claude -p with ccrider MCP).
 func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel int, timeout time.Duration, promptName string, label string) (int, bool) {
 	tools := []string{
 		"Read", "Write", "Edit", "Glob", "Grep",
@@ -1120,6 +1124,14 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 	}
 
 	dbPath := cfg.CcriderDB
+
+	// Phase 4C envelope dispatch: when configured for envelope mode,
+	// route the whole batch through the Go orchestrator. The legacy
+	// tools path stays in place so users can A/B with a config flip
+	// rather than a deploy.
+	if strings.EqualFold(cfg.SessionMine.Mode, "envelope") {
+		return s.mineSessionBatchesEnvelope(root, sessionIDs, parallel, label, cfg)
+	}
 
 	if parallel <= 1 {
 		// Serial mode for large sessions (avoids concurrent wiki writes).
@@ -1612,26 +1624,65 @@ func stripFrontmatter(s string) string {
 	return strings.TrimLeft(rest, "\n")
 }
 
-// absorbSinglePass runs the original single-pass absorb.md prompt. Timeout
-// comes from AbsorbConfig.SinglePassTimeoutMin.
+// absorbSinglePass runs the single-pass absorb. Phase 4A.3 ported it
+// off `claude -p` onto llmProviderGenerator + WikiActionEnvelope. The
+// raw article body is inlined into the prompt; the model returns one
+// envelope describing every wiki file to create/update; Go applies the
+// mutations through applyWikiActions. No tools needed → works against
+// Ollama out of the box.
 func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 	cfg := loadConfig(root)
-	prompt, err := loadPrompt("absorb.md", map[string]string{
+	rawBody, err := os.ReadFile(rawFile)
+	if err != nil {
+		return fmt.Errorf("absorb-single: read raw article: %w", err)
+	}
+	provider := cfg.Absorb.SinglePassProvider
+	model := cfg.Absorb.SinglePassModel
+	if model == "" {
+		model = s.Model
+	}
+	promptName := promptForProvider("absorb", provider)
+	prompt, err := loadPrompt(promptName, map[string]string{
 		"KB_DIR":         root,
 		"RAW_FILE":       rawFile,
 		"BRIEF_WORDS":    fmt.Sprintf("%d", cfg.Absorb.BriefThresholdWords),
 		"BRIEF_HEADINGS": fmt.Sprintf("%d", cfg.Absorb.BriefThresholdHeadings),
 		"DENSE_WORDS":    fmt.Sprintf("%d", cfg.Absorb.DenseThresholdWords),
 		"DENSE_HEADINGS": fmt.Sprintf("%d", cfg.Absorb.DenseThresholdHeadings),
+		"RAW_BODY":       string(rawBody),
+		"TODAY":          time.Now().UTC().Format("2006-01-02"),
 	})
 	if err != nil {
 		return fmt.Errorf("load absorb prompt: %w", err)
 	}
-	tools := []string{"Read", "Write", "Edit", "Glob", "Grep", "Bash(wc:*)"}
 	ctx := context.Background()
 	timeout := time.Duration(cfg.Absorb.SinglePassTimeoutMin) * time.Minute
-	_, err = runClaude(withOpLabel(ctx, "absorb-single"), root, prompt, s.Model, tools, timeout)
-	return err
+	gen := newLLMProvider(provider, model, cfg.Absorb.Contextualize.OllamaURL, root)
+	tagged := withOllamaNumCtx(withOpLabel(ctx, "absorb-single"), cfg.Absorb.SinglePassNumCtx)
+	callCtx, cancel := context.WithTimeout(tagged, timeout)
+	defer cancel()
+	out, err := generateMaybeJSON(callCtx, gen, prompt)
+	if err != nil {
+		return fmt.Errorf("absorb-single: %w", err)
+	}
+	jsonText, ok := extractJSON(out)
+	if !ok {
+		return fmt.Errorf("absorb-single: no JSON envelope in provider output (%d bytes)", len(out))
+	}
+	env, err := parseEnvelope(jsonText)
+	if err != nil {
+		return fmt.Errorf("absorb-single: parse envelope: %w", err)
+	}
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	if err != nil {
+		return fmt.Errorf("absorb-single: apply actions: %w", err)
+	}
+	if len(res.Errors) > 0 {
+		logMsg("sync", "absorb-single: %d applied, %d errors: %s", len(res.Applied), len(res.Errors), strings.Join(res.Errors, "; "))
+	} else {
+		logMsg("sync", "absorb-single: applied %d action(s)", len(res.Applied))
+	}
+	return nil
 }
 
 // absorbDenseTwoPass runs the entity-first two-pass absorb for dense raw
@@ -1727,7 +1778,11 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 			return fmt.Errorf("pass2 json: read raw article: %w", err)
 		}
 		planJSONForPrompt = string(planBytes)
-		logMsg("sync", "pass2 mode=json provider=%s model=%s", pass2Provider.Name(), pass2Model)
+		logMsg("sync", "pass2 mode=json provider=%s model=%s num_ctx=%d", pass2Provider.Name(), pass2Model, cfg.Absorb.Pass2NumCtx)
+		// Tag parent ctx so every parallel pass-2 goroutine inherits the
+		// num_ctx. Anthropic providers ignore the value; Ollama reads it
+		// when building the /api/generate request.
+		ctx = withOllamaNumCtx(ctx, cfg.Absorb.Pass2NumCtx)
 	}
 
 	parallel := cfg.Absorb.Pass2Parallel
@@ -2028,6 +2083,25 @@ func (s *SyncCmd) commitAndPush(root, message string) error {
 		}
 	}
 	return nil
+}
+
+// rebuildIndexAndBacklinks runs `scribe backlinks` and `scribe index`
+// in-process via the running binary. Free-function variant of
+// SyncCmd.rebuildAndReindex's wiki-index portion, used by orchestrator
+// callers (dream uses os/exec directly; assess + deep use this helper
+// so a fresh envelope-mode run leaves _index.md and _backlinks.json
+// in sync). Best-effort: any error is logged and discarded.
+func rebuildIndexAndBacklinks(root string) {
+	scribeExe, _ := os.Executable()
+	if scribeExe == "" {
+		scribeExe = "scribe"
+	}
+	if out, _ := runCmdErr(root, scribeExe, "backlinks"); out != "" {
+		logMsg("rebuild", "%s", lastLine(out))
+	}
+	if out, _ := runCmdErr(root, scribeExe, "index"); out != "" {
+		logMsg("rebuild", "%s", lastLine(out))
+	}
 }
 
 // rebuildAndReindex runs backlinks, index, and qmd reindex.

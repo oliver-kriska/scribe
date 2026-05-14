@@ -103,35 +103,51 @@ func (d *DeepCmd) Run() error {
 			continue
 		}
 
-		fileList := strings.Join(mdFiles, ",")
-
-		prompt, err := loadPrompt("deep-extract.md", map[string]string{
-			"KB_DIR":    root,
-			"REL_DIR":   relDir,
-			"PROJECT":   d.Project,
-			"P_PATH":    projectPath,
-			"DOMAIN":    domain,
-			"FILE_LIST": fileList,
-		})
-		if err != nil {
-			return fmt.Errorf("load prompt: %w", err)
-		}
-
-		tools := []string{
-			"Read", "Write", "Edit", "Glob", "Grep",
-			"Bash(git log:*)", "Bash(git -C:*)",
-			"Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
-		}
-
 		ctx := context.Background()
-		_, err = runClaude(withOpLabel(ctx, "deep-extract"), root, prompt, d.Model, tools, 600*time.Second)
-		if err != nil {
-			if errors.Is(err, ErrRateLimit) {
+
+		// Phase 4E: envelope mode pulls per-directory files into the
+		// prompt and asks for one envelope; tools mode keeps the
+		// legacy `claude -p` path. The cfg dispatcher matches the
+		// pattern from assess + dream.
+		cfg := loadConfig(root)
+		if cfg != nil && strings.EqualFold(cfg.DeepIngest.Mode, "envelope") {
+			rl, err := runDeepExtractEnvelope(ctx, root, cfg, d.Project, projectPath, relDir, domain, mdFiles)
+			if rl {
 				logMsg("deep", "  [%s] rate limited — stopping, will resume next run", relDir)
 				break
 			}
-			logMsg("deep", "  [%s] claude error: %v", relDir, err)
-			// Continue with next directory rather than aborting the whole batch.
+			if err != nil {
+				logMsg("deep", "  [%s] envelope error: %v", relDir, err)
+			}
+		} else {
+			fileList := strings.Join(mdFiles, ",")
+			prompt, err := loadPrompt("deep-extract.md", map[string]string{
+				"KB_DIR":    root,
+				"REL_DIR":   relDir,
+				"PROJECT":   d.Project,
+				"P_PATH":    projectPath,
+				"DOMAIN":    domain,
+				"FILE_LIST": fileList,
+			})
+			if err != nil {
+				return fmt.Errorf("load prompt: %w", err)
+			}
+
+			tools := []string{
+				"Read", "Write", "Edit", "Glob", "Grep",
+				"Bash(git log:*)", "Bash(git -C:*)",
+				"Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
+			}
+
+			_, err = runClaude(withOpLabel(ctx, "deep-extract"), root, prompt, d.Model, tools, 600*time.Second)
+			if err != nil {
+				if errors.Is(err, ErrRateLimit) {
+					logMsg("deep", "  [%s] rate limited — stopping, will resume next run", relDir)
+					break
+				}
+				logMsg("deep", "  [%s] claude error: %v", relDir, err)
+				// Continue with next directory rather than aborting the whole batch.
+			}
 		}
 
 		newlyExtracted = append(newlyExtracted, relDir)
@@ -167,6 +183,12 @@ func (d *DeepCmd) Run() error {
 
 	// Reindex and commit.
 	if !d.DryRun && batchNum > 0 {
+		// Rebuild wiki index + backlinks before qmd re-embed.
+		// Envelope-mode deep writes wiki articles via applyWikiActions
+		// without touching _index.md / _backlinks.json. The legacy
+		// tools-mode path edited those files inside `claude -p`; on
+		// the envelope path the rebuild has to happen here.
+		rebuildIndexAndBacklinks(root)
 		logMsg("deep", "reindexing qmd...")
 		runCmd(root, "qmd", "update")
 		runCmd(root, "qmd", "embed")

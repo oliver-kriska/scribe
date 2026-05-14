@@ -76,6 +76,32 @@ func (a *AssessCmd) Run() error {
 	}
 
 	today := time.Now().Format("2006-01-02")
+
+	// Phase 4E dispatch: envelope mode runs ONE LLM call with the
+	// project's orientation packet inlined. Legacy tools mode keeps
+	// the 5-track + consolidate path.
+	cfg := loadConfig(root)
+	if cfg != nil && strings.EqualFold(cfg.Assess.Mode, "envelope") {
+		if a.DryRun {
+			fmt.Printf("# DRY RUN — assess mode=envelope for %s\n", a.Project)
+			return nil
+		}
+		if err := runAssessOrchestrator(context.Background(), root, cfg, a.Project, entry, today); err != nil {
+			return fmt.Errorf("assess envelope: %w", err)
+		}
+		// Rebuild wiki index + backlinks before qmd re-embed. The
+		// envelope-mode assess writes one or more articles via
+		// applyWikiActions but doesn't touch _index.md /
+		// _backlinks.json — without this they drift until the next
+		// sync run rebuilds them.
+		rebuildIndexAndBacklinks(root)
+		runCmd(root, "qmd", "update")
+		runCmd(root, "qmd", "embed")
+		writeHotMDQuiet(root)
+		logMsg("assess", "done (envelope) — overview at projects/%s/overview.md", strings.ToLower(a.Project))
+		return nil
+	}
+
 	outDir := filepath.Join(root, "output", "assess", fmt.Sprintf("%s-%s", a.Project, today))
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", outDir, err)

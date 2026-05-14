@@ -417,18 +417,28 @@ func (o *ollamaProvider) GenerateJSON(ctx context.Context, prompt string) (strin
 // generate is the shared implementation behind Generate and GenerateJSON.
 // jsonMode toggles Ollama's structured-output flag; everything else
 // (cost-ledger row, error handling, ensureReady) is identical.
+//
+// num_ctx defaults to 8192 (enough for contextualize / facts / pass-1
+// chapter prompts). Callers handling bigger packets (session-mine
+// transcripts, dream orient packets, assess/deep file batches) MUST
+// pre-tag their context with withOllamaNumCtx — without that, Ollama
+// silently truncates anything past 8192 tokens. The default isn't
+// "fits everything" because a 32K context costs RAM and slows the
+// model on every call, not just the big ones.
 func (o *ollamaProvider) generate(ctx context.Context, prompt string, jsonMode bool) (string, error) {
 	if err := o.ensureReady(ctx); err != nil {
 		return "", err
 	}
 	url := strings.TrimRight(o.baseURL, "/") + "/api/generate"
+	numCtx := ollamaNumCtxFromContext(ctx)
+	if numCtx <= 0 {
+		numCtx = 8192
+	}
 	reqBody := ollamaRequest{
-		Model:  o.model,
-		Prompt: prompt,
-		Stream: false,
-		// num_ctx 8192 accommodates most raw articles; the caller trims if
-		// a source is pathologically long.
-		Options: map[string]any{"num_ctx": 8192, "temperature": 0.3},
+		Model:   o.model,
+		Prompt:  prompt,
+		Stream:  false,
+		Options: map[string]any{"num_ctx": numCtx, "temperature": 0.3},
 	}
 	if jsonMode {
 		reqBody.Format = "json"
@@ -465,7 +475,15 @@ func (o *ollamaProvider) generate(ctx context.Context, prompt string, jsonMode b
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Minute}
+	// No client-level timeout: every Ollama caller already bounds the
+	// request via context.WithTimeout (dream 20m, session-mine 8m,
+	// deep 10m, assess 10m, absorb-pass2 25m, …). A separate 10-min
+	// client cap silently overrode those — with Stream: false the
+	// /api/generate call buffers the whole response, so the client
+	// timeout has to cover cold-load + full generation. Trusting the
+	// per-op context is both correct and more honest about which
+	// knob the user should tune.
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		entry.OK = false

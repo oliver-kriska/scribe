@@ -38,8 +38,8 @@ import (
 // the article entirely.
 
 // classifierFn is the seam tests use to substitute the LLM. The
-// production binding is callClaudeForRelationsMigrate.
-var classifierFn = callClaudeForRelationsMigrate
+// production binding is callLLMForRelationsMigrate.
+var classifierFn = callLLMForRelationsMigrate
 
 // ClassifierResult is one element of the LLM's JSON array reply,
 // after parsing and bounds-checking.
@@ -447,7 +447,13 @@ func classifyOrLoadSidecar(root string, c migrationCandidate, model string, forc
 
 // ---- LLM call ----
 
-func callClaudeForRelationsMigrate(c migrationCandidate, model string) ([]ClassifierResult, error) {
+// callLLMForRelationsMigrate dispatches the classifier prompt through
+// llmProviderGenerator instead of `claude -p`. Phase 4A.4 port — the
+// underlying prompt is pure text-in / JSON-out (no tool use), so any
+// provider that can produce one JSON document handles it. The provider
+// + model + ollama URL come from the per-op RelationsConfig (or, when
+// that's empty, the top-level LLMConfig — see config.go).
+func callLLMForRelationsMigrate(c migrationCandidate, model string) ([]ClassifierResult, error) {
 	tpl, err := promptFS.ReadFile("prompts/relations-migrate.md")
 	if err != nil {
 		return nil, fmt.Errorf("load prompt: %w", err)
@@ -475,8 +481,12 @@ func callClaudeForRelationsMigrate(c migrationCandidate, model string) ([]Classi
 	prompt = strings.ReplaceAll(prompt, "{{SOURCE_BODY}}", c.SourceBody)
 	prompt = strings.ReplaceAll(prompt, "{{CANDIDATES}}", cb.String())
 
-	ctx := withOpLabel(context.Background(), "relations-migrate")
-	out, err := runClaude(ctx, mustKBRoot(), prompt, model, nil, 90*time.Second)
+	root := mustKBRoot()
+	provider, providerModel, ollamaURL := relationsProviderModel(root, model)
+	ctx, cancel := context.WithTimeout(withOpLabel(context.Background(), "relations-migrate"), 90*time.Second)
+	defer cancel()
+	gen := newLLMProvider(provider, providerModel, ollamaURL, root)
+	out, err := generateMaybeJSON(ctx, gen, prompt)
 	if err != nil {
 		return nil, err
 	}

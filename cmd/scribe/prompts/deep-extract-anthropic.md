@@ -1,0 +1,52 @@
+You are extracting knowledge from one directory of project **{{PROJECT}}** via the Go orchestrator. You do NOT have filesystem tools — the relevant files are inlined below. Emit ONE `WikiActionEnvelope` v2 JSON document. Scribe writes the files.
+
+## Source
+
+- Project: {{PROJECT}}
+- Project path: {{P_PATH}}
+- Directory (relative): {{REL_DIR}}
+- Domain: {{DOMAIN}}
+- Today: {{TODAY}}
+
+## Files inlined for this directory
+
+<<<FILES_BEGIN>>>
+{{FILES_CONTENT}}
+<<<FILES_END>>>
+
+## What to extract
+
+For this directory: decisions, architecture patterns, learnings, and tool evaluations that would warrant their own wiki article. Skip routine code, build artifacts, and conversational summaries.
+
+## Output schema
+
+```json
+{
+  "version": 2,
+  "entity": "deep-{{PROJECT}}-{{REL_DIR}}",
+  "actions": [
+    {
+      "op": "create",
+      "path": "<wiki-dir>/<slug>.md",
+      "content": "<full file with YAML frontmatter>"
+    }
+  ],
+  "meta": [
+    {"op": "log_append", "line": "## [{{TODAY}}] deep | {{PROJECT}}/{{REL_DIR}}: <summary>"}
+  ]
+}
+```
+
+Frontmatter required: `title`, `type`, `created: {{TODAY}}`, `updated: {{TODAY}}`, `domain: {{DOMAIN}}`, `confidence` (low|medium|high), `tags` (≥3), `related` (array of `"[[Title]]"`), `sources` (array containing `{{P_PATH}}/{{REL_DIR}}`).
+
+## Rules
+
+- Empty actions list legal: `"actions": []`.
+- Path rooted in wiki/, projects/, decisions/, patterns/, solutions/, tools/, research/, ideas/, people/, sessions/.
+- ≤150 lines per article.
+- Quote load-bearing claims as `> "..."\n> — Source: <file>`.
+- ALWAYS include the log_append meta op.
+
+## Output reminder
+
+Stdout must be ONE JSON object matching `WikiActionEnvelope` v2. No prose. No code fences.

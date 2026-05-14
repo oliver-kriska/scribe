@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	gosync "sync"
 	"time"
 )
 
@@ -255,6 +256,53 @@ func loadPrompt(name string, vars map[string]string) (string, error) {
 		result = strings.ReplaceAll(result, "{{"+k+"}}", v)
 	}
 	return result, nil
+}
+
+// promptForProvider picks between `<base>-anthropic.md` and
+// `<base>-ollama.md` based on the provider name. Established in
+// docs/100-percent-ollama-plan.md decision 3: each provider gets its
+// own prompt variant because Ollama benefits from explicit JSON-only
+// caps and a smaller context budget while Anthropic prompts can stay
+// narrative.
+//
+// Falls back to `<base>.md` if neither variant is embedded — keeps the
+// pre-Phase-4A.2 prompts loadable during the migration without forcing
+// every task to land its pair atomically. The fallback is logged once
+// per (base, provider) pair when ollama is the caller — the
+// anthropic-tuned legacy prompts lack the "OUTPUT ONLY JSON" caps and
+// produce noisier output through local models.
+func promptForProvider(base, provider string) string {
+	suffix := "-anthropic.md"
+	if strings.EqualFold(provider, "ollama") {
+		suffix = "-ollama.md"
+	}
+	candidate := base + suffix
+	if _, err := promptFS.ReadFile("prompts/" + candidate); err == nil {
+		return candidate
+	}
+	if strings.EqualFold(provider, "ollama") {
+		warnPromptFallbackOnce(base)
+	}
+	return base + ".md"
+}
+
+// warnPromptFallbackOnce emits exactly one log line per base prompt
+// per process when the ollama-specific variant is missing. Keeps the
+// signal in the sync log without flooding when the same prompt is
+// reused across N parallel sessions.
+var (
+	promptFallbackOnceMu gosync.Mutex
+	promptFallbackOnce   = map[string]bool{}
+)
+
+func warnPromptFallbackOnce(base string) {
+	promptFallbackOnceMu.Lock()
+	defer promptFallbackOnceMu.Unlock()
+	if promptFallbackOnce[base] {
+		return
+	}
+	promptFallbackOnce[base] = true
+	logMsg("llm", "prompts/%s-ollama.md missing — falling back to %s.md (anthropic-tuned). Add the ollama variant for cleaner JSON output.", base, base)
 }
 
 // runCmd runs a command and returns its trimmed stdout. Returns empty string on error.

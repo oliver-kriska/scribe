@@ -34,14 +34,490 @@ type ScribeConfig struct {
 	//   - log prefixes where the name adds useful disambiguation
 	// Defaults to the basename of the KB root directory. Override only
 	// if your folder name and the name you want to expose differ.
-	KBName     string           `yaml:"kb_name"`
-	Sync       SyncConfig       `yaml:"sync"`
-	Deep       DeepConfig       `yaml:"deep"`
-	Capture    CaptureConfig    `yaml:"capture"`
-	Triage     TriageConfig     `yaml:"triage"`
-	Absorb     AbsorbConfig     `yaml:"absorb"`
-	Ingest     IngestConfig     `yaml:"ingest"`
-	Identities IdentitiesConfig `yaml:"identities"`
+	KBName string `yaml:"kb_name"`
+	// LLM is the top-level fallback for every per-op LLM call. Phase
+	// 4A.5: when a per-op Provider/Model field is empty, the resolver
+	// inherits from here. Lets the user flip the whole pipeline to
+	// Ollama with a single `llm.provider: ollama` line in scribe.yaml.
+	// Defaults: provider=anthropic, model="" (each op picks its own
+	// sensible default — haiku for cheap passes, sonnet for prose).
+	LLM         LLMConfig         `yaml:"llm"`
+	Sync        SyncConfig        `yaml:"sync"`
+	Deep        DeepConfig        `yaml:"deep"`
+	Capture     CaptureConfig     `yaml:"capture"`
+	Triage      TriageConfig      `yaml:"triage"`
+	Absorb      AbsorbConfig      `yaml:"absorb"`
+	Ingest      IngestConfig      `yaml:"ingest"`
+	Identities  IdentitiesConfig  `yaml:"identities"`
+	Relations   RelationsConfig   `yaml:"relations"`
+	SessionMine SessionMineConfig `yaml:"session_mine"`
+	Dream       DreamConfig       `yaml:"dream"`
+	Assess      AssessConfig      `yaml:"assess"`
+	DeepIngest  DeepIngestConfig  `yaml:"deep_ingest"`
+	Meta        MetaConfig        `yaml:"meta"`
+}
+
+// MetaConfig controls the envelope's MetaAction surface — the side-
+// channel writes (log.md, sessions log, rolling memory) that don't
+// fit inside the wiki-dirs sandbox. RollingTargets pins which target
+// stems rolling_memory_append accepts; defaults to learnings +
+// decisions-log (the original pre-4C set). Users can add domain-
+// specific targets like "incidents" or "migrations-log" without code
+// changes.
+type MetaConfig struct {
+	// RollingTargets is the closed list of file stems
+	// rolling_memory_append will write under <domain>/<stem>.md.
+	// Empty defaults to [learnings, decisions-log]. Names must be
+	// kebab-case alphanumeric — applyMetaDefaults validates and
+	// drops anything that looks like a path component.
+	RollingTargets []string `yaml:"rolling_targets"`
+}
+
+// LLMConfig is the top-level LLM-routing knob. Set once in scribe.yaml
+// to flip the whole pipeline between Anthropic and Ollama; per-op
+// fields override when set, otherwise inherit. The 100%-Ollama story
+// is `llm.provider: ollama` plus a pre-pulled model — no per-op edits
+// needed.
+type LLMConfig struct {
+	// Provider is "anthropic" (default) or "ollama". Unknown values
+	// fall back to anthropic with a log line (see newLLMProvider).
+	Provider string `yaml:"provider"`
+	// Model is the default model name used when a per-op Model is
+	// empty. For provider=anthropic this is a Claude alias ("haiku",
+	// "sonnet"); for ollama it's an Ollama model tag
+	// ("gemma3:4b", "qwen2.5-coder:14b"). Empty is legal —
+	// inheritOLLAMAModel and applyAbsorbDefaults fill the recommended
+	// local default when the user picks ollama but leaves model
+	// blank.
+	Model string `yaml:"model"`
+	// OllamaURL points at the Ollama HTTP server. Default
+	// http://localhost:11434. Per-op overrides survive (e.g. the
+	// existing Absorb.Contextualize.OllamaURL); when both are unset
+	// the resolver falls back to this value.
+	OllamaURL string `yaml:"ollama_url"`
+	// NumCtx is the global Ollama num_ctx default applied to any LLM
+	// call that doesn't override per-op. Zero leaves the provider's
+	// own default (8192) in place. The 100%-Ollama pipeline's bigger
+	// passes (session-mine, dream, assess, deep) DO override per-op
+	// with larger windows; this knob mainly exists for users who
+	// want every call to run at, e.g., 16384 across the board.
+	NumCtx int `yaml:"num_ctx"`
+}
+
+// RelationsConfig is the per-op routing for `scribe relations migrate`.
+// Phase 4A.4: the classifier path no longer needs to live on `claude -p`
+// — it's pure text-in / JSON-out. Empty fields inherit from LLMConfig.
+type RelationsConfig struct {
+	Provider  string `yaml:"provider"`
+	Model     string `yaml:"model"`
+	OllamaURL string `yaml:"ollama_url"`
+}
+
+// DreamConfig routes the weekly dream cycle. Mode picks between
+// "monolithic" (legacy: one `claude -p` runs the whole 4-phase
+// protocol with tools for up to an hour) and "orchestrator" (Phase
+// 4D: Go runs Phase 1/4 in pure code, the LLM only sees one
+// EnvelopeV2 subtask for the consolidation/contradiction/stub work).
+type DreamConfig struct {
+	Provider   string `yaml:"provider"`
+	Model      string `yaml:"model"`
+	OllamaURL  string `yaml:"ollama_url"`
+	Mode       string `yaml:"mode"`        // monolithic | orchestrator
+	TimeoutMin int    `yaml:"timeout_min"` // per subtask cap
+	// NumCtx overrides the global LLMConfig.NumCtx for this op only.
+	// Dream's orient packet (recent log + inventory + stale list +
+	// contradiction pairs) is sizable; 16384 is the safe floor on
+	// Ollama. Empty → falls through to LLMConfig.NumCtx, then the
+	// orchestrator's own per-op default.
+	NumCtx int `yaml:"num_ctx"`
+}
+
+// AssessConfig and DeepConfig route the project-ingestion commands.
+// Phase 4E ports both off `claude -p` with tools onto the envelope
+// orchestrator pattern. Empty fields inherit from LLMConfig.
+type AssessConfig struct {
+	Provider  string `yaml:"provider"`
+	Model     string `yaml:"model"`
+	OllamaURL string `yaml:"ollama_url"`
+	// Mode picks "tools" (legacy) or "envelope" (Phase 4E). Empty
+	// defaults to tools so existing `scribe assess` calls work
+	// unchanged.
+	Mode string `yaml:"mode"`
+	// NumCtx overrides the global LLMConfig.NumCtx for the envelope
+	// path. The assess prompt inlines top docs + source tree + git
+	// log so 32768 is the recommended floor on Ollama; smaller
+	// projects fit in 16384.
+	NumCtx int `yaml:"num_ctx"`
+}
+
+// DeepIngestConfig is the per-op config for `scribe deep`. Named
+// DeepIngestConfig to avoid the existing DeepConfig.BatchMax knob.
+type DeepIngestConfig struct {
+	Provider  string `yaml:"provider"`
+	Model     string `yaml:"model"`
+	OllamaURL string `yaml:"ollama_url"`
+	Mode      string `yaml:"mode"`
+	// NumCtx overrides the global LLMConfig.NumCtx for the envelope
+	// path. Deep inlines per-directory file contents (cap 24K chars),
+	// so 16384 is the recommended floor on Ollama.
+	NumCtx int `yaml:"num_ctx"`
+}
+
+// SessionMineConfig routes the session-mining ops (session-mine,
+// session-mine-batch, session-extract). Mode picks between "tools"
+// (legacy `claude -p` with ccrider MCP) and "envelope" (Phase 4C
+// orchestrator: Go reads transcripts, model emits one EnvelopeV2 per
+// session). Empty fields inherit from LLMConfig.
+//
+// Auto-flip: when Provider is non-anthropic, Mode is forced to
+// "envelope" — `claude -p` is the only backend that supports MCP
+// tools today.
+type SessionMineConfig struct {
+	Provider  string `yaml:"provider"`
+	Model     string `yaml:"model"`
+	OllamaURL string `yaml:"ollama_url"`
+	// Mode picks the protocol: "tools" or "envelope". Default "tools"
+	// preserves the historical behavior; users flip to "envelope" to
+	// engage the Phase 4C orchestrator path (which is what makes the
+	// local-Ollama story work).
+	Mode string `yaml:"mode"`
+	// TranscriptMaxChars caps the transcript size inlined into the
+	// prompt. Defaults to 24000 (~6K tokens for most tokenizers).
+	// The prompt skeleton + transcript + related-sessions block can
+	// approach 8K tokens — pair with NumCtx ≥ 16384 (the default
+	// applySessionMineDefaults sets) so Ollama doesn't silently
+	// truncate the conclusion of the transcript.
+	TranscriptMaxChars int `yaml:"transcript_max_chars"`
+	// TimeoutMin caps a single envelope-mode call. Defaults to 8
+	// minutes — local models on a 20K-char transcript take 4-7
+	// minutes wallclock on Apple Silicon.
+	TimeoutMin int `yaml:"timeout_min"`
+	// NumCtx overrides the global LLMConfig.NumCtx for this op only.
+	// 16384 is the floor for the default TranscriptMaxChars; bump
+	// alongside any TranscriptMaxChars increase.
+	NumCtx int `yaml:"num_ctx"`
+}
+
+// llmDefaults returns the canonical defaults for LLMConfig. Used by
+// loadConfig to fill missing fields after yaml.Unmarshal. Provider
+// defaults to anthropic so an empty `llm:` block reproduces the
+// pre-4A.5 behavior exactly.
+func llmDefaults() LLMConfig {
+	return LLMConfig{
+		Provider:  "anthropic",
+		Model:     "",
+		OllamaURL: "http://localhost:11434",
+	}
+}
+
+// applyLLMDefaults fills any zero-valued LLMConfig field from the
+// defaults. Also normalizes Claude/Ollama model aliases the same way
+// the per-op resolvers do — so a user who flips `llm.provider: ollama`
+// without updating `llm.model` ends up on the recommended local default
+// rather than a misconfigured request that 404s at Ollama.
+func applyLLMDefaults(cfg *LLMConfig) {
+	d := llmDefaults()
+	if cfg.Provider == "" {
+		cfg.Provider = d.Provider
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = d.OllamaURL
+	}
+	cfg.Provider, cfg.Model = coerceProviderModel("llm", cfg.Provider, cfg.Model)
+}
+
+// coerceProviderModel normalizes a (provider, model) pair so callers
+// don't have to repeat the ollama+Claude-alias swap that absorb,
+// facts, and contextualize each open-coded. Empty model under ollama
+// → recommended local default; Claude alias under ollama → recommended
+// local default with a log line so the user notices the swap. Returns
+// the (possibly modified) provider and model. The `label` argument is
+// only used in the warning log so the user can locate the misconfig.
+func coerceProviderModel(label, provider, model string) (string, string) {
+	if !strings.EqualFold(provider, "ollama") {
+		return provider, model
+	}
+	if model == "" || isClaudeModelAlias(model) {
+		if model != "" {
+			logMsg("config", "%s.provider=ollama but model=%q is a Claude alias — switching to %s (set an ollama model explicitly to silence this)", label, model, ollamaRecommendedModel)
+		}
+		model = ollamaRecommendedModel
+	}
+	return provider, model
+}
+
+// inheritProviderFromLLM returns the effective (provider, model,
+// ollamaURL) for a per-op config that may leave any field empty. The
+// fallback chain is: per-op value → LLMConfig value → llmDefaults().
+// Returned values pass through coerceProviderModel so callers don't
+// need to repeat the alias swap themselves.
+//
+// label is used only for the alias-swap warning so the user can find
+// the misconfigured op in scribe.yaml ("absorb.pass2", "facts", ...).
+func inheritProviderFromLLM(label string, opProvider, opModel, opOllamaURL string, top LLMConfig) (provider, model, ollamaURL string) {
+	provider = opProvider
+	if provider == "" {
+		provider = top.Provider
+	}
+	model = opModel
+	if model == "" {
+		model = top.Model
+	}
+	ollamaURL = opOllamaURL
+	if ollamaURL == "" {
+		ollamaURL = top.OllamaURL
+	}
+	if ollamaURL == "" {
+		ollamaURL = "http://localhost:11434"
+	}
+	provider, model = coerceProviderModel(label, provider, model)
+	return provider, model, ollamaURL
+}
+
+// applyRelationsDefaults fills RelationsConfig from LLMConfig + sane
+// defaults (Phase 4A.4/4A.5). Empty fields inherit; alias swap runs
+// at the end so a Claude alias under ollama is rewritten cleanly.
+func applyRelationsDefaults(cfg *RelationsConfig, llm LLMConfig) {
+	if cfg.Provider == "" {
+		cfg.Provider = llm.Provider
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+	}
+	if cfg.Model == "" {
+		cfg.Model = llm.Model
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = llm.OllamaURL
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = "http://localhost:11434"
+	}
+	cfg.Provider, cfg.Model = coerceProviderModel("relations", cfg.Provider, cfg.Model)
+}
+
+// applyDreamDefaults fills DreamConfig. Mode defaults to monolithic
+// for backward compat; non-anthropic provider auto-flips to
+// orchestrator (Phase 4D) because the legacy tools path needs
+// `claude -p`.
+func applyDreamDefaults(cfg *DreamConfig, llm LLMConfig) {
+	if cfg.Provider == "" {
+		cfg.Provider = llm.Provider
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+	}
+	if cfg.Model == "" {
+		cfg.Model = llm.Model
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = llm.OllamaURL
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = "http://localhost:11434"
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = "monolithic"
+	}
+	if cfg.TimeoutMin <= 0 {
+		cfg.TimeoutMin = 20
+	}
+	if cfg.NumCtx <= 0 {
+		cfg.NumCtx = llm.NumCtx
+	}
+	if cfg.NumCtx <= 0 {
+		// Dream's orient packet is big (log tail + inventory + stale
+		// list + contradictions). 16384 keeps the conclusion of the
+		// inventory from being truncated.
+		cfg.NumCtx = 16384
+	}
+	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "orchestrator") {
+		logMsg("config", "dream.provider=%q forces mode=orchestrator (was %q)", cfg.Provider, cfg.Mode)
+		cfg.Mode = "orchestrator"
+	}
+	cfg.Provider, cfg.Model = coerceProviderModel("dream", cfg.Provider, cfg.Model)
+}
+
+// applyAssessDefaults / applyDeepIngestDefaults: Phase 4E. Same shape
+// as Dream — Mode defaults to tools for backward compat, non-anthropic
+// provider auto-flips to envelope mode.
+func applyAssessDefaults(cfg *AssessConfig, llm LLMConfig) {
+	if cfg.Provider == "" {
+		cfg.Provider = llm.Provider
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+	}
+	if cfg.Model == "" {
+		cfg.Model = llm.Model
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = llm.OllamaURL
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = "http://localhost:11434"
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = "tools"
+	}
+	if cfg.NumCtx <= 0 {
+		cfg.NumCtx = llm.NumCtx
+	}
+	if cfg.NumCtx <= 0 {
+		// Assess inlines top-level docs (12K char cap), source tree
+		// (200 entries), and recent git log. Even with truncation
+		// this routinely lands at 6-8K tokens.
+		cfg.NumCtx = 32768
+	}
+	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
+		logMsg("config", "assess.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
+		cfg.Mode = "envelope"
+	}
+	cfg.Provider, cfg.Model = coerceProviderModel("assess", cfg.Provider, cfg.Model)
+}
+
+func applyDeepIngestDefaults(cfg *DeepIngestConfig, llm LLMConfig) {
+	if cfg.Provider == "" {
+		cfg.Provider = llm.Provider
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+	}
+	if cfg.Model == "" {
+		cfg.Model = llm.Model
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = llm.OllamaURL
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = "http://localhost:11434"
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = "tools"
+	}
+	if cfg.NumCtx <= 0 {
+		cfg.NumCtx = llm.NumCtx
+	}
+	if cfg.NumCtx <= 0 {
+		// Deep inlines per-directory file contents capped at 24K
+		// chars (~6K tokens) — pair with 16384 to leave headroom for
+		// the prompt and the envelope output.
+		cfg.NumCtx = 16384
+	}
+	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
+		logMsg("config", "deep_ingest.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
+		cfg.Mode = "envelope"
+	}
+	cfg.Provider, cfg.Model = coerceProviderModel("deep_ingest", cfg.Provider, cfg.Model)
+}
+
+// applySessionMineDefaults fills SessionMineConfig + the Phase 4C
+// auto-flip: a non-anthropic provider forces envelope mode because
+// `claude -p` is the only backend that supports the ccrider MCP tools
+// the legacy path relies on.
+func applySessionMineDefaults(cfg *SessionMineConfig, llm LLMConfig) {
+	if cfg.Provider == "" {
+		cfg.Provider = llm.Provider
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+	}
+	if cfg.Model == "" {
+		cfg.Model = llm.Model
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = llm.OllamaURL
+	}
+	if cfg.OllamaURL == "" {
+		cfg.OllamaURL = "http://localhost:11434"
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = "tools"
+	}
+	if cfg.TranscriptMaxChars <= 0 {
+		cfg.TranscriptMaxChars = 24000
+	}
+	if cfg.TimeoutMin <= 0 {
+		cfg.TimeoutMin = 8
+	}
+	if cfg.NumCtx <= 0 {
+		cfg.NumCtx = llm.NumCtx
+	}
+	if cfg.NumCtx <= 0 {
+		// Default TranscriptMaxChars 24000 + prompt skeleton + related
+		// sessions block lands at 6-7K tokens. 16384 is the floor;
+		// raising TranscriptMaxChars without raising NumCtx silently
+		// truncates the conclusion of the transcript on Ollama.
+		cfg.NumCtx = 16384
+	}
+	// Non-anthropic provider has no MCP support → force envelope mode.
+	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
+		logMsg("config", "session_mine.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
+		cfg.Mode = "envelope"
+	}
+	cfg.Provider, cfg.Model = coerceProviderModel("session_mine", cfg.Provider, cfg.Model)
+}
+
+// applyMetaDefaults validates and fills the meta block. Empty
+// RollingTargets list inherits the historical {learnings,
+// decisions-log} pair. Invalid stems (anything containing a path
+// separator, slash, or `..`) get dropped with a log line so a typo
+// can't open a path-traversal hole through the rolling_memory_append
+// op.
+func applyMetaDefaults(cfg *MetaConfig) {
+	if len(cfg.RollingTargets) == 0 {
+		cfg.RollingTargets = []string{"learnings", "decisions-log"}
+		return
+	}
+	seen := map[string]bool{}
+	cleaned := make([]string, 0, len(cfg.RollingTargets))
+	for _, t := range cfg.RollingTargets {
+		s := strings.TrimSpace(t)
+		if s == "" {
+			continue
+		}
+		if strings.ContainsAny(s, "/\\") || strings.Contains(s, "..") {
+			logMsg("config", "meta.rolling_targets: dropping %q (must be a bare stem, no path separators)", t)
+			continue
+		}
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		cleaned = append(cleaned, s)
+	}
+	if len(cleaned) == 0 {
+		cleaned = []string{"learnings", "decisions-log"}
+	}
+	cfg.RollingTargets = cleaned
+}
+
+// relationsProviderModel returns the (provider, model, ollamaURL) the
+// relations-migrate classifier should use. Callers pass the CLI's
+// --model flag as the explicit pin; when that's a Claude alias and the
+// user has flipped `llm.provider: ollama`, the recommended local model
+// wins. defaultModel falls back to "haiku" when both the CLI flag and
+// config are empty (matches pre-4A.4 default).
+func relationsProviderModel(root, cliModel string) (provider, model, ollamaURL string) {
+	cfg := loadConfig(root)
+	if cfg == nil {
+		return "anthropic", cliModel, "http://localhost:11434"
+	}
+	// The CLI flag wins over RelationsConfig.Model when set, so users
+	// can A/B without editing scribe.yaml. Empty flag → fall through
+	// to config inheritance.
+	opModel := cliModel
+	if opModel == "" {
+		opModel = cfg.Relations.Model
+	}
+	provider, model, ollamaURL = inheritProviderFromLLM("relations", cfg.Relations.Provider, opModel, cfg.Relations.OllamaURL, cfg.LLM)
+	if model == "" {
+		// Final fallback: haiku is what the pre-4A.4 CLI used as its
+		// default-of-defaults. For ollama, coerceProviderModel
+		// already replaced empty with ollamaRecommendedModel above.
+		model = "haiku"
+	}
+	return provider, model, ollamaURL
 }
 
 // IngestConfig controls the file-ingestion pipeline (Phase 1B+). All
@@ -324,6 +800,31 @@ type AbsorbConfig struct {
 	// "ollama" automatically engages json mode and reuses
 	// Contextualize.OllamaURL just like FactsProvider does.
 	Pass2Provider string `yaml:"pass2_provider"`
+
+	// Pass1Provider routes the entity-list pass-1 through
+	// llmProviderGenerator (Phase 4A.2). The prompt is inlined-raw
+	// → JSON-plan; no tool use needed. "anthropic" (default) keeps
+	// the historical `claude -p` path; "ollama" runs against the
+	// local Ollama server. Same provider/model coherence rules as
+	// FactsProvider — Claude alias under ollama gets swapped to the
+	// recommended local default.
+	Pass1Provider string `yaml:"pass1_provider"`
+
+	// SinglePassProvider routes brief-article single-pass absorb
+	// through llmProviderGenerator (Phase 4A.3). The prompt is
+	// inlined-raw → WikiActionEnvelope; no tool use. Default
+	// "anthropic". When empty, inherits from LLMConfig.Provider.
+	SinglePassProvider string `yaml:"single_pass_provider"`
+	SinglePassModel    string `yaml:"single_pass_model"`
+
+	// Pass2NumCtx and SinglePassNumCtx override Ollama's default
+	// num_ctx (8192) for the two paths that inline the raw article
+	// body. The pass-2 prompt routinely lands at 5–10K tokens (entity
+	// + raw body + plan JSON + facts block); without a bump, the tail
+	// of the source silently truncates on Ollama. Empty fields fall
+	// through to LLMConfig.NumCtx, then to 16384.
+	Pass2NumCtx      int `yaml:"pass2_num_ctx"`
+	SinglePassNumCtx int `yaml:"single_pass_num_ctx"`
 }
 
 // ContextualizeConfig controls the `scribe contextualize` pre-embed step.
@@ -372,12 +873,14 @@ func absorbDefaults() AbsorbConfig {
 		// AtomicFacts off by default. Users opt in by setting
 		// `absorb.atomic_facts: true` in scribe.yaml after they've
 		// verified chaptered absorb works on their corpus.
-		AtomicFacts:     nil,
-		FactsModel:      "haiku",
-		FactsTimeoutMin: 3,
-		FactsProvider:   "anthropic",
-		Pass2Mode:       "tools",
-		Pass2Provider:   "anthropic",
+		AtomicFacts:        nil,
+		FactsModel:         "haiku",
+		FactsTimeoutMin:    3,
+		FactsProvider:      "anthropic",
+		Pass2Mode:          "tools",
+		Pass2Provider:      "anthropic",
+		Pass1Provider:      "anthropic",
+		SinglePassProvider: "anthropic",
 		Contextualize: ContextualizeConfig{
 			Enabled:    &trueV,
 			Provider:   "anthropic",
@@ -510,6 +1013,10 @@ const ollamaRecommendedModel = "gemma3:4b"
 // claudeModelAliases are the model names `claude -p` accepts. Anything in
 // this list is a red flag when the provider is ollama — the user probably
 // switched provider without updating model.
+//
+// Use isClaudeModelAlias() instead of this map directly — it covers prefix
+// patterns (claude-*, *-sonnet, *-haiku, *-opus) so future model names
+// (claude-4-7, claude-5-haiku, …) don't silently slip past the swap.
 var claudeModelAliases = map[string]bool{
 	"haiku":             true,
 	"sonnet":            true,
@@ -523,12 +1030,55 @@ var claudeModelAliases = map[string]bool{
 	"claude-4-5-sonnet": true,
 }
 
+// isClaudeModelAlias reports whether `model` looks like a Claude alias
+// the user might have left in place after flipping `llm.provider: ollama`.
+// Covers the explicit list in claudeModelAliases plus three prefix shapes
+// that future model names are guaranteed to match:
+//
+//   - claude-*            ("claude-4-7", "claude-5-haiku-20270101")
+//   - *-sonnet / *-haiku  ("claude-x-sonnet", "tier-haiku")
+//   - *-opus              ("claude-y-opus")
+//
+// Ollama model names use the family:tag form (e.g. "qwen2.5-coder:14b"),
+// so an Ollama model that contains a colon never matches this heuristic.
+func isClaudeModelAlias(model string) bool {
+	if model == "" {
+		return false
+	}
+	m := strings.ToLower(strings.TrimSpace(model))
+	if claudeModelAliases[m] {
+		return true
+	}
+	// Ollama models always carry a `:tag` — colon means it's not Claude.
+	if strings.Contains(m, ":") {
+		return false
+	}
+	if strings.HasPrefix(m, "claude-") {
+		return true
+	}
+	if strings.HasSuffix(m, "-sonnet") || strings.HasSuffix(m, "-haiku") || strings.HasSuffix(m, "-opus") {
+		return true
+	}
+	return false
+}
+
 // applyAbsorbDefaults fills any zero-valued AbsorbConfig field from the
 // defaults. Called after yaml.Unmarshal so partial user overrides merge
 // cleanly with the baseline. Also performs provider/model coherence
 // fixups: ollama + Claude alias is never what the user meant, so the
 // recommended local model takes over with a one-line log.
+//
+// Backward-compat wrapper for tests. Production callers use
+// applyAbsorbDefaultsWithLLM directly so per-op fields can inherit
+// from the top-level LLMConfig (Phase 4A.5).
 func applyAbsorbDefaults(cfg *AbsorbConfig) {
+	applyAbsorbDefaultsWithLLM(cfg, llmDefaults())
+}
+
+// applyAbsorbDefaultsWithLLM is the Phase 4A.5 inheritance-aware
+// variant. Empty per-op Provider/Model fields fall through to the
+// top-level LLMConfig; non-empty values stick.
+func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 	d := absorbDefaults()
 	if cfg.Strictness == "" {
 		cfg.Strictness = d.Strictness
@@ -584,23 +1134,40 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 	if cfg.FactsTimeoutMin <= 0 {
 		cfg.FactsTimeoutMin = d.FactsTimeoutMin
 	}
+	// Phase 4A.5 inheritance: empty per-op Provider falls through to
+	// LLMConfig.Provider. Per-op Model already has a sensible default
+	// ("haiku") for facts, so we only inherit when both layers leave
+	// it blank.
+	if cfg.FactsProvider == "" {
+		cfg.FactsProvider = llm.Provider
+	}
 	if cfg.FactsProvider == "" {
 		cfg.FactsProvider = d.FactsProvider
 	}
 	// Provider/model coherence for facts mirrors the contextualize check
 	// below: ollama + Claude alias is a misconfiguration, swap to the
 	// recommended local default and log so the user notices.
-	if strings.EqualFold(cfg.FactsProvider, "ollama") {
-		if cfg.FactsModel == "" || claudeModelAliases[strings.ToLower(cfg.FactsModel)] {
-			if cfg.FactsModel != "" {
-				logMsg("config", "absorb.facts_provider=ollama but facts_model=%q is a Claude alias — switching to %s (set an ollama model explicitly to silence this)", cfg.FactsModel, ollamaRecommendedModel)
-			}
-			cfg.FactsModel = ollamaRecommendedModel
-		}
+	cfg.FactsProvider, cfg.FactsModel = coerceProviderModel("absorb.facts", cfg.FactsProvider, cfg.FactsModel)
+	if cfg.Pass2Provider == "" {
+		cfg.Pass2Provider = llm.Provider
 	}
 	if cfg.Pass2Provider == "" {
 		cfg.Pass2Provider = d.Pass2Provider
 	}
+	if cfg.Pass1Provider == "" {
+		cfg.Pass1Provider = llm.Provider
+	}
+	if cfg.Pass1Provider == "" {
+		cfg.Pass1Provider = d.FactsProvider // same anthropic default
+	}
+	cfg.Pass1Provider, cfg.Pass1Model = coerceProviderModel("absorb.pass1", cfg.Pass1Provider, cfg.Pass1Model)
+	if cfg.SinglePassProvider == "" {
+		cfg.SinglePassProvider = llm.Provider
+	}
+	if cfg.SinglePassProvider == "" {
+		cfg.SinglePassProvider = d.FactsProvider // same anthropic default
+	}
+	cfg.SinglePassProvider, cfg.SinglePassModel = coerceProviderModel("absorb.single_pass", cfg.SinglePassProvider, cfg.SinglePassModel)
 	if cfg.Pass2Mode == "" {
 		cfg.Pass2Mode = d.Pass2Mode
 	}
@@ -631,22 +1198,38 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 		cfg.Pass2Mode = "json"
 	}
 	// Provider/model coherence: ollama + Claude alias swap, same as facts.
-	if strings.EqualFold(cfg.Pass2Provider, "ollama") {
-		if cfg.Pass2Model == "" || claudeModelAliases[strings.ToLower(cfg.Pass2Model)] {
-			if cfg.Pass2Model != "" {
-				logMsg("config", "absorb.pass2_provider=ollama but pass2_model=%q is a Claude alias — switching to %s (set an ollama model explicitly to silence this)", cfg.Pass2Model, ollamaRecommendedModel)
-			}
-			cfg.Pass2Model = ollamaRecommendedModel
-		}
+	cfg.Pass2Provider, cfg.Pass2Model = coerceProviderModel("absorb.pass2", cfg.Pass2Provider, cfg.Pass2Model)
+
+	// num_ctx defaults for the two paths that inline raw body. Empty →
+	// inherit from llm.num_ctx, then 16384. Only relevant under Ollama;
+	// Anthropic ignores num_ctx entirely.
+	if cfg.Pass2NumCtx <= 0 {
+		cfg.Pass2NumCtx = llm.NumCtx
 	}
+	if cfg.Pass2NumCtx <= 0 {
+		cfg.Pass2NumCtx = 16384
+	}
+	if cfg.SinglePassNumCtx <= 0 {
+		cfg.SinglePassNumCtx = llm.NumCtx
+	}
+	if cfg.SinglePassNumCtx <= 0 {
+		cfg.SinglePassNumCtx = 16384
+	}
+
 	if cfg.Contextualize.Enabled == nil {
 		cfg.Contextualize.Enabled = d.Contextualize.Enabled
+	}
+	if cfg.Contextualize.Provider == "" {
+		cfg.Contextualize.Provider = llm.Provider
 	}
 	if cfg.Contextualize.Provider == "" {
 		cfg.Contextualize.Provider = d.Contextualize.Provider
 	}
 	if cfg.Contextualize.Model == "" {
 		cfg.Contextualize.Model = d.Contextualize.Model
+	}
+	if cfg.Contextualize.OllamaURL == "" {
+		cfg.Contextualize.OllamaURL = llm.OllamaURL
 	}
 	if cfg.Contextualize.OllamaURL == "" {
 		cfg.Contextualize.OllamaURL = d.Contextualize.OllamaURL
@@ -658,18 +1241,8 @@ func applyAbsorbDefaults(cfg *AbsorbConfig) {
 		cfg.Contextualize.TimeoutSec = d.Contextualize.TimeoutSec
 	}
 
-	// Provider/model coherence: when the user opts into ollama, make sure the
-	// model field makes sense for ollama. Empty → recommended default. Claude
-	// alias → user probably switched provider without updating model; swap
-	// to the recommended default and log so they notice.
-	if strings.EqualFold(cfg.Contextualize.Provider, "ollama") {
-		if cfg.Contextualize.Model == "" || claudeModelAliases[strings.ToLower(cfg.Contextualize.Model)] {
-			if cfg.Contextualize.Model != "" {
-				logMsg("config", "contextualize.provider=ollama but model=%q is a Claude alias — switching to %s (set an ollama model explicitly to silence this)", cfg.Contextualize.Model, ollamaRecommendedModel)
-			}
-			cfg.Contextualize.Model = ollamaRecommendedModel
-		}
-	}
+	// Provider/model coherence: same alias swap as pass2/facts.
+	cfg.Contextualize.Provider, cfg.Contextualize.Model = coerceProviderModel("contextualize", cfg.Contextualize.Provider, cfg.Contextualize.Model)
 }
 
 // TriageConfig controls how `scribe triage` scores session knowledge density.
@@ -845,8 +1418,15 @@ func loadConfig(root string) *ScribeConfig {
 	cfgPath := filepath.Join(root, "scribe.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
-		applyAbsorbDefaults(&cfg.Absorb)
+		applyLLMDefaults(&cfg.LLM)
+		applyAbsorbDefaultsWithLLM(&cfg.Absorb, cfg.LLM)
 		applyIngestDefaults(&cfg.Ingest)
+		applyRelationsDefaults(&cfg.Relations, cfg.LLM)
+		applySessionMineDefaults(&cfg.SessionMine, cfg.LLM)
+		applyDreamDefaults(&cfg.Dream, cfg.LLM)
+		applyAssessDefaults(&cfg.Assess, cfg.LLM)
+		applyDeepIngestDefaults(&cfg.DeepIngest, cfg.LLM)
+		applyMetaDefaults(&cfg.Meta)
 		return cfg
 	}
 	// loadConfig used to swallow yaml.Unmarshal errors silently, which
@@ -865,9 +1445,18 @@ func loadConfig(root string) *ScribeConfig {
 	cfg.LockDir = expandHome(cfg.LockDir)
 
 	// Merge user overrides on top of absorb defaults (zero-valued fields
-	// inherit). Partial user config is legal and common.
-	applyAbsorbDefaults(&cfg.Absorb)
+	// inherit). Partial user config is legal and common. LLMConfig
+	// defaults are applied first so applyAbsorbDefaults can inherit
+	// provider/model fall-throughs from it.
+	applyLLMDefaults(&cfg.LLM)
+	applyAbsorbDefaultsWithLLM(&cfg.Absorb, cfg.LLM)
 	applyIngestDefaults(&cfg.Ingest)
+	applyRelationsDefaults(&cfg.Relations, cfg.LLM)
+	applySessionMineDefaults(&cfg.SessionMine, cfg.LLM)
+	applyDreamDefaults(&cfg.Dream, cfg.LLM)
+	applyAssessDefaults(&cfg.Assess, cfg.LLM)
+	applyDeepIngestDefaults(&cfg.DeepIngest, cfg.LLM)
+	applyMetaDefaults(&cfg.Meta)
 
 	// First-use backfill: if the on-disk scribe.yaml has no `absorb:` key,
 	// append the commented defaults block so the user can discover the knobs

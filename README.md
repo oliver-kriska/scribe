@@ -300,9 +300,9 @@ triage:
     # ... matching weights for each category
 ```
 
-### Local-mode contextualize (free, offline)
+### Local-mode — 100% Ollama (free, offline)
 
-The `contextualize` step inserts an LLM-generated "retrieval context" paragraph into each raw article so qmd's semantic search can find it. By default it uses Claude Haiku (~$0.0001/doc). You can switch it to a local model via [Ollama](https://ollama.com) — fully free, fully offline, no API keys.
+As of 0.2.14, **every LLM-driven subcommand can run end-to-end against a local [Ollama](https://ollama.com) server** with zero Anthropic calls. `dream`, `assess`, `deep`, `session-mine`, `relations migrate`, all four absorb passes, and `contextualize` resolve their backend through a single top-level `llm:` block. The Anthropic path stays the default; flipping the whole pipeline to free/offline is one line of yaml.
 
 **One-time setup:**
 
@@ -311,23 +311,53 @@ brew install ollama
 # macOS: Ollama auto-registers as a launchd service, so `ollama serve` is already running.
 ```
 
-**Enable local mode** — edit `scribe.yaml`:
+**Flip the whole pipeline to local** — edit `scribe.yaml`:
 
 ```yaml
-absorb:
-  contextualize:
-    provider: ollama
-    # model: gemma3:4b     # optional — scribe uses this as the default for ollama
+llm:
+  provider: ollama
+  model: gemma3:12b              # cross-op default; per-op blocks override
+  ollama_url: http://localhost:11434
+  num_ctx: 16384                 # safe floor for envelope-mode ops
 ```
 
-That's it. On the next `scribe sync` (or `scribe contextualize`) scribe will:
+That's it. Every per-op block (`dream`, `assess`, `deep_ingest`, `session_mine`, `relations`, `absorb.pass1`, `absorb.pass2`, `absorb.single_pass`, `absorb.facts`, `absorb.contextualize`) inherits `provider` + `model` + `ollama_url` + `num_ctx` from `llm:` when its own fields are empty. Set any per-op `provider:`/`model:` to override for that op only (typical: pin a bigger model on `absorb.pass2`, keep the small fast model everywhere else).
+
+**Auto-flip:** scribe forces the right *mode* on each op when `llm.provider: ollama` so the `claude -p` paths can't silently no-op. You'll see config log lines like:
+
+```
+config: dream.provider="ollama" forces mode=orchestrator (was "monolithic")
+config: assess.provider="ollama" forces mode=envelope (was "tools")
+config: session_mine.provider="ollama" forces mode=envelope (was "tools")
+config: absorb.pass2_provider="ollama" forces pass2_mode=json (was "tools")
+```
+
+**Pre-flight check:**
+
+```sh
+scribe doctor --section localmode
+```
+
+Validates: Ollama reachable; `llm.model` pulled; `absorb.pass2_model` pulled; `absorb.atomic_facts` on (recommended under local pass-2); `sync.daily_anthropic_output_token_ceiling` configured.
+
+**What runs where on a typical 32 GB Mac:**
+
+| Op                            | Default model       | num_ctx | Notes                                    |
+| ----------------------------- | ------------------- | ------- | ---------------------------------------- |
+| `contextualize`, `facts`      | `gemma3:4b`         | 8192    | Cheap, high-throughput per-chunk pass    |
+| `absorb.pass1`                | inherits `llm.model`| 8192    | Entity-list extraction, fast             |
+| `absorb.pass2`                | `gemma3:27b`        | 16384   | Highest-quality wiki writes; pin per-op  |
+| `dream`, `assess`, `deep`     | inherits `llm.model`| 16384–32768 | Envelope orchestrators                |
+| `session-mine`                | inherits `llm.model`| 16384   | Transcript inlined, capped at 24K chars  |
+
+On the next `scribe sync` (or any subcommand) scribe will:
 
 1. Probe `http://localhost:11434/api/tags` to confirm Ollama is up.
 2. Check if the chosen model is already pulled.
-3. If not, call `/api/pull` in streaming mode and wait for completion (one-time, ~3.3 GB for gemma3:4b).
-4. Run generation via `/api/generate`.
+3. If not, call `/api/pull` in streaming mode and wait for completion (one-time download).
+4. Run generation via `/api/generate` with the resolved `num_ctx`.
 
-No manual `ollama pull` needed.
+No manual `ollama pull` needed — though `ollama pull gemma3:12b && ollama pull gemma3:27b` ahead of time avoids a cold-start delay on the first sync.
 
 **Recommended models (April 2026):**
 
@@ -340,7 +370,7 @@ No manual `ollama pull` needed.
 
 All are free and work with scribe's auto-pull. Pick with `model: <tag>` in scribe.yaml. llama.cpp's `llama-server` exposes the same `/api/generate` shape, so `ollama_url: http://localhost:8080` also works if you prefer raw llama.cpp over Ollama.
 
-> **Note.** Local-mode now covers the full absorb pipeline end-to-end. `contextualize` was first; the per-chunk atomic-facts pass added `facts_provider: ollama` in 0.2.0/Phase 4A; Pass 2 added `pass2_mode: json` + `pass2_provider: ollama` in 0.2.11 (Phase 4B), inlining a `WikiActionEnvelope` JSON prompt that scribe applies itself instead of calling Claude Code's tool use. With all three set to ollama you can run a complete absorb without an Anthropic API key. Run `scribe doctor --section localmode` to validate the local-provider knobs (ollama reachable, pass-2 model pulled, fact IDs enabled, daily output-token ceiling configured) before kicking off a sync.
+> **Note.** Local-mode covers every LLM-driven subcommand as of 0.2.14 — `dream`, `assess`, `deep`, `session-mine`, `relations migrate`, and the four absorb passes. `contextualize` was first (pre-0.2.11); Phase 4A added `facts_provider: ollama`; Phase 4B added `pass2_mode: json` + `pass2_provider: ollama` (0.2.11); Phase 4C/4D/4E (0.2.14) ported the four remaining `claude -p` orchestrators onto bounded JSON-envelope subtasks, and a top-level `llm:` block now wires it together so flipping the whole pipeline is one line of yaml.
 
 ### `~/.config/scribe/config.yaml` (user)
 

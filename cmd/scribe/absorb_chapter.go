@@ -36,25 +36,41 @@ import (
 // and the fan-out wallclock equals the longest-chapter time, not the
 // sum of all chapters. Net cost is comparable, quality is higher.
 
-// runPass1Whole is the legacy single-shot pass-1 path. Extracted as
-// its own helper so the chaptered dispatcher can call it as a
-// fallback (and so the dispatcher itself stays readable in
-// absorbDenseTwoPass). Behavior is byte-identical to what landed
-// pre-Phase-3A.5 — same prompt, same model, same tools, same
-// timeout, same plan file shape. No callers changed.
+// runPass1Whole is the single-shot pass-1 path. Phase 4A.2 ported it
+// off `claude -p` onto llmProviderGenerator — the raw article body is
+// inlined into the prompt, the model returns one JSON plan to stdout,
+// and Go writes the plan file. The chaptered dispatcher calls this as
+// a fallback (and absorbDenseTwoPass uses it directly when the source
+// isn't chaptered).
 func (s *SyncCmd) runPass1Whole(ctx context.Context, root, rawFile, planFile string, cfg AbsorbConfig) error {
-	pass1Prompt, err := loadPrompt("absorb-pass1.md", map[string]string{
+	rawBody, err := os.ReadFile(rawFile)
+	if err != nil {
+		return fmt.Errorf("pass1: read raw article: %w", err)
+	}
+	promptName := promptForProvider("absorb-pass1", cfg.Pass1Provider)
+	pass1Prompt, err := loadPrompt(promptName, map[string]string{
 		"KB_DIR":    root,
 		"RAW_FILE":  rawFile,
 		"PLAN_FILE": planFile,
+		"RAW_BODY":  string(rawBody),
 	})
 	if err != nil {
 		return fmt.Errorf("load pass1 prompt: %w", err)
 	}
-	pass1Tools := []string{"Read", "Write", "Glob", "Grep"}
 	pass1Timeout := time.Duration(cfg.Pass1TimeoutMin) * time.Minute
-	if _, err := runClaude(withOpLabel(ctx, "absorb-pass1-whole"), root, pass1Prompt, cfg.Pass1Model, pass1Tools, pass1Timeout); err != nil {
+	provider := newLLMProvider(cfg.Pass1Provider, cfg.Pass1Model, cfg.Contextualize.OllamaURL, root)
+	callCtx, cancel := context.WithTimeout(withOpLabel(ctx, "absorb-pass1-whole"), pass1Timeout)
+	defer cancel()
+	out, err := generateMaybeJSON(callCtx, provider, pass1Prompt)
+	if err != nil {
 		return fmt.Errorf("pass1: %w", err)
+	}
+	jsonText, ok := extractJSON(out)
+	if !ok {
+		return fmt.Errorf("pass1: no JSON object in provider output (%d bytes)", len(out))
+	}
+	if err := os.WriteFile(planFile, []byte(jsonText), 0o644); err != nil {
+		return fmt.Errorf("pass1: write plan: %w", err)
 	}
 	return nil
 }
@@ -121,8 +137,13 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 		return fmt.Errorf("mkdir per-chapter plans: %w", err)
 	}
 
-	pass1Tools := []string{"Read", "Write", "Glob", "Grep"}
 	pass1Timeout := time.Duration(cfg.Pass1TimeoutMin) * time.Minute
+
+	// Phase 4A.2: provider routes through llmProviderGenerator instead
+	// of `claude -p`. The chunk body is inlined into each chapter's
+	// prompt; the model returns one JSON plan per chapter and Go
+	// writes the per-chapter plan file.
+	provider := newLLMProvider(cfg.Pass1Provider, cfg.Pass1Model, cfg.Contextualize.OllamaURL, root)
 
 	// Phase 3D follow-up: use ChapterParallel (default 2), not
 	// Pass2Parallel. The chaptered path can run alongside other
@@ -198,7 +219,13 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 			}
 			r := runs[i]
 			factsBlock := formatFactsForPrompt(mergedFacts.factsForChapter(r.index))
-			prompt, err := loadPrompt("absorb-pass1-chapter.md", map[string]string{
+			chunkBody, readErr := os.ReadFile(r.chunkMD)
+			if readErr != nil {
+				logMsg("sync", "pass1 chapter %d (%s) read chunk: %v", r.index, fmtChapterTitle(r.chunk.Title), readErr)
+				return nil
+			}
+			promptName := promptForProvider("absorb-pass1-chapter", cfg.Pass1Provider)
+			prompt, err := loadPrompt(promptName, map[string]string{
 				"KB_DIR":        root,
 				"RAW_FILE":      rawFile,
 				"CHUNK_FILE":    r.chunkMD,
@@ -206,11 +233,15 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 				"SOURCE_TITLE":  sourceTitle,
 				"PLAN_FILE":     r.planJSON,
 				"FACTS":         factsBlock,
+				"CHUNK_BODY":    string(chunkBody),
 			})
 			if err != nil {
 				return fmt.Errorf("load chapter prompt %d: %w", r.index, err)
 			}
-			if _, err := runClaude(withOpLabel(gctx, "absorb-pass1-chapter"), root, prompt, cfg.Pass1Model, pass1Tools, pass1Timeout); err != nil {
+			callCtx, cancel := context.WithTimeout(withOpLabel(gctx, "absorb-pass1-chapter"), pass1Timeout)
+			out, err := generateMaybeJSON(callCtx, provider, prompt)
+			cancel()
+			if err != nil {
 				if errors.Is(err, ErrRateLimit) {
 					rateLimitOnce.Do(func() { rateLimited = true })
 					return err
@@ -219,6 +250,15 @@ func (s *SyncCmd) runPass1Chaptered(ctx context.Context, root, rawFile, rawName 
 				// absorb — log and skip; merge will tolerate missing
 				// chunk plans.
 				logMsg("sync", "pass1 chapter %d (%s) failed: %v", r.index, fmtChapterTitle(r.chunk.Title), err)
+				return nil
+			}
+			jsonText, ok := extractJSON(out)
+			if !ok {
+				logMsg("sync", "pass1 chapter %d (%s): no JSON object in provider output (%d bytes)", r.index, fmtChapterTitle(r.chunk.Title), len(out))
+				return nil
+			}
+			if err := os.WriteFile(r.planJSON, []byte(jsonText), 0o644); err != nil {
+				logMsg("sync", "pass1 chapter %d (%s) write plan: %v", r.index, fmtChapterTitle(r.chunk.Title), err)
 				return nil
 			}
 			return nil

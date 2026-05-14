@@ -20,6 +20,28 @@ lock_dir: /tmp
 # Default model for extraction / absorb claude -p calls
 default_model: sonnet
 
+# Top-level LLM routing (Phase 4A.5). Every per-op LLM call inherits
+# from this block when its own provider/model fields are empty. Flip
+# `llm.provider: ollama` and `llm.model: qwen2.5-coder:14b` here to
+# move the *entire* pipeline onto the local Ollama server with a single
+# line — no per-op edits needed. Per-op overrides still win when set.
+llm:
+  provider: {{.LLMProvider}}
+  model: "{{.LLMModel}}"
+  ollama_url: http://localhost:11434
+{{if eq .LLMProvider "ollama"}}
+# This KB was bootstrapped with --provider ollama. Every LLM op runs
+# against the local server. Per-op overrides (e.g. keep pass-2 on
+# Anthropic) still work — just set the per-op provider explicitly.
+{{else}}
+# 100%-Ollama setup (replace the block above):
+#   llm:
+#     provider: ollama
+#     model: qwen2.5-coder:14b       # general-purpose; gemma3:4b for cheap passes
+#     ollama_url: http://localhost:11434
+# Then verify with `scribe doctor` — it'll probe the Ollama server.
+{{end}}
+
 sync:
   max_extractions: 3
   max_sessions: 3

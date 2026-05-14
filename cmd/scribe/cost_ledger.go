@@ -152,6 +152,37 @@ func opLabelFromContext(ctx context.Context) string {
 	return ""
 }
 
+// ollamaNumCtxKey carries a per-call num_ctx hint through to
+// ollamaProvider.generate. Bigger tasks (session-mine, dream, assess,
+// deep) need 16384 / 32768 — the default 8192 silently truncates the
+// tail of a 24K-char transcript, dropping the conclusion exactly when
+// the prompt needs it most. Pass via withOllamaNumCtx; the provider
+// reads with ollamaNumCtxFromContext (defaulting to 8192).
+type ollamaNumCtxKey struct{}
+
+// withOllamaNumCtx pins the Ollama num_ctx for this call. Pass 0 to
+// inherit the provider default (8192). Callers can stack this with
+// withOpLabel — the two keys are independent.
+func withOllamaNumCtx(ctx context.Context, numCtx int) context.Context {
+	if numCtx <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, ollamaNumCtxKey{}, numCtx)
+}
+
+// ollamaNumCtxFromContext returns the requested num_ctx or 0 when
+// the caller didn't pin one. The provider's generate() resolves 0 →
+// its default (8192).
+func ollamaNumCtxFromContext(ctx context.Context) int {
+	if ctx == nil {
+		return 0
+	}
+	if v, ok := ctx.Value(ollamaNumCtxKey{}).(int); ok {
+		return v
+	}
+	return 0
+}
+
 // appendCostEntry writes one CostEntry to the day's ledger file.
 // Best-effort: any I/O error returns silently — the ledger is an
 // observability nice-to-have and must not block a working absorb.

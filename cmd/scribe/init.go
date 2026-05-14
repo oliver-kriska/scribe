@@ -67,6 +67,12 @@ type InitCmd struct {
 	Force        bool     `help:"Overwrite existing KB files during bootstrap."`
 	Bind         bool     `help:"Repoint ~/.claude/CLAUDE.md and ~/.config/scribe/config.yaml at the new KB. Implicit on normal paths; required for /tmp/ and other temp paths to avoid foot-gunning smoke tests."`
 	NoClaudeMD   bool     `help:"Never refresh the scribe block in ~/.claude/CLAUDE.md, regardless of --bind/--yes/--force." name:"no-claude-md"`
+	// Phase 5: top-level LLM provider for the new KB. When set to
+	// "ollama" the rendered scribe.yaml has `llm.provider: ollama`
+	// uncommented and the bootstrap pre-pulls the recommended local
+	// model so the first sync run doesn't pause on /api/pull.
+	Provider string `help:"LLM provider for the KB. anthropic (default) | ollama." enum:"anthropic,ollama," default:""`
+	Model    string `help:"Default model for the picked provider. Empty falls back to provider-specific recommendation."`
 }
 
 // templateVars is what every embedded template receives. One struct is easier
@@ -85,6 +91,11 @@ type templateVars struct {
 	SelfChatHandle       string
 	CodePatternKeywords  string
 	Today                string
+	// LLMProvider + LLMModel populate the rendered scribe.yaml's
+	// top-level `llm:` block. Phase 5 onboarding: --provider ollama
+	// flips the template to emit the local-default block uncommented.
+	LLMProvider string
+	LLMModel    string
 }
 
 func (c *InitCmd) Run() error {
@@ -192,12 +203,23 @@ func (c *InitCmd) runBootstrap() error {
 		fmt.Println("  (skipping ~/.claude/CLAUDE.md block — pass --bind to install)")
 	}
 
+	// Phase 5: when the user picked Ollama, probe the server and
+	// pre-pull the recommended model so the first sync run doesn't
+	// pause on /api/pull. Non-fatal — if Ollama isn't running yet,
+	// just print a hint.
+	if strings.EqualFold(vars.LLMProvider, "ollama") {
+		ensureOllamaReadyOrHint(vars.LLMModel)
+	}
+
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Review the generated scribe.yaml and tweak domains/triage keywords.")
 	fmt.Println("  2. Install cron: scribe cron install")
 	fmt.Println("     (On Linux, `scribe cron install` prints crontab entries you paste manually.)")
 	fmt.Println("  3. Run `scribe doctor` to verify dependencies + freshness checks.")
+	if strings.EqualFold(vars.LLMProvider, "ollama") {
+		fmt.Println("  4. Ollama mode: `ollama serve` must be running when sync fires; `scribe doctor` probes it.")
+	}
 
 	// Offer to walk the user through Full Disk Access right now. Only on
 	// macOS with capture enabled (handle was set); Linux capture uses a
@@ -255,6 +277,21 @@ func (c *InitCmd) collectVars(abs string) (templateVars, error) {
 		handle = prompt("iMessage self-chat handle (leave empty to disable capture)", "")
 	}
 
+	// Phase 5 onboarding: provider picker. When the user passes
+	// --provider on the CLI, that wins. Otherwise prompt in
+	// interactive mode; default anthropic.
+	provider := strings.ToLower(strings.TrimSpace(c.Provider))
+	if provider == "" && !c.Yes {
+		provider = prompt("LLM provider (anthropic | ollama)", "anthropic")
+	}
+	if provider == "" {
+		provider = "anthropic"
+	}
+	model := c.Model
+	if model == "" && provider == "ollama" {
+		model = ollamaRecommendedModel
+	}
+
 	// Universal domains are always appended.
 	seen := map[string]bool{}
 	dedup := []string{}
@@ -284,6 +321,8 @@ func (c *InitCmd) collectVars(abs string) (templateVars, error) {
 		SelfChatHandle:       handle,
 		CodePatternKeywords:  defaultTriageKeywords["code_pattern"],
 		Today:                time.Now().UTC().Format("2006-01-02"),
+		LLMProvider:          provider,
+		LLMModel:             model,
 	}, nil
 }
 

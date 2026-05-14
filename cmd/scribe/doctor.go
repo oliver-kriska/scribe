@@ -219,7 +219,16 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 // for offline CI.
 func checkLocalMode(cfg *ScribeConfig) []check {
 	var out []check
-	pass2Ollama := strings.EqualFold(cfg.Absorb.Pass2Provider, "ollama")
+	// Resolve the EFFECTIVE pass-2 provider through the LLMConfig
+	// inheritance chain (Phase 4A.5). Raw Absorb.Pass2Provider misses
+	// the common 100%-Ollama case where the user flips
+	// `llm.provider: ollama` and leaves absorb.pass2_provider empty.
+	effPass2Provider, effPass2Model, effOllamaURL := inheritProviderFromLLM(
+		"absorb.pass2",
+		cfg.Absorb.Pass2Provider, cfg.Absorb.Pass2Model, cfg.Absorb.Contextualize.OllamaURL,
+		cfg.LLM,
+	)
+	pass2Ollama := strings.EqualFold(effPass2Provider, "ollama")
 	if !pass2Ollama {
 		// No local mode to validate. Only the anthropic-ceiling INFO
 		// applies in that branch — emit it and return.
@@ -234,11 +243,11 @@ func checkLocalMode(cfg *ScribeConfig) []check {
 		return out
 	}
 
-	url := cfg.Absorb.Contextualize.OllamaURL
+	url := effOllamaURL
 	if url == "" {
 		url = "http://localhost:11434"
 	}
-	model := cfg.Absorb.Pass2Model
+	model := effPass2Model
 
 	if os.Getenv("SCRIBE_DOCTOR_SKIP_OLLAMA") != "1" {
 		probe := &ollamaProvider{baseURL: url}
@@ -274,11 +283,47 @@ func checkLocalMode(cfg *ScribeConfig) []check {
 		}
 	}
 
+	// Phase 5: also probe the top-level LLM model. Users running the
+	// 100%-Ollama config typically set `llm.model: qwen2.5-coder:14b`
+	// and leave per-op model fields empty — the per-op probe above
+	// would miss that case.
+	if strings.EqualFold(cfg.LLM.Provider, "ollama") && cfg.LLM.Model != "" && cfg.LLM.Model != model && os.Getenv("SCRIBE_DOCTOR_SKIP_OLLAMA") != "1" {
+		probe := &ollamaProvider{baseURL: url}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		models, err := probe.listedModels(ctx)
+		switch {
+		case err != nil:
+			// Already reported above.
+		case !probe.modelListContains(models, cfg.LLM.Model):
+			out = append(out, check{
+				Section: "localmode", Name: "llm_model_pulled",
+				Status: statusWarn,
+				Detail: "llm.model=" + cfg.LLM.Model + " not present locally",
+				Fix:    "ollama pull " + cfg.LLM.Model,
+			})
+		default:
+			out = append(out, check{
+				Section: "localmode", Name: "llm_model_pulled",
+				Status: statusOK, Detail: cfg.LLM.Model,
+			})
+		}
+	}
+
 	if cfg.Absorb.AtomicFacts == nil || !*cfg.Absorb.AtomicFacts {
+		// Phrase the warning by *effective* routing so users on the
+		// top-level `llm.provider: ollama` switch (with empty
+		// absorb.pass2_provider) see the right hint.
+		detail := "absorb pass-2 routed to ollama but atomic_facts is off — model will fabricate [cN-fM] citations without ground-truth fact IDs to cite"
+		if strings.EqualFold(cfg.Absorb.Pass2Provider, "ollama") {
+			detail = "absorb.pass2_provider=ollama but atomic_facts is off — model will fabricate [cN-fM] citations without ground-truth fact IDs to cite"
+		} else if strings.EqualFold(cfg.LLM.Provider, "ollama") {
+			detail = "llm.provider=ollama (inherited by pass-2) but atomic_facts is off — model will fabricate [cN-fM] citations without ground-truth fact IDs to cite"
+		}
 		out = append(out, check{
 			Section: "localmode", Name: "atomic_facts_with_ollama",
 			Status: statusWarn,
-			Detail: "absorb.pass2_provider=ollama but atomic_facts is off — model will fabricate [cN-fM] citations without ground-truth fact IDs to cite",
+			Detail: detail,
 			Fix:    "set absorb.atomic_facts: true in scribe.yaml so pass-2 has real fact IDs to ground its citations",
 		})
 	}

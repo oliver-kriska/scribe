@@ -2,6 +2,53 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.14] — 2026-05-14
+
+100% Ollama. Every LLM-driven subcommand — `dream`, `assess`, `deep`, `session-mine`, `relations migrate`, and the four absorb passes that weren't already local — now runs end-to-end against a local Ollama server with zero `claude -p` calls. The Anthropic path stays the default; flipping the whole pipeline to free/offline is a single `llm.provider: ollama` line in `scribe.yaml`.
+
+### `llm:` top-level routing block
+- New `llm:` block in `scribe.yaml` sets provider/model/ollama_url/num_ctx defaults that every per-op section inherits when its own provider/model is empty. The pre-existing per-op blocks (`absorb.pass2_provider`, `absorb.facts_provider`, `contextualize.provider`) still win when set.
+- Six per-op default-resolvers (`applyDreamDefaults`, `applyAssessDefaults`, `applyDeepIngestDefaults`, `applySessionMineDefaults`, `applyRelationsDefaults`, `applyAbsorbDefaultsWithLLM`) inherit from `LLMConfig` in a consistent order: per-op value → `llm.*` → built-in default.
+- Auto-flip: a non-anthropic top-level provider forces the right *mode* on every op that has one. `dream.mode → orchestrator`, `assess.mode → envelope`, `deep_ingest.mode → envelope`, `session_mine.mode → envelope`, `absorb.pass2_mode → json`. The legacy `claude -p` paths can't drive Ollama; the auto-flip prevents silent no-ops and logs the override.
+- Claude alias under `provider: ollama` (e.g. forgetting to update `model: sonnet`) gets coerced to `gemma3:4b` with a log line via `coerceProviderModel`, so a half-finished migration never 404s the local server.
+
+### Phase 4C/4D/4E orchestrators
+- `dream` orchestrator (Phase 4D): Go walks `dreams/`, builds the orient packet (recent log + inventory + stale list + contradictions), inlines it into a single bounded prompt, parses one `EnvelopeV2` JSON document back. The legacy hour-long monolithic `claude -p` path remains available via `dream.mode: monolithic` for users who want it.
+- `assess` orchestrator (Phase 4E): Go walks the source tree (200 entry cap), inlines top-level docs (12K char cap) + recent git log, asks the model for one envelope. The new `errAssessWalkDone` sentinel replaces `filepath.SkipDir` from a file callback so partial walks return what they gathered instead of empty.
+- `deep` orchestrator (Phase 4E): per-directory envelope subtask. Each directory's .md files are concatenated (24K char cap, head/tail trim) and the model emits one envelope per directory. `runDeepExtractEnvelope` accumulates `envelope_actions_applied` / `envelope_actions_errored` into `runStats` for the per-run JSONL row.
+- `session-mine` envelope path (Phase 4C): the ccrider FTS5 path now reads transcripts in Go (no MCP), inlines them into a bounded prompt, parses one envelope. Two-prompt-per-task wrapper picks `session-mine-anthropic.md` vs `session-mine-ollama.md` based on resolved provider. Once-only fallback warning logs which prompt was missing so users notice mis-named variants.
+
+### `WikiActionEnvelope` V2 — `MetaAction` (Phase 4C)
+- New `MetaAction` ops cover the side-channel writes that don't fit inside the wiki-dirs sandbox: `log_append` (top-level `log.md`), `sessions_log_append` (`sessions/<YYYY>/<MM>/<DD>.md`), `rolling_memory_append` (`<domain>/<stem>.md` under a closed-stem allowlist).
+- `meta.rolling_targets` in `scribe.yaml` lets each KB pin its own stems. Empty defaults to `[learnings, decisions-log]` (the pre-4C set). Path-traversal validation drops anything containing slashes or `..` with a log line.
+- `parseEnvelopeV2` is the new entry point — accepts both V1 and V2 envelopes, logs a hint when a V1 envelope carries `meta` (forgot to set `version: 2`), warns on unknown future versions.
+
+### `num_ctx` plumbing
+- Every envelope op tags its `context.Context` with `withOllamaNumCtx(ctx, …)` before calling the LLM provider. Ollama reads the value from the request body; Anthropic ignores it.
+- Per-op `num_ctx` defaults: dream 16384, assess 32768, deep 16384, session-mine 16384, absorb.pass2 16384, absorb.single_pass 16384. Each falls through `LLMConfig.NumCtx` → built-in floor when unset.
+- Absorb pass-2 + single-pass got new `pass2_num_ctx` / `single_pass_num_ctx` fields. The pre-4C pass-2 path loaded Ollama with the default 8192 even on a 27B model, silently truncating the tail of dense articles.
+
+### HTTP client timeout
+- Removed the 10-minute `http.Client.Timeout` cap from the Ollama provider. Every caller already wraps the request in a `context.WithTimeout` carrying the per-op `TimeoutMin` (dream 20m, session-mine 8m, deep 10m, assess 10m, absorb.pass2 25m). With `Stream: false` on `/api/generate`, the client cap had to cover full generation — a 12B model cold-loading + a sizable orient packet routinely blew past 10 min and surfaced as the misleading "Client.Timeout exceeded while awaiting headers". Context timeout is now the single source of truth; users tune via `TimeoutMin` per op.
+
+### Per-task prompt variants
+- Each task that needs different framing on local vs Anthropic ships two prompts: `<task>-anthropic.md` + `<task>-ollama.md`. `promptForProvider(task, provider)` picks the right one; a missing ollama variant logs a one-time fallback warning (mutex-guarded) and uses the anthropic prompt. New prompt pairs: `absorb`, `absorb-pass1`, `absorb-pass1-chapter`, `assess`, `deep-extract`, `dream`, `session-extract`, `session-mine`.
+
+### Observability
+- Every orchestrator populates `runStats` (mode, project, envelope_actions_applied, envelope_actions_errored) which `writeRunRecord` flushes into `output/runs/<YYYY-MM-DD>.jsonl`. `scribe doctor --section freshness` reads those rows.
+- `dream` log line now shows the resolved provider/model/mode (`model: ollama/gemma3:12b, mode: orchestrator`) instead of always printing the CLI flag default ("sonnet"), which was misleading on orchestrator-mode runs.
+
+### Doctor — `localmode` resolves inheritance
+- `scribe doctor --section localmode` now reads the *effective* `absorb.pass2` provider/model after `LLMConfig` inheritance, not the raw `absorb.pass2_provider` field. A KB that pinned `llm.provider: ollama` and left `absorb.pass2_provider:` empty used to look misconfigured to doctor; it now reports the correctly inherited value and warns only when the resolved provider isn't ollama-on-an-actually-pulled-model.
+- New check: `llm_model_pulled` — warns when `llm.model` is set but not pulled locally. Fix line: `ollama pull <model>`.
+
+### Tests
+- 51 new tests in `ollama_followup_test.go` covering the inheritance chain (`LLMConfig.Model` reaches dream/assess/deep/session-mine/relations), per-op model wins, `Pass2NumCtx`/`SinglePassNumCtx` fallback chain, prompt-pair resolution, envelope V1↔V2 compatibility, MetaAction config-driven allowlist, transcript role mapping for `tool`/`tool_use`/`tool_result`, and `coerceProviderModel` alias swaps.
+- `wiki_actions_meta_test.go` covers the three MetaAction ops + the rolling-targets allowlist boundary.
+
+### Verified end-to-end against scriptorium
+- 3445-article KB, dream cycle completed in ~70 seconds on gemma3:12b at `num_ctx=16384`. 3 envelope actions applied, dream committed + pushed cleanly. Same KB, `absorb.pass2` continues to run gemma3:27b at the bumped context window; `ollama ps` now correctly shows `CONTEXT 16384` instead of the silently-truncating 8192.
+
 ## [0.2.13] — 2026-05-14
 
 ### Fix — `scribe init -p` no longer foot-guns global state on temp paths
