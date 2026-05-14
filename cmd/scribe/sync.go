@@ -324,7 +324,18 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 		}
 
 		pname := projectName(decoded)
-		if _, exists := manifest.Projects[pname]; exists {
+		if existing, exists := manifest.Projects[pname]; exists {
+			// Project already known. If it was previously surfaced via
+			// Codex only, record that Claude has now seen it too (so
+			// `discovered_from` promotes to "both") and persist.
+			if existing.DiscoveredSource() != "claude" && existing.DiscoveredSource() != "both" {
+				if !s.DryRun {
+					existing.MergeDiscoveredFrom("claude")
+					if err := manifest.save(); err != nil {
+						logMsg("sync", "manifest save failed: %v", err)
+					}
+				}
+			}
 			continue
 		}
 
@@ -337,8 +348,9 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 		}
 
 		manifest.Projects[pname] = &ProjectEntry{
-			Path:   decoded,
-			Domain: domain,
+			Path:           decoded,
+			Domain:         domain,
+			DiscoveredFrom: "claude",
 		}
 		if err := manifest.save(); err != nil {
 			logMsg("sync", "manifest save failed: %v", err)
@@ -347,6 +359,12 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 		// Create .repo.yaml in the project's wiki directory.
 		s.ensureRepoYAML(root, decoded, pname, domain)
 	}
+
+	codexCount, err := s.discoverCodex(root, manifest, cfg)
+	if err != nil {
+		logMsg("sync", "codex discovery failed (continuing): %v", err)
+	}
+	discovered += codexCount
 
 	return discovered, nil
 }

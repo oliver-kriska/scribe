@@ -2,6 +2,33 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.15] — 2026-05-14
+
+Codex CLI project discovery. `scribe sync --discover` now walks `~/.codex/sessions/` alongside `~/.claude/projects/`, picking up projects you've only ever touched from Codex. Discovery only — Codex session *mining* is a separate, larger track (deferred behind the 100%-Ollama session-mine envelope).
+
+### Codex sessions are first-class for discovery
+- New `codex_sessions_dir: ~/.codex/sessions` config key (default points at the standard Codex CLI rollout root). The scribe.yaml template, `init` summary, and `applyDefaults` home-expansion all pick it up.
+- New `cmd/scribe/codex.go`: `readCodexSessionMeta` parses just the first JSONL line of a rollout (the `session_meta` event) to extract the verbatim `cwd` — no `decodeClaudePath`-style ambiguous-dash rebuild needed. 1 MB scanner buffer ceiling defends against future growth of `base_instructions.text`.
+- `walkCodexSessions` enumerates rollouts in descending YYYY/MM/DD partition order and yields each unique `cwd` once. Most-recent rollout wins on cwd disagreements (mid-project renames).
+- `SyncCmd.discoverCodex` mirrors the existing Claude branch in `discover` — same `manifest.isIgnored`, `hasSignificantContent`, `manifest.resolveDomain`, and `ensureRepoYAML` flow. Codex failures log and continue; never block the Claude pass.
+
+### Manifest schema — `discovered_from`
+- New `discovered_from` field on `ProjectEntry` (`"claude" | "codex" | "both"`). Back-compat: empty reads as `"claude"` since every pre-existing entry came in through the Claude scanner.
+- Idempotent `MergeDiscoveredFrom` promotes the field to `"both"` when a project is seen from a second source, so cross-agent projects stay one manifest entry.
+
+### Doctor — `codex_sessions_dir` row
+- New row alongside `claude_projects_dir`. OK when the dir exists and a recent rollout still parses with a non-empty `cwd` (schema-drift sentinel — a future Codex rename of the field shows up as a WARN here instead of silently breaking discovery). WARN on missing dir, zero rollouts, or empty config. Never FAIL — Codex is optional.
+- Rollout count is shown in the OK detail (capped at 5000+).
+
+### Tests
+- 13 new tests in `codex_test.go`: `readCodexSessionMeta` happy/empty/malformed/wrong-type, fixture-pin against the on-disk shape, `walkCodexSessions` dedup + descending-order race, `discoverCodex` adds-new + Claude→both promotion, `DiscoveredSource` back-compat + `MergeDiscoveredFrom` idempotency, `codexRolloutCount` limit honouring, `codexProbeRollout` recency.
+- `testdata/codex/rollout-fixture.jsonl` locks the parser to today's session_meta layout.
+
+### Out of scope
+- Codex session *mining* (ccrider-equivalent FTS5 indexer + sync wiring) — deferred behind the 100%-Ollama session-mine envelope so we don't reinvent the schema. Plan in `docs/codex-discovery-plan.md` Phase C3.
+- Codex `memories/`, `rules/`, `skills/` cross-agent sharing — different problem.
+- Reading Codex's SQLite (`state_5.sqlite`, `logs_1.sqlite`, `session_index.jsonl`). Desktop-private; walking rollouts directly is the robust contract.
+
 ## [0.2.14] — 2026-05-14
 
 100% Ollama. Every LLM-driven subcommand — `dream`, `assess`, `deep`, `session-mine`, `relations migrate`, and the four absorb passes that weren't already local — now runs end-to-end against a local Ollama server with zero `claude -p` calls. The Anthropic path stays the default; flipping the whole pipeline to free/offline is a single `llm.provider: ollama` line in `scribe.yaml`.

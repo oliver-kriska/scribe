@@ -24,9 +24,15 @@ type ScribeConfig struct {
 	OwnerContext      string   `yaml:"owner_context"`
 	Domains           []string `yaml:"domains"`
 	ClaudeProjectsDir string   `yaml:"claude_projects_dir"`
-	CcriderDB         string   `yaml:"ccrider_db"`
-	LockDir           string   `yaml:"lock_dir"`
-	DefaultModel      string   `yaml:"default_model"`
+	// CodexSessionsDir is the OpenAI Codex CLI rollouts directory
+	// (~/.codex/sessions). `scribe sync --discover` walks rollouts here
+	// to find projects you've touched only via Codex, parallel to
+	// ClaudeProjectsDir. Missing dir is optional — Codex is not
+	// required, doctor surfaces it as a WARN.
+	CodexSessionsDir string `yaml:"codex_sessions_dir"`
+	CcriderDB        string `yaml:"ccrider_db"`
+	LockDir          string `yaml:"lock_dir"`
+	DefaultModel     string `yaml:"default_model"`
 	// KBName is the display-level name of this KB, used for:
 	//   - the drop-file directory other projects write to
 	//     (`.claude/<kb_name>/*.md`)
@@ -1405,6 +1411,7 @@ func loadConfig(root string) *ScribeConfig {
 	cfg := &ScribeConfig{
 		Domains:           []string{},
 		ClaudeProjectsDir: filepath.Join(os.Getenv("HOME"), ".claude", "projects"),
+		CodexSessionsDir:  filepath.Join(os.Getenv("HOME"), ".codex", "sessions"),
 		CcriderDB:         filepath.Join(os.Getenv("HOME"), ".config", "ccrider", "sessions.db"),
 		LockDir:           "/tmp",
 		DefaultModel:      "sonnet",
@@ -1441,6 +1448,7 @@ func loadConfig(root string) *ScribeConfig {
 
 	// Expand ~ in paths.
 	cfg.ClaudeProjectsDir = expandHome(cfg.ClaudeProjectsDir)
+	cfg.CodexSessionsDir = expandHome(cfg.CodexSessionsDir)
 	cfg.CcriderDB = expandHome(cfg.CcriderDB)
 	cfg.LockDir = expandHome(cfg.LockDir)
 

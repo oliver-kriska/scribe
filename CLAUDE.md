@@ -61,6 +61,7 @@ make check        # test + vet
 | --------------------------- | ------------------------------------------- | --------------------------------- |
 | ccrider sessions DB         | `~/.config/ccrider/sessions.db`             | FTS5, read-only access            |
 | Claude Code session folders | `~/.claude/projects/*`                      | keyed by project cwd              |
+| Codex CLI rollouts          | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | first line is `session_meta` with verbatim `cwd` — used by `sync --discover` |
 | iMessage chat DB            | `~/Library/Messages/chat.db`                | needs Full Disk Access            |
 | scribe user config          | `~/.config/scribe/config.yaml`              | global defaults                   |
 | pending sessions queue      | `~/.config/scribe/pending-sessions.txt`     | drained by `sync --sessions`      |

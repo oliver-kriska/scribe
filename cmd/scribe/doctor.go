@@ -182,6 +182,13 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 		})
 	}
 
+	// Codex sessions: optional. Missing dir / zero rollouts is WARN,
+	// not FAIL — users without Codex CLI should still get a clean
+	// doctor. When rollouts exist, we probe one to assert the
+	// `cwd` field still parses non-empty so a future Codex schema
+	// rename shows up here instead of silently breaking discovery.
+	out = append(out, checkCodexSessions(cfg)...)
+
 	if fileExists(cfg.CcriderDB) {
 		out = append(out, check{Section: "config", Name: "ccrider_db", Status: statusOK, Detail: cfg.CcriderDB})
 	} else {
@@ -204,6 +211,72 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 	}
 
 	return out
+}
+
+// checkCodexSessions probes the Codex CLI sessions root. Three states:
+//
+//	OK    — dir exists, contains at least one rollout-*.jsonl, and the
+//	        most recent rollout's session_meta payload parses with a
+//	        non-empty cwd (schema-drift sentinel — a future Codex
+//	        rename of the `cwd` field would flip this to WARN).
+//	WARN  — dir missing, contains zero rollouts, or the schema probe
+//	        fails. Codex is optional; users without Codex CLI installed
+//	        should still get a clean doctor.
+//	(never FAIL — see WARN reasoning above.)
+//
+// Empty `codex_sessions_dir` in scribe.yaml is treated the same as a
+// missing directory.
+func checkCodexSessions(cfg *ScribeConfig) []check {
+	dir := cfg.CodexSessionsDir
+	if dir == "" {
+		return []check{{
+			Section: "config", Name: "codex_sessions_dir", Status: statusWarn,
+			Detail: "unset in scribe.yaml — Codex discovery disabled",
+			Fix:    "set codex_sessions_dir: ~/.codex/sessions or install Codex CLI",
+		}}
+	}
+	if !dirExists(dir) {
+		return []check{{
+			Section: "config", Name: "codex_sessions_dir", Status: statusWarn,
+			Detail: dir + " does not exist (Codex CLI not installed?)",
+			Fix:    "install Codex CLI, or edit scribe.yaml to point at the right path",
+		}}
+	}
+
+	probe := codexProbeRollout(dir)
+	if probe == "" {
+		return []check{{
+			Section: "config", Name: "codex_sessions_dir", Status: statusWarn,
+			Detail: dir + " — no rollouts yet",
+		}}
+	}
+	meta, err := readCodexSessionMeta(probe)
+	switch {
+	case err != nil:
+		return []check{{
+			Section: "config", Name: "codex_sessions_dir", Status: statusWarn,
+			Detail: fmt.Sprintf("%s — schema probe failed: %v", dir, err),
+			Fix:    "Codex may have changed its session_meta schema — file an issue",
+		}}
+	case meta == nil || meta.Cwd == "":
+		return []check{{
+			Section: "config", Name: "codex_sessions_dir", Status: statusWarn,
+			Detail: dir + " — probed rollout has empty/missing cwd (Codex schema may have changed)",
+			Fix:    "file an issue at github.com/oliver-kriska/scribe",
+		}}
+	}
+
+	// OK row. Capped rollout count is a cheap signal — full count for
+	// huge histories is wasted work in the hot doctor path.
+	count := codexRolloutCount(dir, 5000)
+	suffix := fmt.Sprintf("%d rollout(s)", count)
+	if count >= 5000 {
+		suffix = "5000+ rollouts"
+	}
+	return []check{{
+		Section: "config", Name: "codex_sessions_dir", Status: statusOK,
+		Detail: fmt.Sprintf("%s (%s)", dir, suffix),
+	}}
 }
 
 // ---- Local-mode coherence ----

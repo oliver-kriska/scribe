@@ -27,6 +27,38 @@ type ProjectEntry struct {
 	LastDropProcessed   string `json:"last_drop_processed,omitempty"`
 	LastResearchScanned string `json:"last_research_scanned,omitempty"`
 	ExtractedDirs       string `json:"extracted_dirs,omitempty"`
+	// DiscoveredFrom records which agent surface first surfaced this
+	// project to the manifest. "claude" | "codex" | "both". Empty
+	// reads as "claude" for back-compat — every entry written before
+	// this field existed came in via the Claude scanner.
+	DiscoveredFrom string `json:"discovered_from,omitempty"`
+}
+
+// DiscoveredSource normalises the back-compat default. Pre-existing
+// manifests have ProjectEntry.DiscoveredFrom == "" because the field
+// didn't exist when they were written; treat those as Claude entries.
+func (e *ProjectEntry) DiscoveredSource() string {
+	if e == nil || e.DiscoveredFrom == "" {
+		return "claude"
+	}
+	return e.DiscoveredFrom
+}
+
+// MergeDiscoveredFrom records that this project was just seen from
+// `source` ("claude" or "codex"). If the project was already attributed
+// to the other agent, the field promotes to "both". Idempotent.
+func (e *ProjectEntry) MergeDiscoveredFrom(source string) {
+	if e == nil || source == "" {
+		return
+	}
+	current := e.DiscoveredSource()
+	if current == source || current == "both" {
+		if e.DiscoveredFrom == "" {
+			e.DiscoveredFrom = current
+		}
+		return
+	}
+	e.DiscoveredFrom = "both"
 }
 
 // loadManifest reads the projects.json manifest.

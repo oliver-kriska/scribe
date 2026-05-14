@@ -491,6 +491,14 @@ func (c *InitCmd) runStatus(root string) error {
 	fmt.Printf("  owner_name:          %s\n", cfg.OwnerName)
 	fmt.Printf("  domains:             %s\n", strings.Join(cfg.AllDomains(), ", "))
 	fmt.Printf("  claude_projects_dir: %s\n", cfg.ClaudeProjectsDir)
+	codexStatus := cfg.CodexSessionsDir
+	switch {
+	case codexStatus == "":
+		codexStatus = "(unset — Codex discovery off)"
+	case !dirExists(codexStatus):
+		codexStatus += "  (not present — install Codex CLI to enable, optional)"
+	}
+	fmt.Printf("  codex_sessions_dir:  %s\n", codexStatus)
 	fmt.Printf("  ccrider_db:          %s\n", cfg.CcriderDB)
 	fmt.Printf("  default_model:       %s\n", cfg.DefaultModel)
 	fmt.Printf("  capture.self_chat:   %s\n", cfg.Capture.SelfChatHandle)

@@ -14,6 +14,11 @@ domains:
 {{end}}
 # Paths
 claude_projects_dir: ~/.claude/projects
+# Codex CLI rollouts (~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl). Scanned
+# by `scribe sync --discover` so projects you've touched only from Codex
+# also land in the manifest. Optional — missing dir is a WARN in doctor,
+# not a failure.
+codex_sessions_dir: ~/.codex/sessions
 ccrider_db: ~/.config/ccrider/sessions.db
 lock_dir: /tmp
 

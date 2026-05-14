@@ -276,6 +276,7 @@ domains:
   - oss
 
 claude_projects_dir: ~/.claude/projects
+codex_sessions_dir: ~/.codex/sessions   # optional — Codex CLI rollouts; `sync --discover` walks these alongside Claude
 ccrider_db: ~/.config/ccrider/sessions.db
 
 default_model: sonnet # claude model used for extraction/dream/absorb
