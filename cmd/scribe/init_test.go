@@ -71,6 +71,10 @@ func TestRunBootstrap_ThrowawayPathSkipsGlobals(t *testing.T) {
 	}
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
+	// userConfigPath() prefers $XDG_CONFIG_HOME when set; empty makes it
+	// fall back to HOME. Ubuntu CI sets XDG_CONFIG_HOME, so without this
+	// the user-config write would land in the real ~/.config not fakeHome.
+	t.Setenv("XDG_CONFIG_HOME", "")
 	kb := filepath.Join(t.TempDir(), "smoke-kb")
 
 	c := &InitCmd{
@@ -137,6 +141,10 @@ func TestRunBootstrap_BindFlagAllowsThrowawayWrites(t *testing.T) {
 	}
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
+	// userConfigPath() prefers $XDG_CONFIG_HOME when set; empty makes it
+	// fall back to HOME. Ubuntu CI sets XDG_CONFIG_HOME, so without this
+	// the user-config write would land in the real ~/.config not fakeHome.
+	t.Setenv("XDG_CONFIG_HOME", "")
 	kb := filepath.Join(t.TempDir(), "intentional-kb")
 
 	c := &InitCmd{

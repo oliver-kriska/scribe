@@ -281,7 +281,12 @@ ccrider_db: ~/.config/ccrider/sessions.db
 default_model: sonnet # claude model used for extraction/dream/absorb
 
 capture:
-  self_chat_handle: "+15551234567"
+  # Use the list form (`self_chat_handles`) if you message yourself from both a
+  # phone and an Apple-ID email — iMessage stores those as separate chats and
+  # the singular form only reads one of them. The legacy singular still works.
+  self_chat_handles:
+    - "+15551234567"
+    - "you@example.com"
 
 # Keyword categories for `scribe triage`. Tune to your stack.
 triage:
@@ -335,7 +340,7 @@ No manual `ollama pull` needed.
 
 All are free and work with scribe's auto-pull. Pick with `model: <tag>` in scribe.yaml. llama.cpp's `llama-server` exposes the same `/api/generate` shape, so `ollama_url: http://localhost:8080` also works if you prefer raw llama.cpp over Ollama.
 
-> **Note.** Local-mode currently covers the `contextualize` step only. Absorb Pass 1 + Pass 2 still use Claude because they rely on Claude Code's tool use (Read, Write, Grep). Porting those to local models is future work.
+> **Note.** Local-mode now covers the full absorb pipeline end-to-end. `contextualize` was first; the per-chunk atomic-facts pass added `facts_provider: ollama` in 0.2.0/Phase 4A; Pass 2 added `pass2_mode: json` + `pass2_provider: ollama` in 0.2.11 (Phase 4B), inlining a `WikiActionEnvelope` JSON prompt that scribe applies itself instead of calling Claude Code's tool use. With all three set to ollama you can run a complete absorb without an Anthropic API key. Run `scribe doctor --section localmode` to validate the local-provider knobs (ollama reachable, pass-2 model pulled, fact IDs enabled, daily output-token ceiling configured) before kicking off a sync.
 
 ### `~/.config/scribe/config.yaml` (user)
 
@@ -350,9 +355,14 @@ kb_dir: /home/alice/my-kb
 | Variable                   | Purpose                                                                                                                   |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `SCRIBE_KB`                | Override KB root for one command                                                                                          |
-| `SCRIBE_SELF_CHAT_ID`      | Override `capture.self_chat_handle`                                                                                       |
+| `SCRIBE_SELF_CHAT_ID`      | Override `capture.self_chat_handle` (accepts comma-separated values for accounts with phone + Apple-ID email)             |
 | `SCRIBE_SKIP_REINDEX`      | Skip the final `qmd` reindex (useful in tests / CI)                                                                       |
 | `SCRIBE_PROJECT_ROOTS`     | Colon-separated list of parent dirs treated as top-level project roots (default: `Projects:projects:src:code:repos:work`) |
+| `SCRIBE_PASS2_MODE`        | Override `absorb.pass2_mode` (`tools` or `json`) for one run without editing scribe.yaml                                  |
+| `SCRIBE_PASS2_PROVIDER`    | Override `absorb.pass2_provider` (`anthropic` or `ollama`) for one run                                                    |
+| `SCRIBE_PASS2_MODEL`       | Override `absorb.pass2_model` for one run                                                                                  |
+| `SCRIBE_BYPASS_BUDGET`     | Bypass `sync.daily_anthropic_output_token_ceiling` for one invocation (cron-safe ceiling otherwise aborts and exits 0)    |
+| `SCRIBE_DOCTOR_SKIP_OLLAMA`| Skip the Ollama `/api/tags` probe in `scribe doctor --section localmode` (offline CI)                                     |
 
 ---
 
@@ -363,6 +373,7 @@ scribe init         # bootstrap a KB or check an existing one
 scribe sync         # discover → extract → absorb → reindex
 scribe sync --sessions       # mine Claude Code sessions via ccrider
 scribe sync --estimate       # token estimate for pending work (no LLM calls)
+scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml
 scribe triage       # score unprocessed sessions by knowledge density
 scribe capture      # pull links you iMessaged to yourself as bookmarks (macOS only; needs Full Disk Access)
 scribe ingest url <url> --absorb   # queue-less ingest + contextualize + absorb
@@ -375,7 +386,16 @@ scribe lint --contradictions # LLM pass for factual disagreements across article
 scribe link         # link orphan articles to contextual hosts via See Also sections
 scribe watch        # long-running fsnotify watcher on ccrider DB (near-real-time session extraction)
 scribe assess <project>      # one-shot parallel deep assessment of a project (5 tracks + consolidation)
-scribe doctor       # deps + config + cron + freshness + errors
+scribe cost         # summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger
+scribe sections {build,list,get}            # H1/H2/H3 section sidecars for wiki articles (Phase 5A)
+scribe tier {compute,list,set,write}        # index_tier hint (stub|brief|standard|deep|reference) (Phase 5B)
+scribe relations {get,set,rm,graph,check,migrate,migrate-revert}   # typed edges between articles (Phase 6A)
+scribe contradictions {build,list,show,resolve}                    # contradiction ledger (Phase 6B)
+scribe stale {build,list,show}                                      # staleness ledger (date + source signals) (Phase 6C)
+scribe view {<name>,--list}                 # declarative views over wiki frontmatter (Phase 7B)
+scribe skill {install,list}                 # embedded scribe-kb agent skill bundle (Phase 7A)
+scribe install-tools         # bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion
+scribe doctor       # deps + config + cron + freshness + errors + localmode + vault + stale + contradictions
 scribe fda          # macOS Full Disk Access probe + interactive grant flow
 scribe cron {install,status,uninstall}
 ```
