@@ -5,6 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>scribe — your knowledge base, written by your tools</title>
   <meta name="description" content="A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable." />
+  <meta name="theme-color" content="#0e0f12" />
+  <meta name="color-scheme" content="dark" />
+  <link rel="canonical" href="https://getscribe.dev/" />
+
+  <!-- Icons -->
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+  <!-- Open Graph / social previews -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://getscribe.dev/" />
+  <meta property="og:site_name" content="scribe" />
+  <meta property="og:title" content="scribe — your knowledge base, written by your tools" />
+  <meta property="og:description" content="A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable wiki. Cross-project, cron-driven, fully local-capable." />
+  <meta property="og:image" content="https://getscribe.dev/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="scribe — your knowledge base, written by your tools" />
+  <meta name="twitter:description" content="A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable wiki." />
+  <meta name="twitter:image" content="https://getscribe.dev/og.png" />
+
+  <!-- Structured data (SoftwareApplication) so search + AI crawlers
+       have a clean entity definition to cite. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "scribe",
+    "description": "A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable.",
+    "url": "https://getscribe.dev/",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Linux",
+    "softwareVersion": "0.2.13",
+    "license": "https://opensource.org/licenses/MIT",
+    "codeRepository": "https://github.com/oliver-kriska/scribe",
+    "programmingLanguage": "Go",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Person", "name": "Oliver Kriska" }
+  }
+  </script>
+
   <!-- Privacy-friendly analytics by Plausible -->
   <script async src="https://plausible.io/js/pa-SplqFtwNmkspNbht9wwlS.js"></script>
   <script>
@@ -134,8 +179,33 @@
       color: var(--text);
     }
     .btn-ghost:hover { border-color: var(--text-dim); }
-    .btn { border-bottom: 1px solid var(--border); }
-    .btn-primary { border-bottom-color: var(--accent); }
+
+    /* Skip-to-content link (visually hidden until focused). */
+    .skip-link {
+      position: absolute;
+      top: -100px;
+      left: 8px;
+      background: var(--accent);
+      color: #1a1208;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      z-index: 1000;
+      transition: top 0.15s;
+    }
+    .skip-link:focus { top: 8px; outline: 2px solid var(--text); }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
 
     /* SECTIONS */
     section {
@@ -207,7 +277,7 @@
     .stage .src {
       font-family: var(--mono);
       font-size: 12px;
-      color: var(--text-faint);
+      color: var(--text-dim);
       margin-top: 12px;
     }
 
@@ -411,8 +481,10 @@
 </head>
 <body>
 
+  <a class="skip-link" href="#main">Skip to content</a>
+
   <header class="hero">
-    <canvas id="hero-graph" aria-hidden="true"></canvas>
+    <canvas id="hero-graph" width="1" height="1" aria-hidden="true"></canvas>
     <div class="container">
       <div class="eyebrow">scribe — v0.2.13 · single-binary Go CLI</div>
       <h1>Your knowledge base,<br/><span class="accent">written by your tools.</span></h1>
@@ -430,6 +502,8 @@
       </div>
     </div>
   </header>
+
+  <main id="main">
 
   <section>
     <div class="container">
@@ -708,6 +782,7 @@ absorb:
       <p class="section-sub">Snapshot 2026-04-21. Everything moves; check the source repos before deciding.</p>
 
       <table class="compare">
+        <caption class="sr-only">Comparison of scribe versus alternative tools across session mining, cron support, density pre-filter, two-pass absorb, multi-project, and local-mode capabilities</caption>
         <thead>
           <tr>
             <th>Tool</th>
@@ -836,6 +911,8 @@ absorb:
     </div>
   </section>
 
+  </main>
+
   <footer>
     <div class="container">
       <p>scribe — MIT licensed · single-binary Go CLI · v0.2.13 · <a href="https://github.com/oliver-kriska/scribe">github.com/oliver-kriska/scribe</a></p>
@@ -866,13 +943,26 @@ absorb:
 
     function rand(a, b) { return a + Math.random() * (b - a); }
 
+    // Resize the canvas backing store. If nodes already exist, scale their
+    // positions proportionally to the new dimensions so a window resize
+    // doesn't visibly reset the graph.
     function resize() {
       var rect = canvas.getBoundingClientRect();
-      W = rect.width; H = rect.height;
-      if (W === 0 || H === 0) return;
+      var newW = rect.width, newH = rect.height;
+      if (newW === 0 || newH === 0) return;
+      var hadDims = W > 0 && H > 0;
+      var sx = hadDims ? newW / W : 1;
+      var sy = hadDims ? newH / H : 1;
+      W = newW; H = newH;
       canvas.width = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (hadDims && nodes.length) {
+        for (var i = 0; i < nodes.length; i++) {
+          nodes[i].x *= sx;
+          nodes[i].y *= sy;
+        }
+      }
     }
 
     function init() {
@@ -978,14 +1068,14 @@ absorb:
     var rt;
     window.addEventListener('resize', function () {
       clearTimeout(rt);
-      rt = setTimeout(function () { init(); }, 150);
+      rt = setTimeout(function () { resize(); }, 150);
     });
 
     // Pause when scrolled out of view; pause when tab hidden.
     if ('IntersectionObserver' in window) {
       new IntersectionObserver(function (es) {
         es.forEach(function (en) { en.isIntersecting ? start() : stop(); });
-      }).observe(canvas);
+      }, { threshold: 0.1 }).observe(canvas);
     }
     document.addEventListener('visibilitychange', function () {
       document.hidden ? stop() : start();
