@@ -125,7 +125,7 @@
             "name": "What does it cost to run?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Zero on the local-mode path (Ollama). On the Anthropic-hosted path, the contextualize pass costs roughly $0.0001 per article via Claude Haiku; project extraction and pass-2 use Sonnet at standard Anthropic prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free."
+              "text": "Zero on the local-mode path (Ollama) for the entire absorb pipeline as of v0.2.12. On the Anthropic-hosted path, contextualize costs roughly $0.0001 per article via Claude Haiku; project extraction and pass-2 use Sonnet at standard prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free. The one asterisk on the $0 claim: the weekly Dream consolidation cycle still uses claude -p with sonnet today (rough order: $5-$25 per weekly run for a mid-sized KB). Phase 4C will port Dream to the same JSON-envelope pattern used for pass-2 absorb (soon on Ollama); workarounds today are scribe dream --model haiku or skipping the weekly LaunchAgent entirely."
             }
           },
           {
@@ -803,21 +803,32 @@
         </div>
 
         <div class="stage">
-          <h3><span class="num">05</span>Weekly cleanup — Dream cycle prunes, merges, breaks down</h3>
+          <h3><span class="num">05</span>Weekly cleanup — Dream cycle prunes, merges, breaks down <span class="pill pill-warn" style="margin-left: 6px;">soon on Ollama</span></h3>
           <p>
-            Sundays at 02:00, <code>scribe dream</code> runs a 4-phase consolidation pass driven by
-            <code>claude -p</code>: <strong>ORIENT</strong> (read-only inventory), <strong>SIGNAL</strong> (gather contradictions
-            and stale articles), <strong>CONSOLIDATE</strong> (merge duplicates, promote rough notes to
-            full articles, break dense ones into per-entity sub-pages),
+            Sundays at 02:00, <code>scribe dream</code> runs a 4-phase consolidation pass:
+            <strong>ORIENT</strong> (read-only inventory), <strong>SIGNAL</strong> (gather contradictions and
+            stale articles), <strong>CONSOLIDATE</strong> (merge duplicates, promote rough notes to full
+            articles, break dense ones into per-entity sub-pages),
             <strong>PRUNE + INDEX</strong> (drop superseded content, refresh <code>_index.md</code>,
-            <code>_hot.md</code>, <code>_backlinks.json</code>). Three other weekly cron passes
-            handle conflict resolution (<code>lint-resolve</code>), identity clustering for
-            people/tools under different aliases (<code>lint-identities</code>), and high-confidence
-            alias auto-application (<code>apply-identities</code>). The KB stays compact and current
-            without you opening it.
+            <code>_hot.md</code>, <code>_backlinks.json</code>). Three other weekly passes handle
+            conflict resolution (<code>lint-resolve</code>), identity clustering for people/tools
+            under different aliases (<code>lint-identities</code>), and high-confidence alias
+            auto-application (<code>apply-identities</code>).
+          </p>
+          <p style="margin-top: 14px; padding: 12px 16px; border-left: 3px solid var(--accent); background: rgba(255, 184, 107, 0.06); font-size: 14px;">
+            <strong>Cost asterisk on the local-mode story.</strong> Dream is currently the one
+            operation in the loop that still requires Anthropic — it shells out to
+            <code>claude -p</code> with sonnet (60-min timeout, full Read/Write/Edit tool use across the
+            wiki tree). Order-of-magnitude $5–$25 per weekly run for a mid-sized KB. The
+            other heavy passes (contextualize, atomic facts, pass-2 absorb) already route
+            through Ollama via the Phase-4B JSON-envelope path; <strong>Phase 4C</strong> ports the
+            same pattern to Dream. Today's workarounds: <code>scribe dream --model haiku</code>
+            (cheaper but lower-quality merges) or skip the weekly LaunchAgent entirely —
+            the KB still works fine without weekly consolidation, just gets denser over
+            time.
           </p>
           <div class="src">
-            cmd/scribe/dream.go + prompts/dream.md (4 phases: ORIENT, SIGNAL, CONSOLIDATE, PRUNE+INDEX)
+            cmd/scribe/dream.go + prompts/dream.md (4 phases: ORIENT, SIGNAL, CONSOLIDATE, PRUNE+INDEX). Default model: sonnet.
           </div>
         </div>
       </div>
@@ -1005,6 +1016,16 @@ absorb:
 <span class="out">→ 3 projects extracted, 12 articles absorbed, 0 anthropic tokens used</span></pre>
 
       <p>scribe auto-pulls models on first use. Zero manual <code>ollama pull</code> needed.</p>
+
+      <p style="margin-top: 18px; padding: 12px 16px; border-left: 3px solid var(--accent); background: rgba(255, 184, 107, 0.06); font-size: 14px;">
+        <strong>One asterisk.</strong> The weekly Dream consolidation cycle still calls
+        <code>claude -p</code> with sonnet today — it's the one op in the
+        <a href="#autonomous">autonomous loop</a> that hasn't been ported off Anthropic.
+        Phase 4C (<em>soon on Ollama</em>) brings the same JSON-envelope pattern
+        used for pass-2 absorb to Dream. Until then, run <code>scribe dream --model haiku</code>
+        for a ~10× cheaper run, or skip the weekly LaunchAgent entirely — the KB still
+        works fine without consolidation, it just gets denser over time.
+      </p>
     </div>
   </section>
 
@@ -1166,7 +1187,7 @@ absorb:
         <dd>No. As of v0.2.12 the entire absorb pipeline (contextualize, atomic facts, pass-2) can route through Ollama with <code>pass2_mode: json</code> + <code>pass2_provider: ollama</code>. Recommended local models: <code>gemma3:4b</code> for contextualize and atomic facts, <code>qwen2.5-coder:14b</code> for pass-2. Set <code>scribe.yaml</code> accordingly and the pipeline runs end-to-end without an Anthropic key.</dd>
 
         <dt>What does it cost to run?</dt>
-        <dd>Zero on the local-mode path (Ollama). On the Anthropic-hosted path the contextualize pass costs roughly $0.0001 per article via Claude Haiku; project extraction and pass-2 use Sonnet at standard Anthropic prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free.</dd>
+        <dd>Zero on the local-mode path (Ollama) for the entire absorb pipeline as of v0.2.12. On the Anthropic-hosted path the contextualize pass costs roughly $0.0001 per article via Claude Haiku; project extraction and pass-2 use Sonnet at standard Anthropic prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free. <strong>The one asterisk on the $0 claim:</strong> the weekly Dream consolidation cycle still uses <code>claude -p</code> with sonnet today (rough order: $5–$25 per weekly run for a mid-sized KB). <strong>Phase 4C (soon on Ollama)</strong> will port Dream to the same JSON-envelope pattern used for pass-2 absorb. Today's workarounds: <code>scribe dream --model haiku</code> for a ~10× cheaper run, or skip the weekly LaunchAgent entirely — the KB still works fine without consolidation, just gets denser over time.</dd>
 
         <dt>Does scribe work on Linux?</dt>
         <dd>Yes. macOS gets LaunchAgents via <code>scribe cron install</code>; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (<code>scribe watch</code>) is not cron-friendly on either OS — run it under launchd KeepAlive on macOS, or systemd-user on Linux. The iMessage capture step is macOS-only because it reads <code>chat.db</code>; everything else is portable.</dd>
