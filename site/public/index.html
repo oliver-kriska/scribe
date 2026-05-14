@@ -60,11 +60,26 @@
 
     /* HERO */
     .hero {
+      position: relative;
+      overflow: hidden;
       padding: 96px 0 64px;
       border-bottom: 1px solid var(--border);
       background:
         radial-gradient(ellipse at top, rgba(255, 184, 107, 0.07), transparent 60%),
         radial-gradient(ellipse at bottom right, rgba(125, 211, 252, 0.05), transparent 50%);
+    }
+    .hero canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.85;
+    }
+    .hero .container { position: relative; z-index: 1; }
+    @media (prefers-reduced-motion: reduce) {
+      .hero canvas { display: none; }
     }
     .hero .eyebrow {
       font-family: var(--mono);
@@ -397,6 +412,7 @@
 <body>
 
   <header class="hero">
+    <canvas id="hero-graph" aria-hidden="true"></canvas>
     <div class="container">
       <div class="eyebrow">scribe — v0.2.12 · single-binary Go CLI</div>
       <h1>Your knowledge base,<br/><span class="accent">written by your tools.</span></h1>
@@ -825,6 +841,160 @@ absorb:
       <p>scribe — MIT licensed · single-binary Go CLI · v0.2.12 · <a href="https://github.com/oliver-kriska/scribe">github.com/oliver-kriska/scribe</a></p>
     </div>
   </footer>
+
+  <!--
+    Hero graph animation — vanilla canvas, no deps. Force-directed layout
+    (repulsion + spring + damping) running at 60fps in the hero background.
+    Disabled when prefers-reduced-motion is set. Pauses when the hero
+    scrolls out of view via IntersectionObserver, so it doesn't burn CPU.
+  -->
+  <script>
+  (function () {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var canvas = document.getElementById('hero-graph');
+    if (!canvas || !canvas.getContext) return;
+    var ctx = canvas.getContext('2d');
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    var W = 0, H = 0, nodes = [], edges = [];
+    var N = 42;
+    var REPULSE = 1400;
+    var SPRING = 0.0045;
+    var SPRING_LEN = 110;
+    var DAMP = 0.86;
+    var MAX_V = 1.4;
+
+    function rand(a, b) { return a + Math.random() * (b - a); }
+
+    function resize() {
+      var rect = canvas.getBoundingClientRect();
+      W = rect.width; H = rect.height;
+      if (W === 0 || H === 0) return;
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function init() {
+      resize();
+      if (W === 0 || H === 0) return;
+      nodes = [];
+      for (var i = 0; i < N; i++) {
+        nodes.push({
+          x: rand(40, W - 40),
+          y: rand(40, H - 40),
+          vx: rand(-0.3, 0.3),
+          vy: rand(-0.3, 0.3),
+          r: rand(1.6, 3.0)
+        });
+      }
+      // Each node connects to its 1-2 nearest neighbors (deduped).
+      edges = [];
+      var seen = {};
+      for (var a = 0; a < N; a++) {
+        var dists = [];
+        for (var b = 0; b < N; b++) {
+          if (a === b) continue;
+          var dx = nodes[a].x - nodes[b].x, dy = nodes[a].y - nodes[b].y;
+          dists.push({ j: b, d: dx * dx + dy * dy });
+        }
+        dists.sort(function (p, q) { return p.d - q.d; });
+        var k = 1 + ((Math.random() < 0.5) ? 0 : 1);
+        for (var m = 0; m < k && m < dists.length; m++) {
+          var j = dists[m].j;
+          var key = a < j ? a + '-' + j : j + '-' + a;
+          if (!seen[key]) { seen[key] = 1; edges.push({ a: a, b: j }); }
+        }
+      }
+    }
+
+    function step() {
+      // Pairwise repulsion (n^2 — fine for ~40 nodes).
+      for (var i = 0; i < N; i++) {
+        for (var j = i + 1; j < N; j++) {
+          var dx = nodes[j].x - nodes[i].x;
+          var dy = nodes[j].y - nodes[i].y;
+          var d2 = dx * dx + dy * dy + 0.01;
+          var d = Math.sqrt(d2);
+          var f = REPULSE / d2;
+          var fx = (dx / d) * f, fy = (dy / d) * f;
+          nodes[i].vx -= fx; nodes[i].vy -= fy;
+          nodes[j].vx += fx; nodes[j].vy += fy;
+        }
+      }
+      // Spring force along edges pulls them toward natural length.
+      for (var e = 0; e < edges.length; e++) {
+        var na = nodes[edges[e].a], nb = nodes[edges[e].b];
+        var ex = nb.x - na.x, ey = nb.y - na.y;
+        var ed = Math.sqrt(ex * ex + ey * ey) || 0.01;
+        var ef = SPRING * (ed - SPRING_LEN);
+        var efx = (ex / ed) * ef, efy = (ey / ed) * ef;
+        na.vx += efx; na.vy += efy;
+        nb.vx -= efx; nb.vy -= efy;
+      }
+      // Integrate, damp, clamp velocity, soft-bounce off edges.
+      for (var n = 0; n < N; n++) {
+        var p = nodes[n];
+        p.vx *= DAMP; p.vy *= DAMP;
+        var v = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+        if (v > MAX_V) { p.vx = p.vx / v * MAX_V; p.vy = p.vy / v * MAX_V; }
+        p.x += p.vx; p.y += p.vy;
+        var pad = 30;
+        if (p.x < pad) p.vx += (pad - p.x) * 0.02;
+        if (p.x > W - pad) p.vx += (W - pad - p.x) * 0.02;
+        if (p.y < pad) p.vy += (pad - p.y) * 0.02;
+        if (p.y > H - pad) p.vy += (H - pad - p.y) * 0.02;
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      ctx.lineWidth = 1;
+      for (var e = 0; e < edges.length; e++) {
+        var a = nodes[edges[e].a], b = nodes[edges[e].b];
+        var dx = a.x - b.x, dy = a.y - b.y;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        var alpha = Math.max(0, 0.22 - d / 1400);
+        ctx.strokeStyle = 'rgba(255, 184, 107, ' + alpha.toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      for (var n = 0; n < N; n++) {
+        var p = nodes[n];
+        ctx.fillStyle = 'rgba(255, 184, 107, 0.5)';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    var raf = 0, running = false;
+    function loop() { step(); draw(); raf = requestAnimationFrame(loop); }
+    function start() { if (!running) { running = true; raf = requestAnimationFrame(loop); } }
+    function stop()  { if (running)  { running = false; cancelAnimationFrame(raf); } }
+
+    var rt;
+    window.addEventListener('resize', function () {
+      clearTimeout(rt);
+      rt = setTimeout(function () { init(); }, 150);
+    });
+
+    // Pause when scrolled out of view; pause when tab hidden.
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (es) {
+        es.forEach(function (en) { en.isIntersecting ? start() : stop(); });
+      }).observe(canvas);
+    }
+    document.addEventListener('visibilitychange', function () {
+      document.hidden ? stop() : start();
+    });
+
+    init();
+    start();
+  })();
+  </script>
 
 </body>
 </html>
