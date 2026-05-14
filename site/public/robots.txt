@@ -1,4 +1,33 @@
 User-agent: *
 Allow: /
 
+# Explicit allow for AI search + dev-tool agents — clarifies intent
+# even though the wildcard above already permits them. Listed for
+# discoverability when someone audits this file.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: GoogleOther
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
 Sitemap: https://getscribe.dev/sitemap.xml
+
+# AI-specific machine-readable views (https://llmstxt.org/)
+# - /llms.txt — index for LLM agents
+# - /llms-full.txt — full content for large-context models
+# - /index.md — page rendered as markdown

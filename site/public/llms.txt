@@ -1,0 +1,34 @@
+# scribe
+
+> A single-binary Go CLI that turns your git repos, Claude Code sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. Cross-project, cron-driven, and capable of running fully local on Ollama with zero API spend.
+
+scribe is an LLM-written knowledge base pipeline. It mines:
+
+- git repository commits for new decisions and patterns
+- Claude Code session transcripts via ccrider's FTS5 index
+- URLs you text yourself via iMessage (macOS only)
+- drop files committed inside other projects under `.claude/scribe/`
+
+It writes a wiki of typed markdown articles (decisions, patterns, learnings, tools, research, projects) with YAML frontmatter and `[[wikilink]]` connections, indexed by qmd for semantic search. The whole pipeline runs on macOS LaunchAgents or Linux cron — set up once with `scribe init` + `scribe cron install`, then your KB grows on its own.
+
+The product is the curated wiki, not raw chunks. Every dense source fans out into multiple entity-first wiki pages via a two-pass absorb. LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities. As of v0.2.12 the entire absorb pipeline can run fully local on Ollama (gemma3:4b for contextualize and atomic facts, qwen2.5-coder:14b for pass-2) with $0 API spend.
+
+## Resources
+
+- [Marketing site](https://getscribe.dev/): overview, features, install, comparison table
+- [Marketing site as markdown](https://getscribe.dev/index.md): same content, plain text
+- [Full content concatenated](https://getscribe.dev/llms-full.txt): everything in one file for large-context LLMs
+- [GitHub repository](https://github.com/oliver-kriska/scribe): source code, issues, releases
+- [README](https://github.com/oliver-kriska/scribe/blob/main/README.md): canonical end-user docs
+- [CHANGELOG](https://github.com/oliver-kriska/scribe/blob/main/CHANGELOG.md): per-version release notes
+- [Homebrew formula](https://github.com/oliver-kriska/scribe/blob/main/Formula/scribe.rb): brew install path
+
+## Install
+
+- macOS / Linuxbrew: `brew tap oliver-kriska/scribe && brew install oliver-kriska/scribe/scribe`
+- Shell: `curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh | bash`
+
+## Optional
+
+- [Cloudflare Workers deployment config](https://github.com/oliver-kriska/scribe/blob/main/site/wrangler.toml): how getscribe.dev itself is hosted
+- [Agent guide](https://github.com/oliver-kriska/scribe/blob/main/CLAUDE.md): instructions for AI agents working on scribe's source code

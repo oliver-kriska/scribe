@@ -30,23 +30,131 @@
   <meta name="twitter:description" content="A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable wiki." />
   <meta name="twitter:image" content="https://getscribe.dev/og.png" />
 
-  <!-- Structured data (SoftwareApplication) so search + AI crawlers
-       have a clean entity definition to cite. -->
+  <!-- Structured data — multi-type @graph so AI crawlers + AI search
+       engines (ChatGPT, Perplexity, Claude, Google AI Overviews) can
+       extract: the software entity, the install procedure as ordered
+       steps, the FAQ for direct Q→A lookup, and freshness via the
+       Article wrapper. -->
+  <meta name="article:published_time" content="2026-04-21T00:00:00Z" />
+  <meta name="article:modified_time" content="2026-05-14T00:00:00Z" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "scribe",
-    "description": "A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable.",
-    "url": "https://getscribe.dev/",
-    "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "macOS, Linux",
-    "softwareVersion": "0.2.13",
-    "license": "https://opensource.org/licenses/MIT",
-    "codeRepository": "https://github.com/oliver-kriska/scribe",
-    "programmingLanguage": "Go",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-    "author": { "@type": "Person", "name": "Oliver Kriska" }
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://getscribe.dev/#scribe",
+        "name": "scribe",
+        "alternateName": "scribe-kb",
+        "description": "A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable.",
+        "url": "https://getscribe.dev/",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Knowledge Management",
+        "operatingSystem": "macOS, Linux",
+        "softwareVersion": "0.2.13",
+        "license": "https://opensource.org/licenses/MIT",
+        "codeRepository": "https://github.com/oliver-kriska/scribe",
+        "programmingLanguage": "Go",
+        "downloadUrl": "https://github.com/oliver-kriska/scribe/releases",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "Oliver Kriska", "url": "https://github.com/oliver-kriska" }
+      },
+      {
+        "@type": "Article",
+        "@id": "https://getscribe.dev/#article",
+        "headline": "scribe — your knowledge base, written by your tools",
+        "description": "Overview of scribe: a CLI that builds a personal knowledge base from git repos, Claude Code sessions, and self-sent URLs. Cross-project, cron-driven, runs fully local on Ollama.",
+        "url": "https://getscribe.dev/",
+        "datePublished": "2026-04-21",
+        "dateModified": "2026-05-14",
+        "image": "https://getscribe.dev/og.png",
+        "author": { "@type": "Person", "name": "Oliver Kriska" },
+        "publisher": { "@type": "Person", "name": "Oliver Kriska" },
+        "mainEntityOfPage": "https://getscribe.dev/",
+        "about": { "@id": "https://getscribe.dev/#scribe" }
+      },
+      {
+        "@type": "HowTo",
+        "@id": "https://getscribe.dev/#install",
+        "name": "Install scribe and bootstrap a knowledge base",
+        "description": "Install scribe on macOS or Linux and create your first knowledge base in under 60 seconds.",
+        "totalTime": "PT2M",
+        "supply": [{ "@type": "HowToSupply", "name": "macOS or Linux machine" }],
+        "tool": [
+          { "@type": "HowToTool", "name": "Homebrew" },
+          { "@type": "HowToTool", "name": "git" }
+        ],
+        "step": [
+          { "@type": "HowToStep", "position": 1, "name": "Tap the scribe Homebrew formula", "text": "brew tap oliver-kriska/scribe" },
+          { "@type": "HowToStep", "position": 2, "name": "Install scribe", "text": "brew install oliver-kriska/scribe/scribe" },
+          { "@type": "HowToStep", "position": 3, "name": "Bootstrap a knowledge base", "text": "scribe init --path ~/my-kb" },
+          { "@type": "HowToStep", "position": 4, "name": "Install the cron jobs (macOS LaunchAgents)", "text": "cd ~/my-kb && scribe cron install" },
+          { "@type": "HowToStep", "position": 5, "name": "Verify the install", "text": "scribe doctor" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://getscribe.dev/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is scribe?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Scribe is a single-binary Go CLI that builds a personal, LLM-written knowledge base from your existing work. It mines your git repos, Claude Code sessions (via ccrider's FTS5 index), and URLs you text yourself, then compiles a curated wiki of decisions, patterns, learnings, and tool evaluations indexed by qmd for semantic search. The whole pipeline runs on cron — set up once, then go back to working."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How is scribe different from RAG, Obsidian, or claude-memory-compiler?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does scribe require an Anthropic API key?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. As of v0.2.12 the entire absorb pipeline (contextualize, atomic facts, pass-2) can route through Ollama with pass2_mode: json + pass2_provider: ollama. Recommended local models: gemma3:4b for contextualize and atomic facts, qwen2.5-coder:14b for pass-2. Set scribe.yaml accordingly and the pipeline runs end-to-end without an Anthropic key."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What does it cost to run?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Zero on the local-mode path (Ollama). On the Anthropic-hosted path, the contextualize pass costs roughly $0.0001 per article via Claude Haiku; project extraction and pass-2 use Sonnet at standard Anthropic prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does scribe work on Linux?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. macOS gets LaunchAgents via scribe cron install; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (scribe watch) is not cron-friendly on either OS — run it under launchd KeepAlive on macOS, or systemd-user on Linux. The iMessage capture step is macOS-only because it reads chat.db; everything else is portable."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Where does scribe store the knowledge base?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "In a plain git repo of markdown files at whatever path you pass to scribe init. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, and no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook. If scribe disappears tomorrow, you still have the KB."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What does the cron schedule look like?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
+            }
+          }
+        ]
+      }
+    ]
   }
   </script>
 
@@ -477,6 +585,26 @@
       font-size: 13px;
       color: var(--text-dim);
     }
+
+    /* FAQ */
+    dl.faq { margin: 0; }
+    dl.faq dt {
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 17px;
+      color: var(--text);
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      letter-spacing: -0.005em;
+    }
+    dl.faq dt:first-of-type { border-top: none; padding-top: 0; }
+    dl.faq dd {
+      margin: 10px 0 0;
+      color: var(--text-dim);
+      font-size: 16px;
+      line-height: 1.65;
+    }
   </style>
 </head>
 <body>
@@ -499,6 +627,7 @@
         <a class="btn btn-primary" href="https://github.com/oliver-kriska/scribe">View on GitHub →</a>
         <a class="btn btn-ghost" href="#install">Install</a>
         <a class="btn btn-ghost" href="#how">How it works</a>
+        <a class="btn btn-ghost" href="#faq">FAQ</a>
       </div>
     </div>
   </header>
@@ -895,6 +1024,36 @@ absorb:
     </div>
   </section>
 
+  <section id="faq">
+    <div class="container">
+      <h2>Common questions</h2>
+      <p class="section-sub">The questions people actually ask the first time they hear about scribe.</p>
+
+      <dl class="faq">
+        <dt>What is scribe?</dt>
+        <dd>Scribe is a single-binary Go CLI that builds a personal, LLM-written knowledge base from your existing work. It mines your git repos, Claude Code sessions (via ccrider's FTS5 index), and URLs you text yourself, then compiles a curated wiki of decisions, patterns, learnings, and tool evaluations indexed by <code>qmd</code> for semantic search. The whole pipeline runs on cron — set up once, then go back to working.</dd>
+
+        <dt>How is scribe different from RAG, Obsidian, or claude-memory-compiler?</dt>
+        <dd>RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. <code>claude-memory-compiler</code> runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions <em>before</em> any LLM call, so cheap sessions cost nothing.</dd>
+
+        <dt>Does scribe require an Anthropic API key?</dt>
+        <dd>No. As of v0.2.12 the entire absorb pipeline (contextualize, atomic facts, pass-2) can route through Ollama with <code>pass2_mode: json</code> + <code>pass2_provider: ollama</code>. Recommended local models: <code>gemma3:4b</code> for contextualize and atomic facts, <code>qwen2.5-coder:14b</code> for pass-2. Set <code>scribe.yaml</code> accordingly and the pipeline runs end-to-end without an Anthropic key.</dd>
+
+        <dt>What does it cost to run?</dt>
+        <dd>Zero on the local-mode path (Ollama). On the Anthropic-hosted path the contextualize pass costs roughly $0.0001 per article via Claude Haiku; project extraction and pass-2 use Sonnet at standard Anthropic prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free.</dd>
+
+        <dt>Does scribe work on Linux?</dt>
+        <dd>Yes. macOS gets LaunchAgents via <code>scribe cron install</code>; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (<code>scribe watch</code>) is not cron-friendly on either OS — run it under launchd KeepAlive on macOS, or systemd-user on Linux. The iMessage capture step is macOS-only because it reads <code>chat.db</code>; everything else is portable.</dd>
+
+        <dt>Where does scribe store the knowledge base?</dt>
+        <dd>In a plain git repo of markdown files at whatever path you pass to <code>scribe init</code>. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, and no vendor lock-in. Open it in Obsidian, VS Code, <code>vim</code>, or <code>mdbook</code>. If scribe disappears tomorrow, you still have the KB.</dd>
+
+        <dt>What does the cron schedule look like?</dt>
+        <dd>Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</dd>
+      </dl>
+    </div>
+  </section>
+
   <section>
     <div class="container">
       <h2>Get started</h2>
@@ -916,6 +1075,12 @@ absorb:
   <footer>
     <div class="container">
       <p>scribe — MIT licensed · single-binary Go CLI · v0.2.13 · <a href="https://github.com/oliver-kriska/scribe">github.com/oliver-kriska/scribe</a></p>
+      <p style="margin-top: 12px; font-size: 12px;">
+        Machine-readable views for AI agents:
+        <a href="/llms.txt">llms.txt</a> ·
+        <a href="/llms-full.txt">llms-full.txt</a> ·
+        <a href="/index.md">index.md</a>
+      </p>
     </div>
   </footer>
 
