@@ -19,6 +19,22 @@ scribe is not a RAG pipeline. It keeps raw sources verbatim under `raw/` AND com
 3. **Absorb** — two-pass extraction. Pass 1 grounds atomic facts; pass 2 fans dense sources into multiple entity-first wiki pages.
 4. **Compile + index** — auto-generated wikilinks, backlinks JSON, retrieval-context paragraphs spliced into every article. `qmd` reindexes.
 
+## Hands-off — the autonomous loop
+
+After `scribe init` + `scribe cron install`, five things happen on their own. New work flows in, the KB grows, your private git remote stays current, and the next Claude Code session in any project queries what scribe just wrote.
+
+1. **Discovery — scribe finds every project you've already touched.** Walks `~/.claude/projects/` (the directory Claude Code creates the first time you open any codebase) and decodes each entry back to its real filesystem path. Every git repo you've ever opened in Claude Code becomes a tracked project automatically; the discovery pass on the every-2-hours cron tick keeps the manifest fresh.
+
+2. **The CLAUDE.md handshake — Claude writes the notes for you.** `scribe init` appends a parameterised block to `~/.claude/CLAUDE.md`. That block tells every Claude Code session, in every project, to (a) query your KB via the qmd MCP server before recommending a library or making a decision, and (b) when a session produces reusable knowledge, write a drop file to `.claude/<your-kb-name>/YYYY-MM-DD-{slug}.md` in the current project with structured frontmatter (`type`, `domain`, `tags`, `action: create | update | append`).
+
+3. **Cron sweeps — drop files + research notes flow into the absorb pipeline.** Every 2 hours `scribe sync` visits each tracked project and globs `.claude/<your-kb-name>/*.md` (Claude-written drop files) and `.claude/research/**/*.md` (your manual research deep-dives). New files are staged into the KB's `output/drops-<project>/` directory and fed through the same two-pass absorb. Each project's `last_drop_processed` and `last_research_processed` timestamps are tracked so the next sweep picks up only what's new.
+
+4. **Auto-publish — your private KB repo commits and pushes itself.** `scribe commit` runs hourly. It stages every change, builds a structured commit message, and runs `git push` to your origin (your own GitHub, Gitea, or Forgejo — there's no scribe-hosted backend). On non-fast-forward, it runs `git pull --rebase` and retries once. Force-push is never attempted. Every invocation appends a JSON record to `output/runs/YYYY-MM-DD.jsonl` for `scribe doctor` to audit.
+
+5. **Weekly cleanup — Dream cycle prunes, merges, breaks down.** Sundays at 02:00, `scribe dream` runs a 4-phase consolidation pass driven by `claude -p`: ORIENT (read-only inventory), SIGNAL (gather contradictions and stale articles), CONSOLIDATE (merge duplicates, promote rough notes to full articles, break dense ones into per-entity sub-pages), PRUNE + INDEX (drop superseded content, refresh `_index.md`, `_hot.md`, `_backlinks.json`). Three other weekly passes handle conflict resolution, identity clustering, and high-confidence alias auto-application.
+
+The loop closes here: every absorb tick reindexes `qmd`; the next time you open Claude Code in any project, the MCP `mcp__plugin_qmd_qmd__query` tool finds whatever scribe just wrote. When the same problem comes up in a different repo, Claude pulls the prior solution before suggesting code — and if that session produces a new lesson, it writes a drop file, and the cycle repeats.
+
 ## Strong points
 
 - **Claude Code becomes context-aware across sessions.** `scribe init` writes a block into `~/.claude/CLAUDE.md` that tells Claude to query your KB via qmd's MCP server before recommending a library, proposing an architecture, or reproducing a pattern.

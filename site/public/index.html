@@ -146,6 +146,22 @@
           },
           {
             "@type": "Question",
+            "name": "How does scribe automatically extract knowledge from existing projects?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Scribe walks ~/.claude/projects/ to auto-discover every codebase you've opened in Claude Code. The CLAUDE.md block scribe init writes into ~/.claude/CLAUDE.md tells every Claude Code session to drop reusable lessons into .claude/<your-kb-name>/YYYY-MM-DD-{slug}.md inside the current project. Every 2 hours scribe sync sweeps those drop files plus any .claude/research/**/*.md notes, runs them through the two-pass absorb, commits the result to your private KB repo, and reindexes qmd so the MCP tool can serve them in the next Claude Code session — closing the loop."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does scribe push to a remote git repo on its own?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. scribe commit runs hourly via cron. It stages every change scribe has produced, builds a structured commit message, and runs git push to your origin (your own GitHub, Gitea, or Forgejo — no scribe-hosted backend). On non-fast-forward it runs git pull --rebase and retries once. Force-push is never attempted. The KB stays in sync without you opening a terminal."
+            }
+          },
+          {
+            "@type": "Question",
             "name": "What does the cron schedule look like?",
             "acceptedAnswer": {
               "@type": "Answer",
@@ -627,6 +643,7 @@
         <a class="btn btn-primary" href="https://github.com/oliver-kriska/scribe">View on GitHub →</a>
         <a class="btn btn-ghost" href="#install">Install</a>
         <a class="btn btn-ghost" href="#how">How it works</a>
+        <a class="btn btn-ghost" href="#autonomous">Auto loop</a>
         <a class="btn btn-ghost" href="#faq">FAQ</a>
       </div>
     </div>
@@ -703,6 +720,115 @@
           </div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section id="autonomous">
+    <div class="container">
+      <h2>Hands-off — the autonomous loop</h2>
+      <p class="section-sub">
+        scribe doesn't ask you to remember to run anything. After
+        <code>scribe init</code> + <code>scribe cron install</code>, five things happen in a closed loop —
+        new work flows in, the KB grows, your private git remote stays current, and the
+        next Claude Code session in any project queries what scribe just wrote.
+      </p>
+
+      <div class="pipeline" style="grid-template-columns: 1fr;">
+        <div class="stage">
+          <h3><span class="num">01</span>Discovery — scribe finds every project you've already touched</h3>
+          <p>
+            scribe walks <code>~/.claude/projects/</code> — the directory Claude Code creates the first
+            time you open any codebase — and decodes each entry back to its real filesystem
+            path. Every git repo you've ever opened in Claude Code becomes a tracked project
+            automatically, with its domain inferred from the parent directory (<code>Projects/</code>,
+            <code>src/</code>, <code>code/</code>, <code>repos/</code>, <code>work/</code> are recognised by default;
+            override via <code>SCRIBE_PROJECT_ROOTS</code>). You don't list anything; the discovery
+            pass on the every-2-hours cron tick keeps the project manifest fresh.
+          </p>
+          <div class="src">
+            cmd/scribe/sync.go: discover() → ~/.claude/projects/* → manifest.Projects
+          </div>
+        </div>
+
+        <div class="stage">
+          <h3><span class="num">02</span>The CLAUDE.md handshake — Claude writes the notes for you</h3>
+          <p>
+            <code>scribe init</code> appends a parameterised block to <code>~/.claude/CLAUDE.md</code>
+            (your global Claude Code instructions). That block tells every Claude Code
+            session, in every project, to: <strong>(a)</strong> query your KB via the qmd MCP server before
+            recommending a library or making a decision, and <strong>(b)</strong> when a session produces
+            reusable knowledge, write a drop file to <code>.claude/&lt;your-kb-name&gt;/YYYY-MM-DD-{slug}.md</code>
+            in the current project. So when you finish debugging a tricky bug in
+            <code>project-b</code>, Claude leaves a structured markdown note inside that repo
+            with frontmatter: <code>type:</code>, <code>domain:</code>, <code>tags:</code>, <code>action: create | update | append</code>.
+            You don't write it. You don't even ask.
+          </p>
+          <div class="src">
+            cmd/scribe/templates/claude-md-kb.md → ~/.claude/CLAUDE.md (parameterised on init)
+          </div>
+        </div>
+
+        <div class="stage">
+          <h3><span class="num">03</span>Cron sweeps — drop files + research notes flow into the absorb pipeline</h3>
+          <p>
+            Every 2 hours <code>scribe sync</code> visits each tracked project and globs two paths:
+            <code>.claude/&lt;your-kb-name&gt;/*.md</code> (Claude-written drop files) and
+            <code>.claude/research/**/*.md</code> (your manual research deep-dives). New files are
+            staged into the KB's <code>output/drops-&lt;project&gt;/</code> directory and fed through
+            the same two-pass absorb described above — atomic facts grounded in pass 1,
+            entity-first wiki pages emitted in pass 2. Each project's
+            <code>last_drop_processed</code> and <code>last_research_processed</code> timestamps
+            are tracked in the manifest so the next sweep picks up only what's new.
+          </p>
+          <div class="src">
+            sync.go: collectDropFiles() + collectResearchFiles() — checkpointed, idempotent
+          </div>
+        </div>
+
+        <div class="stage">
+          <h3><span class="num">04</span>Auto-publish — your private KB repo commits and pushes itself</h3>
+          <p>
+            <code>scribe commit</code> runs hourly. It stages every change scribe has produced
+            in the last hour, builds a structured commit message ("3 articles, 2 patterns,
+            1 decision"), and runs <code>git push</code> to your origin (your own GitHub, Gitea,
+            or Forgejo — there's no scribe-hosted backend). On non-fast-forward (a parallel
+            scribe run pushed first), it runs <code>git pull --rebase</code> and retries once.
+            Force-push is never attempted. Every invocation appends a JSON record to
+            <code>output/runs/YYYY-MM-DD.jsonl</code> so <code>scribe doctor</code> can audit
+            freshness later.
+          </p>
+          <div class="src">
+            cmd/scribe/commit.go + gitops.go: gitCommit() → gitPush() → handleNonFastForward()
+          </div>
+        </div>
+
+        <div class="stage">
+          <h3><span class="num">05</span>Weekly cleanup — Dream cycle prunes, merges, breaks down</h3>
+          <p>
+            Sundays at 02:00, <code>scribe dream</code> runs a 4-phase consolidation pass driven by
+            <code>claude -p</code>: <strong>ORIENT</strong> (read-only inventory), <strong>SIGNAL</strong> (gather contradictions
+            and stale articles), <strong>CONSOLIDATE</strong> (merge duplicates, promote rough notes to
+            full articles, break dense ones into per-entity sub-pages),
+            <strong>PRUNE + INDEX</strong> (drop superseded content, refresh <code>_index.md</code>,
+            <code>_hot.md</code>, <code>_backlinks.json</code>). Three other weekly cron passes
+            handle conflict resolution (<code>lint-resolve</code>), identity clustering for
+            people/tools under different aliases (<code>lint-identities</code>), and high-confidence
+            alias auto-application (<code>apply-identities</code>). The KB stays compact and current
+            without you opening it.
+          </p>
+          <div class="src">
+            cmd/scribe/dream.go + prompts/dream.md (4 phases: ORIENT, SIGNAL, CONSOLIDATE, PRUNE+INDEX)
+          </div>
+        </div>
+      </div>
+
+      <p style="margin-top: 36px; color: var(--text-dim);">
+        The loop closes here: every absorb tick reindexes <code>qmd</code>; the next time you
+        open Claude Code in any project, the MCP <code>mcp__plugin_qmd_qmd__query</code> tool finds
+        whatever scribe just wrote. When the same problem comes up in a different repo,
+        Claude pulls the prior solution before suggesting code — and if that session
+        produces a new lesson, it writes a drop file, and the cycle repeats.
+      </p>
     </div>
   </section>
 
@@ -1047,6 +1173,12 @@ absorb:
 
         <dt>Where does scribe store the knowledge base?</dt>
         <dd>In a plain git repo of markdown files at whatever path you pass to <code>scribe init</code>. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, and no vendor lock-in. Open it in Obsidian, VS Code, <code>vim</code>, or <code>mdbook</code>. If scribe disappears tomorrow, you still have the KB.</dd>
+
+        <dt>How does scribe automatically extract knowledge from existing projects?</dt>
+        <dd>Scribe walks <code>~/.claude/projects/</code> to auto-discover every codebase you've opened in Claude Code. The CLAUDE.md block <code>scribe init</code> writes into <code>~/.claude/CLAUDE.md</code> tells every Claude Code session to drop reusable lessons into <code>.claude/&lt;your-kb-name&gt;/YYYY-MM-DD-{slug}.md</code> inside the current project. Every 2 hours <code>scribe sync</code> sweeps those drop files plus any <code>.claude/research/**/*.md</code> notes, runs them through the two-pass absorb, commits the result to your private KB repo, and reindexes <code>qmd</code> so the MCP tool can serve them in the next Claude Code session — closing the loop.</dd>
+
+        <dt>Does scribe push to a remote git repo on its own?</dt>
+        <dd>Yes. <code>scribe commit</code> runs hourly via cron. It stages every change scribe has produced, builds a structured commit message, and runs <code>git push</code> to your origin (your own GitHub, Gitea, or Forgejo — no scribe-hosted backend). On non-fast-forward it runs <code>git pull --rebase</code> and retries once. Force-push is never attempted. The KB stays in sync without you opening a terminal.</dd>
 
         <dt>What does the cron schedule look like?</dt>
         <dd>Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</dd>
