@@ -2,6 +2,15 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.13] — 2026-05-14
+
+### Fix — `scribe init -p` no longer foot-guns global state on temp paths
+- `scribe init -p /tmp/...` (and any path under `/tmp`, `/private/tmp`, `/var/folders`, or `$TMPDIR`) used to silently retarget `~/.claude/CLAUDE.md`'s scribe-managed block and rewrite `~/.config/scribe/config.yaml`'s `kb_dir` when invoked with `--yes`. That's wrong for what is almost always a smoke test, and on 2026-05-13 it triggered a cascade: a stray `scribe init -p /tmp/freshkb --yes` repointed the user config; `scribe watch` noticed the kb_dir change and ran a 76-minute `scribe sync --max 2` against the throwaway KB overnight, billing anthropic tokens against a directory that had nothing to absorb.
+- New `isThrowawayPath` check refuses to retarget global state when the bootstrap target is under one of those temp prefixes. The KB scaffold (`scribe.yaml`, `wiki/`, `.gitignore`, etc.) is still written; only the two destructive global writes are skipped.
+- New `--bind` flag is the explicit opt-in for the rare case where a temp-pathed KB really is meant to be primary. Without `--bind`, throwaway paths print a clear `Re-run with --bind if you really want this to be your primary KB.` notice and stop.
+- New `--no-claude-md` flag suppresses the `~/.claude/CLAUDE.md` block refresh regardless of mode (works in both bootstrap and status paths). Useful when you want to scaffold a real KB but defer the global-context wiring.
+- Normal (non-temp) paths still bind globals as before when `--yes`/`--force`/`--bind` is set. No behavior change for `scribe init -p /Users/me/Projects/my-kb --yes`.
+
 ## [0.2.12] — 2026-05-14
 
 Local-mode production readiness. The Phase 4B + followup work shipped in 0.2.11 made the absorb pipeline runnable end-to-end against local Ollama models; this release closes the operational gaps so the heavy crons (`com.scribe.sync-projects`, `com.scribe.sync-sessions`) can resume running safely against the new stack.

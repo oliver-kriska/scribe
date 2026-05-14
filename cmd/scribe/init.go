@@ -65,6 +65,8 @@ type InitCmd struct {
 	NoGit        bool     `help:"Skip git init in the new KB." name:"no-git"`
 	NoCron       bool     `help:"Skip cron setup instructions." name:"no-cron"`
 	Force        bool     `help:"Overwrite existing KB files during bootstrap."`
+	Bind         bool     `help:"Repoint ~/.claude/CLAUDE.md and ~/.config/scribe/config.yaml at the new KB. Implicit on normal paths; required for /tmp/ and other temp paths to avoid foot-gunning smoke tests."`
+	NoClaudeMD   bool     `help:"Never refresh the scribe block in ~/.claude/CLAUDE.md, regardless of --bind/--yes/--force." name:"no-claude-md"`
 }
 
 // templateVars is what every embedded template receives. One struct is easier
@@ -143,20 +145,51 @@ func (c *InitCmd) runBootstrap() error {
 	// Bootstrap never silently re-points an existing user config or
 	// CLAUDE.md block away from another KB — that would be destructive to
 	// someone with multiple scribes. Require --force or --yes to proceed.
-	allowUserWrites := c.Force || c.Yes
-	uc := loadUserConfig()
-	if uc.KBDir != "" && uc.KBDir != abs && !allowUserWrites {
-		fmt.Printf("\n~/.config/scribe/config.yaml already points at %s.\n", uc.KBDir)
-		fmt.Printf("Not re-pointing to %s — pass --force to switch, or manually edit the file.\n", abs)
-	} else if err := installUserConfig(abs, c.Check, true); err != nil {
-		fmt.Printf("  warning: %s\n", err)
+	//
+	// Throwaway paths (/tmp/, /var/folders/, $TMPDIR/...) are treated as
+	// smoke tests and refuse to retarget global scribe state regardless of
+	// --yes/--force. The 2026-05-13 incident: `scribe init -p /tmp/freshkb
+	// --yes` quietly repointed ~/.claude/CLAUDE.md + the user config; the
+	// `scribe watch` daemon then noticed the kb_dir change and ran a
+	// 76-minute sync against the throwaway, burning anthropic tokens
+	// overnight. `--bind` is the explicit opt-in for the rare case where
+	// a /tmp/ KB really is meant to be primary.
+	allowUserWrites := c.Force || c.Yes || c.Bind
+	if isThrowawayPath(abs) && !c.Bind {
+		fmt.Printf("\n%s looks like a throwaway/temp path.\n", abs)
+		fmt.Println("Refusing to retarget ~/.claude/CLAUDE.md and ~/.config/scribe/config.yaml.")
+		fmt.Println("Re-run with --bind if you really want this to be your primary KB.")
+		allowUserWrites = false
 	}
-	if allowUserWrites {
+	uc := loadUserConfig()
+	switch {
+	case uc.KBDir == abs:
+		// Idempotent re-install on the same path — always safe.
+		if err := installUserConfig(abs, c.Check, true); err != nil {
+			fmt.Printf("  warning: %s\n", err)
+		}
+	case allowUserWrites:
+		if uc.KBDir != "" && uc.KBDir != abs {
+			fmt.Printf("\n~/.config/scribe/config.yaml currently points at %s — switching to %s.\n", uc.KBDir, abs)
+		}
+		if err := installUserConfig(abs, c.Check, true); err != nil {
+			fmt.Printf("  warning: %s\n", err)
+		}
+	case uc.KBDir != "" && uc.KBDir != abs:
+		fmt.Printf("\n~/.config/scribe/config.yaml already points at %s.\n", uc.KBDir)
+		fmt.Printf("Not re-pointing to %s — pass --bind to switch, or manually edit the file.\n", abs)
+	default:
+		fmt.Println("\n  (skipping ~/.config/scribe/config.yaml — pass --bind to point it at the new KB)")
+	}
+	switch {
+	case c.NoClaudeMD:
+		fmt.Println("  (--no-claude-md: skipping ~/.claude/CLAUDE.md block)")
+	case allowUserWrites:
 		if err := installClaudeMD(abs, vars, c.Check, true); err != nil {
 			fmt.Printf("  warning: %s\n", err)
 		}
-	} else {
-		fmt.Println("  (skipping ~/.claude/CLAUDE.md block — run `scribe init --yes` from inside the new KB to install)")
+	default:
+		fmt.Println("  (skipping ~/.claude/CLAUDE.md block — pass --bind to install)")
 	}
 
 	fmt.Println()
@@ -434,20 +467,24 @@ func (c *InitCmd) runStatus(root string) error {
 	}
 
 	fmt.Println("\nUser CLAUDE.md (~/.claude/CLAUDE.md):")
-	vars, _ := c.collectVars(root)
-	// In status mode, prefer the stored config over fresh prompts.
-	if cfg.OwnerName != "" {
-		vars.OwnerName = cfg.OwnerName
-	}
-	if cfg.OwnerContext != "" {
-		vars.OwnerContext = cfg.OwnerContext
-	}
-	vars.KBDir = root
-	vars.Domains = cfg.AllDomains()
-	vars.DomainsCSV = strings.Join(vars.Domains, ", ")
-	vars.DomainsPipe = strings.Join(vars.Domains, " | ")
-	if err := installClaudeMD(root, vars, c.Check, c.Yes); err != nil {
-		fmt.Printf("  warning: %s\n", err)
+	if c.NoClaudeMD {
+		fmt.Println("  (--no-claude-md: skipping)")
+	} else {
+		vars, _ := c.collectVars(root)
+		// In status mode, prefer the stored config over fresh prompts.
+		if cfg.OwnerName != "" {
+			vars.OwnerName = cfg.OwnerName
+		}
+		if cfg.OwnerContext != "" {
+			vars.OwnerContext = cfg.OwnerContext
+		}
+		vars.KBDir = root
+		vars.Domains = cfg.AllDomains()
+		vars.DomainsCSV = strings.Join(vars.Domains, ", ")
+		vars.DomainsPipe = strings.Join(vars.Domains, " | ")
+		if err := installClaudeMD(root, vars, c.Check, c.Yes); err != nil {
+			fmt.Printf("  warning: %s\n", err)
+		}
 	}
 
 	if !c.NoCron {
@@ -499,6 +536,41 @@ func ensureAbsorbSection(cfgPath string, yes bool) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// isThrowawayPath reports whether abs looks like a scratch/temp location
+// where `scribe init -p` was almost certainly invoked as a smoke test
+// rather than a "make this my primary KB" command. When this returns
+// true, runBootstrap refuses to retarget ~/.claude/CLAUDE.md and
+// ~/.config/scribe/config.yaml unless --bind is also passed.
+//
+// The 2026-05-13 incident: `scribe init -p /tmp/freshkb --yes` silently
+// repointed both globals; `scribe watch` then ran a 76-minute sync
+// against the throwaway KB overnight, burning anthropic tokens.
+func isThrowawayPath(abs string) bool {
+	if abs == "" {
+		return false
+	}
+	// macOS resolves /tmp → /private/tmp via symlink; canonicalise so a
+	// path supplied as either form trips the same guard.
+	if canon, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = canon
+	}
+	prefixes := []string{"/tmp", "/private/tmp", "/var/folders", "/private/var/folders"}
+	if tmp := os.TempDir(); tmp != "" {
+		if canon, err := filepath.EvalSymlinks(tmp); err == nil {
+			prefixes = append(prefixes, canon)
+		} else {
+			prefixes = append(prefixes, tmp)
+		}
+	}
+	for _, prefix := range prefixes {
+		clean := filepath.Clean(prefix)
+		if abs == clean || strings.HasPrefix(abs, clean+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // hasTopLevelKey returns true if any line of the YAML document starts with
