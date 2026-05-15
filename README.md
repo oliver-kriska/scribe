@@ -10,7 +10,7 @@ Your KB is a private git repo you own. `scribe init` scaffolds it from embedded 
 
 ## Why bother
 
-**1. Claude Code becomes *context-aware* across sessions.** `scribe init` writes a block into `~/.claude/CLAUDE.md` parameterized with the KB name you picked (e.g. `mykb`, `acme-notes`, or whatever you chose during init). That block tells Claude to consult your KB via [qmd's MCP server](https://github.com/tobi/qmd) — using the collection name that matches your KB — before answering architectural questions, recommending a library, or reproducing a pattern. Mention a project name in any Claude Code session and Claude will query the KB first, pulling prior decisions, rejected tools, past solutions, and the project's own learnings log. No more re-explaining the same context every session; no more Claude suggesting the library you already evaluated and rejected six weeks ago.
+**1. Claude Code *and* Codex CLI become *context-aware* across sessions.** `scribe init` writes a block into `~/.claude/CLAUDE.md` **and `~/.codex/AGENTS.md`** parameterized with the KB name you picked (e.g. `mykb`, `acme-notes`, or whatever you chose during init). That block tells the agent to consult your KB via [qmd](https://github.com/tobi/qmd) — using the collection name that matches your KB — before answering architectural questions, recommending a library, or reproducing a pattern. Mention a project name in any Claude Code *or* Codex session and the agent queries the KB first, pulling prior decisions, rejected tools, past solutions, and the project's own learnings log. No more re-explaining the same context every session; no more the agent suggesting the library you already evaluated and rejected six weeks ago. (Use one agent or both — the drop-file contribution path is shared, so knowledge captured from a Codex session is searchable from a Claude session and vice versa.)
 
 Excerpt from the block `scribe init` writes (`{{.KBName}}` gets replaced with your KB name, `{{.OwnerName}}` with yours):
 
@@ -21,7 +21,7 @@ Excerpt from the block `scribe init` writes (`{{.KBName}}` gets replaced with yo
 > - Before proposing an architectural choice — query `"<problem> decision reasoning"`. Cite the prior decision instead of reinventing it.
 > - When {{.OwnerName}} references past work ("have I done this before", "didn't we decide on X", "which tool did I use for X") — these are direct instructions to search. Don't answer from memory; search.
 
-That single prompt turns your KB into working memory for every Claude Code session. Without it, an LLM-written KB is just a write-only archive. The full block (including the drop-file protocol for contributing from other projects) is in [`cmd/scribe/templates/claude-md-kb.md`](cmd/scribe/templates/claude-md-kb.md).
+That single prompt turns your KB into working memory for every agent session. Without it, an LLM-written KB is just a write-only archive. The full block (including the drop-file protocol for contributing from other projects) is in [`cmd/scribe/templates/claude-md-kb.md`](cmd/scribe/templates/claude-md-kb.md); the Codex variant (shell `qmd` instead of the MCP tool) is [`cmd/scribe/templates/codex-agents-md.md`](cmd/scribe/templates/codex-agents-md.md). Skip the Codex file with `scribe init --no-codex-md`, the Claude file with `--no-claude-md`.
 
 **2. It runs itself.** Set it up once, then go back to your regular work. Cron handles the rest:
 

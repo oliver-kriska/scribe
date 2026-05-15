@@ -67,6 +67,7 @@ type InitCmd struct {
 	Force        bool     `help:"Overwrite existing KB files during bootstrap."`
 	Bind         bool     `help:"Repoint ~/.claude/CLAUDE.md and ~/.config/scribe/config.yaml at the new KB. Implicit on normal paths; required for /tmp/ and other temp paths to avoid foot-gunning smoke tests."`
 	NoClaudeMD   bool     `help:"Never refresh the scribe block in ~/.claude/CLAUDE.md, regardless of --bind/--yes/--force." name:"no-claude-md"`
+	NoCodexMD    bool     `help:"Never refresh the scribe block in ~/.codex/AGENTS.md, regardless of --bind/--yes/--force." name:"no-codex-md"`
 	// Phase 5: top-level LLM provider for the new KB. When set to
 	// "ollama" the rendered scribe.yaml has `llm.provider: ollama`
 	// uncommented and the bootstrap pre-pulls the recommended local
@@ -201,6 +202,16 @@ func (c *InitCmd) runBootstrap() error {
 		}
 	default:
 		fmt.Println("  (skipping ~/.claude/CLAUDE.md block — pass --bind to install)")
+	}
+	switch {
+	case c.NoCodexMD:
+		fmt.Println("  (--no-codex-md: skipping ~/.codex/AGENTS.md block)")
+	case allowUserWrites:
+		if err := installCodexMD(vars, c.Check, true); err != nil {
+			fmt.Printf("  warning: %s\n", err)
+		}
+	default:
+		fmt.Println("  (skipping ~/.codex/AGENTS.md block — pass --bind to install)")
 	}
 
 	// Phase 5: when the user picked Ollama, probe the server and
@@ -513,25 +524,36 @@ func (c *InitCmd) runStatus(root string) error {
 		fmt.Printf("  warning: %s\n", err)
 	}
 
+	// Collect vars once and reuse for both agent handshakes — calling
+	// collectVars twice would re-prompt in interactive status mode.
+	var agentVars templateVars
+	if !c.NoClaudeMD || !c.NoCodexMD {
+		agentVars, _ = c.collectVars(root)
+		// In status mode, prefer the stored config over fresh prompts.
+		if cfg.OwnerName != "" {
+			agentVars.OwnerName = cfg.OwnerName
+		}
+		if cfg.OwnerContext != "" {
+			agentVars.OwnerContext = cfg.OwnerContext
+		}
+		agentVars.KBDir = root
+		agentVars.Domains = cfg.AllDomains()
+		agentVars.DomainsCSV = strings.Join(agentVars.Domains, ", ")
+		agentVars.DomainsPipe = strings.Join(agentVars.Domains, " | ")
+	}
+
 	fmt.Println("\nUser CLAUDE.md (~/.claude/CLAUDE.md):")
 	if c.NoClaudeMD {
 		fmt.Println("  (--no-claude-md: skipping)")
-	} else {
-		vars, _ := c.collectVars(root)
-		// In status mode, prefer the stored config over fresh prompts.
-		if cfg.OwnerName != "" {
-			vars.OwnerName = cfg.OwnerName
-		}
-		if cfg.OwnerContext != "" {
-			vars.OwnerContext = cfg.OwnerContext
-		}
-		vars.KBDir = root
-		vars.Domains = cfg.AllDomains()
-		vars.DomainsCSV = strings.Join(vars.Domains, ", ")
-		vars.DomainsPipe = strings.Join(vars.Domains, " | ")
-		if err := installClaudeMD(root, vars, c.Check, c.Yes); err != nil {
-			fmt.Printf("  warning: %s\n", err)
-		}
+	} else if err := installClaudeMD(root, agentVars, c.Check, c.Yes); err != nil {
+		fmt.Printf("  warning: %s\n", err)
+	}
+
+	fmt.Println("\nCodex AGENTS.md (~/.codex/AGENTS.md):")
+	if c.NoCodexMD {
+		fmt.Println("  (--no-codex-md: skipping)")
+	} else if err := installCodexMD(agentVars, c.Check, c.Yes); err != nil {
+		fmt.Printf("  warning: %s\n", err)
 	}
 
 	if !c.NoCron {
@@ -644,10 +666,20 @@ func claudeMDPath() string {
 	return filepath.Join(os.Getenv("HOME"), ".claude", "CLAUDE.md")
 }
 
-// buildClaudeMDBlock renders the embedded block template against the given
-// vars and wraps it in the idempotency markers.
-func buildClaudeMDBlock(vars templateVars) (string, error) {
-	body, err := renderTemplate("templates/claude-md-kb.md", vars)
+// codexAgentsMDPath returns ~/.codex/AGENTS.md — Codex CLI's global
+// instructions file, the analog of ~/.claude/CLAUDE.md. Codex merges
+// this with any project-root AGENTS.md; only the global file is
+// scribe-managed.
+func codexAgentsMDPath() string {
+	return filepath.Join(os.Getenv("HOME"), ".codex", "AGENTS.md")
+}
+
+// buildAgentMDBlock renders an embedded block template against the given
+// vars and wraps it in the shared idempotency markers. The markers are
+// HTML comments, valid in any markdown file, so the same pair works for
+// both ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md.
+func buildAgentMDBlock(tmpl string, vars templateVars) (string, error) {
+	body, err := renderTemplate(tmpl, vars)
 	if err != nil {
 		return "", err
 	}
@@ -655,12 +687,24 @@ func buildClaudeMDBlock(vars templateVars) (string, error) {
 	return claudeMDMarkerBegin + "\n" + body + "\n" + claudeMDMarkerEnd, nil
 }
 
-// installClaudeMD syncs the scribe block in ~/.claude/CLAUDE.md. Four
-// cases: missing, present-without-markers, present-in-sync, present-drifted.
-// User content outside the markers is never touched.
+// installClaudeMD syncs the scribe block in ~/.claude/CLAUDE.md.
 func installClaudeMD(_ string, vars templateVars, check, yes bool) error {
-	path := claudeMDPath()
-	block, err := buildClaudeMDBlock(vars)
+	return installAgentMD(claudeMDPath(), "templates/claude-md-kb.md", vars, check, yes)
+}
+
+// installCodexMD syncs the scribe block in ~/.codex/AGENTS.md so Codex
+// CLI sessions get the same KB handshake (query before decisions, write
+// drop files) Claude Code sessions get from ~/.claude/CLAUDE.md.
+func installCodexMD(vars templateVars, check, yes bool) error {
+	return installAgentMD(codexAgentsMDPath(), "templates/codex-agents-md.md", vars, check, yes)
+}
+
+// installAgentMD syncs the scribe block in an agent's global
+// instructions file. Four cases: missing, present-without-markers,
+// present-in-sync, present-drifted. User content outside the markers
+// is never touched.
+func installAgentMD(path, tmpl string, vars templateVars, check, yes bool) error {
+	block, err := buildAgentMDBlock(tmpl, vars)
 	if err != nil {
 		return err
 	}

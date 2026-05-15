@@ -2,6 +2,29 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.17] — 2026-05-15
+
+Cross-agent KB handshake. `scribe init` now writes its KB block to **`~/.codex/AGENTS.md`** as well as `~/.claude/CLAUDE.md`, so OpenAI Codex CLI sessions get the same loop Claude Code sessions get: query the KB before decisions, write drop files for reusable knowledge. Pairs with the Codex *project discovery* shipped in 0.2.15 — discovery finds the projects, the handshake makes Codex sessions populate them. The drop-file half was always agent-agnostic (`scribe sync` scans `.claude/<kb>/` by path regardless of which agent wrote the file); this closes the instruction-injection half.
+
+### `scribe init` — Codex AGENTS.md block
+- New embedded `templates/codex-agents-md.md` — ~95% identical to `claude-md-kb.md`, three deliberate deltas: (1) leads with `qmd query`/`qmd get` via shell instead of the `mcp__plugin_qmd_qmd__*` MCP tool (Codex configures MCP differently in `~/.codex/config.toml`; shell qmd is always available), (2) an explicit note that `.claude/<kb>/` is the *shared* drop location both agents use, not Claude-specific, (3) opening paragraph mentions Codex project discovery.
+- `installClaudeMD` generalised to `installAgentMD(path, tmpl, vars, check, yes)`; `installClaudeMD` + new `installCodexMD` are thin wrappers. Behaviour byte-identical — same four cases (missing / present-without-markers / in-sync / drifted), user content outside the markers never touched. The shared `<!-- scribe:begin … -->` markers are HTML comments, valid in any markdown file, so they work unchanged in AGENTS.md.
+- New `--no-codex-md` flag mirroring `--no-claude-md`. The 2026-05-13 throwaway-path guard covers both handshakes — `scribe init -p /tmp/...` writes neither global file.
+- Status-mode init collects template vars once and reuses them for both handshakes (was double-prompting in interactive mode).
+
+### Doctor — `~/.codex/AGENTS.md block` row
+- New row mirroring `~/.claude/CLAUDE.md block`: OK when the scribe markers are present, WARN when the file or block is missing. Never FAIL — Codex is optional. AGENTS.md is a softer contract than `~/.claude/CLAUDE.md` (Codex churned `codex.md` → `instructions.md` → `AGENTS.md`, and Desktop/managed installs may manage their own), so the row reports *presence of the scribe block*, not "Codex is reading it" — the latter isn't probeable.
+
+### Tests
+- `TestInstallCodexMD_Lifecycle` exercises create / in-sync no-op / drift-refresh / user-content-preserved against a fake `$HOME`. `TestInstallCodexMD_CheckModeNeverWrites` locks `--check` read-only. The existing throwaway-path and `--bind` regression guards extended to assert Codex AGENTS.md behaviour too.
+
+### Out of scope (deliberate)
+- Registering qmd as a Codex MCP server (auto-editing `~/.codex/config.toml`) — the shell `qmd query` fallback works everywhere; bigger blast radius, separate plan if wanted.
+- Codex SessionStart hooks (`~/.codex/hooks.json`) as a dynamic alternative to a static AGENTS.md block — cleaner long-term, but H1 ships the static block first because it matches the proven Claude path exactly.
+- Project-level `AGENTS.md` injection — only the global `~/.codex/AGENTS.md` is scribe-managed.
+
+Plan: `docs/codex-handshake-plan.md`.
+
 ## [0.2.16] — 2026-05-14
 
 Two follow-up fixes to the 100%-Ollama landing in 0.2.14. Closes the last `claude -p` callsite that fired during a normal `scribe sync` run, and stops the auto-flip log lines from repeating on every `loadConfig`.

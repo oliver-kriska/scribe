@@ -210,6 +210,23 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 		out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusWarn, Detail: "scribe block not found", Fix: "scribe init"})
 	}
 
+	// Codex CLI handshake: ~/.codex/AGENTS.md is Codex's analog of
+	// ~/.claude/CLAUDE.md. WARN-only — Codex is optional, and AGENTS.md
+	// is a softer contract (Codex churned codex.md → instructions.md →
+	// AGENTS.md, and Desktop/managed installs may manage their own), so
+	// this row reports *presence of the scribe block*, never "Codex is
+	// reading it" — we can't probe the latter.
+	codexMD := filepath.Join(os.Getenv("HOME"), ".codex", "AGENTS.md")
+	cdata, cerr := os.ReadFile(codexMD)
+	switch {
+	case cerr != nil:
+		out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md", Status: statusWarn, Detail: "not found (Codex CLI not set up?)", Fix: "scribe init"})
+	case strings.Contains(string(cdata), claudeMDMarkerBegin) && strings.Contains(string(cdata), claudeMDMarkerEnd):
+		out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusOK, Detail: "installed"})
+	default:
+		out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusWarn, Detail: "scribe block not found", Fix: "scribe init"})
+	}
+
 	return out
 }
 

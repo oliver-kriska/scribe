@@ -130,6 +130,12 @@ func TestRunBootstrap_ThrowawayPathSkipsGlobals(t *testing.T) {
 	if _, err := os.Stat(userCfg); err == nil {
 		t.Errorf("user config should not be written to fake home; found at %s", userCfg)
 	}
+	// Codex AGENTS.md must not have been written either — the
+	// throwaway-path guard covers both agent handshakes.
+	codexMD := filepath.Join(fakeHome, ".codex", "AGENTS.md")
+	if _, err := os.Stat(codexMD); err == nil {
+		t.Errorf("~/.codex/AGENTS.md should not be written to fake home; found at %s", codexMD)
+	}
 }
 
 // TestRunBootstrap_BindFlagAllowsThrowawayWrites confirms --bind is the
@@ -181,5 +187,100 @@ func TestRunBootstrap_BindFlagAllowsThrowawayWrites(t *testing.T) {
 	userCfg := filepath.Join(fakeHome, ".config", "scribe", "config.yaml")
 	if _, err := os.Stat(userCfg); err != nil {
 		t.Errorf("--bind should install ~/.config/scribe/config.yaml, but %s missing: %v", userCfg, err)
+	}
+	codexMD := filepath.Join(fakeHome, ".codex", "AGENTS.md")
+	if _, err := os.Stat(codexMD); err != nil {
+		t.Errorf("--bind should install ~/.codex/AGENTS.md, but %s missing: %v", codexMD, err)
+	}
+}
+
+// minimalVars builds a templateVars sufficient to render either agent
+// block template. Mirrors what collectVars produces in --yes mode.
+func minimalVars(kbDir string) templateVars {
+	return templateVars{
+		OwnerName:   "Tester",
+		KBName:      "testkb",
+		KBDir:       kbDir,
+		Domains:     []string{"general"},
+		DomainsCSV:  "general",
+		DomainsPipe: "general",
+	}
+}
+
+// TestInstallCodexMD_Lifecycle exercises the four installAgentMD cases
+// against ~/.codex/AGENTS.md via the Codex wrapper: create-when-missing,
+// in-sync no-op, drift refresh, and user content outside the markers
+// preserved on append.
+func TestInstallCodexMD_Lifecycle(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	vars := minimalVars(t.TempDir())
+	path := filepath.Join(fakeHome, ".codex", "AGENTS.md")
+
+	// 1. Missing file → created with the block + markers.
+	if err := installCodexMD(vars, false, true); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after create: %v", err)
+	}
+	if !strings.Contains(string(data), claudeMDMarkerBegin) || !strings.Contains(string(data), claudeMDMarkerEnd) {
+		t.Fatal("created AGENTS.md missing scribe markers")
+	}
+	if !strings.Contains(string(data), "testkb Knowledge Base") {
+		t.Errorf("created AGENTS.md missing rendered KB name; got:\n%s", data)
+	}
+	if !strings.Contains(string(data), "shared drop-file location both Codex and Claude Code use") {
+		t.Errorf("Codex template should carry the shared-drop-path note")
+	}
+
+	// 2. In-sync → byte-identical, no-op.
+	before, _ := os.ReadFile(path)
+	if err := installCodexMD(vars, false, true); err != nil {
+		t.Fatalf("in-sync: %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Errorf("in-sync run rewrote the file:\nbefore=%q\nafter=%q", before, after)
+	}
+
+	// 3. User content outside markers is preserved on refresh.
+	userPrefix := "# My own Codex notes\n\nkeep me\n\n"
+	userSuffix := "\n\n## trailing user section\nalso keep me\n"
+	body, _ := os.ReadFile(path)
+	mixed := userPrefix + string(body) + userSuffix
+	if err := os.WriteFile(path, []byte(mixed), 0o644); err != nil {
+		t.Fatalf("write mixed: %v", err)
+	}
+	// Drift the block by changing a rendered var, then refresh.
+	vars2 := vars
+	vars2.OwnerName = "Someone Else"
+	if err := installCodexMD(vars2, false, true); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	out, _ := os.ReadFile(path)
+	if !strings.Contains(string(out), "keep me") || !strings.Contains(string(out), "also keep me") {
+		t.Errorf("refresh dropped user content outside markers; got:\n%s", out)
+	}
+	if !strings.Contains(string(out), "Someone Else") {
+		t.Errorf("refresh did not update the drifted block; got:\n%s", out)
+	}
+	if strings.Count(string(out), claudeMDMarkerBegin) != 1 {
+		t.Errorf("refresh should leave exactly one scribe block, got %d", strings.Count(string(out), claudeMDMarkerBegin))
+	}
+}
+
+// TestInstallCodexMD_CheckModeNeverWrites confirms --check is read-only
+// for the Codex handshake just like the Claude one.
+func TestInstallCodexMD_CheckModeNeverWrites(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	vars := minimalVars(t.TempDir())
+	if err := installCodexMD(vars, true, true); err != nil {
+		t.Fatalf("check mode: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(fakeHome, ".codex", "AGENTS.md")); err == nil {
+		t.Error("check mode must not create ~/.codex/AGENTS.md")
 	}
 }

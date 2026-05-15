@@ -62,6 +62,8 @@ make check        # test + vet
 | ccrider sessions DB         | `~/.config/ccrider/sessions.db`             | FTS5, read-only access            |
 | Claude Code session folders | `~/.claude/projects/*`                      | keyed by project cwd              |
 | Codex CLI rollouts          | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | first line is `session_meta` with verbatim `cwd` — used by `sync --discover` |
+| Claude handshake block      | `~/.claude/CLAUDE.md`                       | scribe-managed block between `<!-- scribe:begin -->`/`end` markers; written by `init` |
+| Codex handshake block       | `~/.codex/AGENTS.md`                         | same markers/block as the Claude one; written by `init` so Codex CLI sessions query the KB + write drop files |
 | iMessage chat DB            | `~/Library/Messages/chat.db`                | needs Full Disk Access            |
 | scribe user config          | `~/.config/scribe/config.yaml`              | global defaults                   |
 | pending sessions queue      | `~/.config/scribe/pending-sessions.txt`     | drained by `sync --sessions`      |
