@@ -36,7 +36,7 @@
        steps, the FAQ for direct Q→A lookup, and freshness via the
        Article wrapper. -->
   <meta name="article:published_time" content="2026-04-21T00:00:00Z" />
-  <meta name="article:modified_time" content="2026-05-14T00:00:00Z" />
+  <meta name="article:modified_time" content="2026-05-15T00:00:00Z" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -66,7 +66,7 @@
         "description": "Overview of scribe: a CLI that builds a personal knowledge base from git repos, Claude Code sessions, and self-sent URLs. Cross-project, cron-driven, runs fully local on Ollama.",
         "url": "https://getscribe.dev/",
         "datePublished": "2026-04-21",
-        "dateModified": "2026-05-14",
+        "dateModified": "2026-05-15",
         "image": "https://getscribe.dev/og.png",
         "author": { "@type": "Person", "name": "Oliver Kriska" },
         "publisher": { "@type": "Person", "name": "Oliver Kriska" },
@@ -709,7 +709,7 @@
           <h3><span class="num">03</span>Absorb</h3>
           <p>Two-pass extraction. Pass 1 grounds atomic facts; pass 2 fans dense sources out into multiple entity-first wiki pages — never one summary per source.</p>
           <div class="src">
-            anthropic claude · or local ollama (gemma3, qwen3, llama3.2)
+            anthropic claude · or 100% local ollama (gemma3:4b/12b, qwen2.5-coder:14b)
           </div>
         </div>
         <div class="stage">
@@ -803,7 +803,7 @@
             freshness later.
           </p>
           <div class="src">
-            cmd/scribe/commit.go + gitops.go: gitCommit() → gitPush() → handleNonFastForward()
+            cmd/scribe/commit.go + gitops.go: gitCommit() → gitPush() → isNonFastForward() → pull --rebase + retry
           </div>
         </div>
 
@@ -851,7 +851,7 @@
     <div class="container">
       <h2>What makes scribe different</h2>
       <p class="section-sub">
-        Four things that, taken together, no other tool in this neighborhood
+        Six things that, taken together, no other tool in this neighborhood
         provides.
       </p>
 
@@ -895,11 +895,11 @@
           <span class="icon">⌂</span>
           <h3>Fully local-capable, zero API spend</h3>
           <p>
-            Every pipeline stage — contextualize, atomic facts, pass-2 absorb —
-            can route through <a href="https://ollama.com">Ollama</a> via the
-            new <code>pass2_mode: json</code> + <code>pass2_provider: ollama</code> knobs (v0.2.12).
-            <code>scribe doctor --section localmode</code> validates the setup before
-            you kick off a sync.
+            <strong>Every</strong> LLM op — absorb, dream, assess, deep, session-mine,
+            relations migrate — routes through <a href="https://ollama.com">Ollama</a>
+            with a single <code>llm.provider: ollama</code> line in <code>scribe.yaml</code>
+            (100% Ollama as of v0.2.14). <code>scribe doctor --section localmode</code>
+            validates the setup before you kick off a sync.
           </p>
         </div>
 
@@ -947,7 +947,7 @@
 <span class="prompt">$</span> scribe init <span class="arg">--path</span> ~/my-kb
 <span class="prompt">$</span> cd ~/my-kb
 <span class="prompt">$</span> scribe cron install
-<span class="out">→ installed 14 LaunchAgents</span>
+<span class="out">→ installed 13 LaunchAgents</span>
 <span class="prompt">$</span> scribe doctor
 <span class="ok">✓</span> deps  <span class="ok">✓</span> config  <span class="ok">✓</span> cron  <span class="ok">✓</span> freshness  <span class="ok">✓</span> localmode</pre>
 
@@ -1145,7 +1145,7 @@ llm:
   <section>
     <div class="container">
       <h2>The whole command surface</h2>
-      <p class="section-sub">28 subcommands, all in one binary. Here are the ones you'll actually type.</p>
+      <p class="section-sub">38 subcommands, all in one binary. Here are the ones you'll actually type.</p>
 
       <pre class="terminal"><span class="prompt">$</span> scribe init                    <span class="comment"># bootstrap a KB</span>
 <span class="prompt">$</span> scribe sync                    <span class="comment"># discover → extract → absorb → reindex</span>
