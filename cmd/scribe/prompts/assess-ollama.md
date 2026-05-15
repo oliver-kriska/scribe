@@ -58,6 +58,7 @@ Assess project **{{PROJECT}}** and produce a wiki overview as a single envelope.
 - Each section ≤30 lines. Total ≤150 lines.
 - Frontmatter keys: title, type=project, created, updated, domain, confidence, tags (≥3), related, sources.
 - Path rooted in projects/<project>/. Slug lowercase.
+- NEVER target a file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 - log_append ALWAYS included.
 
 OUTPUT: ONE JSON OBJECT. NO PROSE. NO CODE FENCES.

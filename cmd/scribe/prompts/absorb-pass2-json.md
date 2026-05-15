@@ -57,6 +57,7 @@ Emit EXACTLY ONE JSON object to stdout. No prose before or after. No markdown fe
 ### Path rules
 
 - Relative to KB root. No leading `/`. No `..`.
+- NEVER target a file whose basename starts with `_` (e.g. `_index.md`, `_backlinks.json`, `_absorb_log.json`) — scribe generates these and the executor rejects writes to them.
 - Pick the directory matching the entity type: `patterns/` for patterns, `decisions/` for decisions, `tools/` for tools, `solutions/` for solutions, `research/` for research, `people/` for people, `projects/` for projects. Fall back to `wiki/` if none fit.
 - Slugify the label for the filename: lowercase, spaces → `-`, strip punctuation, append `.md`.
 

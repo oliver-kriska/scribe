@@ -85,6 +85,108 @@ func TestValidateActionPath_AcceptsAllWikiDirs(t *testing.T) {
 	}
 }
 
+// Layer 1 (0.2.18): the executor must reject any action whose basename
+// starts with "_". These are scribe-generated artifacts (_index.md,
+// _backlinks.json, _absorb_log.json, …); a model `append` onto an
+// existing one silently corrupts it and aborts the absorb phase. The
+// guard is basename-based so a _-file in any wiki subdir is caught.
+func TestValidateActionPath_RejectsUnderscorePrefixedArtifacts(t *testing.T) {
+	root := t.TempDir()
+	rejected := []string{
+		"wiki/_index.md",
+		"wiki/_backlinks.json",
+		"wiki/_absorb_log.json",
+		"wiki/_hot.md",
+		"wiki/_staleness.jsonl",
+		"projects/_scratch.md",  // _-file in a subdir, not just wiki/
+		"decisions/_draft.md",   // basename check, not top-level only
+		"sessions/2026/_tmp.md", // nested subdir
+	}
+	for _, p := range rejected {
+		if _, err := validateActionPath(root, p); err == nil {
+			t.Errorf("expected %q to be rejected (underscore-prefixed artifact)", p)
+		}
+	}
+	accepted := []string{
+		"wiki/real-article.md",
+		"patterns/some_pattern.md", // underscore mid-name is fine
+		"projects/my-proj/overview.md",
+		"decisions/a_b_c.md", // underscores allowed when not the prefix
+	}
+	for _, p := range accepted {
+		if _, err := validateActionPath(root, p); err != nil {
+			t.Errorf("expected %q to be accepted, got: %v", p, err)
+		}
+	}
+}
+
+// Layer 2 (0.2.18): an `append` whose target is missing is promoted to
+// `create` rather than erroring — the model's intent (this content
+// belongs at this path) is still satisfiable. Layer 1 runs first, so a
+// _-prefixed missing target is still rejected, never promoted.
+func TestApplyWikiActions_AppendMissingPromotesToCreate(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "append", Path: "patterns/brand-new.md", Content: "---\ntitle: \"X\"\n---\n\nbody\n",
+	}}}
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("append-to-missing should promote to create, got errors: %v", res.Errors)
+	}
+	if len(res.Applied) != 1 {
+		t.Fatalf("expected 1 applied, got %v", res.Applied)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "patterns", "brand-new.md"))
+	if err != nil {
+		t.Fatalf("promoted create did not write the file: %v", err)
+	}
+	if !strings.Contains(string(got), "title: \"X\"") {
+		t.Errorf("promoted content mismatch: %q", string(got))
+	}
+}
+
+func TestApplyWikiActions_AppendExistingStillAppends(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "wiki", "log.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "append", Path: "wiki/log.md", Content: "second\n",
+	}}}
+	res, _ := applyWikiActions(root, env, ApplyOptions{})
+	if len(res.Errors) > 0 {
+		t.Fatalf("append to existing file errored: %v", res.Errors)
+	}
+	got, _ := os.ReadFile(target)
+	if string(got) != "first\nsecond\n" {
+		t.Errorf("append did not concatenate; got %q", string(got))
+	}
+}
+
+func TestApplyWikiActions_AppendMissingUnderscoreStillRejected(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "append", Path: "wiki/_absorb_log.json", Content: `{"bogus":1}`,
+	}}}
+	res, _ := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	if len(res.Applied) != 0 {
+		t.Errorf("underscore-prefixed append must NOT be promoted to create; applied=%v", res.Applied)
+	}
+	if len(res.Errors) == 0 {
+		t.Error("expected a path-validation error for _-prefixed append target")
+	}
+	if _, err := os.Stat(filepath.Join(root, "wiki", "_absorb_log.json")); err == nil {
+		t.Error("Layer 1 must prevent the file from being created via append→create")
+	}
+}
+
 func TestApplyWikiActions_CreateNew(t *testing.T) {
 	root := t.TempDir()
 	env := WikiActionEnvelope{Actions: []WikiAction{{
@@ -193,17 +295,25 @@ func TestApplyWikiActions_AppendExisting(t *testing.T) {
 	}
 }
 
-func TestApplyWikiActions_AppendMissingFails(t *testing.T) {
+// Behavior change (0.2.18): append-to-missing is no longer a hard
+// error — it's promoted to create (see Layer 2). The model's intent
+// is satisfiable, so honoring it beats discarding the generation. The
+// _-prefixed-still-rejected and existing-still-appends cases are
+// covered by the dedicated Layer 2 tests above.
+func TestApplyWikiActions_AppendMissingPromotesNotFails(t *testing.T) {
 	root := t.TempDir()
 	env := WikiActionEnvelope{Actions: []WikiAction{{
 		Op: "append", Path: "wiki/missing.md", Content: "x",
 	}}}
 	res, _ := applyWikiActions(root, env, ApplyOptions{})
-	if len(res.Applied) != 0 {
-		t.Errorf("append against missing file should fail; applied=%v", res.Applied)
+	if len(res.Errors) != 0 {
+		t.Errorf("append-to-missing should promote to create, not error; errors=%v", res.Errors)
 	}
-	if len(res.Errors) == 0 {
-		t.Error("expected error on missing append target")
+	if len(res.Applied) != 1 {
+		t.Errorf("expected the promoted create to land; applied=%v", res.Applied)
+	}
+	if _, err := os.Stat(filepath.Join(root, "wiki", "missing.md")); err != nil {
+		t.Errorf("promoted create did not write the file: %v", err)
 	}
 }
 

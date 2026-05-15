@@ -46,6 +46,7 @@ SKIP: conversation summaries, routine code changes, transient debug noise.
 - ALWAYS include `{"op": "sessions_log_append", "session_id": "{{SESSION_ID}}"}` in meta — even when actions is empty.
 - Empty actions is legal: `"actions": []`.
 - Path must be rooted in: wiki/, projects/, research/, solutions/, tools/, decisions/, patterns/, ideas/, people/, sessions/.
+- NEVER target a file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 - Slug: lowercase, spaces → `-`, strip punctuation, `.md`.
 - Frontmatter required keys: title, type, created: {{TODAY}}, updated: {{TODAY}}, domain, confidence (low|medium|high), tags (≥3 kebab-case), related (array of "[[Title]]" strings), sources (array containing "session:{{SESSION_ID}}").
 - ≤150 lines per article. Quote load-bearing claims as markdown blockquotes ending `— Source: session:{{SESSION_ID}}`.

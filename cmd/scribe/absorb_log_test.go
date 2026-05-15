@@ -201,3 +201,78 @@ func TestFindDupName_EmptyShaReturnsEmpty(t *testing.T) {
 		t.Errorf("empty sha should yield empty result; got %q", got)
 	}
 }
+
+// Layer 3 (0.2.18): a corrupt _absorb_log.json must never abort the
+// absorb phase. The real scriptorium corruption was a complete JSON
+// object followed by a foreign-schema fragment an envelope action
+// appended. loadAbsorbLog recovers the valid leading object via
+// json.Decoder (reads exactly one value, ignores trailing bytes); the
+// caller's saveAbsorbLog then rewrites the file clean.
+func TestLoadAbsorbLog_SalvagesTrailingGarbage(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "log.json")
+	// Valid object, then the exact corruption shape observed in
+	// scriptorium: an LLM-fabricated record appended after the close.
+	body := `{
+  "good-one.md": {"sha":"a1","at":"2026-05-01T10:00:00Z"},
+  "good-two.md": {"sha":"b2","at":"2026-05-02T11:00:00Z"}
+}{"x-com-status-2046-s-42.md", "status": "absorbed", "reason": "Tweet content was never captured (empty blockquote).", "rule": 7}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	log, err := loadAbsorbLog(path)
+	if err != nil {
+		t.Fatalf("corrupt log must not error (fail-open); got %v", err)
+	}
+	if len(log) != 2 {
+		t.Fatalf("expected 2 recovered entries from the valid prefix, got %d: %+v", len(log), log)
+	}
+	if log["good-one.md"].SHA != "a1" || log["good-two.md"].At != "2026-05-02T11:00:00Z" {
+		t.Errorf("recovered entries corrupted: %+v", log)
+	}
+
+	// The caller self-heals by saving the recovered map back. Verify
+	// the rewritten file is now strictly parseable.
+	if err := saveAbsorbLog(path, log); err != nil {
+		t.Fatalf("save recovered log: %v", err)
+	}
+	reread, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var strict AbsorbLog
+	if err := json.Unmarshal(reread, &strict); err != nil {
+		t.Errorf("self-healed file is still not strictly parseable: %v", err)
+	}
+	if len(strict) != 2 {
+		t.Errorf("self-healed file lost entries: %+v", strict)
+	}
+}
+
+func TestLoadAbsorbLog_TotalGarbageFailsOpenEmpty(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "log.json")
+	if err := os.WriteFile(path, []byte("not json at all <<<>>> {{{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	log, err := loadAbsorbLog(path)
+	if err != nil {
+		t.Fatalf("unparseable log must fail open, not error; got %v", err)
+	}
+	if log == nil || len(log) != 0 {
+		t.Errorf("unparseable log should yield empty map; got %+v", log)
+	}
+}
+
+func TestLoadAbsorbLog_CleanFileUnaffected(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "log.json")
+	body := []byte(`{"a.md":{"sha":"s","at":"2026-05-01T00:00:00Z"}}`)
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	log, err := loadAbsorbLog(path)
+	if err != nil || len(log) != 1 || log["a.md"].SHA != "s" {
+		t.Errorf("clean file regressed: log=%+v err=%v", log, err)
+	}
+}

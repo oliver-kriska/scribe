@@ -70,6 +70,7 @@ Emit EXACTLY ONE JSON object to stdout. No prose. No code fences.
 ### Path rules
 
 - Wiki dirs only: `wiki/`, `projects/`, `research/`, `solutions/`, `tools/`, `decisions/`, `patterns/`, `ideas/`, `people/`, `sessions/`.
+- NEVER target a file whose basename starts with `_` (e.g. `_index.md`, `_backlinks.json`, `_absorb_log.json`) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 - Pick the directory matching the entity type.
 - Slugify: lowercase, spaces → `-`, strip punctuation, `.md`.
 

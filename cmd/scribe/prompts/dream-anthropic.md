@@ -63,7 +63,7 @@ ONE envelope. Cover:
 - Path must be rooted in wiki/, projects/, research/, solutions/, tools/, decisions/, patterns/, ideas/, people/, sessions/.
 - Use `replace_section` when you only want to swap the body of one `## Heading`. Use `update_frontmatter` for date bumps. Use `append` for decay markers. Use `create` only for stub articles.
 - An empty actions list is legal — emit `"actions": []` if nothing genuinely needs to change. Still include the `log_append`.
-- Do NOT touch `wiki/_index.md` or `wiki/_backlinks.json` — Go rebuilds those.
+- NEVER target ANY file whose basename starts with `_` (e.g. `_index.md`, `_backlinks.json`, `_absorb_log.json`, `_hot.md`, `_staleness.jsonl`). Scribe generates these and writing one corrupts the KB. The executor rejects them. Use `create` for a new file; use `append` only for a file you were shown exists.
 
 ## Output reminder
 

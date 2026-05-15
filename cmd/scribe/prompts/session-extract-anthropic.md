@@ -48,6 +48,7 @@ You are extracting knowledge from one Claude Code session for project **{{PROJEC
 - Always emit one `sessions_log_append` per session id in `SESSION_ID_LIST`.
 - Frontmatter: `title`, `type`, `created: {{TODAY}}`, `updated: {{TODAY}}`, `domain: {{DOMAIN}}`, `confidence`, `tags` (≥3), `related` (array of `"[[Title]]"` strings), `sources` (array containing `session:<id>`).
 - ≤150 lines per article. Quote claims with `> "..."\n> — Source: session:<id>`.
+- NEVER target a file whose basename starts with `_` (e.g. `_index.md`, `_backlinks.json`, `_absorb_log.json`) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 - For rolling_memory_append, target must be `learnings` or `decisions-log`.
 
 ## Output reminder

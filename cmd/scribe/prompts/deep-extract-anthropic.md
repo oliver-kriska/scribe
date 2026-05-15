@@ -43,6 +43,7 @@ Frontmatter required: `title`, `type`, `created: {{TODAY}}`, `updated: {{TODAY}}
 
 - Empty actions list legal: `"actions": []`.
 - Path rooted in wiki/, projects/, decisions/, patterns/, solutions/, tools/, research/, ideas/, people/, sessions/.
+- NEVER target a file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 - ≤150 lines per article.
 - Quote load-bearing claims as `> "..."\n> — Source: <file>`.
 - ALWAYS include the log_append meta op.

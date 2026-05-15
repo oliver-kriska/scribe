@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -73,8 +74,18 @@ func (al *AbsorbLog) UnmarshalJSON(data []byte) error {
 
 // loadAbsorbLog reads wiki/_absorb_log.json. Missing file returns an
 // empty log (not an error) — first-run idempotency means absent ==
-// "nothing absorbed yet". Read errors fall through to nil + error so
-// the caller can decide whether to abort.
+// "nothing absorbed yet".
+//
+// Resilience (0.2.18): a corrupt log no longer aborts the absorb
+// phase. The only corruption pattern seen in the wild is a complete
+// JSON object followed by trailing garbage — an LLM-fabricated record
+// an envelope action appended onto the file before the executor
+// learned to reject _-prefixed targets. json.Decoder reads exactly
+// one value and stops, recovering the valid leading object; the
+// caller's saveAbsorbLog then rewrites the file clean (self-heal). If
+// even the leading object is unparseable we fail open with an empty
+// log: absorb re-evaluates by content hash (checkAbsorbDecision
+// dedupes), which is wasteful but correct and never blocks the run.
 func loadAbsorbLog(path string) (AbsorbLog, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -84,13 +95,24 @@ func loadAbsorbLog(path string) (AbsorbLog, error) {
 		return nil, fmt.Errorf("read absorb log: %w", err)
 	}
 	var log AbsorbLog
-	if err := json.Unmarshal(data, &log); err != nil {
-		return nil, fmt.Errorf("parse absorb log: %w", err)
+	if uerr := json.Unmarshal(data, &log); uerr == nil {
+		if log == nil {
+			log = AbsorbLog{}
+		}
+		return log, nil
 	}
-	if log == nil {
-		log = AbsorbLog{}
+	// Strict parse failed — attempt single-value salvage.
+	dec := json.NewDecoder(bytes.NewReader(data))
+	var salvaged AbsorbLog
+	if derr := dec.Decode(&salvaged); derr == nil {
+		if salvaged == nil {
+			salvaged = AbsorbLog{}
+		}
+		logMsg("absorb", "warn: _absorb_log.json had trailing garbage — recovered %d entries, rewriting clean on next save", len(salvaged))
+		return salvaged, nil
 	}
-	return log, nil
+	logMsg("absorb", "warn: _absorb_log.json unparseable — treating as empty; absorb re-evaluates by content hash")
+	return AbsorbLog{}, nil
 }
 
 // saveAbsorbLog writes the log atomically (tmp + rename) to avoid

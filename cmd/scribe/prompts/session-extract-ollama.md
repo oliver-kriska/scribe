@@ -43,6 +43,7 @@ Extract project-specific knowledge from one Claude Code session for **{{PROJECT}
 - Empty actions list is legal: `"actions": []`.
 - Frontmatter required keys: title, type, created: {{TODAY}}, updated: {{TODAY}}, domain: {{DOMAIN}}, confidence (low|medium|high), tags (≥3 kebab-case), related (array of "[[Title]]" strings), sources (array containing "session:<id>").
 - Path rooted in: wiki/, projects/, research/, solutions/, tools/, decisions/, patterns/, ideas/, people/, sessions/.
+- NEVER target a file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 - ≤150 lines per article.
 - Optional rolling_memory_append: `{"op": "rolling_memory_append", "domain": "{{DOMAIN}}", "target": "learnings", "content": "one paragraph"}`. Target MUST be `learnings` or `decisions-log`.
 
