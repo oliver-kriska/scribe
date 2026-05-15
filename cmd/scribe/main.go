@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -87,9 +88,74 @@ func main() {
 	err := ctx.Run()
 	// Command path like "sync", "ingest url", "cron install". Useful for grouping.
 	cmdPath := ctx.Command()
-	writeRunRecord(cmdPath, started, err)
+	// Read-only invocations must not append a run record — that file
+	// auto-commits to the KB repo, so a `scribe doctor`/`status` or any
+	// `--dry-run` would make diagnostics self-modifying (Codex finding,
+	// 2026-05-15).
+	if !commandIsReadOnly(ctx) {
+		writeRunRecord(cmdPath, started, err)
+	}
 
 	ctx.FatalIfErrorf(err)
+}
+
+// readOnlyCmd is implemented by commands that never write KB state.
+// Used for always-read-only diagnostics (doctor, status) that have no
+// --dry-run flag to key off. --dry-run invocations of mutating
+// commands are detected generically in commandIsReadOnly, so the bulk
+// of commands need no boilerplate.
+type readOnlyCmd interface{ ReadOnly() bool }
+
+// addrOf returns an addressable pointer form of v so a pointer-receiver
+// method (ReadOnly()) can be invoked. kong-bound fields are usually
+// already addressable; if not, a one-shot copy is made (ReadOnly()
+// returns a constant for the read-only commands, so the copy is safe).
+func addrOf(v reflect.Value) reflect.Value {
+	if v.Kind() == reflect.Pointer {
+		return v
+	}
+	if v.CanAddr() {
+		return v.Addr()
+	}
+	p := reflect.New(v.Type())
+	p.Elem().Set(v)
+	return p
+}
+
+// commandIsReadOnly reports whether the selected command performs no
+// KB-state writes, so main() can skip the run-record append. Two
+// signals, checked against the Kong-selected leaf command:
+//
+//  1. it implements readOnlyCmd and returns true (doctor, status), or
+//  2. it carries a `DryRun bool` field that is currently true — the
+//     project-wide convention for "show what would happen, write
+//     nothing" (~20 commands; handled here so none need a method).
+func commandIsReadOnly(ctx *kong.Context) bool {
+	sel := ctx.Selected()
+	if sel == nil || !sel.Target.IsValid() {
+		return false
+	}
+	// kong's Node.Target is the command struct *value*; ReadOnly() has
+	// a pointer receiver, so test the addressable pointer form too
+	// (doctor/status rely solely on the interface — they have no
+	// DryRun field to fall back on).
+	for _, v := range []reflect.Value{addrOf(sel.Target), sel.Target} {
+		if v.IsValid() && v.CanInterface() {
+			if ro, ok := v.Interface().(readOnlyCmd); ok && ro.ReadOnly() {
+				return true
+			}
+		}
+	}
+	v := sel.Target
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+	if v.Kind() == reflect.Struct {
+		if f := v.FieldByName("DryRun"); f.IsValid() && f.Kind() == reflect.Bool && f.Bool() {
+			return true
+		}
+	}
+	return false
 }
 
 // redactArgs masks token-bearing URLs before they're persisted to

@@ -99,6 +99,16 @@ func (s *SyncCmd) Run() error {
 		defer releaseLock(lf)
 	}
 
+	// First-use config discoverability: append the commented `absorb:`
+	// defaults block so the user finds the knobs next time they edit
+	// scribe.yaml. No-op when the key already exists or
+	// SCRIBE_NO_CONFIG_BACKFILL is set. Only a real sync run rewrites
+	// config — never --dry-run, and never a read-only command
+	// (loadConfig is pure as of 0.2.21).
+	if !s.DryRun {
+		maybeBackfillAbsorbBlock(root)
+	}
+
 	logMsg("sync", "starting")
 
 	// Phase 0: pull latest from remote so teammates' committed pages show

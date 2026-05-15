@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -46,6 +47,10 @@ type check struct {
 	Fix     string      `json:"fix,omitempty"`
 }
 
+// ReadOnly marks doctor as a pure diagnostic — main() skips the
+// run-record append so a health check never mutates the KB it audits.
+func (c *DoctorCmd) ReadOnly() bool { return true }
+
 func (c *DoctorCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
@@ -61,7 +66,7 @@ func (c *DoctorCmd) Run() error {
 		}
 		switch name {
 		case "deps":
-			all = append(all, checkDeps()...)
+			all = append(all, checkDeps(cfg)...)
 		case "config":
 			all = append(all, checkConfig(root, cfg)...)
 		case "localmode":
@@ -112,7 +117,12 @@ func (c *DoctorCmd) Run() error {
 
 // ---- Dependencies ----
 
-func checkDeps() []check {
+// runtimeGOOS is runtime.GOOS, indirected through a package var so the
+// capability-aware FDA branch can be exercised for non-darwin in tests
+// without a cross-compile. Production never reassigns it.
+var runtimeGOOS = runtime.GOOS
+
+func checkDeps(cfg *ScribeConfig) []check {
 	var out []check
 	for _, d := range scribeDeps {
 		path, err := exec.LookPath(d.Binary)
@@ -126,35 +136,56 @@ func checkDeps() []check {
 		}
 	}
 
-	// Full Disk Access probe — capture-imessage needs chat.db readable.
-	// On modern macOS (10.15+) TCC tracks the *binary being executed* per
-	// inode+cdhash, not the parent Terminal. So the fix is always "grant FDA
-	// to the scribe binary itself", which `scribe fda` drives interactively.
-	chatDB := filepath.Join(os.Getenv("HOME"), "Library", "Messages", "chat.db")
-	if f, err := os.Open(chatDB); err == nil {
-		_ = f.Close()
-		out = append(out, check{Section: "deps", Name: "chat.db (FDA)", Status: statusOK, Detail: "readable"})
-	} else {
+	// Full Disk Access probe is macOS- AND capture-specific. README
+	// documents capture as optional and Linux as supported, and
+	// `scribe fda` is macOS-only — so an unreadable chat.db is only a
+	// hard FAIL when the user is actually on macOS *and* has capture
+	// configured. Off that happy-path it's a skip/warn, never a FAIL
+	// (Codex finding, 2026-05-15: doctor reported a false hard failure
+	// on Linux and on macOS with capture intentionally unused).
+	captureConfigured := len(resolveSelfChatHandles(cfg.Capture)) > 0
+	switch {
+	case runtimeGOOS != "darwin":
+		// chat.db / TCC Full Disk Access is a macOS concept; there is
+		// nothing to probe on Linux. Stay silent rather than emit a
+		// confusing row on a platform where it can never apply.
+	case !captureConfigured:
 		out = append(out, check{
-			Section: "deps", Name: "chat.db (FDA)", Status: statusFail,
-			Detail: "unreadable — `scribe capture` will fail",
-			Fix:    "run `scribe fda` (grants Full Disk Access to the scribe binary)",
+			Section: "deps", Name: "chat.db (FDA)", Status: statusWarn,
+			Detail: "capture not configured (no capture.self_chat_handles) — FDA probe skipped",
+			Fix:    "only needed if you want iMessage capture: set capture.self_chat_handles in scribe.yaml",
 		})
-	}
-
-	// Warn about the Homebrew-Cellar / cdhash tax: the FDA grant is keyed to
-	// the exact binary inode. Every `brew upgrade scribe` replaces the
-	// Cellar-versioned binary, which invalidates the prior grant and makes
-	// capture silently start failing until the user re-runs `scribe fda`.
-	// This stays a warn (not a fail) because the binary may already be
-	// granted — we only want to pre-empt the next upgrade surprise.
-	if exe, err := os.Executable(); err == nil {
-		if resolved, err := filepath.EvalSymlinks(exe); err == nil && strings.Contains(resolved, "/Cellar/scribe/") {
+	default:
+		// On modern macOS (10.15+) TCC tracks the *binary being
+		// executed* per inode+cdhash, not the parent Terminal, so the
+		// fix is always "grant FDA to the scribe binary itself", which
+		// `scribe fda` drives interactively.
+		chatDB := filepath.Join(os.Getenv("HOME"), "Library", "Messages", "chat.db")
+		if f, err := os.Open(chatDB); err == nil {
+			_ = f.Close()
+			out = append(out, check{Section: "deps", Name: "chat.db (FDA)", Status: statusOK, Detail: "readable"})
+		} else {
 			out = append(out, check{
-				Section: "deps", Name: "FDA (brew upgrade)", Status: statusWarn,
-				Detail: "running from " + resolved + " — the TCC grant is tied to this exact binary and will be invalidated by the next `brew upgrade scribe`",
-				Fix:    "re-run `scribe fda` after every upgrade (until signed builds ship)",
+				Section: "deps", Name: "chat.db (FDA)", Status: statusFail,
+				Detail: "unreadable — `scribe capture` will fail",
+				Fix:    "run `scribe fda` (grants Full Disk Access to the scribe binary)",
 			})
+		}
+
+		// Warn about the Homebrew-Cellar / cdhash tax: the FDA grant
+		// is keyed to the exact binary inode. Every `brew upgrade
+		// scribe` replaces the Cellar-versioned binary, which
+		// invalidates the prior grant and makes capture silently start
+		// failing until the user re-runs `scribe fda`. Only relevant
+		// when capture is actually in use.
+		if exe, err := os.Executable(); err == nil {
+			if resolved, err := filepath.EvalSymlinks(exe); err == nil && strings.Contains(resolved, "/Cellar/scribe/") {
+				out = append(out, check{
+					Section: "deps", Name: "FDA (brew upgrade)", Status: statusWarn,
+					Detail: "running from " + resolved + " — the TCC grant is tied to this exact binary and will be invalidated by the next `brew upgrade scribe`",
+					Fix:    "re-run `scribe fda` after every upgrade (until signed builds ship)",
+				})
+			}
 		}
 	}
 	return out

@@ -72,11 +72,15 @@ absorb:
 	}
 }
 
-// TestLoadConfigBackfillsMissingAbsorbSection confirms that loadConfig
-// appends the commented absorb block when scribe.yaml lacks it. Runtime
-// config still returns defaults regardless; the on-disk merge is for
-// user discoverability.
-func TestLoadConfigBackfillsMissingAbsorbSection(t *testing.T) {
+// TestLoadConfigDoesNotBackfill_RelocatedToExplicitCall locks the
+// 0.2.21 contract change at the original site: loadConfig must NOT
+// rewrite scribe.yaml (it used to, which made `scribe doctor`/`status`
+// and --dry-run self-modifying — Codex finding 2026-05-15). The
+// discoverability backfill moved to maybeBackfillAbsorbBlock, invoked
+// only from mutating entrypoints; this test proves loadConfig is inert
+// and the explicit call still provides it. (Unit-level coverage of
+// each half lives in readonly_contract_test.go.)
+func TestLoadConfigDoesNotBackfill_RelocatedToExplicitCall(t *testing.T) {
 	tmp := t.TempDir()
 	cfgPath := filepath.Join(tmp, "scribe.yaml")
 	original := "owner_name: Test\ndefault_model: sonnet\n"
@@ -84,15 +88,20 @@ func TestLoadConfigBackfillsMissingAbsorbSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = loadConfig(tmp)
-	after, err := os.ReadFile(cfgPath)
+	afterLoad, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasTopLevelKey(string(after), "absorb") {
-		t.Error("absorb section should be backfilled into scribe.yaml")
+	if string(afterLoad) != original {
+		t.Errorf("loadConfig must not touch scribe.yaml; got:\n%s", afterLoad)
 	}
-	// Original content must survive.
-	if !strings.Contains(string(after), "owner_name: Test") {
+	// The relocated explicit call still provides discoverability.
+	maybeBackfillAbsorbBlock(tmp)
+	afterBackfill, _ := os.ReadFile(cfgPath)
+	if !hasTopLevelKey(string(afterBackfill), "absorb") {
+		t.Error("maybeBackfillAbsorbBlock should append the absorb block")
+	}
+	if !strings.Contains(string(afterBackfill), "owner_name: Test") {
 		t.Error("existing content was damaged during backfill")
 	}
 }

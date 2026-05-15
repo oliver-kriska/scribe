@@ -1582,19 +1582,44 @@ func loadConfig(root string) *ScribeConfig {
 	applyExtractDefaults(&cfg.Extract, cfg.LLM)
 	applyMetaDefaults(&cfg.Meta)
 
-	// First-use backfill: if the on-disk scribe.yaml has no `absorb:` key,
-	// append the commented defaults block so the user can discover the knobs
-	// next time they edit the file. Best-effort; silent on failure (runtime
-	// still has defaults merged in memory). Gated by SCRIBE_NO_CONFIG_BACKFILL
-	// for users who want a strictly read-only loadConfig.
-	if os.Getenv("SCRIBE_NO_CONFIG_BACKFILL") == "" && !hasTopLevelKey(string(data), "absorb") {
-		appendAbsorbBlockQuiet(cfgPath, string(data))
-	}
+	// loadConfig is pure: it never writes scribe.yaml. The first-use
+	// `absorb:` backfill moved to maybeBackfillAbsorbBlock, invoked only
+	// from mutating entrypoints (sync, init). Before, the backfill fired
+	// from *any* loadConfig caller — so `scribe doctor`/`status` and
+	// `--dry-run` silently rewrote the user's config (Codex finding,
+	// 2026-05-15). Diagnostics and dry runs must not mutate state.
 	return cfg
 }
 
+// maybeBackfillAbsorbBlock appends the commented `absorb:` defaults
+// block to scribe.yaml when the file has no top-level `absorb:` key,
+// so the user can discover the knobs next time they edit it. This is
+// the one place config can be rewritten — call it only from commands
+// that already mutate KB state (sync, init), never from loadConfig or
+// any read-only path.
+//
+// Best-effort and silent on every failure: the runtime already has
+// defaults merged in memory, so a read-only filesystem, permission
+// issue, or missing file is non-fatal. Gated by
+// SCRIBE_NO_CONFIG_BACKFILL=1 for users who want scribe.yaml left
+// strictly untouched.
+func maybeBackfillAbsorbBlock(root string) {
+	if os.Getenv("SCRIBE_NO_CONFIG_BACKFILL") != "" {
+		return
+	}
+	cfgPath := filepath.Join(root, "scribe.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return
+	}
+	if hasTopLevelKey(string(data), "absorb") {
+		return
+	}
+	appendAbsorbBlockQuiet(cfgPath, string(data))
+}
+
 // appendAbsorbBlockQuiet appends absorbDefaultYAMLBlock() to cfgPath. Silent
-// on any error — loadConfig still returns a usable Config with defaults
+// on any error — the runtime still has a usable Config with defaults
 // merged in memory, so a read-only filesystem or permission issue is
 // non-fatal.
 func appendAbsorbBlockQuiet(cfgPath, existing string) {

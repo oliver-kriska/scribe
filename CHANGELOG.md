@@ -2,6 +2,47 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.21] — 2026-05-15
+
+Read-only / portability contract hardening. Three contract violations
+surfaced by a Codex CLI review of this repo (2026-05-15), all verified
+against the code before fixing.
+
+### Why
+- `scribe doctor` / `scribe status` and any `--dry-run` appended a run
+  record to `output/runs/` (which auto-commits to the KB repo) — so
+  diagnostics and previews were self-modifying.
+- `loadConfig` rewrote `scribe.yaml` (temp-write + rename) on *any*
+  invocation missing a top-level `absorb:` key, including read-only
+  ones — a hidden write on every inspect.
+- `doctor` hard-FAILed when `~/Library/Messages/chat.db` was
+  unreadable and pointed at the macOS-only `scribe fda`, even on
+  Linux (README-supported) or on macOS with capture intentionally
+  unused — a false hard failure off the capture happy-path.
+
+### Change
+- New optional `ReadOnly()` interface; `main()` skips the run-record
+  write when the selected command is read-only. `doctor`/`status`
+  implement it; every `--dry-run` invocation is detected generically
+  via the `DryRun` field (no per-command boilerplate).
+- `loadConfig` is now pure — it never writes. The first-use `absorb:`
+  discoverability backfill moved to `maybeBackfillAbsorbBlock`,
+  invoked only from the mutating entrypoints (`sync` on a real run;
+  `init` already had its own explicit, confirmable backfill). UX is
+  unchanged (cron sync backfills within one cycle).
+  `SCRIBE_NO_CONFIG_BACKFILL=1` still forces strict purity everywhere.
+- `doctor`'s FDA probe is capability-aware: only a hard FAIL on
+  `darwin` *and* with capture configured; otherwise a skip (non-
+  darwin) or `warn` (macOS, capture unconfigured). Never blocks
+  Linux / capture-off setups.
+
+### Tests
+- `commandIsReadOnly` gate (doctor/status/`--dry-run` true; real
+  `sync` false), `loadConfig` purity, `maybeBackfillAbsorbBlock`
+  (append / `SCRIBE_NO_CONFIG_BACKFILL` / existing-key no-op), and
+  FDA capability matrix (Linux emits no FAIL via a testable
+  `runtimeGOOS` seam; macOS+capture-off warns, never FAILs).
+
 ## [0.2.20] — 2026-05-15
 
 FxTwitter empty-tweet fix. An empty-text tweet (deleted, protected,

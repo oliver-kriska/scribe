@@ -20,6 +20,10 @@ import (
 // Also exposed from `scribe doctor` so doctor acts as a superset.
 type StatusCmd struct{}
 
+// ReadOnly marks status as never writing KB state — main() skips the
+// run-record append so the scoreboard stays a pure read.
+func (s *StatusCmd) ReadOnly() bool { return true }
+
 func (s *StatusCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
