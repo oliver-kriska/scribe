@@ -50,26 +50,52 @@ func fetchCodexTranscript(rolloutPath string) ([]sessionTurn, error)
 
 Parses the rollout JSONL line-by-line (reuse the `bufio.Scanner` +
 `codexMaxFirstLineBytes` ceiling pattern from `codex.go`). Each line
-is `{"timestamp","type","payload"}` (`codexRolloutEnvelope`). Map
-Codex event types → the existing `sessionTurn{Role, Sequence, Text,
-ToolText}` shape:
+is `{"timestamp","type","payload"}` (`codexRolloutEnvelope`).
 
-| Codex event `type`            | sessionTurn.Role | Source field            |
-| ----------------------------- | ---------------- | ----------------------- |
-| `session_meta`                | (skip)           | already parsed for disc |
-| `event_msg` user message      | `user`           | payload text            |
-| `event_msg` assistant message | `assistant`      | payload text            |
-| `response_item` tool call     | `tool`           | payload → ToolText      |
-| `response_item` tool result   | `tool`           | payload → ToolText      |
-| anything else                 | `system`         | best-effort text        |
+### Verified schema (probed 2026-05-15, real scribe rollout, 176 lines)
+
+The earlier table in this plan was a **guess and was wrong**. Ground
+truth from a real "review this project" Codex session is pinned at
+`testdata/codex/rollout-transcript.jsonl` (12 representative events,
+private paths + the encrypted-reasoning + base-instructions blobs
+scrubbed). The on-the-wire shape is the **OpenAI Responses-API item
+schema** (`input_text` / `output_text` / `function_call` /
+`function_call_output`), which is stable and documented by OpenAI —
+the parser keys off that, not a Codex-private format.
+
+Two parallel streams exist in every rollout:
+
+- **`response_item`** (137/176 here) — the canonical model I/O stream.
+  **This is the only stream the transcript reader should consume.**
+- **`event_msg`** (37/176) — the UI/telemetry event stream. Every
+  content-bearing `event_msg` (`user_message`, `agent_message`) is a
+  **duplicate** of a `response_item/message`; the rest is noise
+  (`token_count` is the single most frequent event at 24×). Consuming
+  both streams double-counts every turn — the original table's worst
+  trap.
+
+| Envelope `type` | `payload.type` (+`role`) | Maps to | Notes |
+| --------------- | ------------------------ | ------- | ----- |
+| `session_meta`  | —                        | (skip)  | line 0, already parsed by discovery |
+| `turn_context`  | —                        | (skip)  | per-turn config snapshot, no content |
+| `response_item` | `message` role=`user`    | `user`  | `content:[{type:"input_text",text}]` — concat text parts |
+| `response_item` | `message` role=`assistant` | `assistant` | `content:[{type:"output_text",text}]`; also has `phase` |
+| `response_item` | `function_call`          | `tool` → ToolText | `{name, arguments(JSON str), call_id}` |
+| `response_item` | `function_call_output`   | `tool` → ToolText | `{call_id, output(str)}`; pair via `call_id` |
+| `response_item` | `reasoning`              | (skip)  | **`content:null`, `encrypted_content` only — UNRECOVERABLE.** Plan's "best-effort text" was impossible |
+| `event_msg`     | * (any)                  | (skip)  | duplicates `response_item` content + telemetry (`token_count`, `task_started/complete`) |
+
+Net: the reader is **smaller** than the original table implied — one
+envelope type (`response_item`), four content sub-cases, everything
+else skipped. No "anything else → system" catch-all (it would ingest
+`token_count` telemetry as fake turns).
 
 `Sequence` = line index (rollouts are already append-ordered, unlike
-ccrider which needed `ORDER BY sequence, id`). The exact payload
-shapes per event type need a one-time probe of a real rollout
-(`~/.codex/sessions/2026/*/*/rollout-*.jsonl`) — Codex's
-`message`/`tool_call` schemas differ from Claude's and aren't
-documented; pin them with a `testdata/codex/` fixture the same way
-0.2.15 pinned `session_meta`.
+ccrider which needed `ORDER BY sequence, id`). The first user
+`response_item/message` is a synthetic `<environment_context>` block
+(cwd/shell/date) Codex injects — the reader should drop a leading
+user turn whose text is wholly an `<environment_context>` element so
+it doesn't pollute triage scoring.
 
 Robustness: a single malformed line is skipped (not fatal) — same
 posture as `readCodexSessionMeta`. Empty transcript → empty slice, no
