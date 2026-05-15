@@ -81,11 +81,24 @@ func (al *AbsorbLog) UnmarshalJSON(data []byte) error {
 // JSON object followed by trailing garbage — an LLM-fabricated record
 // an envelope action appended onto the file before the executor
 // learned to reject _-prefixed targets. json.Decoder reads exactly
-// one value and stops, recovering the valid leading object; the
-// caller's saveAbsorbLog then rewrites the file clean (self-heal). If
-// even the leading object is unparseable we fail open with an empty
-// log: absorb re-evaluates by content hash (checkAbsorbDecision
-// dedupes), which is wasteful but correct and never blocks the run.
+// one value and stops, recovering the valid leading object. If even
+// the leading object is unparseable we fail open with an empty log:
+// absorb re-evaluates by content hash (checkAbsorbDecision dedupes),
+// which is wasteful but correct and never blocks the run.
+//
+// Eager heal (0.2.19): when salvage recovers a prefix, loadAbsorbLog
+// rewrites the file clean immediately rather than waiting for the
+// caller's article-completion saveAbsorbLog. The original design left
+// the corrupt file in place until an article finished pass-2 — on a
+// 27B model at parallel=1 that's 60-90 min, and if the run was
+// interrupted first the heal never persisted and the next run
+// re-evaluated the whole backlog from the same corrupt state (an
+// effective cross-run loop). Healing at read time makes the repair
+// durable the instant any code path (absorb, ingest, estimate) opens
+// the log. The total-garbage path deliberately does NOT rewrite —
+// overwriting an unrecoverable file with an empty log would destroy
+// whatever a human might want to inspect; we only ever clobber a file
+// we successfully recovered the real data from.
 func loadAbsorbLog(path string) (AbsorbLog, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -108,10 +121,14 @@ func loadAbsorbLog(path string) (AbsorbLog, error) {
 		if salvaged == nil {
 			salvaged = AbsorbLog{}
 		}
-		logMsg("absorb", "warn: _absorb_log.json had trailing garbage — recovered %d entries, rewriting clean on next save", len(salvaged))
+		if serr := saveAbsorbLog(path, salvaged); serr != nil {
+			logMsg("absorb", "warn: _absorb_log.json salvaged %d entries but eager rewrite failed (%v) — caller save will retry", len(salvaged), serr)
+		} else {
+			logMsg("absorb", "warn: _absorb_log.json had trailing garbage — recovered %d entries and rewrote clean", len(salvaged))
+		}
 		return salvaged, nil
 	}
-	logMsg("absorb", "warn: _absorb_log.json unparseable — treating as empty; absorb re-evaluates by content hash")
+	logMsg("absorb", "warn: _absorb_log.json unparseable — treating as empty; absorb re-evaluates by content hash (file left intact for inspection)")
 	return AbsorbLog{}, nil
 }
 

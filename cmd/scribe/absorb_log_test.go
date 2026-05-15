@@ -202,13 +202,12 @@ func TestFindDupName_EmptyShaReturnsEmpty(t *testing.T) {
 	}
 }
 
-// Layer 3 (0.2.18): a corrupt _absorb_log.json must never abort the
-// absorb phase. The real scriptorium corruption was a complete JSON
-// object followed by a foreign-schema fragment an envelope action
-// appended. loadAbsorbLog recovers the valid leading object via
-// json.Decoder (reads exactly one value, ignores trailing bytes); the
-// caller's saveAbsorbLog then rewrites the file clean.
-func TestLoadAbsorbLog_SalvagesTrailingGarbage(t *testing.T) {
+// Layer 3 (0.2.18) + eager heal (0.2.19): a corrupt _absorb_log.json
+// must never abort the absorb phase, AND loadAbsorbLog rewrites it
+// clean immediately — no caller save required. The real scriptorium
+// corruption was a complete JSON object followed by a foreign-schema
+// fragment an envelope action appended.
+func TestLoadAbsorbLog_SalvagesAndEagerHeals(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "log.json")
 	// Valid object, then the exact corruption shape observed in
@@ -224,35 +223,42 @@ func TestLoadAbsorbLog_SalvagesTrailingGarbage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("corrupt log must not error (fail-open); got %v", err)
 	}
-	if len(log) != 2 {
-		t.Fatalf("expected 2 recovered entries from the valid prefix, got %d: %+v", len(log), log)
-	}
-	if log["good-one.md"].SHA != "a1" || log["good-two.md"].At != "2026-05-02T11:00:00Z" {
-		t.Errorf("recovered entries corrupted: %+v", log)
+	if len(log) != 2 || log["good-one.md"].SHA != "a1" || log["good-two.md"].At != "2026-05-02T11:00:00Z" {
+		t.Fatalf("salvage recovered wrong data: %+v", log)
 	}
 
-	// The caller self-heals by saving the recovered map back. Verify
-	// the rewritten file is now strictly parseable.
-	if err := saveAbsorbLog(path, log); err != nil {
-		t.Fatalf("save recovered log: %v", err)
-	}
+	// 0.2.19 contract: the file on disk is ALREADY clean — no caller
+	// saveAbsorbLog needed. This is what makes the heal interruption-
+	// safe (a run killed before any article completes still leaves the
+	// log repaired).
 	reread, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var strict AbsorbLog
 	if err := json.Unmarshal(reread, &strict); err != nil {
-		t.Errorf("self-healed file is still not strictly parseable: %v", err)
+		t.Errorf("eager heal did not rewrite the file clean (still corrupt): %v", err)
 	}
 	if len(strict) != 2 {
-		t.Errorf("self-healed file lost entries: %+v", strict)
+		t.Errorf("eager-healed file lost entries: %+v", strict)
+	}
+	// A second load of the now-clean file takes the fast path and is
+	// byte-stable (idempotent — no perpetual rewrite churn).
+	before, _ := os.ReadFile(path)
+	if _, err := loadAbsorbLog(path); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Error("re-loading a clean file rewrote it (should be a no-op fast path)")
 	}
 }
 
-func TestLoadAbsorbLog_TotalGarbageFailsOpenEmpty(t *testing.T) {
+func TestLoadAbsorbLog_TotalGarbageFailsOpenAndLeavesFileIntact(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "log.json")
-	if err := os.WriteFile(path, []byte("not json at all <<<>>> {{{"), 0o644); err != nil {
+	garbage := []byte("not json at all <<<>>> {{{")
+	if err := os.WriteFile(path, garbage, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	log, err := loadAbsorbLog(path)
@@ -261,6 +267,16 @@ func TestLoadAbsorbLog_TotalGarbageFailsOpenEmpty(t *testing.T) {
 	}
 	if log == nil || len(log) != 0 {
 		t.Errorf("unparseable log should yield empty map; got %+v", log)
+	}
+	// Eager heal must NOT clobber an unrecoverable file — a human may
+	// want to inspect it. Only files we successfully salvaged get
+	// rewritten.
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(garbage) {
+		t.Errorf("total-garbage file was overwritten (should be left intact for inspection); got %q", string(after))
 	}
 }
 

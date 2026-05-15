@@ -2,6 +2,49 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.19] — 2026-05-15
+
+Eager absorb-log heal. Follow-up to 0.2.18's salvage: `loadAbsorbLog`
+now rewrites a recovered log clean **immediately**, instead of relying
+on the caller's article-completion `saveAbsorbLog`.
+
+### Why
+- 0.2.18 salvaged the corrupt log in memory but only persisted the
+  repair when an article finished pass-2 and the caller saved. On
+  scriptorium's config (gemma3:27b, `pass2_parallel: 1`) the first
+  article takes 60-90 min of serial pass-2; a run interrupted before
+  then left the file corrupt, so the next run re-evaluated the whole
+  backlog from the same broken state — an effective cross-run loop
+  that looked like "sync is stuck" (observed: a 77-min run with the
+  log still unhealed because no article had completed yet).
+
+### Change
+- `loadAbsorbLog`, on successful single-value salvage, calls
+  `saveAbsorbLog(path, salvaged)` before returning. The heal is now
+  durable the instant *any* code path (absorb, ingest, estimate)
+  opens the log — interruption-safe.
+- The total-garbage fail-open path deliberately does **not** rewrite:
+  overwriting an unrecoverable file with an empty log would destroy
+  whatever a human might want to inspect. Only files we successfully
+  recovered the real data from get clobbered.
+- Clean files still take the strict-parse fast path with zero writes
+  (idempotent — no rewrite churn on every load).
+
+### Tests
+- `TestLoadAbsorbLog_SalvagesAndEagerHeals`: file on disk is clean
+  immediately after `loadAbsorbLog` with no caller save; a second
+  load is byte-stable.
+- `TestLoadAbsorbLog_TotalGarbageFailsOpenAndLeavesFileIntact`:
+  unrecoverable file is left untouched for inspection.
+
+### Operational note (not code)
+- scriptorium `scribe.yaml`: `absorb.strictness` flipped `medium →
+  high`. The raw/ backlog was 328 articles dominated by 59 x.com
+  captures (many empty-blockquote failed fetches) all getting the
+  full two-pass gemma3:27b absorb. `high` restricts auto-absorb to
+  `absorb: true` / named-domain articles. Config-only, in the user's
+  KB, not this repo.
+
 ## [0.2.18] — 2026-05-15
 
 Envelope executor hardening. A single misbehaving envelope action could
