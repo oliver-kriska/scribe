@@ -2,6 +2,45 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.20] — 2026-05-15
+
+FxTwitter empty-tweet fix. An empty-text tweet (deleted, protected,
+media-only, or one FxTwitter couldn't extract) is now a **failed**
+fetch instead of a fake success.
+
+### Why
+- `fetchFxTwitter` returned success whenever `code==200 && tweet.id
+  != ""` — it never checked that the tweet actually had text. A
+  deleted/protected tweet still has a valid id, so it produced a
+  ~12-word attribution-only body (`> ` empty blockquote + `— @user
+  on <date>` + original-link) reported as `fetched_via: fxtwitter`.
+- That fake-success article landed in `raw/articles/`, cleared the
+  stub heuristics just enough to look real, and absorb burned a
+  gemma3:27b two-pass on zero content. Worse, `capture --refetch`
+  re-"succeeded" on it every run (non-empty boilerplate body) so the
+  dead link was never parked — an effective per-link refetch loop.
+  This was a major contributor to scriptorium's x.com backlog (60
+  such captures) and the "Tweet content was never captured (empty
+  blockquote)" absorb log noise.
+
+### Change
+- Extracted the response→result mapping into `fxTweetToResult` (pure,
+  unit-testable without an HTTP round-trip) and added an
+  empty/whitespace `tweet.text` guard that returns an error.
+- An empty tweet now falls through to the next fetch tier
+  (trafilatura → jina) and ultimately the intentional stub/park/
+  refetch path: written as `fetched_via: stub`, skipped by absorb,
+  parked in `wiki/_unfetched-links.md`, terminal (no loop).
+- `trafilatura` and `jina` already rejected empty output; this brings
+  FxTwitter in line with the other two tiers.
+
+### Operational
+- Existing fake-success x.com articles already in a KB are unaffected
+  on disk, but with scriptorium at `strictness: high` (0.2.19) they
+  no longer auto-absorb. They can be cleaned up by hand or left for
+  `capture --refetch`, which will now correctly park the dead ones
+  instead of re-"succeeding" forever.
+
 ## [0.2.19] — 2026-05-15
 
 Eager absorb-log heal. Follow-up to 0.2.18's salvage: `loadAbsorbLog`

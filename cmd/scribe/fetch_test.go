@@ -55,6 +55,63 @@ func TestParseJinaEnvelope(t *testing.T) {
 	})
 }
 
+// TestFxTweetToResult locks down the FxTwitter success/failure
+// decision. The regression that motivated this: an empty-text tweet
+// (deleted / protected / media-only) used to return success with a
+// ~12-word attribution-only body, so it landed in raw/articles as a
+// fake `fetched_via: fxtwitter` article and absorb burned a two-pass
+// on nothing. Empty text must now be an error so the URL falls
+// through to the stub/park/refetch path.
+func TestFxTweetToResult(t *testing.T) {
+	mk := func(code int, id, text string) fxTweetResp {
+		var r fxTweetResp
+		r.Code = code
+		r.Tweet.ID = id
+		r.Tweet.Text = text
+		r.Tweet.Author.Name = "Tobi"
+		r.Tweet.Author.ScreenName = "tobi"
+		r.Tweet.URL = "https://x.com/tobi/status/" + id
+		return r
+	}
+
+	t.Run("real tweet succeeds", func(t *testing.T) {
+		res, err := fxTweetToResult(mk(200, "123", "this is a real tweet with content"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Via != "fxtwitter" {
+			t.Errorf("via = %q, want fxtwitter", res.Via)
+		}
+		if !strings.Contains(res.Body, "this is a real tweet") {
+			t.Errorf("body missing tweet text: %q", res.Body)
+		}
+	})
+
+	t.Run("empty text is a failed fetch", func(t *testing.T) {
+		if _, err := fxTweetToResult(mk(200, "123", "")); err == nil {
+			t.Error("empty tweet text must return an error, not a success")
+		}
+	})
+
+	t.Run("whitespace-only text is a failed fetch", func(t *testing.T) {
+		if _, err := fxTweetToResult(mk(200, "123", "   \n\t  ")); err == nil {
+			t.Error("whitespace-only tweet text must return an error")
+		}
+	})
+
+	t.Run("non-200 code fails", func(t *testing.T) {
+		if _, err := fxTweetToResult(mk(404, "123", "ignored")); err == nil {
+			t.Error("code != 200 must return an error")
+		}
+	})
+
+	t.Run("missing tweet id fails", func(t *testing.T) {
+		if _, err := fxTweetToResult(mk(200, "", "text but no id")); err == nil {
+			t.Error("empty tweet id must return an error")
+		}
+	})
+}
+
 // TestFirstMarkdownHeading covers the H1 extractor used when a fetched
 // article has no explicit title. Priority: markdown H1 first, then first
 // non-empty line (capped at 100 chars), then "Untitled".

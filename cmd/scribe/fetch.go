@@ -141,8 +141,29 @@ func fetchFxTwitter(ctx context.Context, rawURL string) (fetchResult, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return fetchResult{}, fmt.Errorf("fxtwitter decode: %w", err)
 	}
+	return fxTweetToResult(data)
+}
+
+// fxTweetToResult maps a decoded FxTwitter response to a fetchResult.
+// Split out from fetchFxTwitter so the success/failure decision is
+// unit-testable without an HTTP round-trip.
+//
+// An empty (or whitespace-only) tweet text is a FAILED fetch, not a
+// success: it means the tweet was deleted, protected, media-only, or
+// FxTwitter couldn't extract the text. Returning success here was the
+// root cause of content-free "> \n\n— @user ..." raw articles — a few
+// words of attribution boilerplate that cleared no real content but
+// still got `fetched_via: fxtwitter`, so absorb burned a two-pass on
+// them and `capture --refetch` re-"succeeded" forever without ever
+// parking the dead link. trafilatura and jina already reject empty
+// output; this brings FxTwitter in line so the URL falls through to
+// the next tier and ultimately the intentional stub/park/refetch path.
+func fxTweetToResult(data fxTweetResp) (fetchResult, error) {
 	if data.Code != 200 || data.Tweet.ID == "" {
 		return fetchResult{}, fmt.Errorf("fxtwitter: no tweet (code=%d msg=%s)", data.Code, data.Message)
+	}
+	if strings.TrimSpace(data.Tweet.Text) == "" {
+		return fetchResult{}, fmt.Errorf("fxtwitter: empty tweet text (deleted, protected, or media-only) id=%s", data.Tweet.ID)
 	}
 
 	title := fmt.Sprintf("Tweet by %s (@%s)", data.Tweet.Author.Name, data.Tweet.Author.ScreenName)
