@@ -1,6 +1,6 @@
 # scribe
 
-> A single-binary Go CLI that turns your git repos, Claude Code + Codex sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. Cross-project, cron-driven, and runs 100% on local Ollama with zero API spend (v0.2.14+).
+> A single-binary Go CLI that turns your git repos, Claude Code sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. Auto-discovers projects from both Claude Code and Codex. Cross-project, cron-driven, and runs 100% on local Ollama with zero API spend (complete in v0.2.16).
 
 scribe is an LLM-written knowledge base pipeline. It mines:
 
@@ -12,7 +12,7 @@ scribe is an LLM-written knowledge base pipeline. It mines:
 
 It writes a wiki of typed markdown articles (decisions, patterns, learnings, tools, research, projects) with YAML frontmatter and `[[wikilink]]` connections, indexed by qmd for semantic search. The whole pipeline runs on macOS LaunchAgents or Linux cron — set up once with `scribe init` + `scribe cron install`, then your KB grows on its own.
 
-The product is the curated wiki, not raw chunks. Every dense source fans out into multiple entity-first wiki pages via a two-pass absorb. LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities. **As of v0.2.14, every LLM op in scribe — absorb, dream, assess, deep, session-mine, relations migrate — routes through a local Ollama server when `llm.provider: ollama` is set.** Phase 4C/4D/4E ports the four remaining `claude -p` orchestrators onto bounded JSON-envelope subtasks; Go does the file walking and the LLM only sees one envelope per subtask.
+The product is the curated wiki, not raw chunks. Every dense source fans out into multiple entity-first wiki pages via a two-pass absorb. LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities. **As of v0.2.16, every LLM op in scribe — per-project extraction, absorb, dream, assess, deep, session-mine, relations migrate — routes through a local Ollama server when `llm.provider: ollama` is set.** Phase 4C/4D/4E (v0.2.14) ported dream/assess/deep/session-mine onto bounded JSON-envelope subtasks; v0.2.16 closed the last `claude -p` callsite — per-project extraction, the core of a normal `scribe sync`. The maintainer's KB (scriptorium) is 3,445 articles, none typed by hand.
 
 ## Resources
 

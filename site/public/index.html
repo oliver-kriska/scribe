@@ -51,7 +51,7 @@
         "applicationCategory": "DeveloperApplication",
         "applicationSubCategory": "Knowledge Management",
         "operatingSystem": "macOS, Linux",
-        "softwareVersion": "0.2.15",
+        "softwareVersion": "0.2.16",
         "license": "https://opensource.org/licenses/MIT",
         "codeRepository": "https://github.com/oliver-kriska/scribe",
         "programmingLanguage": "Go",
@@ -117,7 +117,7 @@
             "name": "Does scribe require an Anthropic API key?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. As of v0.2.14 every LLM op in scribe — absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. A single line in scribe.yaml flips the whole pipeline: llm.provider: ollama. Recommended local models: gemma3:4b for cheap passes, qwen2.5-coder:14b or gemma3:12b for the heavier ones. Per-op provider/model overrides still work if you want to keep some passes on Anthropic."
+              "text": "No. As of v0.2.16 every LLM op in scribe — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. v0.2.14 ported most of it; v0.2.16 closed the last claude -p callsite (per-project extraction, the core of a normal scribe sync). A single line in scribe.yaml flips the whole pipeline: llm.provider: ollama. Recommended local models: gemma3:4b for cheap passes, qwen2.5-coder:14b or gemma3:12b for the heavier ones. Per-op provider/model overrides still work if you want to keep some passes on Anthropic."
             }
           },
           {
@@ -125,7 +125,7 @@
             "name": "What does it cost to run?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Zero on the local-mode path (Ollama) for the entire pipeline as of v0.2.14 — including the weekly Dream cycle, which used to be the one Anthropic-only op. On the Anthropic-hosted path, contextualize costs roughly $0.0001 per article via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free regardless of backend."
+              "text": "Zero on the local-mode path (Ollama) for the entire pipeline as of v0.2.16 — every claude -p callsite in a normal scribe sync, including per-project extraction and the weekly Dream cycle, now runs locally. On the Anthropic-hosted path, contextualize costs roughly $0.0001 per article via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free regardless of backend."
             }
           },
           {
@@ -630,14 +630,14 @@
   <header class="hero">
     <canvas id="hero-graph" width="1" height="1" aria-hidden="true"></canvas>
     <div class="container">
-      <div class="eyebrow">scribe — v0.2.15 · single-binary Go CLI</div>
+      <div class="eyebrow">scribe — v0.2.16 · single-binary Go CLI</div>
       <h1>Your knowledge base,<br/><span class="accent">written by your tools.</span></h1>
       <p class="lede">
         scribe is a personal, LLM-written knowledge base that grows itself. It
-        mines your git repos, Claude Code sessions, and self-sent links, then
-        compiles a curated, semantically searchable wiki — cross-project,
-        cron-driven, and capable of running fully local on Ollama with zero
-        API spend.
+        mines your git repos, Claude Code sessions, and self-sent links — and
+        auto-discovers projects from both Claude Code and Codex — then compiles
+        a curated, semantically searchable wiki: cross-project, cron-driven, and
+        running 100% on local Ollama with zero API spend.
       </p>
       <div class="cta">
         <a class="btn btn-primary" href="https://github.com/oliver-kriska/scribe">View on GitHub →</a>
@@ -666,16 +666,16 @@
 
       <div class="grid-3">
         <div class="stat">
-          <span class="num">884</span>
-          <span class="lbl">files in maintainer's KB after 2 weeks of normal work</span>
+          <span class="num">3,445</span>
+          <span class="lbl">articles in the maintainer's KB today — 884 of them in the first 2 weeks alone</span>
         </div>
         <div class="stat">
           <span class="num">$0</span>
-          <span class="lbl">API spend possible — full pipeline runs on local Ollama</span>
+          <span class="lbl">API spend — the entire pipeline runs on local Ollama (v0.2.16)</span>
         </div>
         <div class="stat">
           <span class="num">0</span>
-          <span class="lbl">manual notes typed to produce that KB</span>
+          <span class="lbl">notes typed by hand to produce any of it</span>
         </div>
       </div>
     </div>
@@ -895,11 +895,13 @@
           <span class="icon">⌂</span>
           <h3>Fully local-capable, zero API spend</h3>
           <p>
-            <strong>Every</strong> LLM op — absorb, dream, assess, deep, session-mine,
-            relations migrate — routes through <a href="https://ollama.com">Ollama</a>
-            with a single <code>llm.provider: ollama</code> line in <code>scribe.yaml</code>
-            (100% Ollama as of v0.2.14). <code>scribe doctor --section localmode</code>
-            validates the setup before you kick off a sync.
+            <strong>Every</strong> LLM op — project extraction, absorb, dream, assess,
+            deep, session-mine, relations migrate — routes through
+            <a href="https://ollama.com">Ollama</a> with a single
+            <code>llm.provider: ollama</code> line in <code>scribe.yaml</code>. v0.2.16
+            closed the last <code>claude -p</code> callsite in the normal sync flow;
+            <code>scribe doctor --section localmode</code> validates the setup before you
+            kick off a sync.
           </p>
         </div>
 
@@ -1026,12 +1028,14 @@ llm:
       <p>scribe auto-pulls models on first use. Zero manual <code>ollama pull</code> needed.</p>
 
       <p style="margin-top: 18px; padding: 12px 16px; border-left: 3px solid var(--green); background: rgba(110, 231, 167, 0.05); font-size: 14px;">
-        <strong>The asterisk is gone.</strong> Earlier versions left the weekly Dream cycle
-        on <code>claude -p</code> because it depended on Claude Code's tool use. Phase 4C/4D/4E
-        in v0.2.14 ports Dream + assess + deep + session-mine onto bounded JSON-envelope
-        subtasks; Go does the file walking and source gathering, the LLM emits one
-        envelope per task, scribe applies it. Verified end-to-end against a 3445-article
-        KB with <code>gemma3:12b</code>.
+        <strong>The asterisk is gone — for real as of v0.2.16.</strong> Phase 4C/4D/4E in
+        v0.2.14 ported Dream + assess + deep + session-mine onto bounded JSON-envelope
+        subtasks. But the per-project <em>extraction</em> step — the core of a normal
+        <code>scribe sync</code> — was still quietly calling <code>claude -p</code> even with
+        <code>llm.provider: ollama</code> set, so <code>ollama ps</code> stayed empty during
+        syncs. v0.2.16 closed that last callsite with an <code>extract:</code> envelope
+        path. Verified end-to-end against the 3,445-article scriptorium KB on
+        <code>gemma3:12b</code> — a full sync now makes zero Anthropic calls.
       </p>
     </div>
   </section>
@@ -1191,10 +1195,10 @@ llm:
         <dd>RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. <code>claude-memory-compiler</code> runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions <em>before</em> any LLM call, so cheap sessions cost nothing.</dd>
 
         <dt>Does scribe require an Anthropic API key?</dt>
-        <dd>No. <strong>As of v0.2.14 every LLM op in scribe runs end-to-end against a local Ollama server</strong> — absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate. A single line in <code>scribe.yaml</code> flips the whole pipeline: <code>llm.provider: ollama</code>. Recommended local models: <code>gemma3:4b</code> for cheap passes, <code>qwen2.5-coder:14b</code> or <code>gemma3:12b</code> for the heavier ones. Per-op overrides still work if you want to keep some passes on Anthropic.</dd>
+        <dd>No. <strong>As of v0.2.16 every LLM op in scribe runs end-to-end against a local Ollama server</strong> — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate. v0.2.14 ported most of it; v0.2.16 closed the last <code>claude -p</code> callsite (per-project extraction, the core of a normal <code>scribe sync</code>). A single line in <code>scribe.yaml</code> flips the whole pipeline: <code>llm.provider: ollama</code>. Recommended local models: <code>gemma3:4b</code> for cheap passes, <code>qwen2.5-coder:14b</code> or <code>gemma3:12b</code> for the heavier ones. Per-op overrides still work if you want to keep some passes on Anthropic.</dd>
 
         <dt>What does it cost to run?</dt>
-        <dd>Zero on the local-mode path (Ollama) for the entire pipeline as of v0.2.14 — including the weekly Dream cycle, which used to be the one Anthropic-only op. On the Anthropic-hosted path the contextualize pass costs roughly $0.0001 per article via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard Anthropic prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free regardless of backend.</dd>
+        <dd>Zero on the local-mode path (Ollama) for the entire pipeline as of v0.2.16 — every <code>claude -p</code> callsite in a normal <code>scribe sync</code>, including per-project extraction and the weekly Dream cycle, now runs locally. On the Anthropic-hosted path the contextualize pass costs roughly $0.0001 per article via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard Anthropic prices. The triage pre-filter and density scoring are deterministic and never call an LLM, so most session-mining work is free regardless of backend.</dd>
 
         <dt>Does scribe work on Linux?</dt>
         <dd>Yes. macOS gets LaunchAgents via <code>scribe cron install</code>; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (<code>scribe watch</code>) is not cron-friendly on either OS — run it under launchd KeepAlive on macOS, or systemd-user on Linux. The iMessage capture step is macOS-only because it reads <code>chat.db</code>; everything else is portable.</dd>
@@ -1234,7 +1238,7 @@ llm:
 
   <footer>
     <div class="container">
-      <p>scribe — MIT licensed · single-binary Go CLI · v0.2.15 · <a href="https://github.com/oliver-kriska/scribe">github.com/oliver-kriska/scribe</a></p>
+      <p>scribe — MIT licensed · single-binary Go CLI · v0.2.16 · <a href="https://github.com/oliver-kriska/scribe">github.com/oliver-kriska/scribe</a></p>
       <p style="margin-top: 12px; font-size: 12px;">
         Machine-readable views for AI agents:
         <a href="/llms.txt">llms.txt</a> ·
