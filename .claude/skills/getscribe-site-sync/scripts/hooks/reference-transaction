@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# scribe getscribe-site-sync :: reference-transaction hook  [marker: GSS-WARN-v1]
+#
+# WARN-ONLY. This hook NEVER deploys, never spawns an LLM, never runs anything
+# in the background. When a new release tag (refs/tags/vX.Y.Z) is created it
+# prints one reminder to stderr that the getscribe.dev page should be refreshed
+# — a manual decision the maintainer makes by invoking the getscribe-site-sync
+# skill when they choose to. Auto-deploying a public site from a git hook is
+# exactly the kind of hidden magic we don't want.
+set -euo pipefail
+
+STATE="${1:-}"
+# Drain stdin (git feeds ref lines) regardless, so we never SIGPIPE git.
+[ "$STATE" = "committed" ] || { cat >/dev/null 2>&1 || true; exit 0; }
+
+tag=""
+while read -r _old _new ref; do
+  case "$ref" in
+    refs/tags/v[0-9]*.[0-9]*.[0-9]*)
+      case "$_old" in 0000000*) tag="${ref#refs/tags/}";; esac
+      ;;
+  esac
+done
+[ -n "$tag" ] || exit 0
+
+cat >&2 <<EOF
+
+  ┌────────────────────────────────────────────────────────────────┐
+  │  scribe ${tag} tagged — getscribe.dev may now be stale.
+  │  When ready, refresh it manually:
+  │      run the "getscribe-site-sync" skill (audits the changelog,
+  │      fixes any version pins, deploys, verifies the live site).
+  │  Nothing was deployed automatically.
+  └────────────────────────────────────────────────────────────────┘
+EOF
+exit 0

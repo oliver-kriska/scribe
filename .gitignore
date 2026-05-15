@@ -18,7 +18,11 @@
 coverage.txt
 
 # Claude Code session state + research + drops (not for public repo)
-.claude/
+# — except .claude/skills/, which holds project-scoped skills that travel with the repo
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/getscribe-site-sync/
 
 # Logs (scribe writes these under /tmp by default; keep local copies out)
 *.log
