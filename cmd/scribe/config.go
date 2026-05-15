@@ -93,6 +93,7 @@ type ScribeConfig struct {
 	Identities  IdentitiesConfig  `yaml:"identities"`
 	Relations   RelationsConfig   `yaml:"relations"`
 	SessionMine SessionMineConfig `yaml:"session_mine"`
+	Codex       CodexConfig       `yaml:"codex"`
 	Dream       DreamConfig       `yaml:"dream"`
 	Assess      AssessConfig      `yaml:"assess"`
 	DeepIngest  DeepIngestConfig  `yaml:"deep_ingest"`
@@ -272,6 +273,52 @@ type SessionMineConfig struct {
 	// 16384 is the floor for the default TranscriptMaxChars; bump
 	// alongside any TranscriptMaxChars increase.
 	NumCtx int `yaml:"num_ctx"`
+}
+
+// CodexConfig controls C3 Codex session mining: distilling Codex CLI
+// rollouts into the KB via the same triage→envelope→wiki path ccrider
+// sessions use. Discovery (0.2.15) and the AGENTS.md handshake
+// (0.2.17) are always on; mining spends LLM tokens per session, so it
+// is opt-in (matches absorb.atomic_facts' opt-in precedent and avoids
+// surprising existing users' token budget on upgrade). The LLM
+// provider/model/prompt are inherited from session_mine: — Codex
+// mining is ccrider mining with the transcript source swapped, so it
+// shares one config and one prompt family.
+type CodexConfig struct {
+	// Mine enables the pass. Default false — set `codex: { mine: true }`
+	// to turn it on. No-op when codex_sessions_dir is absent (the
+	// common case for users without Codex CLI), so leaving it on in a
+	// shared default config would be harmless, but opt-in is the
+	// safer, more predictable contract.
+	Mine bool `yaml:"mine"`
+	// SessionsMax caps mined Codex sessions per sync run (parallels
+	// sync.max_sessions for ccrider). Default 3.
+	SessionsMax int `yaml:"sessions_max"`
+	// LookbackHours bounds the rollout scan to files modified within
+	// the window — the durable processed-set in
+	// wiki/_codex_sessions_log.json is the real dedup; this just keeps
+	// a cron pass from stat-walking all of ~/.codex/ history. Default
+	// 168 (7 days).
+	LookbackHours int `yaml:"lookback_hours"`
+	// MinScore is the scoreText threshold a rendered transcript must
+	// clear to be worth an LLM extraction. Default 2 — a genuinely
+	// useful coding session trips at least one weighted category.
+	MinScore int `yaml:"min_score"`
+}
+
+// applyCodexDefaults fills zero-valued CodexConfig fields. Mine is
+// left as-is (its zero value false IS the default — opt-in), so a
+// user's explicit `mine: true` is the only way it turns on.
+func applyCodexDefaults(cfg *CodexConfig) {
+	if cfg.SessionsMax <= 0 {
+		cfg.SessionsMax = 3
+	}
+	if cfg.LookbackHours <= 0 {
+		cfg.LookbackHours = 168
+	}
+	if cfg.MinScore <= 0 {
+		cfg.MinScore = 2
+	}
 }
 
 // llmDefaults returns the canonical defaults for LLMConfig. Used by
@@ -1549,6 +1596,7 @@ func loadConfig(root string) *ScribeConfig {
 		applyDeepIngestDefaults(&cfg.DeepIngest, cfg.LLM)
 		applyExtractDefaults(&cfg.Extract, cfg.LLM)
 		applyMetaDefaults(&cfg.Meta)
+		applyCodexDefaults(&cfg.Codex)
 		return cfg
 	}
 	// loadConfig used to swallow yaml.Unmarshal errors silently, which
@@ -1581,6 +1629,7 @@ func loadConfig(root string) *ScribeConfig {
 	applyDeepIngestDefaults(&cfg.DeepIngest, cfg.LLM)
 	applyExtractDefaults(&cfg.Extract, cfg.LLM)
 	applyMetaDefaults(&cfg.Meta)
+	applyCodexDefaults(&cfg.Codex)
 
 	// loadConfig is pure: it never writes scribe.yaml. The first-use
 	// `absorb:` backfill moved to maybeBackfillAbsorbBlock, invoked only
@@ -1673,9 +1722,10 @@ func expandHome(path string) string {
 // listed here: walkArticles still skips it via the underscore rule, but
 // walkAllMarkdown reads it so hub indices contribute wikilinks.
 var skipFiles = map[string]bool{
-	"_backlinks.json":    true,
-	"_absorb_log.json":   true,
-	"_sessions_log.json": true,
+	"_backlinks.json":          true,
+	"_absorb_log.json":         true,
+	"_sessions_log.json":       true,
+	"_codex_sessions_log.json": true,
 }
 
 var (

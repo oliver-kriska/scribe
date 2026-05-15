@@ -321,10 +321,31 @@ func checkCodexSessions(cfg *ScribeConfig) []check {
 	if count >= 5000 {
 		suffix = "5000+ rollouts"
 	}
-	return []check{{
-		Section: "config", Name: "codex_sessions_dir", Status: statusOK,
-		Detail: fmt.Sprintf("%s (%s)", dir, suffix),
-	}}
+	return []check{
+		{
+			Section: "config", Name: "codex_sessions_dir", Status: statusOK,
+			Detail: fmt.Sprintf("%s (%s)", dir, suffix),
+		},
+		codexMiningCheck(cfg),
+	}
+}
+
+// codexMiningCheck surfaces C3 session-mining status. Always statusOK:
+// disabled is a deliberate opt-out, not a misconfiguration. Only
+// reached when codex_sessions_dir exists, so "enabled" here means the
+// pass will actually run.
+func codexMiningCheck(cfg *ScribeConfig) check {
+	if !cfg.Codex.Mine {
+		return check{
+			Section: "config", Name: "codex mining", Status: statusOK,
+			Detail: "disabled (opt-in: set `codex: { mine: true }` in scribe.yaml)",
+		}
+	}
+	return check{
+		Section: "config", Name: "codex mining", Status: statusOK,
+		Detail: fmt.Sprintf("enabled — lookback %dh, max %d/run, min_score %d",
+			cfg.Codex.LookbackHours, cfg.Codex.SessionsMax, cfg.Codex.MinScore),
+	}
 }
 
 // ---- Local-mode coherence ----

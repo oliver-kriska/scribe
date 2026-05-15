@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // codexSessionMeta is the decoded payload of the first event of every
@@ -159,6 +160,89 @@ func walkCodexSessions(root string, fn func(meta *codexSessionMeta, sessionPath 
 					}
 					seen[meta.Cwd] = struct{}{}
 					fn(meta, p)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// walkCodexRollouts walks root for rollout-*.jsonl files modified
+// within the lookback window and invokes fn once per rollout, newest
+// first. Unlike walkCodexSessions (which dedupes by cwd for project
+// discovery), session mining wants every distinct session, so there
+// is no cwd dedup here — two sessions in the same project are two
+// minable transcripts.
+//
+// sinceHours <= 0 disables the time filter (every rollout is yielded).
+// Otherwise a rollout is skipped when its file mtime is older than
+// now-sinceHours; this is the cheap pre-gate that keeps a cron mining
+// pass from re-reading the entire ~/.codex/ history every run (the
+// processed-set log in _codex_sessions_log.json is the durable dedup;
+// the window just bounds the scan).
+func walkCodexRollouts(root string, sinceHours int, fn func(rolloutPath string, meta *codexSessionMeta, mtime time.Time)) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("codex sessions root is not a directory: %s", root)
+	}
+
+	var cutoff time.Time
+	if sinceHours > 0 {
+		cutoff = time.Now().Add(-time.Duration(sinceHours) * time.Hour)
+	}
+
+	years, err := readSortedDirNamesDesc(root)
+	if err != nil {
+		return err
+	}
+	for _, year := range years {
+		yearDir := filepath.Join(root, year)
+		months, err := readSortedDirNamesDesc(yearDir)
+		if err != nil {
+			continue
+		}
+		for _, month := range months {
+			monthDir := filepath.Join(yearDir, month)
+			days, err := readSortedDirNamesDesc(monthDir)
+			if err != nil {
+				continue
+			}
+			for _, day := range days {
+				dayDir := filepath.Join(monthDir, day)
+				files, err := os.ReadDir(dayDir)
+				if err != nil {
+					continue
+				}
+				sort.Slice(files, func(i, j int) bool {
+					return files[i].Name() > files[j].Name()
+				})
+				for _, fi := range files {
+					if fi.IsDir() || !strings.HasPrefix(fi.Name(), "rollout-") || !strings.HasSuffix(fi.Name(), ".jsonl") {
+						continue
+					}
+					fInfo, ierr := fi.Info()
+					if ierr != nil {
+						continue
+					}
+					if !cutoff.IsZero() && fInfo.ModTime().Before(cutoff) {
+						continue
+					}
+					p := filepath.Join(dayDir, fi.Name())
+					meta, merr := readCodexSessionMeta(p)
+					if merr != nil {
+						logMsg("codex", "skip %s: %v", p, merr)
+						continue
+					}
+					if meta == nil {
+						continue
+					}
+					fn(p, meta, fInfo.ModTime())
 				}
 			}
 		}

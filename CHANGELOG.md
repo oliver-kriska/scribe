@@ -2,6 +2,64 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.22] — 2026-05-15
+
+Codex session mining (C3) — closes the Codex loop. Discovery (0.2.15)
+finds projects touched only via Codex; the AGENTS.md handshake
+(0.2.17) makes Codex sessions write drop files; **0.2.22 distills the
+Codex sessions themselves into the KB**, the same triage→envelope→wiki
+treatment ccrider sessions get. Scribe now has full (not partial)
+Codex support.
+
+### Why this was small
+The only ccrider-specific surface in the session-mine path was the
+transcript source. Everything downstream (renderTranscriptForPrompt,
+runSessionEnvelopeOnce, applyWikiActions, the session-extract prompt
+family) is transcript-source-agnostic and reused unchanged.
+
+### Schema (verified, not guessed)
+A real Codex CLI "review this project" session run in this repo on
+2026-05-15 produced a 176-event rollout that served as the schema
+probe. The earlier C3 plan's event-type table was materially wrong;
+the parser is built against ground truth (fixture pinned at
+`testdata/codex/rollout-transcript.jsonl`):
+
+- Codex writes the **OpenAI Responses-API item schema**. `response_item`
+  is the canonical model I/O stream and the **only** one consumed.
+- `event_msg` is a parallel UI/telemetry stream whose content-bearing
+  events (`user_message`, `agent_message`) **duplicate**
+  `response_item/message`; the rest is noise (`token_count` is the
+  single most frequent event). Consuming both double-counts every
+  turn — the trap the guessed table fell into.
+- `reasoning` items are `encrypted_content` only — unrecoverable,
+  skipped. The synthetic leading `<environment_context>` user turn is
+  dropped so it can't skew triage scoring.
+
+### Added
+- `fetchCodexTranscript` (codex_transcript.go) → `[]sessionTurn`,
+  the same shape ccrider mining consumes. Malformed line → skip
+  (non-fatal); empty rollout → empty slice.
+- `walkCodexRollouts` — lookback-windowed rollout walk; unlike
+  `walkCodexSessions` it does **not** dedupe by cwd (each session is a
+  distinct minable transcript).
+- `scoreText` — pure, in-process triage scorer (ccrider scores via
+  FTS5 BM25; Codex rollouts aren't in any DB). Shares
+  `TriageConfig.Resolve()` so there is one keyword/weight definition.
+- `wiki/_codex_sessions_log.json` — durable processed-set keyed by the
+  rollout's session_meta id (survives session resume); mirrors
+  `_sessions_log.json`, reuses its generic helpers.
+- `mineCodexSessions` driver + sync Phase 2.55 hook. Reuses the
+  session-mine provider/config and the `session-extract-*` prompt
+  family (no new prompts). Respects the 0.2.21 `--dry-run` contract.
+- `codex:` config block (`mine`, `sessions_max`, `lookback_hours`,
+  `min_score`); surfaced in `scribe doctor`.
+
+### Opt-in
+Mining spends LLM tokens per session, so it is **opt-in**: set
+`codex: { mine: true }` in scribe.yaml (matches `absorb.atomic_facts`'
+opt-in precedent). It is a silent no-op without `codex_sessions_dir`.
+Discovery and the handshake remain on by default as before.
+
 ## [0.2.21] — 2026-05-15
 
 Read-only / portability contract hardening. Three contract violations

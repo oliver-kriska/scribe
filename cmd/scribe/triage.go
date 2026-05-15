@@ -414,6 +414,55 @@ func buildStatsMatchClause(keywords map[string]string) string {
 	return ftsEscape(strings.Join(parts, " OR "))
 }
 
+// scoreText is the pure, in-process triage scorer used by the Codex
+// session-mining path (C3). ccrider sessions are scored via FTS5 BM25
+// inside SQLite; Codex rollouts are not in any DB, so this scores the
+// rendered transcript text directly against the same resolved
+// keyword/weight config (TriageConfig.Resolve) the FTS5 path uses —
+// one scoring definition, two call sites.
+//
+// Model: for each category, if ANY of its keywords appears in the
+// text (case-insensitive substring), add that category's weight once.
+// This deliberately mirrors triage's "(kw) OR (kw) ..." presence test
+// plus per-category weight — it is a threshold GATE (MinScore), not a
+// BM25 ranker, so reproducing term-frequency math here would add
+// complexity without changing the keep/skip decision.
+func scoreText(keywords map[string]string, weights map[string]int, text string) int {
+	if strings.TrimSpace(text) == "" {
+		return 0
+	}
+	lower := strings.ToLower(text)
+	score := 0
+	for _, cat := range triageCategoryOrder {
+		for _, term := range triageKeywordTerms(keywords[cat]) {
+			if strings.Contains(lower, term) {
+				score += weights[cat]
+				break // category counts once
+			}
+		}
+	}
+	return score
+}
+
+// triageKeywordTerms splits an FTS5-shaped keyword string
+// (`a OR b OR "two words"`) into plain lowercased match terms with
+// surrounding quotes stripped. Empty/blank terms are dropped.
+func triageKeywordTerms(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var out []string
+	for _, raw := range strings.Split(s, " OR ") {
+		t := strings.ToLower(strings.TrimSpace(raw))
+		t = strings.Trim(t, `"`)
+		t = strings.TrimSpace(t)
+		if t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // ftsEscape doubles single-quotes so a user-authored keyword list that happens
 // to contain `'` doesn't break out of the surrounding string literal when
 // interpolated into the query. FTS5 itself has no string-escape issues with

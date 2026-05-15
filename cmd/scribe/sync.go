@@ -212,6 +212,19 @@ func (s *SyncCmd) Run() error {
 		counters.sessionsScanned = mined
 	}
 
+	// Phase 2.55: Codex session mining (C3). Same triage→envelope→wiki
+	// path as ccrider mining, transcript sourced from ~/.codex/
+	// rollouts. Part of the session phase, so gated on the same
+	// s.Sessions flag; opt-in via `codex: { mine: true }`; a silent
+	// no-op without codex_sessions_dir. Respects --dry-run internally.
+	if s.Sessions && cfg.Codex.Mine {
+		cmined, cerr := s.mineCodexSessions(root, cfg)
+		if cerr != nil {
+			logMsg("sync", "codex session mining error: %v", cerr)
+		}
+		counters.sessionsScanned += cmined
+	}
+
 	// Phase 2.6: Absorb raw articles.
 	absorbed, err := s.absorbRaw(root)
 	if err != nil {

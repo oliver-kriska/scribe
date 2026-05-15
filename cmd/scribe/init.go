@@ -402,6 +402,7 @@ func createKBSkeleton(root string) error {
 		{"scripts/projects.json", seedProjectsJSON()},
 		{"wiki/_backlinks.json", "{}\n"},
 		{"wiki/_sessions_log.json", `{"processed":{}}` + "\n"},
+		{"wiki/_codex_sessions_log.json", `{"processed":{}}` + "\n"},
 	}
 	for _, s := range seeds {
 		path := filepath.Join(root, s.rel)

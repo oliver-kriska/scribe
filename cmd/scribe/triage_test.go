@@ -163,3 +163,72 @@ func TestLoadProcessedSessionIDs(t *testing.T) {
 		}
 	})
 }
+
+// TestScoreText covers the pure C3 triage scorer. It must agree with
+// the resolved default keyword/weight config and be a presence-
+// weighted gate (one weight per category that has any hit), case-
+// insensitive, quoted-phrase aware.
+func TestScoreText(t *testing.T) {
+	kw, w := (TriageConfig{}).Resolve()
+
+	t.Run("empty text scores zero", func(t *testing.T) {
+		if s := scoreText(kw, w, "   \n\t "); s != 0 {
+			t.Errorf("empty text = %d, want 0", s)
+		}
+	})
+
+	t.Run("no keywords scores zero", func(t *testing.T) {
+		if s := scoreText(kw, w, "the quick brown fox jumped over the lazy dog"); s != 0 {
+			t.Errorf("keyword-free text = %d, want 0", s)
+		}
+	})
+
+	t.Run("single category adds its weight once", func(t *testing.T) {
+		// "decided" → decision (weight 3). Repeated mentions must not
+		// multiply — it's a presence gate.
+		got := scoreText(kw, w, "We decided X. Then we decided Y. We decided again.")
+		if got != w["decision"] {
+			t.Errorf("got %d, want %d (decision weight, counted once)", got, w["decision"])
+		}
+	})
+
+	t.Run("case-insensitive", func(t *testing.T) {
+		if scoreText(kw, w, "we DECIDED to ship") != w["decision"] {
+			t.Error("scorer must be case-insensitive")
+		}
+	})
+
+	t.Run("quoted phrase keyword matches", func(t *testing.T) {
+		// architecture category includes the quoted phrase
+		// "design pattern".
+		if scoreText(kw, w, "this introduces a new design pattern") < w["architecture"] {
+			t.Error("quoted-phrase keyword should match")
+		}
+	})
+
+	t.Run("multiple categories sum", func(t *testing.T) {
+		// decision (decided=3) + research (benchmark=3) + code_pattern
+		// (GenServer=1) = 7.
+		text := "We decided to run a benchmark on the GenServer hot path."
+		want := w["decision"] + w["research"] + w["code_pattern"]
+		if got := scoreText(kw, w, text); got != want {
+			t.Errorf("got %d, want %d", got, want)
+		}
+	})
+}
+
+func TestTriageKeywordTerms(t *testing.T) {
+	got := triageKeywordTerms(`architecture OR "design pattern" OR strategy`)
+	want := []string{"architecture", "design pattern", "strategy"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("term[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if triageKeywordTerms("   ") != nil {
+		t.Error("blank keyword string should yield nil")
+	}
+}
