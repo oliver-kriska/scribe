@@ -211,6 +211,16 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 	if opts.SanitizeContent {
 		sanitizeEnvelopeContent(&env, opts.ValidFactIDs)
 		clampEnvelopeFrontmatter(&env, root)
+		// envelope-sanitization-unification-analysis.md recommends
+		// defaulting the unknown-top-dir remap on, gated behind the same
+		// opt-in, "revisit after a KB-wide dry run". The 2026-05-16 sync
+		// confirmed the loss empirically: local models invented
+		// debugging/, todo/, github-issues/ tops and three mined
+		// entities were rejected outright. A hallucinated top dir loses
+		// the entity for ANY caller, not just pass-2; the remap re-homes
+		// it under wiki/ and re-validates through the same gate (so
+		// absolute/traversal/underscore paths stay hard rejections).
+		opts.RemapUnknownTopToWiki = true
 	}
 	for i, a := range env.Actions {
 		abs, err := validateActionPath(root, a.Path)

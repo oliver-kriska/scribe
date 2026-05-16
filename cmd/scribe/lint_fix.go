@@ -9,10 +9,10 @@ import (
 )
 
 // autoFixArticle applies deterministic, non-destructive frontmatter
-// repairs to a single wiki article. Returns (changes_applied, new_content,
-// err). new_content is "" when no changes are needed, so the caller can
-// skip the write. The fixes only touch fields where the correct answer
-// is obvious:
+// repairs to a single wiki article at `rel` (KB-relative path) under
+// `root`. Returns (changes_applied, new_content, err). new_content is ""
+// when no changes are needed, so the caller can skip the write. The
+// fixes only touch fields where the correct answer is obvious:
 //
 //   - add missing tags/related/sources as empty lists
 //   - add missing confidence: medium
@@ -21,17 +21,31 @@ import (
 //   - add missing created: <today> (only when file mtime unavailable)
 //   - reformat 2026/04/20 or 2026.04.20 → 2026-04-20 in created/updated
 //   - strip trailing whitespace on every line
+//   - clamp an invalid/missing `type` to the path's canonical type
+//     (decisions/→decision, …; wiki/ & sessions/ → research). The
+//     directory IS the taxonomy (validate.go: validTypes "mirrors the
+//     wikiDirs taxonomy"), so this is a lossless correction, not the
+//     "mis-categorizing" the old policy feared — same inference the
+//     envelope seam (clampEnvelopeFrontmatter) makes for new writes.
+//     Only fires when the current type is absent or not in validTypes;
+//     a valid-but-dir-mismatched type is not a lint error and is left.
+//   - clamp a present-but-invalid `domain` to `general` (the universal
+//     catch-all), matching the seam. Missing domain is still handled by
+//     the add-default below.
 //
-// Skipped (require human decision):
+// Skipped (require human / LLM decision):
 //
 //   - missing title (author must pick)
-//   - missing type (mis-categorizing would be worse than missing)
-//   - invalid type or confidence (silent "fix" would misrepresent)
+//   - invalid confidence (silent "fix" would misrepresent)
+//   - frontmatter that does not parse even after the above (no closing
+//     ---, unescaped `:` in a value, etc.) — returned as an error so
+//     the caller SKIPs and reports it instead of writing a file lint
+//     still rejects
 //   - body-level issues (size, orphan, etc)
 //
 // Returns a slice of human-readable change descriptions so the CLI can
 // log what actually happened.
-func autoFixArticle(content []byte) ([]string, []byte, error) {
+func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) {
 	s := string(content)
 	if !strings.HasPrefix(s, "---\n") && !strings.HasPrefix(s, "---\r\n") {
 		return nil, nil, nil // no frontmatter — skip
@@ -106,10 +120,41 @@ func autoFixArticle(content []byte) ([]string, []byte, error) {
 		}
 	}
 
+	// Type clamp from the path. The directory is the taxonomy, so an
+	// invalid/missing type in a typed dir has one correct answer. Only
+	// act when the current type is absent or not in validTypes — a
+	// valid-but-dir-mismatched type (e.g. a decision-typed note filed in
+	// wiki/) is not a lint error and stays untouched.
+	if canonical := canonicalTypeForRel(rel); canonical != "" {
+		cur := typeValue(lines)
+		if cur == "" || !validTypes[cur] {
+			if replaceFMLine(lines, "type", canonical) {
+				changes = append(changes, fmt.Sprintf("clamped invalid type %q → %q (from %s/)", cur, canonical, topDir(rel)))
+			} else {
+				lines = append([]string{"type: " + canonical}, lines...)
+				changes = append(changes, fmt.Sprintf("set missing type: %s (from %s/)", canonical, topDir(rel)))
+			}
+		}
+	}
+
+	// Domain clamp. missingDefaults above already adds `domain: general`
+	// when absent; this handles the present-but-invalid case (a domain
+	// not in scribe.yaml + universals — the `research`/`{{DOMAIN}}`/
+	// `<frontmatter domain or 'general'>` lint class). general is the
+	// universal catch-all, always valid; same floor the seam uses.
+	if domv := frontmatterValue(lines, "domain"); domv != "" {
+		if domains := validDomainsForRoot(root); !domains[domv] {
+			if replaceFMLine(lines, "domain", "general") {
+				changes = append(changes, fmt.Sprintf("clamped invalid domain %q → general", domv))
+			}
+		}
+	}
+
 	// Authority defaults from type. This only fills unset entries so we
 	// don't override deliberate overrides the author made. Mapping comes
 	// from the schema principle: decisions are load-bearing, curated wiki
-	// types are contextual, raw-ish surfaces are opinion-level.
+	// types are contextual, raw-ish surfaces are opinion-level. Runs after
+	// the type clamp so a clamped type gets the right authority.
 	if !present["authority"] {
 		if auth := defaultAuthorityForType(typeValue(lines)); auth != "" {
 			lines = append(lines, "authority: "+auth)
@@ -117,12 +162,79 @@ func autoFixArticle(content []byte) ([]string, []byte, error) {
 		}
 	}
 
+	newFM := strings.Join(lines, "\n")
+	result := []byte(s[:fmStart] + newFM + body)
+
+	// Honesty guard: never claim a fix on frontmatter lint still
+	// rejects. The "no closing ---" subclass already errored above; this
+	// catches the has-delimiter-but-invalid-YAML subclass (unescaped `:`
+	// in a value, a bad map key like the literal {{DOMAIN}}). These need
+	// human/LLM repair — surface them as a SKIP, regardless of whether
+	// cosmetic changes (trailing ws, defaults) would otherwise apply, so
+	// the operator sees the true residual instead of a misleading FIX.
+	if _, perr := parseFrontmatter(result); perr != nil {
+		return nil, nil, fmt.Errorf("still invalid YAML after deterministic fixes (manual repair needed): %v", perr)
+	}
+
 	if len(changes) == 0 {
 		return nil, nil, nil
 	}
+	return changes, result, nil
+}
 
-	newFM := strings.Join(lines, "\n")
-	return changes, []byte(s[:fmStart] + newFM + body), nil
+// topDir returns the first path segment of a KB-relative path
+// ("decisions/x.md" → "decisions"), or "" for an empty path.
+func topDir(rel string) string {
+	rel = strings.TrimPrefix(rel, "./")
+	if i := strings.IndexByte(rel, '/'); i >= 0 {
+		return rel[:i]
+	}
+	return rel
+}
+
+// canonicalTypeForRel returns the single valid `type` for the directory
+// `rel` lives in. Typed dirs map 1:1 via dirCanonicalType; wiki/ and
+// sessions/ are the general-knowledge dirs with no canonical type, so
+// they fall back to "research" (the loosest-schema valid type) — the
+// same rule clampEnvelopeFrontmatter applies to new envelope writes, so
+// on-disk repair and the live seam stay consistent. "" means "unknown
+// dir — don't infer" (defensive; walkArticles only walks wikiDirs).
+func canonicalTypeForRel(rel string) string {
+	top := topDir(rel)
+	if t, ok := dirCanonicalType[top]; ok {
+		return t
+	}
+	if top == "wiki" || top == "sessions" {
+		return "research"
+	}
+	return ""
+}
+
+// frontmatterValue returns the value of a top-level scalar `key:` line
+// in a split frontmatter block, quotes trimmed, or "" if absent.
+func frontmatterValue(lines []string, key string) string {
+	for _, line := range lines {
+		k, rest, ok := splitFrontmatterLine(line)
+		if ok && k == key {
+			return strings.Trim(strings.TrimSpace(rest), `"'`)
+		}
+	}
+	return ""
+}
+
+// replaceFMLine rewrites the first top-level `key:` line's whole value
+// to `key: val` (unquoted scalar — type/domain are bare identifiers).
+// Returns false if the key is absent so the caller can decide whether
+// to insert. Indented/continuation lines never match (splitFrontmatterLine
+// rejects them), so a nested child is never clobbered.
+func replaceFMLine(lines []string, key, val string) bool {
+	for i, line := range lines {
+		if k, _, ok := splitFrontmatterLine(line); ok && k == key {
+			lines[i] = key + ": " + val
+			return true
+		}
+	}
+	return false
 }
 
 // typeValue returns the value of a top-level `type:` line in the
@@ -219,7 +331,7 @@ func runLintFix(root string, files []string, dryRun bool) (fixed, skipped int, e
 			skipped++
 			continue
 		}
-		changes, newContent, fErr := autoFixArticle(data)
+		changes, newContent, fErr := autoFixArticle(root, relPath(root, path), data)
 		if fErr != nil {
 			fmt.Printf("  SKIP %s: %v\n", relPath(root, path), fErr)
 			skipped++

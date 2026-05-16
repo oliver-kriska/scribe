@@ -871,3 +871,26 @@ func TestLoadPrompt_StripsUnsubstitutedPlaceholders(t *testing.T) {
 		t.Errorf("residual placeholder survived loadPrompt:\n%s", out)
 	}
 }
+
+// TestApplyWikiActions_SanitizeContentEnablesRemap asserts the
+// 2026-05-16 fix: a SanitizeContent caller inherits the unknown-top-dir
+// remap automatically (no explicit RemapUnknownTopToWiki), so a local
+// model that invents debugging/ / todo/ / github-issues/ no longer
+// loses the mined entity — it is re-homed under wiki/.
+func TestApplyWikiActions_SanitizeContentEnablesRemap(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "create", Path: "debugging/plugin-activation-caveat.md",
+		Content: "---\ntitle: Caveat\ntype: research\ndomain: general\n---\nbody\n",
+	}}}
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("invented top dir must be remapped, not rejected: %v", res.Errors)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "wiki/debugging/plugin-activation-caveat.md")); statErr != nil {
+		t.Errorf("entity not re-homed under wiki/: %v", statErr)
+	}
+}
