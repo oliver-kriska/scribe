@@ -1,12 +1,12 @@
 # scribe
 
-> A single-binary Go CLI that turns your git repos, Claude Code sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. Auto-discovers projects from both Claude Code and Codex, and writes a query-KB + drop-file handshake into both agents' global instruction files. Cross-project, cron-driven, and runs 100% on local Ollama with zero API spend.
+> A single-binary Go CLI that turns your git repos, Claude Code and Codex sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. Auto-discovers projects from both Claude Code and Codex, and writes a query-KB + drop-file handshake into both agents' global instruction files. Cross-project, cron-driven, and runs 100% on local Ollama with zero API spend.
 
 scribe is an LLM-written knowledge base pipeline. It mines:
 
 - git repository commits for new decisions and patterns
 - Claude Code session transcripts via ccrider's FTS5 index
-- Codex CLI rollouts for project discovery
+- Codex CLI rollouts — project discovery, plus opt-in session mining (same triage→absorb path as Claude Code sessions)
 - URLs you text yourself via iMessage (macOS only)
 - drop files committed inside other projects under `.claude/<your-kb-name>/`
 

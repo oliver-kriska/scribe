@@ -36,7 +36,7 @@
        steps, the FAQ for direct Q→A lookup, and freshness via the
        Article wrapper. -->
   <meta name="article:published_time" content="2026-04-21T00:00:00Z" />
-  <meta name="article:modified_time" content="2026-05-15T00:00:00Z" />
+  <meta name="article:modified_time" content="2026-05-16T00:00:00Z" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -65,7 +65,7 @@
         "description": "Overview of scribe: a CLI that builds a personal knowledge base from git repos, Claude Code sessions, and self-sent URLs. Cross-project, cron-driven, runs fully local on Ollama.",
         "url": "https://getscribe.dev/",
         "datePublished": "2026-04-21",
-        "dateModified": "2026-05-15",
+        "dateModified": "2026-05-16",
         "image": "https://getscribe.dev/og.png",
         "author": { "@type": "Person", "name": "Oliver Kriska" },
         "publisher": { "@type": "Person", "name": "Oliver Kriska" },
@@ -100,7 +100,7 @@
             "name": "What is scribe?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Scribe is a single-binary Go CLI that builds a personal, LLM-written knowledge base from your existing work. It mines your git repos, Claude Code sessions (via ccrider's FTS5 index), and URLs you text yourself, then compiles a curated wiki of decisions, patterns, learnings, and tool evaluations indexed by qmd for semantic search. The whole pipeline runs on cron — set up once, then go back to working."
+              "text": "Scribe is a single-binary Go CLI that builds a personal, LLM-written knowledge base from your existing work. It mines your git repos, Claude Code sessions (via ccrider's FTS5 index) and Codex CLI rollouts, and URLs you text yourself, then compiles a curated wiki of decisions, patterns, learnings, and tool evaluations indexed by qmd for semantic search. The whole pipeline runs on cron — set up once, then go back to working."
             }
           },
           {
@@ -148,7 +148,7 @@
             "name": "How does scribe automatically extract knowledge from existing projects?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Scribe walks both ~/.claude/projects/ (Claude Code) and ~/.codex/sessions/ (Codex CLI) to auto-discover every codebase you've opened in either agent. Cross-agent projects collapse to a single manifest entry tagged discovered_from: both. scribe init writes a handshake block into both ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, telling every Claude Code and Codex session to query your KB before decisions and drop reusable lessons into .claude/<your-kb-name>/YYYY-MM-DD-{slug}.md inside the current project — the same shared drop location for both agents. Every 2 hours scribe sync sweeps those drop files plus any .claude/research/**/*.md notes, runs them through the two-pass absorb, commits the result to your private KB repo, and reindexes qmd so the next agent session can serve them — closing the loop."
+              "text": "Scribe walks both ~/.claude/projects/ (Claude Code) and ~/.codex/sessions/ (Codex CLI) to auto-discover every codebase you've opened in either agent. Cross-agent projects collapse to a single manifest entry tagged discovered_from: both. scribe init writes a handshake block into both ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, telling every Claude Code and Codex session to query your KB before decisions and drop reusable lessons into .claude/<your-kb-name>/YYYY-MM-DD-{slug}.md inside the current project — the same shared drop location for both agents. Every 2 hours scribe sync sweeps those drop files plus any .claude/research/**/*.md notes, runs them through the two-pass absorb, commits the result to your private KB repo, and reindexes qmd so the next agent session can serve them — closing the loop. Codex CLI sessions are also distilled directly into the KB (opt-in), the same triage→absorb path Claude Code sessions get via ccrider — so Codex is fully supported, not discovery-only."
             }
           },
           {
@@ -164,7 +164,7 @@
             "name": "What does the cron schedule look like?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
+              "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, Codex CLI sessions inside the 2-hourly sync when opted in, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
             }
           }
         ]
@@ -633,8 +633,8 @@
       <h1>Your knowledge base,<br/><span class="accent">written by your tools.</span></h1>
       <p class="lede">
         scribe is a personal, LLM-written knowledge base that grows itself. It
-        mines your git repos, Claude Code sessions, and self-sent links — and
-        auto-discovers projects from both Claude Code and Codex — then compiles
+        mines your git repos, Claude Code and Codex sessions, and self-sent
+        links — auto-discovering projects across both agents — then compiles
         a curated, semantically searchable wiki: cross-project, cron-driven, and
         running 100% on local Ollama with zero API spend.
       </p>
@@ -694,7 +694,7 @@
           <h3><span class="num">01</span>Capture</h3>
           <p>Four input streams, all running on cron with no human in the loop.</p>
           <div class="src">
-            git repos · Claude Code sessions (via ccrider's FTS5 index) · iMessage self-chat URLs · drop files
+            git repos · Claude Code &amp; Codex sessions · iMessage self-chat URLs · drop files
           </div>
         </div>
         <div class="stage">
@@ -1087,7 +1087,7 @@ llm:
         <tbody>
           <tr class="scribe">
             <td>scribe</td>
-            <td class="yes">✓ ccrider FTS5</td>
+            <td class="yes">✓ Claude + Codex</td>
             <td class="yes">✓ LaunchAgents</td>
             <td class="yes">✓ BM25 triage</td>
             <td class="yes">✓ fan-out</td>
@@ -1192,7 +1192,7 @@ llm:
 
       <dl class="faq">
         <dt>What is scribe?</dt>
-        <dd>Scribe is a single-binary Go CLI that builds a personal, LLM-written knowledge base from your existing work. It mines your git repos, Claude Code sessions (via ccrider's FTS5 index), and URLs you text yourself, then compiles a curated wiki of decisions, patterns, learnings, and tool evaluations indexed by <code>qmd</code> for semantic search. The whole pipeline runs on cron — set up once, then go back to working.</dd>
+        <dd>Scribe is a single-binary Go CLI that builds a personal, LLM-written knowledge base from your existing work. It mines your git repos, Claude Code sessions (via ccrider's FTS5 index) and Codex CLI rollouts, and URLs you text yourself, then compiles a curated wiki of decisions, patterns, learnings, and tool evaluations indexed by <code>qmd</code> for semantic search. The whole pipeline runs on cron — set up once, then go back to working.</dd>
 
         <dt>How is scribe different from RAG, Obsidian, or claude-memory-compiler?</dt>
         <dd>RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. <code>claude-memory-compiler</code> runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions <em>before</em> any LLM call, so cheap sessions cost nothing.</dd>
@@ -1210,13 +1210,13 @@ llm:
         <dd>In a plain git repo of markdown files at whatever path you pass to <code>scribe init</code>. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, and no vendor lock-in. Open it in Obsidian, VS Code, <code>vim</code>, or <code>mdbook</code>. If scribe disappears tomorrow, you still have the KB.</dd>
 
         <dt>How does scribe automatically extract knowledge from existing projects?</dt>
-        <dd>Scribe walks both <code>~/.claude/projects/</code> (Claude Code) and <code>~/.codex/sessions/</code> (Codex CLI) to auto-discover every codebase you've opened in either agent. Cross-agent projects collapse to a single manifest entry tagged <code>discovered_from: both</code>. <code>scribe init</code> writes a handshake block into <strong>both</strong> <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>, telling every Claude Code and Codex session to query your KB before decisions and drop reusable lessons into <code>.claude/&lt;your-kb-name&gt;/YYYY-MM-DD-{slug}.md</code> inside the current project — the same shared drop location for both agents. Every 2 hours <code>scribe sync</code> sweeps those drop files plus any <code>.claude/research/**/*.md</code> notes, runs them through the two-pass absorb, commits the result to your private KB repo, and reindexes <code>qmd</code> so the next agent session can serve them — closing the loop.</dd>
+        <dd>Scribe walks both <code>~/.claude/projects/</code> (Claude Code) and <code>~/.codex/sessions/</code> (Codex CLI) to auto-discover every codebase you've opened in either agent. Cross-agent projects collapse to a single manifest entry tagged <code>discovered_from: both</code>. <code>scribe init</code> writes a handshake block into <strong>both</strong> <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>, telling every Claude Code and Codex session to query your KB before decisions and drop reusable lessons into <code>.claude/&lt;your-kb-name&gt;/YYYY-MM-DD-{slug}.md</code> inside the current project — the same shared drop location for both agents. Every 2 hours <code>scribe sync</code> sweeps those drop files plus any <code>.claude/research/**/*.md</code> notes, runs them through the two-pass absorb, commits the result to your private KB repo, and reindexes <code>qmd</code> so the next agent session can serve them — closing the loop. Codex CLI sessions are also distilled directly into the KB (opt-in), the same triage→absorb path Claude Code sessions get via ccrider — so Codex is fully supported, not discovery-only.</dd>
 
         <dt>Does scribe push to a remote git repo on its own?</dt>
         <dd>Yes. <code>scribe commit</code> runs hourly via cron. It stages every change scribe has produced, builds a structured commit message, and runs <code>git push</code> to your origin (your own GitHub, Gitea, or Forgejo — no scribe-hosted backend). On non-fast-forward it runs <code>git pull --rebase</code> and retries once. Force-push is never attempted. The KB stays in sync without you opening a terminal.</dd>
 
         <dt>What does the cron schedule look like?</dt>
-        <dd>Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</dd>
+        <dd>Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, Codex CLI sessions inside the 2-hourly sync when opted in, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</dd>
       </dl>
     </div>
   </section>

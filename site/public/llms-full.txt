@@ -1,6 +1,6 @@
 # scribe — your knowledge base, written by your tools
 
-> A single-binary CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, semantically searchable knowledge base. Auto-discovers projects from both Claude Code and Codex, and both agents get the same query-KB + write-drop-files handshake. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend.
+> A single-binary CLI that turns your git repos, Claude Code and Codex sessions, and self-sent links into a curated, semantically searchable knowledge base. Auto-discovers projects from both Claude Code and Codex, and both agents get the same query-KB + write-drop-files handshake. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend.
 
 **License:** MIT · **Repo:** <https://github.com/oliver-kriska/scribe> · **Maintainer's KB:** 3,445 articles, zero typed by hand
 
@@ -8,13 +8,13 @@
 
 ## What scribe is
 
-scribe is an LLM-written knowledge base pipeline. It mines four input streams — git repos, Claude Code sessions (via ccrider's FTS5 index), URLs you text yourself, and drop files from other projects — then compiles a curated wiki of decisions, patterns, learnings, tool evaluations, and research. The wiki is plain markdown with YAML frontmatter, indexed by `qmd` for semantic search.
+scribe is an LLM-written knowledge base pipeline. It mines four input streams — git repos, agent sessions (Claude Code via ccrider's FTS5 index, Codex CLI rollouts), URLs you text yourself, and drop files from other projects — then compiles a curated wiki of decisions, patterns, learnings, tool evaluations, and research. The wiki is plain markdown with YAML frontmatter, indexed by `qmd` for semantic search.
 
 scribe is not a RAG pipeline. It keeps raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities.
 
 ## How it works
 
-1. **Capture** — four input streams, all on cron: git repos, Claude Code sessions via ccrider's FTS5 index, iMessage self-chat URLs, drop files.
+1. **Capture** — four input streams, all on cron: git repos, Claude Code & Codex sessions, iMessage self-chat URLs, drop files.
 2. **Triage** — BM25 keyword density scoring rejects boilerplate sessions before any LLM call. Cheap sessions cost nothing.
 3. **Absorb** — two-pass extraction. Pass 1 grounds atomic facts; pass 2 fans dense sources into multiple entity-first wiki pages.
 4. **Compile + index** — auto-generated wikilinks, backlinks JSON, retrieval-context paragraphs spliced into every article. `qmd` reindexes.
@@ -88,7 +88,7 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 
 | Tool | Session mining | Cron-driven | Density pre-filter | Two-pass absorb | Multi-project | Local-mode |
 |---|---|---|---|---|---|---|
-| **scribe** | yes (ccrider FTS5) | yes (LaunchAgents) | yes (BM25 triage) | yes (fan-out) | yes | yes (Ollama / llama.cpp) |
+| **scribe** | yes (Claude ccrider + Codex) | yes (LaunchAgents) | yes (BM25 triage) | yes (fan-out) | yes | yes (Ollama / llama.cpp) |
 | claude-memory-compiler | every session, no filter | opportunistic | no ($115/20min, issue #3) | no | no | no |
 | nvk/llm-wiki | no | one-shot `/wiki:assess` | n/a | no | no | no |
 | basic-memory | no (issue #669 since Mar) | cron suggested | n/a | no | yes (projects) | no |
@@ -98,7 +98,7 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 ## Common questions
 
 **What is scribe?**
-A single-binary Go CLI that builds a personal, LLM-written knowledge base from your git repos, Claude Code sessions, and self-sent URLs. The pipeline runs on cron — set up once with `scribe init` + `scribe cron install`.
+A single-binary Go CLI that builds a personal, LLM-written knowledge base from your git repos, Claude Code and Codex sessions, and self-sent URLs. The pipeline runs on cron — set up once with `scribe init` + `scribe cron install`.
 
 **How is scribe different from RAG, Obsidian, or claude-memory-compiler?**
 RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.
@@ -116,10 +116,10 @@ Yes. macOS gets LaunchAgents via `scribe cron install`; Linux gets paste-ready c
 In a plain git repo of markdown files at whatever path you pass to `scribe init`. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.
 
 **What does the cron schedule look like?**
-Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
+Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, Codex CLI sessions inside the 2-hourly sync when opted in, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
 
 ---
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-05-15
+**Last updated:** 2026-05-16
