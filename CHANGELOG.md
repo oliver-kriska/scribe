@@ -2,6 +2,49 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.23] — 2026-05-16
+
+Pass-1 entity fan-out cap + local-model pass-2 hardening. Three bugs
+surfaced by the 2026-05-15 gemma3:27b-vs-12b pass-2 A/B (see
+`docs/entity-fanout-cap-plan.md` + the `local-model-followup-plan.md`
+2026-05-16 addendum). The headline fix is a chunker floor, not a model
+downgrade — `pass2_model` stays `gemma3:27b`.
+
+### Fix — runaway entity fan-out (thermal root cause)
+- `chunkByHeadings` split at *every* heading with no minimum size: a
+  588-word note became 13 ~45-word "chapters" → ~35 entities → pass-2
+  ground the GPU ~80 min serially.
+- New `chunkOptions.MinChunkBytes` (default 6 KB) coalesces
+  sub-minimum heading sections; large sections are untouched; `0`
+  disables. Also clears the `gemma3:4b` pass-1 timeout/parse
+  instability on big docs.
+
+### Fix — local models corrupt `related:` frontmatter
+- Local models emit invalid YAML for `related:` (bracket-stripped
+  bare lists, escaped garbage). `normalizeRelatedFrontmatter` rewrites
+  any form back to canonical quoted `"[[X]]"`, applied via
+  `normalizeEnvelopeRelated` before the pass-2 and single-pass
+  applies. Model-agnostic; passthrough when there is no frontmatter /
+  no `related:`.
+
+### Fix — model-invented top dir dropped the entity
+- A hallucinated top directory (`middleware/foo.md`) silently dropped
+  the entity. New `errUnknownTopDir` sentinel + opt-in
+  `ApplyOptions.RemapUnknownTopToWiki` re-homes it under `wiki/`. The
+  remap is re-validated, so absolute / traversal / `_`-prefixed paths
+  stay hard-rejected and the shared sandbox is unchanged for every
+  other envelope caller.
+
+### Tests
+- `chunker_test`, `wiki_actions_test`; existing chaptered/headings
+  fixtures realigned to the corrected contract.
+
+### Verdict
+- Keep `pass2_model: gemma3:27b` — `gemma3:12b` corrupts ~47% of
+  `related:`. The thermal fix is the fan-out cap, not a model
+  downgrade. Fix B (a hard `MaxEntities` cap) is deliberately
+  deferred.
+
 ## [0.2.22] — 2026-05-15
 
 Codex session mining (C3) — closes the Codex loop. Discovery (0.2.15)
