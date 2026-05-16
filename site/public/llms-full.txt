@@ -116,7 +116,7 @@ Yes. macOS gets LaunchAgents via `scribe cron install`; Linux gets paste-ready c
 In a plain git repo of markdown files at whatever path you pass to `scribe init`. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.
 
 **What does the cron schedule look like?**
-Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, Codex CLI sessions inside the 2-hourly sync when opted in, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
+Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
 
 ---
 

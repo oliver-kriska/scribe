@@ -164,7 +164,7 @@
             "name": "What does the cron schedule look like?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, Codex CLI sessions inside the 2-hourly sync when opted in, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
+              "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
             }
           }
         ]
@@ -1216,7 +1216,7 @@ llm:
         <dd>Yes. <code>scribe commit</code> runs hourly via cron. It stages every change scribe has produced, builds a structured commit message, and runs <code>git push</code> to your origin (your own GitHub, Gitea, or Forgejo — no scribe-hosted backend). On non-fast-forward it runs <code>git pull --rebase</code> and retries once. Force-push is never attempted. The KB stays in sync without you opening a terminal.</dd>
 
         <dt>What does the cron schedule look like?</dt>
-        <dd>Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider, Codex CLI sessions inside the 2-hourly sync when opted in, every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</dd>
+        <dd>Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</dd>
       </dl>
     </div>
   </section>
