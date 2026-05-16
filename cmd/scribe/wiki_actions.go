@@ -210,6 +210,7 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 	// here never escapes to the caller. Opt-in via SanitizeContent.
 	if opts.SanitizeContent {
 		sanitizeEnvelopeContent(&env, opts.ValidFactIDs)
+		clampEnvelopeFrontmatter(&env, root)
 	}
 	for i, a := range env.Actions {
 		abs, err := validateActionPath(root, a.Path)
@@ -887,6 +888,132 @@ func sanitizeEnvelopeContent(env *WikiActionEnvelope, validFactIDs map[string]bo
 		}
 	}
 	normalizeEnvelopeRelated(env)
+}
+
+// dirCanonicalType maps a wiki top-level directory to the single
+// frontmatter `type` that directory's articles must carry. It is the
+// reverse of typeDirs (write.go) plus ideas/, and is the authoritative
+// dir↔type taxonomy — validate.go's comment is explicit that validTypes
+// "mirrors the wikiDirs taxonomy". `wiki/` and `sessions/` are
+// deliberately absent: they have no single canonical type, so an entity
+// landing there with an invalid type was mis-routed by the model and is
+// dropped rather than silently mislabeled.
+var dirCanonicalType = map[string]string{
+	"decisions": "decision",
+	"research":  "research",
+	"solutions": "solution",
+	"tools":     "tool",
+	"patterns":  "pattern",
+	"people":    "person",
+	"projects":  "project",
+	"ideas":     "idea",
+}
+
+// setFrontmatterScalar rewrites (or inserts) a single top-level scalar
+// key in an article's YAML frontmatter, touching nothing else. Same
+// conservative line-surgery contract as normalizeRelatedFrontmatter:
+// content without a leading `---` block, or without a closing `---`, is
+// returned byte-for-byte unchanged (the caller handles unparseable
+// frontmatter separately by dropping the action). type/domain values are
+// bare identifiers, so the value is written as an unquoted scalar.
+func setFrontmatterScalar(content, key, value string) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
+		return content
+	}
+	closeIdx := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			closeIdx = i
+			break
+		}
+	}
+	if closeIdx < 0 {
+		return content
+	}
+	newLine := key + ": " + value
+	for i := 1; i < closeIdx; i++ {
+		// Top-level key only: a continuation/flow line is indented or
+		// starts with -, ", ] and never matches "key:" at column 0.
+		if strings.HasPrefix(lines[i], key+":") {
+			lines[i] = newLine
+			return strings.Join(lines, "\n")
+		}
+	}
+	// Key absent — insert right after the opening delimiter so required
+	// fields the model omitted (e.g. type) are repaired in place.
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[0], newLine)
+	out = append(out, lines[1:]...)
+	return strings.Join(out, "\n")
+}
+
+// clampEnvelopeFrontmatter is the frontmatter half of the pre-apply
+// robustness seam (the content half is sanitizeEnvelopeContent). It runs
+// over every content-bearing action that carries a frontmatter block and
+// enforces the KB taxonomy the executor can prove from the path:
+//
+//  1. Unparseable frontmatter (no closing `---`, invalid YAML, an
+//     unsubstituted `{{VAR}}` map key) — the action is DROPPED. Writing
+//     garbage frontmatter is the hard failure (breaks lint / qmd / the
+//     backlink walker for every later run); losing one entity to a
+//     re-run is soft. Same trade normalizeRelatedFrontmatter already
+//     makes one field over.
+//  2. Invalid/missing `type` — clamped to the path's canonical type
+//     (decisions/→decision, …). The directory *is* the type taxonomy,
+//     so this is lossless, not a silent misrepresentation. wiki/ and
+//     sessions/ have no canonical type; they are the general-knowledge
+//     dirs, so a botched type there falls back to "research" (the
+//     loosest-schema knowledge type) rather than dropping real content.
+//     Only unparseable frontmatter (case 1) is unsalvageable.
+//  3. Invalid/missing `domain` — clamped to "general", the universal
+//     catch-all that is always a valid domain. Kills the domain class
+//     plus any residual placeholder/`{{DOMAIN}}` leak that survived
+//     loadPrompt's strip as an empty value.
+//
+// Gated by ApplyOptions.SanitizeContent (set by all 8 envelope
+// consumers as of 0.2.24), so every caller inherits identical
+// frontmatter robustness the same way validateActionPath centralizes the
+// path guards. Logs through the "envelope" channel; no ApplyResult
+// schema change, matching sanitizeEnvelopeContent's precedent.
+func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
+	domains := validDomainsForRoot(root)
+	kept := make([]WikiAction, 0, len(env.Actions))
+	var dropped, retyped, redomained int
+	for _, a := range env.Actions {
+		if !strings.HasPrefix(a.Content, "---") {
+			kept = append(kept, a) // section body / append fragment — not ours
+			continue
+		}
+		fm, err := parseFrontmatter([]byte(a.Content))
+		if err != nil {
+			logMsg("envelope", "clamp: dropped %q — unparseable frontmatter (%v)", a.Path, err)
+			dropped++
+			continue
+		}
+		top := strings.SplitN(filepath.Clean(a.Path), string(os.PathSeparator), 2)[0]
+		if fm.Type == "" || !validTypes[fm.Type] {
+			// Path's canonical type if the dir maps to one; otherwise
+			// (wiki/, sessions/ — the general-knowledge dirs) fall back to
+			// "research", the loosest-schema valid type. Never drop for a
+			// bad type: the content is salvageable, only the label is wrong.
+			canonical, ok := dirCanonicalType[top]
+			if !ok {
+				canonical = "research"
+			}
+			a.Content = setFrontmatterScalar(a.Content, "type", canonical)
+			retyped++
+		}
+		if fm.Domain == "" || !domains[fm.Domain] {
+			a.Content = setFrontmatterScalar(a.Content, "domain", "general")
+			redomained++
+		}
+		kept = append(kept, a)
+	}
+	if dropped+retyped+redomained > 0 {
+		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped", dropped, retyped, redomained)
+	}
+	env.Actions = kept
 }
 
 // parseEnvelope unmarshals one JSON envelope and validates the

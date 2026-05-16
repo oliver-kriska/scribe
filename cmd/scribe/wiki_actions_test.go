@@ -725,3 +725,149 @@ func assertRelated(t *testing.T, content string, want []string) {
 		}
 	}
 }
+
+// TestApplyWikiActions_ClampFrontmatter covers the frontmatter half of
+// the pre-apply seam (clampEnvelopeFrontmatter). It is the executor's
+// answer to the local-model lint dump: invalid type/domain and
+// unparseable frontmatter must never reach disk, regardless of which of
+// the 8 envelope consumers produced the envelope. Tempdir KBs have no
+// scribe.yaml, so validDomainsForRoot resolves to the universal set
+// {personal, general} — "research" is therefore an invalid domain here.
+func TestApplyWikiActions_ClampFrontmatter(t *testing.T) {
+	t.Run("invalid type clamps to the path's canonical type", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "decisions/x.md",
+			Content: "---\ntitle: X\ntype: article\ndomain: general\n---\nbody\n",
+		}}}
+		res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Errors) != 0 {
+			t.Fatalf("unexpected errors: %v", res.Errors)
+		}
+		s := readBack(t, root, "decisions/x.md")
+		if !strings.Contains(s, "\ntype: decision\n") {
+			t.Errorf("type not clamped to canonical 'decision':\n%s", s)
+		}
+		if strings.Contains(s, "type: article") {
+			t.Errorf("invalid type survived:\n%s", s)
+		}
+		if !strings.HasSuffix(s, "\nbody\n") {
+			t.Errorf("body must be preserved verbatim:\n%s", s)
+		}
+	})
+
+	t.Run("invalid domain clamps to general", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "research/y.md",
+			Content: "---\ntitle: Y\ntype: research\ndomain: research\n---\nbody\n",
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+			t.Fatal(err)
+		}
+		s := readBack(t, root, "research/y.md")
+		if !strings.Contains(s, "\ndomain: general\n") {
+			t.Errorf("domain not clamped to 'general':\n%s", s)
+		}
+	})
+
+	t.Run("missing type is inserted from the path", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "patterns/z.md",
+			Content: "---\ntitle: Z\ndomain: general\n---\nbody\n",
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+			t.Fatal(err)
+		}
+		s := readBack(t, root, "patterns/z.md")
+		if !strings.Contains(s, "\ntype: pattern\n") {
+			t.Errorf("missing type not inserted from path:\n%s", s)
+		}
+	})
+
+	t.Run("unparseable frontmatter drops the action (no garbage on disk)", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			// No closing delimiter — the exact "no closing frontmatter
+			// delimiter" lint class.
+			Op: "create", Path: "decisions/broken.md",
+			Content: "---\ntitle: Broken\ntype: decision\nbody with no close\n",
+		}}}
+		res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Applied) != 0 {
+			t.Errorf("unparseable action must not be applied, got: %v", res.Applied)
+		}
+		if _, statErr := os.Stat(filepath.Join(root, "decisions/broken.md")); statErr == nil {
+			t.Error("broken frontmatter was written to disk; clamp must drop it")
+		}
+	})
+
+	t.Run("invalid type in wiki/ falls back to research, not dropped", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "wiki/general-note.md",
+			Content: "---\ntitle: M\ntype: article\ndomain: general\n---\nbody\n",
+		}}}
+		res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Applied) != 1 {
+			t.Fatalf("wiki/ content must be salvaged, not dropped: %v / %v", res.Applied, res.Errors)
+		}
+		s := readBack(t, root, "wiki/general-note.md")
+		if !strings.Contains(s, "\ntype: research\n") {
+			t.Errorf("wiki/ invalid type should fall back to 'research':\n%s", s)
+		}
+	})
+
+	t.Run("valid frontmatter passes through untouched", func(t *testing.T) {
+		root := t.TempDir()
+		const good = "---\ntitle: Good\ntype: solution\ndomain: general\n---\nclean body\n"
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "solutions/good.md", Content: good,
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+			t.Fatal(err)
+		}
+		if got := readBack(t, root, "solutions/good.md"); got != good {
+			t.Errorf("valid frontmatter must be byte-identical; got:\n%s", got)
+		}
+	})
+
+	t.Run("opt-out writes verbatim (backward compatible)", func(t *testing.T) {
+		root := t.TempDir()
+		const bad = "---\ntitle: X\ntype: article\ndomain: research\n---\nbody\n"
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "decisions/x.md", Content: bad,
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true}); err != nil {
+			t.Fatal(err)
+		}
+		if got := readBack(t, root, "decisions/x.md"); got != bad {
+			t.Errorf("opt-out must write verbatim; got:\n%s", got)
+		}
+	})
+}
+
+// TestLoadPrompt_StripsUnsubstitutedPlaceholders asserts the centralized
+// guard in loadPrompt: any {{VAR}} the caller didn't supply (the
+// session-extract {{DOMAIN}} class) is stripped, never shipped to the
+// model verbatim. Uses a real embedded prompt with NO vars supplied so
+// every token is residual.
+func TestLoadPrompt_StripsUnsubstitutedPlaceholders(t *testing.T) {
+	out, err := loadPrompt("session-extract-ollama.md", map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "{{") || strings.Contains(out, "}}") {
+		t.Errorf("residual placeholder survived loadPrompt:\n%s", out)
+	}
+}

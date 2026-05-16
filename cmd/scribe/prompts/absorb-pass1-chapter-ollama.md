@@ -25,11 +25,11 @@ You are Pass 1 of a chaptered absorb. Read THIS chapter only. List 0–4 distinc
   "raw_file": "{{RAW_FILE}}",
   "source_title": "{{SOURCE_TITLE}}",
   "chapter": "{{CHAPTER_TITLE}}",
-  "domain": "<frontmatter domain or 'general'>",
+  "domain": "general",
   "entities": [
     {
       "label": "Wiki Article Title (Title Case, no period)",
-      "type": "article|tool|decision|pattern|solution|research|person",
+      "type": "decision|pattern|solution|research|tool|project|idea|person",
       "one_line": "One sentence orienting Pass 2.",
       "key_claims": ["verbatim claim 1", "claim 2"]
     }
@@ -41,7 +41,7 @@ You are Pass 1 of a chaptered absorb. Read THIS chapter only. List 0–4 distinc
 
 - 0–4 entities. Zero is valid for a short chapter — emit `"entities": []`.
 - `label` must be Title Case wiki titles.
-- `type` must be exactly one of: article, tool, decision, pattern, solution, research, person.
+- `type` must be exactly one of: decision, pattern, solution, research, tool, project, idea, person. (No `article` — there is no such type; a generic note is `research`.)
 - `key_claims` must be verbatim non-obvious facts. Numerics, named decisions, dates — preserve exact wording.
 - Skip cross-references to topics introduced elsewhere; the chapter that introduced them will plan them.
 

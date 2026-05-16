@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	gosync "sync"
 	"time"
@@ -256,7 +257,44 @@ func loadPrompt(name string, vars map[string]string) (string, error) {
 	for k, v := range vars {
 		result = strings.ReplaceAll(result, "{{"+k+"}}", v)
 	}
+	// Centralized placeholder guard. A `{{VAR}}` the caller never
+	// supplied is always a caller/prompt contract bug (e.g. session-
+	// extract referencing {{DOMAIN}} that runSessionEnvelopeOnce never
+	// puts in vars). Left intact it ships verbatim to the model, which
+	// dutifully echoes it into paths and frontmatter — the literal
+	// `projects/{{DOMAIN}}/…` / `domain: {{DOMAIN}}` corruption class.
+	// Strip rather than error: a missing substitution should degrade the
+	// prompt, not abort the run, and the frontmatter clamp turns the
+	// resulting empty value into a valid `general`. Log so the broken
+	// (prompt, caller) pair is findable.
+	if leftover := promptPlaceholderRE.FindAllString(result, -1); len(leftover) > 0 {
+		result = promptPlaceholderRE.ReplaceAllString(result, "")
+		logMsg("prompt", "%s: stripped %d unsubstituted placeholder(s): %s", name, len(leftover), strings.Join(uniqueStrings(leftover), " "))
+	}
 	return result, nil
+}
+
+// promptPlaceholderRE matches a residual {{NAME}} substitution token
+// (uppercase, digits, underscore — the convention every prompt var
+// follows). Prompts never contain literal double-brace text outside
+// substitution tokens, so a post-substitution match is unambiguously an
+// unfilled var.
+var promptPlaceholderRE = regexp.MustCompile(`\{\{[A-Z0-9_]+\}\}`)
+
+// uniqueStrings returns the input with duplicates removed, order
+// preserved. Keeps the placeholder log line terse when the same token
+// (e.g. {{DOMAIN}}) appears many times in one prompt.
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }
 
 // promptForProvider picks between `<base>-anthropic.md` and
