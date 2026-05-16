@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -19,7 +20,13 @@ import (
 func TestShouldAbsorbChaptered_RequiresAllSignals(t *testing.T) {
 	tmp := t.TempDir()
 	rawPath := filepath.Join(tmp, "doc.md")
-	body := "---\ntitle: x\n---\n# Chapter A\nbody A\n\n# Chapter B\nbody B\n\n# Chapter C\nbody C\n\n# Chapter D\nbody D\n"
+	// Each chapter is genuinely chapter-sized (≥ MinChunkBytes) so the
+	// heading splitter does NOT coalesce them (docs/entity-fanout-cap-
+	// plan.md Fix A). Tiny multi-heading notes now collapse to a single
+	// chunk by design — that path is covered by
+	// TestChunkByHeadings_CoalescesTinySections.
+	fill := "\n\n" + strings.Repeat("Chapter prose sentence with enough heft. ", 220) + "\n\n"
+	body := "---\ntitle: x\n---\n# Chapter A" + fill + "# Chapter B" + fill + "# Chapter C" + fill + "# Chapter D" + fill
 	if err := os.WriteFile(rawPath, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

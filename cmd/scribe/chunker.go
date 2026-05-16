@@ -54,10 +54,23 @@ type Chunk struct {
 // limits, leaving room for the prompt template + tools.
 type chunkOptions struct {
 	MaxBytes int
+	// MinChunkBytes coalesces adjacent heading sections until a chunk
+	// reaches this size before it counts as a standalone chunk. Without
+	// it, chunkByHeadings emitted one chunk per heading regardless of
+	// size — a 588-word note with 12 headings became 13 ~45-word
+	// "chapters", each its own pass-1 call, which fanned pass-1 out into
+	// ~35 near-duplicate entities and ground pass-2 for ~80 min on a
+	// trivial article (see docs/entity-fanout-cap-plan.md Fix A). A
+	// 45-word section is never a real chapter. Only the small side is
+	// affected: sections already >= MinChunkBytes pass through unchanged,
+	// and the MaxBytes ceiling still splits oversized chunks afterward.
+	// Zero (non-default callers) disables coalescing — original
+	// one-chunk-per-heading behavior.
+	MinChunkBytes int
 }
 
 func defaultChunkOptions() chunkOptions {
-	return chunkOptions{MaxBytes: 24 * 1024}
+	return chunkOptions{MaxBytes: 24 * 1024, MinChunkBytes: 6 * 1024}
 }
 
 // ChunkArticle is the canonical entry point. Inspects the article
@@ -207,13 +220,28 @@ func chunkByHeadings(body string, opts chunkOptions) []Chunk {
 		})
 	}
 
-	out := make([]Chunk, 0, len(cuts))
+	// Coalesce adjacent sub-MinChunkBytes sections. cuts are contiguous
+	// (cut[i].end == cut[i+1].start), so a coalesced group is just the
+	// first cut with its .end stretched to the last absorbed section. A
+	// group keeps absorbing while it is still under target; the final
+	// group takes whatever remainder is left. MinChunkBytes=0 makes the
+	// guard never fire → original one-chunk-per-heading.
+	groups := make([]cut, 0, len(cuts))
 	for _, c := range cuts {
-		section := body[c.start:c.end]
+		if n := len(groups); n > 0 && (groups[n-1].end-groups[n-1].start) < opts.MinChunkBytes {
+			groups[n-1].end = c.end
+			continue
+		}
+		groups = append(groups, c)
+	}
+
+	out := make([]Chunk, 0, len(groups))
+	for _, g := range groups {
+		section := body[g.start:g.end]
 		if len(section) <= opts.MaxBytes {
 			out = append(out, Chunk{
-				Title: c.title,
-				Level: c.level,
+				Title: g.title,
+				Level: g.level,
 				Body:  section,
 			})
 			continue
@@ -221,8 +249,8 @@ func chunkByHeadings(body string, opts chunkOptions) []Chunk {
 		parts := chunkByTokens(section, opts)
 		for j, p := range parts {
 			out = append(out, Chunk{
-				Title: fmtPart(c.title, j+1, len(parts)),
-				Level: c.level,
+				Title: fmtPart(g.title, j+1, len(parts)),
+				Level: g.level,
 				Body:  p.Body,
 			})
 		}

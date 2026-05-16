@@ -381,7 +381,12 @@ func TestChunkArticle_DispatchesToTOCWhenAvailable(t *testing.T) {
 func TestChunkArticle_FallsBackToHeadingsWithoutSidecar(t *testing.T) {
 	tmp := t.TempDir()
 	rawPath := filepath.Join(tmp, "article.md")
-	body := "---\ntitle: x\n---\nintro\n\n# Section One\ntext\n\n# Section Two\ntext\n"
+	// Sections sized ≥ MinChunkBytes so the heading splitter keeps them
+	// separate rather than coalescing (docs/entity-fanout-cap-plan.md
+	// Fix A). Sub-chapter notes intentionally collapse now; that path is
+	// covered by TestChunkByHeadings_CoalescesTinySections.
+	fill := "\n\n" + strings.Repeat("section prose with real heft. ", 240) + "\n\n"
+	body := "---\ntitle: x\n---\nintro\n\n# Section One" + fill + "# Section Two" + fill
 	if err := os.WriteFile(rawPath, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -478,4 +483,53 @@ func titleList(chunks []Chunk) []string {
 		out[i] = c.Title
 	}
 	return out
+}
+
+// ---- Bug 3: tiny-section coalescing (docs/entity-fanout-cap-plan.md Fix A) ----
+
+func TestChunkByHeadings_CoalescesTinySections(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 12; i++ {
+		b.WriteString("## Heading ")
+		b.WriteByte(byte('A' + i))
+		b.WriteString("\n\nA short paragraph that is nowhere near a chapter.\n\n")
+	}
+	body := b.String()
+
+	// Default opts (MinChunkBytes 6 KB): the whole ~700 B note coalesces
+	// into a single chunk instead of 12 ~55 B "chapters".
+	got := chunkByHeadings(body, defaultChunkOptions())
+	if len(got) != 1 {
+		t.Fatalf("expected 1 coalesced chunk, got %d", len(got))
+	}
+	if got[0].Body != body {
+		t.Errorf("coalesced chunk must reproduce the input verbatim")
+	}
+
+	// MinChunkBytes=0 disables coalescing — original one-per-heading.
+	raw := chunkByHeadings(body, chunkOptions{MaxBytes: 24 * 1024, MinChunkBytes: 0})
+	if len(raw) != 12 {
+		t.Fatalf("MinChunkBytes=0 should preserve 12 heading chunks, got %d", len(raw))
+	}
+
+	// Content preservation under coalescing: concatenated bodies == input.
+	var sb strings.Builder
+	for _, c := range got {
+		sb.WriteString(c.Body)
+	}
+	if sb.String() != body {
+		t.Errorf("coalesced chunk bodies do not reproduce the body")
+	}
+}
+
+func TestChunkByHeadings_LargeSectionsStaySeparate(t *testing.T) {
+	big := strings.Repeat("paragraph text. ", 600) // ~9.6 KB > 6 KB
+	body := "## One\n\n" + big + "\n\n## Two\n\n" + big + "\n"
+	got := chunkByHeadings(body, defaultChunkOptions())
+	if len(got) != 2 {
+		t.Fatalf("two already-large sections must stay 2 chunks, got %d", len(got))
+	}
+	if got[0].Title != "One" || got[1].Title != "Two" {
+		t.Errorf("unexpected titles: %q / %q", got[0].Title, got[1].Title)
+	}
 }

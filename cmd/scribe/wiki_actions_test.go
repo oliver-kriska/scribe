@@ -1,10 +1,13 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Phase 4B test scope: action envelope parsing, path validation, and
@@ -458,5 +461,151 @@ func TestApplyWikiActions_EmptyRootError(t *testing.T) {
 	env := WikiActionEnvelope{Actions: []WikiAction{{Op: "create", Path: "wiki/x.md", Content: "x"}}}
 	if _, err := applyWikiActions("", env, ApplyOptions{}); err == nil {
 		t.Error("expected catastrophic error on empty root")
+	}
+}
+
+// ---- Bug 1: related: frontmatter normalizer ----
+
+func relatedField(t *testing.T, content string) any {
+	t.Helper()
+	body := strings.TrimPrefix(content, "---\n")
+	end := strings.Index(body, "\n---")
+	if end < 0 {
+		t.Fatalf("no closing frontmatter delimiter in:\n%s", content)
+	}
+	var fm map[string]any
+	if err := yaml.Unmarshal([]byte(body[:end]), &fm); err != nil {
+		t.Fatalf("normalized frontmatter is not valid YAML: %v\n%s", err, content)
+	}
+	return fm["related"]
+}
+
+func TestNormalizeRelatedFrontmatter(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string // expected related entries (inner names), nil = empty list
+	}{
+		{
+			name: "invalid yaml junk",
+			in:   "---\ntitle: X\nrelated: [][AuthoredUp][LangChain]\nsources: [a]\n---\nbody\n",
+			want: []string{"[[AuthoredUp]]", "[[LangChain]]"},
+		},
+		{
+			name: "bare bracket-stripped list",
+			in:   "---\ntitle: X\nrelated: [Terminal Bench 2.0, LangSmith, Harness Engineering]\n---\nbody\n",
+			want: []string{"[[Terminal Bench 2.0]]", "[[LangSmith]]", "[[Harness Engineering]]"},
+		},
+		{
+			name: "escaped garbage",
+			in:   "---\ntitle: X\nrelated: [\"\\[Harness Engineering\\]\", \"\\ \\[Tools\\]\"]\n---\nbody\n",
+			want: []string{"[[Harness Engineering]]", "[[Tools]]"},
+		},
+		{
+			name: "already correct multiline block collapses cleanly",
+			in:   "---\ntitle: X\nrelated: [\n  \"[[LangSmith Traces]]\",\n  \"[[Coding Agent]]\"\n]\nsources: [s]\n---\nbody\n",
+			want: []string{"[[LangSmith Traces]]", "[[Coding Agent]]"},
+		},
+		{
+			name: "empty list preserved",
+			in:   "---\ntitle: X\nrelated: []\n---\nbody\n",
+			want: nil,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := normalizeRelatedFrontmatter(c.in)
+			if !strings.HasSuffix(out, "\nbody\n") {
+				t.Errorf("body must be preserved verbatim, got:\n%s", out)
+			}
+			rel := relatedField(t, out)
+			if c.want == nil {
+				if rel != nil {
+					if l, ok := rel.([]any); !ok || len(l) != 0 {
+						t.Errorf("expected empty related, got %#v", rel)
+					}
+				}
+				return
+			}
+			list, ok := rel.([]any)
+			if !ok {
+				t.Fatalf("related is not a YAML list: %#v", rel)
+			}
+			if len(list) != len(c.want) {
+				t.Fatalf("want %d related, got %d (%#v)", len(c.want), len(list), list)
+			}
+			for i, w := range c.want {
+				if got := list[i].(string); got != w {
+					t.Errorf("related[%d] = %q, want %q", i, got, w)
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeRelatedFrontmatter_PassthroughWhenNoFrontmatterOrKey(t *testing.T) {
+	noFM := "no frontmatter here, just [[a body link]]\n"
+	if got := normalizeRelatedFrontmatter(noFM); got != noFM {
+		t.Errorf("content without frontmatter must be unchanged")
+	}
+	noKey := "---\ntitle: X\ntags: [a, b]\n---\n[[body link]] stays\n"
+	if got := normalizeRelatedFrontmatter(noKey); got != noKey {
+		t.Errorf("frontmatter without related: must be unchanged, got:\n%s", got)
+	}
+}
+
+// ---- Bug 2: out-of-bounds path remap (opt-in) ----
+
+func TestValidateActionPath_UnknownTopSentinel(t *testing.T) {
+	root := t.TempDir()
+	_, err := validateActionPath(root, "middleware/foo.md")
+	if !errors.Is(err, errUnknownTopDir) {
+		t.Errorf("unknown top dir should wrap errUnknownTopDir, got %v", err)
+	}
+	if _, err := validateActionPath(root, "/etc/passwd"); errors.Is(err, errUnknownTopDir) {
+		t.Error("absolute path must NOT be classified as unknown-top")
+	}
+	if _, err := validateActionPath(root, "../escape.md"); errors.Is(err, errUnknownTopDir) {
+		t.Error("traversal must NOT be classified as unknown-top")
+	}
+}
+
+func TestApplyWikiActions_RemapUnknownTopOptIn(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "create", Path: "middleware/loop-detection.md", Content: "---\ntitle: LDM\n---\nbody\n",
+	}}}
+
+	// Opted in: page is re-homed under wiki/, not dropped.
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, RemapUnknownTopToWiki: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Errors) != 0 {
+		t.Fatalf("remap should avoid errors, got %v", res.Errors)
+	}
+	if _, err := os.Stat(filepath.Join(root, "wiki", "middleware", "loop-detection.md")); err != nil {
+		t.Errorf("remapped file not written under wiki/: %v", err)
+	}
+
+	// Default (no opt-in): unknown top is still a hard error, file dropped.
+	root2 := t.TempDir()
+	res2, _ := applyWikiActions(root2, env, ApplyOptions{AllowOverwrite: true})
+	if len(res2.Errors) == 0 {
+		t.Error("without opt-in, unknown top dir must remain an error")
+	}
+	if _, err := os.Stat(filepath.Join(root2, "wiki", "middleware", "loop-detection.md")); err == nil {
+		t.Error("file must NOT be written when remap is off")
+	}
+}
+
+func TestApplyWikiActions_RemapNeverResurrectsUnsafePaths(t *testing.T) {
+	root := t.TempDir()
+	for _, p := range []string{"../escape.md", "wiki/_index.md", "/etc/passwd"} {
+		env := WikiActionEnvelope{Actions: []WikiAction{{Op: "create", Path: p, Content: "x"}}}
+		res, _ := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, RemapUnknownTopToWiki: true})
+		if len(res.Errors) == 0 {
+			t.Errorf("unsafe path %q must stay rejected even with remap opted in", p)
+		}
 	}
 }

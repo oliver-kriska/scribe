@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	gosync "sync"
 	"time"
@@ -155,6 +156,14 @@ type WikiAction struct {
 type ApplyOptions struct {
 	DryRun         bool
 	AllowOverwrite bool
+	// RemapUnknownTopToWiki: when the model invents a top-level dir
+	// (e.g. "middleware/foo.md"), re-home the page under "wiki/" instead
+	// of dropping the entity. Opt-in — pass-2 sets it; other envelope
+	// callers keep the strict sandbox so a bad top dir is still an
+	// error. Only the errUnknownTopDir failure is remapped, and the
+	// remapped path is re-validated, so absolute/traversal/underscore
+	// paths are never resurrected here.
+	RemapUnknownTopToWiki bool
 }
 
 // ApplyResult summarizes what the executor did. Returned even on
@@ -182,6 +191,18 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 	}
 	for i, a := range env.Actions {
 		abs, err := validateActionPath(root, a.Path)
+		if err != nil && opts.RemapUnknownTopToWiki && errors.Is(err, errUnknownTopDir) {
+			// Model invented a top dir (e.g. "middleware/"). Re-home the
+			// page under wiki/ rather than losing the entity. The remap
+			// is re-validated through the same gate, so absolute/
+			// traversal/underscore paths (which failed above with a
+			// different error and never reach here) cannot slip in.
+			remapped := filepath.Join("wiki", a.Path)
+			if rabs, rerr := validateActionPath(root, remapped); rerr == nil {
+				logMsg("envelope", "action[%d] %s: remapped out-of-bounds path %q -> %q", i, a.Op, a.Path, remapped)
+				abs, err, a.Path = rabs, nil, remapped
+			}
+		}
 		if err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] %s %q: %v", i, a.Op, a.Path, err))
 			continue
@@ -524,8 +545,15 @@ func validateActionPath(root, rel string) (string, error) {
 			return abs, nil
 		}
 	}
-	return "", fmt.Errorf("path %q is outside known wiki dirs (%s)", rel, strings.Join(wikiDirs, ", "))
+	return "", fmt.Errorf("path %q is outside known wiki dirs (%s): %w", rel, strings.Join(wikiDirs, ", "), errUnknownTopDir)
 }
+
+// errUnknownTopDir flags the "path outside known wiki dirs" failure
+// specifically (the model invented a top-level dir like "middleware/").
+// It is the ONLY validateActionPath failure an opt-in caller may remap
+// under wiki/ — absolute, traversal, and underscore-artifact failures
+// return a different error and stay hard rejections for every caller.
+var errUnknownTopDir = errors.New("path outside known wiki dirs")
 
 // writeFileAtomic writes content to path via tmp + rename so a
 // partially-written file is never observed by readers. The parent
@@ -662,6 +690,146 @@ func marshalFrontmatter(m map[string]any) (string, error) {
 		s += "\n"
 	}
 	return s, nil
+}
+
+// relatedWikiRE matches a [[Wikilink]] token; inner text captured.
+var relatedWikiRE = regexp.MustCompile(`\[\[\s*([^\[\]]+?)\s*\]\]`)
+
+// relatedBracketRE matches one […] group; inner text captured. Fallback
+// for [Name] or a bare flow list [A, B, C] (one match whose body the
+// caller splits on commas).
+var relatedBracketRE = regexp.MustCompile(`\[\s*([^\[\]]*?)\s*\]`)
+
+// relatedKeyBoundRE matches a top-level YAML frontmatter key line, used to bound
+// the related: value region. Flow/block continuation lines are indented
+// or start with -, ", ] and never match this.
+var relatedKeyBoundRE = regexp.MustCompile(`^[A-Za-z0-9_.\-]+:`)
+
+// normalizeRelatedFrontmatter rewrites the `related:` value in an
+// article's YAML frontmatter into the canonical quoted-wikilink form
+// `related: ["[[A]]", "[[B]]"]` (or `related: []`). Local pass-2 models
+// corrupt this field in ways the 2026-05-15 A/B cataloged: invalid
+// YAML (`related: [][AuthoredUp][LangChain]`), bracket-stripped bare
+// lists (`related: [A, B]` → parsed as plain strings, backlink edges
+// silently lost), and escaped garbage (`["\[X\]"]`). Each breaks lint /
+// qmd / the backlink walker. Rewriting to one valid quoted line is
+// strictly safer than letting the corruption hit disk: worst case a
+// recovered token is an orphan wikilink (soft, the linker tolerates it)
+// rather than unparseable frontmatter (hard, breaks the document).
+//
+// Model-agnostic and conservative: content without a leading `---`
+// block, or frontmatter without a `related:` key, is returned
+// byte-for-byte unchanged. Only the first `related:` key's value region
+// is touched; the body is never inspected.
+func normalizeRelatedFrontmatter(content string) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
+		return content
+	}
+	closeIdx := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			closeIdx = i
+			break
+		}
+	}
+	if closeIdx < 0 {
+		return content
+	}
+	relIdx := -1
+	for i := 1; i < closeIdx; i++ {
+		if strings.HasPrefix(lines[i], "related:") {
+			relIdx = i
+			break
+		}
+	}
+	if relIdx < 0 {
+		return content
+	}
+	// Region end: next top-level key, else the closing delimiter.
+	end := closeIdx
+	for i := relIdx + 1; i < closeIdx; i++ {
+		if relatedKeyBoundRE.MatchString(lines[i]) {
+			end = i
+			break
+		}
+	}
+	region := strings.Join(lines[relIdx:end], "\n")
+	region = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(region), "related:"))
+	// Strip stray escape backslashes the model injects (`"\[X\]"`) so
+	// the bracket regexes see clean delimiters.
+	region = strings.ReplaceAll(region, `\`, "")
+
+	var names []string
+	if m := relatedWikiRE.FindAllStringSubmatch(region, -1); len(m) > 0 {
+		for _, g := range m {
+			names = append(names, splitRelatedTokens(g[1])...)
+		}
+	} else if m := relatedBracketRE.FindAllStringSubmatch(region, -1); len(m) > 0 {
+		for _, g := range m {
+			names = append(names, splitRelatedTokens(g[1])...)
+		}
+	} else {
+		names = splitRelatedTokens(region)
+	}
+
+	seen := map[string]struct{}{}
+	clean := make([]string, 0, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(strings.Trim(strings.TrimSpace(n), `"'[]`))
+		if n == "" {
+			continue
+		}
+		if _, dup := seen[n]; dup {
+			continue
+		}
+		seen[n] = struct{}{}
+		clean = append(clean, n)
+	}
+
+	newLine := "related: []"
+	if len(clean) > 0 {
+		quoted := make([]string, len(clean))
+		for i, n := range clean {
+			quoted[i] = `"[[` + n + `]]"`
+		}
+		newLine = "related: [" + strings.Join(quoted, ", ") + "]"
+	}
+
+	out := make([]string, 0, len(lines))
+	out = append(out, lines[:relIdx]...)
+	out = append(out, newLine)
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n")
+}
+
+// splitRelatedTokens splits a captured group on commas/newlines so a
+// flow list captured as one bracket body ("A, B, C") becomes individual
+// names. Surrounding quotes/brackets are trimmed by the caller.
+func splitRelatedTokens(s string) []string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r'
+	})
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// normalizeEnvelopeRelated applies normalizeRelatedFrontmatter to every
+// content-bearing action. The absorb pass-2 and single-pass paths call
+// this before apply so local-model related: corruption never reaches
+// disk. No-op for actions without content (append-to-existing, etc.).
+func normalizeEnvelopeRelated(env *WikiActionEnvelope) {
+	for i := range env.Actions {
+		if env.Actions[i].Content == "" {
+			continue
+		}
+		env.Actions[i].Content = normalizeRelatedFrontmatter(env.Actions[i].Content)
+	}
 }
 
 // parseEnvelope unmarshals one JSON envelope and validates the

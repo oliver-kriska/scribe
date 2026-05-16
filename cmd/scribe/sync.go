@@ -1730,7 +1730,8 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 	if err != nil {
 		return fmt.Errorf("absorb-single: parse envelope: %w", err)
 	}
-	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	normalizeEnvelopeRelated(&env)
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, RemapUnknownTopToWiki: true})
 	if err != nil {
 		return fmt.Errorf("absorb-single: apply actions: %w", err)
 	}
@@ -2004,7 +2005,8 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 						logMsg("sync", "pass2 entity %q: stripped %d fact-ID bracket(s) (facts pass not run for this article)", ent.Label, totalStripped)
 					}
 				}
-				res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+				normalizeEnvelopeRelated(&env)
+				res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, RemapUnknownTopToWiki: true})
 				if err != nil {
 					logMsg("sync", "pass2 entity %q: apply actions: %v", ent.Label, err)
 					return nil

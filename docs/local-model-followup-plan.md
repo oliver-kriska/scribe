@@ -518,3 +518,61 @@ follow-on phase, not part of this followup.
   anthropic, contextualize on a third backend" is already supported
   via the per-op provider knob, but the config surface is sprawling.
   Wait for a real second use case before normalizing.
+
+---
+
+## 2026-05-16 addendum — bugs surfaced by the pass-2 model A/B
+
+Source: `.claude/research/2026-05-15-pass2-thermal-model-downgrade.md`.
+An empirical A/B (gemma3:27b vs gemma3:12b on the real pass-2 envelope
+path, same dense article, identical 2400 s budget) rejected the 12b
+downgrade and surfaced three defects, listed by severity. The thermal
+root cause itself (entity fan-out) is scoped separately in
+`docs/entity-fanout-cap-plan.md`.
+
+> **Status 2026-05-16: all three fixed.** `normalizeRelatedFrontmatter`
+> + `normalizeEnvelopeRelated` (Bug 1), `errUnknownTopDir` sentinel +
+> `ApplyOptions.RemapUnknownTopToWiki` (Bug 2), and `chunkOptions.
+> MinChunkBytes` heading-coalesce (Bug 3 / Fix A) shipped with tests;
+> `make check` green. Per-detail notes below kept for the rationale.
+
+### Bug 1 — local-model `related:` frontmatter corruption (highest)
+
+gemma3:12b pass-2 produced **invalid-YAML** `related:` on ~12% of files
+(`related: [][AuthoredUp][LangChain]`, `related: [][AuthoredUp][LangChain][Harbor]`)
+and bracket-stripped bare `related: [Terminal Bench 2.0, LangSmith, …]`
+on ~29% (parses as plain strings → backlink edges silently lost). 27b
+was clean (13/14 conservative `[]`, 1 perfect quoted block, 0 corrupt).
+
+This is why the 2026-05-13 27b decision stands and 12b is rejected for
+pass-2. **Proposed hardening (model-agnostic):** a Go-side `related:`
+normalizer applied to every pass-2 envelope before apply —
+re-wrap bare `Foo` / `[[Foo]]` → `"[[Foo]]"`, reject tokens that aren't
+wikilinkable, and fail the envelope (triggering the existing
+`runPass2JSONOnce` corrective retry) if `related:` is non-parseable
+YAML. Hardens all local models, not just 12b, and would let smaller/
+cooler models back into contention later. Pairs with Item 1's
+fact-ID validator — same "sanitize envelope before apply" seam.
+
+### Bug 2 — 27b out-of-bounds create-path hallucination (medium)
+
+gemma3:27b pass-2 emitted `create "middleware/loop-detection-middleware.md"`
+— `middleware/` is not in the allowed wiki dirs. The executor correctly
+rejected it (`0 applied, 1 errors`), but the entity was lost with no
+recovery. **Proposed:** on an out-of-bounds path, remap to the
+nearest valid wiki dir by the entity's `type` (tool→`tools/`,
+pattern→`patterns/`, …) instead of dropping; or feed the rejection
+into the corrective-retry loop the way envelope-parse failures already
+are. Low frequency (1/16 here) but silent data loss.
+
+### Bug 3 — gemma3:4b pass-1 over-extraction + instability under fan-out (medium)
+
+On the 588-word note: 35 entities from 13 ~45-word "chapters". On the
+4927-word doc: `context deadline exceeded` on pass-1 chapters 15/16 and
+`json: cannot unmarshal string/array into … entities` on chapter plans
+7/15/16/21/25. Both are downstream of the chunker emitting many tiny
+racy chunks. **Fixed by `docs/entity-fanout-cap-plan.md` Fix A**
+(coalesce sub-`MinChunkBytes` heading sections → far fewer, larger,
+coherent pass-1 calls). Tracked here only so the timeout/parse-error
+class isn't mistaken for an unrelated Ollama flake — it is a
+fan-out symptom, not a model bug.
