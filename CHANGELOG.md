@@ -2,6 +2,41 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.24] — 2026-05-16
+
+Unify envelope content sanitization into one apply-time seam. 0.2.23
+fixed the path/op robustness class centrally (every envelope consumer
+inherits `validateActionPath`), but the two content guards — fabricated
+`[cNN-fM]` fact-ID strip and `related:` YAML normalize — were hand-wired
+into only the two absorb call sites. The other six envelope consumers
+(dream, assess, extract, deep, session-mine, codex-mine) could still
+write local-model-corrupted content straight to disk. Under a 100%-ollama
+config every one of those runs on a local model, so this was the exact
+0.2.23 corruption class, one field over, on the callers that never got
+the fix.
+
+### Fix — content robustness now centralized like the path guards
+- New `sanitizeEnvelopeContent` seam runs at the top of
+  `applyWikiActions`, beside the existing path-guard boundary, gated by
+  `ApplyOptions.SanitizeContent` (+ `ValidFactIDs`; nil ⇒ strip every
+  `[cNN-fM]`, matching the prompt's drop-the-bracket fallback).
+- pass-2's ~40-line inline strip block and absorb-single's hand-rolled
+  `normalizeEnvelopeRelated` call are deleted — both route through the
+  seam with identical behavior.
+- dream / assess / extract / deep / session-mine / codex-mine opt in
+  with one line each and inherit both content guards; the
+  local-model corruption gap on those six paths is closed.
+- Backward compatible: callers that don't set `SanitizeContent` are
+  byte-identical to before; repairs log through the `envelope` channel
+  (no `ApplyResult` schema change). single-pass now also strips
+  fabricated fact-IDs (it runs no facts pass, so any `[cNN-fM]` there
+  was always fabricated).
+
+### Tests
+- `wiki_actions_test`: opt-in strips all IDs + normalizes `related:`;
+  `ValidFactIDs` keeps grounded IDs and strips the rest; opt-out is
+  byte-identical; already-correct `related:` survives intact.
+
 ## [0.2.23] — 2026-05-16
 
 Pass-1 entity fan-out cap + local-model pass-2 hardening. Three bugs
