@@ -1,6 +1,6 @@
 # scribe
 
-`scribe` is a single-binary CLI that creates and maintains a personal, LLM-written knowledge base. It continuously extracts reusable knowledge from your git repos, Claude Code sessions (via [`ccrider`](https://github.com/neilberkman/ccrider)'s FTS5 index), links you iMessage to yourself as bookmarks (your own number is the world's most portable read-it-later list), and local files, then compiles it into a curated wiki that [`qmd`](https://github.com/tobi/qmd) indexes for semantic search. The hot path uses Anthropic's Claude via `claude -p`; the optional `contextualize` step can run fully local via [Ollama](https://ollama.com) (gemma3:4b / qwen3:4b, $0 API cost).
+`scribe` is a single-binary CLI that creates and maintains a personal, LLM-written knowledge base. It continuously extracts reusable knowledge from your git repos, Claude Code sessions (via [`ccrider`](https://github.com/neilberkman/ccrider)'s FTS5 index) and Codex CLI sessions, links you iMessage to yourself as bookmarks (your own number is the world's most portable read-it-later list), and local files, then compiles it into a curated wiki that [`qmd`](https://github.com/tobi/qmd) indexes for semantic search. Every LLM step resolves through one top-level `llm:` provider block: Anthropic's Claude by default, or a 100% local [Ollama](https://ollama.com) server (gemma3 / qwen3, $0 API cost) — flipping the whole pipeline to free/offline is one line of yaml.
 
 **Not a RAG pipeline. Not a Karpathy-style LLM wiki.** scribe keeps raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are indexed, both are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch the implicit entities that aren't literally named in the text. The whole pipeline can run fully local on Ollama (gemma3:4b / qwen3:4b, $0 API cost).
 
@@ -27,7 +27,7 @@ That single prompt turns your KB into working memory for every agent session. Wi
 
 - Every hour: auto-commit the KB.
 - Every 2 hours: scan git repos for new decisions, patterns, learnings; extract them via `claude -p`.
-- 3×/day (03:00, 12:00, 18:00): mine Claude Code sessions via ccrider's FTS5 index, scored by keyword density so boilerplate sessions cost nothing.
+- 3×/day (03:00, 12:00, 18:00): mine Claude Code sessions via ccrider's FTS5 index — and Codex CLI rollouts when `codex.mine` is enabled — scored by keyword density so boilerplate sessions cost nothing.
 - Every 30 min: drain queued URLs into `raw/articles/`.
 - Every 4 hours: pull bookmark-links you texted yourself.
 - Daily 06:30: retry previously-unfetched link stubs (`capture-refetch`).
@@ -281,6 +281,19 @@ ccrider_db: ~/.config/ccrider/sessions.db
 
 default_model: sonnet # claude model used for extraction/dream/absorb
 
+# Codex CLI session mining (opt-in). Project discovery from
+# codex_sessions_dir above needs no extra config; this block additionally
+# distills the Codex transcripts themselves into the KB — the same
+# triage→envelope→wiki path ccrider sessions get, run inside
+# `scribe sync --sessions`. A no-op without codex_sessions_dir. The LLM
+# provider/model/prompt are inherited from session_mine: (Codex mining is
+# ccrider mining with the transcript source swapped).
+codex:
+  mine: true            # default false — set true to turn the pass on
+  sessions_max: 3       # cap mined Codex sessions per sync run
+  lookback_hours: 168   # bound the rollout scan (7d); log is the real dedup
+  min_score: 2          # scoreText threshold a transcript must clear
+
 capture:
   # Use the list form (`self_chat_handles`) if you message yourself from both a
   # phone and an Apple-ID email — iMessage stores those as separate chats and
@@ -371,7 +384,7 @@ No manual `ollama pull` needed — though `ollama pull gemma3:12b && ollama pull
 
 All are free and work with scribe's auto-pull. Pick with `model: <tag>` in scribe.yaml. llama.cpp's `llama-server` exposes the same `/api/generate` shape, so `ollama_url: http://localhost:8080` also works if you prefer raw llama.cpp over Ollama.
 
-> **Note.** Local-mode covers every LLM-driven subcommand as of 0.2.14 — `dream`, `assess`, `deep`, `session-mine`, `relations migrate`, and the four absorb passes. `contextualize` was first (pre-0.2.11); Phase 4A added `facts_provider: ollama`; Phase 4B added `pass2_mode: json` + `pass2_provider: ollama` (0.2.11); Phase 4C/4D/4E (0.2.14) ported the four remaining `claude -p` orchestrators onto bounded JSON-envelope subtasks, and a top-level `llm:` block now wires it together so flipping the whole pipeline is one line of yaml.
+> **Note.** Local-mode covers every LLM-driven subcommand as of 0.2.14 — `dream`, `assess`, `deep`, `session-mine` (including Codex session mining, which inherits the `session_mine:` backend), `relations migrate`, and the four absorb passes. `contextualize` was first (pre-0.2.11); Phase 4A added `facts_provider: ollama`; Phase 4B added `pass2_mode: json` + `pass2_provider: ollama` (0.2.11); Phase 4C/4D/4E (0.2.14) ported the four remaining `claude -p` orchestrators onto bounded JSON-envelope subtasks, and a top-level `llm:` block now wires it together so flipping the whole pipeline is one line of yaml.
 
 ### `~/.config/scribe/config.yaml` (user)
 
@@ -402,7 +415,7 @@ kb_dir: /home/alice/my-kb
 ```sh
 scribe init         # bootstrap a KB or check an existing one
 scribe sync         # discover → extract → absorb → reindex
-scribe sync --sessions       # mine Claude Code sessions via ccrider
+scribe sync --sessions       # mine Claude Code (ccrider) + Codex CLI sessions (when codex.mine is on)
 scribe sync --estimate       # token estimate for pending work (no LLM calls)
 scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml
 scribe triage       # score unprocessed sessions by knowledge density
@@ -443,7 +456,7 @@ Since Karpathy's LLM-wiki gist in April 2026, a handful of open-source takes hav
 
 | Tool                             | Session mining                   | Cron-driven             | Density pre-filter    | Two-pass absorb | Multi-project | Local-mode option  |
 | -------------------------------- | -------------------------------- | ----------------------- | --------------------- | --------------- | ------------- | ------------------ |
-| **scribe**                       | ✅ via ccrider FTS5               | ✅ LaunchAgents / cron   | ✅ BM25 triage         | ✅ fan-out       | ✅             | ✅ Ollama / llama.cpp |
+| **scribe**                       | ✅ ccrider FTS5 + Codex rollouts  | ✅ LaunchAgents / cron   | ✅ BM25 triage         | ✅ fan-out       | ✅             | ✅ Ollama / llama.cpp |
 | `coleam00/claude-memory-compiler` | ✅ every session, no filter       | ❌ opportunistic         | ❌ (see issue #3: $115 in 20 min) | ❌             | ❌             | ❌                  |
 | `AgriciDaniel/claude-obsidian`   | ❌ read-time only                 | ❌                       | n/a                   | ❌              | read-only     | ❌                  |
 | `nvk/llm-wiki`                   | ❌                                | ❌ one-shot `/wiki:assess` | n/a                  | ❌              | ❌             | ❌                  |
