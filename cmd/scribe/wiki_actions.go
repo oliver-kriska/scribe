@@ -164,6 +164,21 @@ type ApplyOptions struct {
 	// remapped path is re-validated, so absolute/traversal/underscore
 	// paths are never resurrected here.
 	RemapUnknownTopToWiki bool
+	// SanitizeContent: run the pre-apply content seam
+	// (sanitizeEnvelopeContent) before the action loop — strip
+	// fabricated [cNN-fM] fact-ID brackets and normalize malformed
+	// `related:` frontmatter. Opt-in so non-absorb callers that already
+	// behave can adopt it with one line; the absorb paths set it plus
+	// ValidFactIDs. Centralizing here means every envelope consumer
+	// inherits the same content robustness the path/op guards already
+	// give for free.
+	SanitizeContent bool
+	// ValidFactIDs: the set of fact IDs the facts pass produced for the
+	// source article. Brackets not in this set are stripped. Only
+	// consulted when SanitizeContent is true. nil ⇒ strip ALL [cNN-fM]
+	// brackets (facts pass off / file absent — matches the prompt's
+	// drop-the-bracket fallback).
+	ValidFactIDs map[string]bool
 }
 
 // ApplyResult summarizes what the executor did. Returned even on
@@ -188,6 +203,13 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 	res := ApplyResult{}
 	if root == "" {
 		return res, fmt.Errorf("apply wiki actions: empty root")
+	}
+	// Content robustness seam — runs before the action loop so it sits
+	// at the same centralized boundary as the path guards
+	// (validateActionPath) below. env is a by-value copy; mutating it
+	// here never escapes to the caller. Opt-in via SanitizeContent.
+	if opts.SanitizeContent {
+		sanitizeEnvelopeContent(&env, opts.ValidFactIDs)
 	}
 	for i, a := range env.Actions {
 		abs, err := validateActionPath(root, a.Path)
@@ -830,6 +852,41 @@ func normalizeEnvelopeRelated(env *WikiActionEnvelope) {
 		}
 		env.Actions[i].Content = normalizeRelatedFrontmatter(env.Actions[i].Content)
 	}
+}
+
+// sanitizeEnvelopeContent is the single pre-apply content robustness
+// seam. It runs the two local-model content guards over every
+// content-bearing action, in order:
+//
+//  1. stripUnknownFactIDs — drop fabricated [cNN-fM] citation brackets.
+//     validFactIDs nil ⇒ strip every bracket (facts pass off / absent).
+//  2. normalizeEnvelopeRelated — repair malformed `related:` frontmatter
+//     a local model emitted as invalid YAML.
+//
+// Called from the top of applyWikiActions when opts.SanitizeContent is
+// set, so EVERY envelope consumer (dream / assess / extract / deep /
+// session-mine, not just absorb pass-2 / single-pass) inherits identical
+// content robustness — the same way validateActionPath centralizes the
+// path guards. Logs through the "envelope" channel so the operator sees
+// what was repaired without an ApplyResult schema change.
+func sanitizeEnvelopeContent(env *WikiActionEnvelope, validFactIDs map[string]bool) {
+	var totalStripped int
+	for i := range env.Actions {
+		if env.Actions[i].Content == "" {
+			continue
+		}
+		cleaned, stripped := stripUnknownFactIDs(env.Actions[i].Content, validFactIDs)
+		env.Actions[i].Content = cleaned
+		totalStripped += len(stripped)
+	}
+	if totalStripped > 0 {
+		if validFactIDs == nil {
+			logMsg("envelope", "sanitize: stripped %d fact-ID bracket(s) (no valid-ID set — facts pass not run for this source)", totalStripped)
+		} else {
+			logMsg("envelope", "sanitize: stripped %d fabricated fact-ID bracket(s)", totalStripped)
+		}
+	}
+	normalizeEnvelopeRelated(env)
 }
 
 // parseEnvelope unmarshals one JSON envelope and validates the

@@ -53,7 +53,7 @@ func runDeepExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig,
 	if err != nil {
 		return false, fmt.Errorf("deep: parse envelope: %w", err)
 	}
-	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
 	if err != nil {
 		return false, fmt.Errorf("deep: apply actions: %w", err)
 	}

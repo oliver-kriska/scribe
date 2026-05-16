@@ -609,3 +609,119 @@ func TestApplyWikiActions_RemapNeverResurrectsUnsafePaths(t *testing.T) {
 		}
 	}
 }
+
+// ---- Unified content sanitization seam (SanitizeContent) ----
+//
+// Before this seam, fact-ID strip + related: normalize were hand-wired
+// into only the two absorb call sites; dream/assess/extract/deep/
+// session-mine wrote local-model-corrupted content straight to disk.
+// These assert the seam now runs for ANY caller that opts in, with the
+// same behavior the absorb paths had, and is a strict no-op when off.
+
+func TestApplyWikiActions_SanitizeContentSeam(t *testing.T) {
+	// A local model's output: malformed related: frontmatter + fabricated
+	// fact-ID brackets in the body.
+	const corrupt = "---\ntitle: X\nrelated: [][AuthoredUp][LangChain]\n---\nclaim one [c01-f99] and claim two [c02-f01].\n"
+
+	t.Run("opt-in strips all fact-IDs (nil set) and normalizes related", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "wiki/x.md", Content: corrupt,
+		}}}
+		// ValidFactIDs nil ⇒ strip every [cNN-fM] — the situation for the
+		// six non-absorb callers (no facts pass produced any valid IDs).
+		res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Errors) != 0 {
+			t.Fatalf("unexpected errors: %v", res.Errors)
+		}
+		s := readBack(t, root, "wiki/x.md")
+		if strings.Contains(s, "[c01-f99]") || strings.Contains(s, "[c02-f01]") {
+			t.Errorf("fabricated fact-ID brackets survived the seam:\n%s", s)
+		}
+		assertRelated(t, s, []string{"[[AuthoredUp]]", "[[LangChain]]"})
+	})
+
+	t.Run("ValidFactIDs keeps grounded IDs, strips the rest", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "wiki/x.md",
+			Content: "---\ntitle: X\n---\nreal [c01-f01] fake [c09-f09].\n",
+		}}}
+		res, err := applyWikiActions(root, env, ApplyOptions{
+			AllowOverwrite:  true,
+			SanitizeContent: true,
+			ValidFactIDs:    map[string]bool{"c01-f01": true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Errors) != 0 {
+			t.Fatalf("unexpected errors: %v", res.Errors)
+		}
+		s := readBack(t, root, "wiki/x.md")
+		if !strings.Contains(s, "[c01-f01]") {
+			t.Errorf("grounded fact-ID was wrongly stripped:\n%s", s)
+		}
+		if strings.Contains(s, "[c09-f09]") {
+			t.Errorf("fabricated fact-ID survived:\n%s", s)
+		}
+	})
+
+	t.Run("opt-out leaves content byte-identical (backward compatible)", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "wiki/x.md", Content: corrupt,
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true}); err != nil {
+			t.Fatal(err)
+		}
+		if got := readBack(t, root, "wiki/x.md"); got != corrupt {
+			t.Errorf("opt-out must write content verbatim; got:\n%s", got)
+		}
+	})
+
+	t.Run("already-correct related survives the seam intact", func(t *testing.T) {
+		root := t.TempDir()
+		const good = "---\ntitle: X\nrelated: [\n  \"[[Alpha]]\",\n  \"[[Beta]]\"\n]\n---\nclean body\n"
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "wiki/x.md", Content: good,
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+			t.Fatal(err)
+		}
+		s := readBack(t, root, "wiki/x.md")
+		assertRelated(t, s, []string{"[[Alpha]]", "[[Beta]]"})
+		if !strings.HasSuffix(s, "\nclean body\n") {
+			t.Errorf("body must be preserved verbatim:\n%s", s)
+		}
+	})
+}
+
+func readBack(t *testing.T, root, rel string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(root, rel))
+	if err != nil {
+		t.Fatalf("read back %s: %v", rel, err)
+	}
+	return string(b)
+}
+
+func assertRelated(t *testing.T, content string, want []string) {
+	t.Helper()
+	rel := relatedField(t, content)
+	list, ok := rel.([]any)
+	if !ok {
+		t.Fatalf("related is not a normalized YAML list: %#v", rel)
+	}
+	if len(list) != len(want) {
+		t.Fatalf("want %d related, got %d (%#v)", len(want), len(list), list)
+	}
+	for i, w := range want {
+		if got, _ := list[i].(string); got != w {
+			t.Errorf("related[%d] = %q, want %q", i, got, w)
+		}
+	}
+}

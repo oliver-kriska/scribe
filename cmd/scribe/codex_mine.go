@@ -109,7 +109,7 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 			}
 		}
 
-		res, applyErr := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+		res, applyErr := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
 		if applyErr != nil {
 			logMsg("sync", "codex envelope %s apply error: %v", c.id, applyErr)
 			continue

@@ -164,7 +164,7 @@ func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, pr
 			return false, err
 		}
 	}
-	res, applyErr := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	res, applyErr := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
 	if applyErr != nil {
 		return false, applyErr
 	}

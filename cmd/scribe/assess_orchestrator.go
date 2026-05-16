@@ -69,7 +69,7 @@ func runAssessOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, 
 	if err != nil {
 		return fmt.Errorf("assess: parse envelope: %w", err)
 	}
-	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
 	if err != nil {
 		return fmt.Errorf("assess: apply actions: %w", err)
 	}

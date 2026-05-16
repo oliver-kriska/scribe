@@ -1730,8 +1730,14 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 	if err != nil {
 		return fmt.Errorf("absorb-single: parse envelope: %w", err)
 	}
-	normalizeEnvelopeRelated(&env)
-	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, RemapUnknownTopToWiki: true})
+	// Single-pass runs no facts pass, so any [cNN-fM] the model emits is
+	// fabricated — ValidFactIDs nil strips them all. related: normalize
+	// + strip both run inside the SanitizeContent seam now.
+	res, err := applyWikiActions(root, env, ApplyOptions{
+		AllowOverwrite:        true,
+		RemapUnknownTopToWiki: true,
+		SanitizeContent:       true,
+	})
 	if err != nil {
 		return fmt.Errorf("absorb-single: apply actions: %w", err)
 	}
@@ -1968,45 +1974,26 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 						return nil
 					}
 				}
-				// Defense-in-depth: strip fabricated [cNN-fM] citation
-				// brackets the model invented despite the prompt's "don't
-				// fabricate IDs" rule. The valid set is whatever the facts
-				// pass produced for this raw article; when facts is off or
-				// the file is absent, mergedFacts is nil and every bracket
-				// strips (matching the prompt's drop-the-bracket fallback).
+				// Content robustness (fabricated [cNN-fM] strip +
+				// related: normalize) now runs inside applyWikiActions via
+				// the SanitizeContent seam — see sanitizeEnvelopeContent.
+				// The valid set is whatever the facts pass produced for
+				// this raw article; nil when facts is off or the file is
+				// absent (every bracket strips, matching the prompt's
+				// drop-the-bracket fallback).
+				var validIDs map[string]bool
 				if mergedFacts != nil {
-					validIDs := make(map[string]bool, len(mergedFacts.Facts))
+					validIDs = make(map[string]bool, len(mergedFacts.Facts))
 					for _, f := range mergedFacts.Facts {
 						validIDs[f.ID] = true
 					}
-					var totalStripped int
-					for i := range env.Actions {
-						if env.Actions[i].Content == "" {
-							continue
-						}
-						cleaned, stripped := stripUnknownFactIDs(env.Actions[i].Content, validIDs)
-						env.Actions[i].Content = cleaned
-						totalStripped += len(stripped)
-					}
-					if totalStripped > 0 {
-						logMsg("sync", "pass2 entity %q: stripped %d fabricated fact-ID bracket(s)", ent.Label, totalStripped)
-					}
-				} else {
-					var totalStripped int
-					for i := range env.Actions {
-						if env.Actions[i].Content == "" {
-							continue
-						}
-						cleaned, stripped := stripUnknownFactIDs(env.Actions[i].Content, nil)
-						env.Actions[i].Content = cleaned
-						totalStripped += len(stripped)
-					}
-					if totalStripped > 0 {
-						logMsg("sync", "pass2 entity %q: stripped %d fact-ID bracket(s) (facts pass not run for this article)", ent.Label, totalStripped)
-					}
 				}
-				normalizeEnvelopeRelated(&env)
-				res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, RemapUnknownTopToWiki: true})
+				res, err := applyWikiActions(root, env, ApplyOptions{
+					AllowOverwrite:        true,
+					RemapUnknownTopToWiki: true,
+					SanitizeContent:       true,
+					ValidFactIDs:          validIDs,
+				})
 				if err != nil {
 					logMsg("sync", "pass2 entity %q: apply actions: %v", ent.Label, err)
 					return nil

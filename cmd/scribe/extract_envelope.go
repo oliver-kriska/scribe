@@ -77,7 +77,7 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	if err != nil {
 		return false, fmt.Errorf("extract: parse envelope: %w", err)
 	}
-	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
 	if err != nil {
 		return false, fmt.Errorf("extract: apply actions: %w", err)
 	}

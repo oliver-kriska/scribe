@@ -67,7 +67,7 @@ func runDreamOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, t
 	if err != nil {
 		return fmt.Errorf("dream: parse envelope: %w", err)
 	}
-	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
 	if err != nil {
 		return fmt.Errorf("dream: apply actions: %w", err)
 	}
