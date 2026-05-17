@@ -206,3 +206,64 @@ func TestAutoFixArticle_SkipsStillInvalidYAML(t *testing.T) {
 		t.Errorf("error should flag manual repair, got: %v", err)
 	}
 }
+
+func TestAutoFixArticle_TrailingSpaceFenceIsFixedNotSkipped(t *testing.T) {
+	// Regression: a closing fence with a trailing space ("--- ") is
+	// valid per `scribe lint` (parseFrontmatter prefix-matches "\n---")
+	// but used to make lint --fix bail with "no closing ---". The
+	// validator and fixer must agree; this must be a real FIX that
+	// normalizes the fence to bare "---", with the body preserved.
+	in := "---\ntitle: \"X\"\ntype: decision\ncreated: 2026-05-16\nupdated: 2026-05-16\ndomain: general\nconfidence: high\ntags: []\nrelated: []\nsources: []\n--- \n\nBody text.\n"
+	changes, out, err := autoFixArticle("", "decisions/x.md", []byte(in))
+	if err != nil {
+		t.Fatalf("trailing-space fence must be fixed, not skipped: %v", err)
+	}
+	if out == nil {
+		t.Fatalf("expected a rewritten file")
+	}
+	got := string(out)
+	if strings.Contains(got, "--- \n") {
+		t.Errorf("trailing-space fence not normalized:\n%s", got)
+	}
+	if !strings.Contains(got, "\n---\n\nBody text.\n") {
+		t.Errorf("body not preserved after bare fence:\n%s", got)
+	}
+	var sawFence bool
+	for _, c := range changes {
+		if strings.Contains(c, "normalized closing frontmatter fence") {
+			sawFence = true
+		}
+	}
+	if !sawFence {
+		t.Errorf("expected a fence-normalization change, got: %v", changes)
+	}
+}
+
+func TestAutoFixArticle_CRLFClosingFencePreserved(t *testing.T) {
+	// CRLF closing fence support predates this change — must not regress.
+	in := "---\ntitle: \"X\"\ntype: pattern\ncreated: 2026-04-20\nupdated: 2026-04-20\ndomain: general\nconfidence: medium\ntags: []\nrelated: []\nsources: []\n---\r\n\r\nBody.\n"
+	_, out, err := autoFixArticle("", "patterns/x.md", []byte(in))
+	if err != nil {
+		t.Fatalf("CRLF closing fence must not error: %v", err)
+	}
+	if out == nil || !strings.Contains(string(out), "Body.") {
+		t.Errorf("CRLF fence body not preserved:\n%s", out)
+	}
+}
+
+func TestAutoFixArticle_GenuinelyNoClosingFenceStillErrors(t *testing.T) {
+	// An opening fence with keys but no closing fence anywhere is real
+	// manual-repair-class corruption — must still SKIP, not silently
+	// invent a fence.
+	in := "---\ntitle: X\ntype: pattern\ndomain: general\n"
+	_, out, err := autoFixArticle("", "patterns/x.md", []byte(in))
+	if err == nil {
+		t.Fatalf("genuinely missing closing fence must error; got out=%q", out)
+	}
+	if !strings.Contains(err.Error(), "no closing ---") {
+		t.Errorf("error should name the missing fence, got: %v", err)
+	}
+	if out != nil {
+		t.Errorf("must not write a file with no closing fence")
+	}
+}

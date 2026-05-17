@@ -51,24 +51,34 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 		return nil, nil, nil // no frontmatter — skip
 	}
 
-	// Locate closing frontmatter delimiter.
-	end := strings.Index(s[4:], "\n---\n")
-	if end < 0 {
-		// Allow CRLF end marker too.
-		end = strings.Index(s[4:], "\n---\r\n")
-		if end < 0 {
-			return nil, nil, fmt.Errorf("malformed frontmatter (no closing ---)")
-		}
+	// Locate closing frontmatter delimiter. Tolerate trailing whitespace
+	// on the fence line (and CRLF) — the validator's parseFrontmatter
+	// prefix-matches "\n---", so a "--- " fence is valid per `scribe
+	// lint` yet this used to bail with "no closing ---". The validator
+	// and fixer must agree on fence syntax; otherwise --fix SKIPs files
+	// lint reports as clean. The matched fence is normalized to a bare
+	// "---" below, so a recognized-but-noncanonical fence becomes a real
+	// repair instead of a silent pass-through.
+	closeFenceRE := regexp.MustCompile(`\n---[ \t]*(?:\r?\n|$)`)
+	loc := closeFenceRE.FindStringIndex(s[4:])
+	if loc == nil {
+		return nil, nil, fmt.Errorf("malformed frontmatter (no closing ---)")
 	}
 	fmStart := 4
-	fmEnd := 4 + end // start of the "\n---" marker
+	fmEnd := 4 + loc[0]      // start of the "\n" preceding the fence
+	afterFence := 4 + loc[1] // first byte after the fence line
 	fmBlock := s[fmStart:fmEnd]
-	body := s[fmEnd:]
+	bodyAfter := s[afterFence:]
+	fenceWasNoncanonical := s[fmEnd:afterFence] != "\n---\n"
 
 	present := presentKeys(fmBlock)
 
 	var changes []string
 	lines := strings.Split(fmBlock, "\n")
+
+	if fenceWasNoncanonical {
+		changes = append(changes, "normalized closing frontmatter fence to bare ---")
+	}
 
 	// Strip trailing whitespace on each frontmatter line.
 	trailingStripped := 0
@@ -163,7 +173,7 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 	}
 
 	newFM := strings.Join(lines, "\n")
-	result := []byte(s[:fmStart] + newFM + body)
+	result := []byte(s[:fmStart] + newFM + "\n---\n" + bodyAfter)
 
 	// Honesty guard: never claim a fix on frontmatter lint still
 	// rejects. The "no closing ---" subclass already errored above; this
