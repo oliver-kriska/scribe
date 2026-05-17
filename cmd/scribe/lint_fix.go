@@ -173,7 +173,7 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 	// cosmetic changes (trailing ws, defaults) would otherwise apply, so
 	// the operator sees the true residual instead of a misleading FIX.
 	if _, perr := parseFrontmatter(result); perr != nil {
-		return nil, nil, fmt.Errorf("still invalid YAML after deterministic fixes (manual repair needed): %v", perr)
+		return nil, nil, fmt.Errorf("still invalid YAML after deterministic fixes (manual repair needed): %w", perr)
 	}
 
 	if len(changes) == 0 {
