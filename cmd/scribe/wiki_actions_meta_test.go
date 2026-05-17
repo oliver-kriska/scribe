@@ -167,3 +167,36 @@ func TestEnvelopeV2BackCompat(t *testing.T) {
 		t.Errorf("expected no meta, got %d", len(env.Meta))
 	}
 }
+
+// TestApplyMetaRollingAppend_InitFrontmatterLintValid is the 0.2.26
+// regression guard. The old init block wrote `type: article` (not in
+// validTypes) plus only title/type/domain/rolling, so every
+// auto-created rolling file failed lint on BOTH invalid-type and
+// missing-required-fields the instant it was created. The frontmatter
+// must now pass validateFile and match the established convention
+// (type: project, full required set, Title Case name).
+func TestApplyMetaRollingAppend_InitFrontmatterLintValid(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{
+		Version: 2,
+		Meta: []MetaAction{
+			{Op: "rolling_memory_append", Domain: "general", Target: "decisions-log", Content: "A decision."},
+		},
+	}
+	if _, err := applyWikiActions(root, env, ApplyOptions{}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	path := filepath.Join(root, "projects", "general", "decisions-log.md")
+	if errs := validateFile(root, path); len(errs) != 0 {
+		t.Fatalf("auto-created rolling file is not lint-valid: %v", errs)
+	}
+	data, _ := os.ReadFile(path)
+	for _, want := range []string{
+		"type: project", "domain: general", "rolling: true",
+		`title: "General Decisions Log"`, "confidence: medium",
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("missing %q in created rolling file:\n%s", want, data)
+		}
+	}
+}

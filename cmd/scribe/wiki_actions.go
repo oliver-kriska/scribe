@@ -512,7 +512,7 @@ func applyMetaRollingAppend(root string, m MetaAction, opts ApplyOptions) error 
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return fmt.Errorf("mkdir project dir: %w", err)
 		}
-		fm := fmt.Sprintf("---\ntitle: \"%s — %s\"\ntype: article\ndomain: %s\nrolling: true\n---\n\n", m.Domain, m.Target, m.Domain)
+		fm := rollingFileFrontmatter(m.Domain, m.Target)
 		if err := os.WriteFile(path, []byte(fm), 0o644); err != nil {
 			return fmt.Errorf("init rolling file: %w", err)
 		}
@@ -526,6 +526,44 @@ func applyMetaRollingAppend(root string, m MetaAction, opts ApplyOptions) error 
 		return fmt.Errorf("write rolling file: %w", err)
 	}
 	return nil
+}
+
+// rollingFileFrontmatter returns complete, lint-valid frontmatter for a
+// rolling memory file (projects/<domain>/<target>.md), matching the
+// convention `scribe init` and existing rolling files use. This must be
+// complete, not minimal — the old block emitted `type: article` (not in
+// validTypes) plus only 4 keys, so every auto-created rolling file
+// failed lint on BOTH "invalid type" and "missing required fields" the
+// moment it was created. Two correctness anchors:
+//
+//   - type: project — projects/ is its canonical home (dirCanonicalType),
+//     it is what existing rolling files carry and what
+//     clampEnvelopeFrontmatter / lint --fix would assign, so the
+//     auto-create path stays consistent with both seams.
+//   - all of title/type/created/updated/domain/confidence/tags/related/
+//     sources present so validateFile passes immediately. domain is
+//     pre-validated by the caller (allowedDomainsForRoot), so it is
+//     always a valid value here.
+func rollingFileFrontmatter(domain, target string) string {
+	today := time.Now().Format("2006-01-02")
+	title := titleCaseDashed(domain) + " " + titleCaseDashed(target)
+	return fmt.Sprintf(
+		"---\ntitle: %q\ntype: project\ncreated: %s\nupdated: %s\ndomain: %s\nconfidence: medium\nrolling: true\ntags: [rolling-memory, %s]\nrelated: []\nsources: []\nauthority: contextual\n---\n\n",
+		title, today, today, domain, domain,
+	)
+}
+
+// titleCaseDashed upper-cases the first rune of each dash-separated word
+// ("decisions-log" → "Decisions Log", "enaia" → "Enaia"), matching the
+// existing rolling-file title style ("Sposal Decisions Log").
+func titleCaseDashed(s string) string {
+	parts := strings.Split(s, "-")
+	for i, p := range parts {
+		if p != "" {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 var (
