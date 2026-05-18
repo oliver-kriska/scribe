@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head><script data-od-sandbox-shim>(function(){
+  function makeStore(){
+    var data = {};
+    var api = {
+      getItem: function(k){ return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function(k, v){ data[k] = String(v); },
+      removeItem: function(k){ delete data[k]; },
+      clear: function(){ data = {}; },
+      key: function(i){ return Object.keys(data)[i] || null; }
+    };
+    Object.defineProperty(api, 'length', { get: function(){ return Object.keys(data).length; } });
+    return api;
+  }
+  function tryShim(name){
+    var works = false;
+    try { works = !!window[name] && typeof window[name].getItem === 'function'; void window[name].length; }
+    catch (_) { works = false; }
+    if (works) return;
+    try { Object.defineProperty(window, name, { configurable: true, value: makeStore() }); }
+    catch (_) { try { window[name] = makeStore(); } catch (__) {} }
+  }
+  tryShim('localStorage');
+  tryShim('sessionStorage');
+  document.addEventListener('click', (e) => {
+    if (!e.target || !(e.target instanceof Element)) return;
+    var link = e.target.closest('a[href]');
+    if (!link) return;
+    var href = link.getAttribute('href');
+    if (href === null) return;
+    var isAnchor = href.startsWith('#') || href === '';
+    if (isAnchor) {
+      e.preventDefault();
+      if (href === '' || href === '#') {
+        window.scrollTo({ top: 0 });
+        history.replaceState(null, '', ' ');
+      } else {
+        var targetId = href.slice(1);
+        var target = targetId ? document.getElementById(targetId) : null;
+        if (target) {
+          target.scrollIntoView();
+          location.hash === href && history.replaceState(null, '', ' ');
+          location.hash = href;
+        }
+      }
+    } else if (link.getAttribute('target') === '_blank') {
+      e.preventDefault();
+      let safe = false;
+      try {
+        var url = new URL(href, location.href);
+        safe =
+          url.protocol === 'http:' ||
+          url.protocol === 'https:' ||
+          url.protocol === 'mailto:';
+      } catch (_) {}
+      safe && window.open(href, '_blank', 'noopener,noreferrer');
+    }
+  });
+})();</script>
+<meta charset="utf-8" />
+<title>scribe — OG card 1200×630</title>
+<meta name="robots" content="noindex" />
+<style>
+  :root {
+    --bg:      oklch(99% 0.002 240);
+    --bg-sub:  oklch(97.5% 0.003 250);
+    --surface: oklch(100% 0 0);
+    --fg:      oklch(18% 0.012 250);
+    --fg-soft: oklch(32% 0.012 250);
+    --muted:   oklch(54% 0.012 250);
+    --border:  oklch(92% 0.005 250);
+    --accent:  oklch(55% 0.18 255);
+    --accent-soft: oklch(96% 0.025 255);
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #2a2a2a;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+    color: var(--fg);
+  }
+
+  /* The exported card. Keep it pixel-exact 1200×630. */
+  .card {
+    width: 1200px;
+    height: 630px;
+    background: var(--bg);
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    align-items: center;
+    padding: 64px 72px;
+    box-sizing: border-box;
+  }
+
+  /* Soft graph-inspired background dots, fixed (decorative only) */
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 12% 18%, color-mix(in oklch, var(--accent) 14%, transparent) 0 6px, transparent 7px),
+      radial-gradient(circle at 78% 12%, color-mix(in oklch, var(--accent) 22%, transparent) 0 9px, transparent 10px),
+      radial-gradient(circle at 92% 38%, color-mix(in oklch, var(--accent) 11%, transparent) 0 5px, transparent 6px),
+      radial-gradient(circle at 5% 72%, color-mix(in oklch, var(--accent) 16%, transparent) 0 7px, transparent 8px),
+      radial-gradient(circle at 88% 88%, color-mix(in oklch, var(--accent) 20%, transparent) 0 8px, transparent 9px),
+      radial-gradient(circle at 32% 92%, color-mix(in oklch, var(--accent) 12%, transparent) 0 5px, transparent 6px);
+    background-repeat: no-repeat;
+    -webkit-mask: linear-gradient(135deg, #000 0%, transparent 60%);
+            mask: linear-gradient(135deg, #000 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* Faint connector lines */
+  .card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(135deg, transparent 11%, color-mix(in oklch, var(--accent) 5%, transparent) 11.1%, color-mix(in oklch, var(--accent) 5%, transparent) 11.3%, transparent 11.4%) no-repeat,
+      linear-gradient(-30deg, transparent 12%, color-mix(in oklch, var(--accent) 4%, transparent) 12.1%, color-mix(in oklch, var(--accent) 4%, transparent) 12.3%, transparent 12.4%) no-repeat;
+    pointer-events: none;
+  }
+
+  .left {
+    position: relative;
+    z-index: 2;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 36px;
+  }
+  .brand__mark {
+    width: 56px;
+    height: 56px;
+    border-radius: 13px;
+    background: var(--accent);
+    color: white;
+    font-weight: 700;
+    font-size: 30px;
+    display: grid;
+    place-items: center;
+    letter-spacing: -0.02em;
+  }
+  .brand__name {
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-sub);
+    font-size: 15px;
+    color: var(--fg-soft);
+    margin-bottom: 28px;
+    letter-spacing: -0.005em;
+  }
+  .eyebrow__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: oklch(58% 0.14 152);
+    box-shadow: 0 0 0 4px color-mix(in oklch, oklch(58% 0.14 152) 18%, transparent);
+  }
+
+  h1 {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+    font-size: 70px;
+    line-height: 1.02;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    margin: 0 0 28px 0;
+    color: var(--fg);
+    max-width: 640px;
+  }
+  h1 em {
+    color: var(--accent);
+    font-style: normal;
+  }
+
+  .sub {
+    font-size: 22px;
+    line-height: 1.45;
+    color: var(--muted);
+    max-width: 580px;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+
+  .right {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  .pillar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .pillar__step {
+    font-size: 30px;
+    font-weight: 500;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    min-width: 42px;
+    text-align: right;
+  }
+  .pillar__body {
+    flex: 1;
+    min-width: 0;
+  }
+  .pillar__title {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    line-height: 1;
+  }
+  .pillar__desc {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.4;
+    margin-top: 6px;
+    letter-spacing: -0.005em;
+  }
+  .pillar--accent {
+    background: var(--accent-soft);
+    border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
+  }
+  .pillar--accent .pillar__step,
+  .pillar--accent .pillar__title { color: var(--accent); }
+
+  /* Bottom row */
+  .bottom {
+    position: absolute;
+    left: 72px;
+    right: 72px;
+    bottom: 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 2;
+    font-size: 17px;
+    color: var(--muted);
+    letter-spacing: -0.005em;
+  }
+  .bottom__url {
+    font-weight: 600;
+    color: var(--fg-soft);
+  }
+  .bottom__tags {
+    display: flex;
+    gap: 18px;
+  }
+  .bottom__tags span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bottom__tags span::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="left">
+      <div class="brand">
+        <div class="brand__mark">s</div>
+        <div class="brand__name">scribe</div>
+      </div>
+
+      <div class="eyebrow">
+        <span class="eyebrow__dot"></span>
+        Single Go binary · runs on cron · self-hosted
+      </div>
+
+      <h1>Your knowledge base, <em>written by your tools.</em></h1>
+
+      <p class="sub">A CLI that turns your git repos, Claude Code sessions, and self-sent links into a curated, searchable wiki.</p>
+    </div>
+
+    <div class="right">
+      <div class="pillar pillar--accent">
+        <div class="pillar__step">01</div>
+        <div class="pillar__body">
+          <div class="pillar__title">Capture</div>
+          <div class="pillar__desc">Git commits, AI coding sessions, links you save</div>
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar__step">02</div>
+        <div class="pillar__body">
+          <div class="pillar__title">Triage</div>
+          <div class="pillar__desc">BM25 finds signal, LLM extracts what's reusable</div>
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar__step">03</div>
+        <div class="pillar__body">
+          <div class="pillar__title">Compile</div>
+          <div class="pillar__desc">Markdown wiki with full-text qmd search</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="bottom__url">getscribe.dev</div>
+      <div class="bottom__tags">
+        <span>Open source</span>
+        <span>Local-first option</span>
+        <span>MIT</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
