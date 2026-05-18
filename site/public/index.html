@@ -84,7 +84,7 @@
 <meta property="og:image" content="https://getscribe.dev/og.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. 3,445 articles. $0/sync. ~70s." />
+<meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. 3,921 articles. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
 
 <!-- Twitter / X -->
@@ -93,7 +93,7 @@
 <meta name="twitter:title" content="scribe — your knowledge base, written by your tools" />
 <meta name="twitter:description" content="A single-binary CLI that turns your git repos, Claude Code/Codex sessions, and self-sent links into a curated, searchable knowledge base. Runs on cron. Local-capable." />
 <meta name="twitter:image" content="https://getscribe.dev/og.png" />
-<meta name="twitter:image:alt" content="scribe — 3,445 articles, $0/sync, ~70s per run." />
+<meta name="twitter:image:alt" content="scribe — 3,921 articles, $0/sync, ~70s per run." />
 
 <!-- JSON-LD: SoftwareApplication -->
 <script type="application/ld+json">
@@ -695,11 +695,12 @@
   }
   .hero__eyebrow strong { color: var(--fg-soft); font-weight: 600; }
   .hero h1 {
-    font-size: clamp(38px, 5.4vw, 68px);
+    font-size: clamp(34px, 5.4vw, 68px);
     letter-spacing: -0.032em;
-    line-height: 1.02;
-    text-wrap: balance;
+    line-height: 1.05;
+    text-wrap: pretty;
     overflow-wrap: break-word;
+    hyphens: auto;
   }
   .hero h1 .accent { color: var(--accent); }
   .hero__sub {
@@ -1761,8 +1762,9 @@
   }
   @media (max-width: 420px) {
     .footer__grid { grid-template-columns: 1fr; }
-    .hero h1 { font-size: clamp(28px, 8vw, 34px); }
-    .wrap { padding-inline: 18px; }
+    .hero h1 { font-size: clamp(26px, 7vw, 30px); letter-spacing: -0.028em; }
+    .hero__sub { font-size: 15px; }
+    .wrap { padding-inline: 16px; }
   }
 
   /* -------------------- mobile menu -------------------- */
@@ -1799,6 +1801,13 @@
     * { transition: none !important; }
   }
 </style>
+
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://plausible.io/js/pa-SplqFtwNmkspNbht9wwlS.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>
 </head>
 <body>
 
@@ -1870,8 +1879,7 @@
           Single Go binary · runs on cron · self-hosted
         </span>
         <h1>
-          Your knowledge base,<br />
-          <span class="accent">written by your tools.</span>
+          Your knowledge base, <span class="accent">written by your tools.</span>
         </h1>
         <p class="hero__sub">
           A single-binary CLI that turns your <strong>git repos</strong>, <strong>Claude Code &amp; Codex sessions</strong>, and self-sent URLs into a curated, semantically searchable wiki. Cross-project, cron-driven, and capable of running <strong>100% locally on Ollama</strong> for zero API spend.
@@ -1888,7 +1896,7 @@
         </div>
         <div class="hero__stats">
           <div class="stat">
-            <div class="stat__num">3,445<span class="unit">articles</span></div>
+            <div class="stat__num">3,921<span class="unit">articles</span></div>
             <div class="stat__label">maintainer's KB · zero typed by hand</div>
           </div>
           <div class="stat">
@@ -2405,7 +2413,7 @@ scribe doctor <span class="flag">--section</span> localmode
         <p class="local__body">No remaining <code>claude -p</code> callsite in a normal <code>scribe sync</code>. Per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, relations migrate — every LLM op fires through bounded JSON-envelope subtasks against your local Ollama server. <code>ollama ps</code> shows the work; <code>ollama</code> does it.</p>
         <div class="local__metrics">
           <div class="metric">
-            <div class="metric__num">3,445<span class="unit">articles</span></div>
+            <div class="metric__num">3,921<span class="unit">articles</span></div>
             <div class="metric__label">verified end-to-end</div>
           </div>
           <div class="metric">
@@ -2429,7 +2437,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <span class="y-cmt">→ absorb pass 1  ...........  atomic facts grounded</span>
 <span class="y-cmt">→ absorb pass 2  ...........  fan-out: 24 entity pages</span>
 <span class="y-cmt">→ retrieval-context splice ..  done</span>
-<span class="y-cmt">→ qmd reindex .............  3,445 → 3,469 articles</span>
+<span class="y-cmt">→ qmd reindex .............  3,921 → 3,945 articles</span>
 <span class="y-key">ok</span>  <span class="y-str">0 errors</span>  <span class="y-num">$0.00</span>  <span class="y-num">68.4s</span></pre>
       </div>
     </div>
@@ -2715,7 +2723,7 @@ scribe doctor <span class="flag">--section</span> localmode
     targets.forEach(t => io.observe(t));
   })();
 
-  // ---------- hero stat count-up (3,445) ----------
+  // ---------- hero stat count-up (3,921) ----------
   (() => {
     const target = document.querySelector('.hero__stats .stat:first-child .stat__num');
     if (!target) return;
@@ -2803,7 +2811,7 @@ scribe doctor <span class="flag">--section</span> localmode
         '<span class="out-dim">absorb pass 1 ....</span> grounding atomic facts',
         '<span class="out-dim">absorb pass 2 ....</span> fan-out → <span class="out-em">24 entity pages</span>',
         '<span class="out-dim">retrieval splice .</span> 24 articles enriched',
-        '<span class="out-dim">qmd reindex ......</span> 3,445 → <span class="out-em">3,469 articles</span>',
+        '<span class="out-dim">qmd reindex ......</span> 3,921 → <span class="out-em">3,945 articles</span>',
         '<span class="out-ok">ok</span>  0 errors  <span class="out-em">$0.00</span>  68.4s'
       ]
     },
