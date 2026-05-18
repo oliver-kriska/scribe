@@ -1802,11 +1802,21 @@
   }
 </style>
 
-<!-- Privacy-friendly analytics by Plausible -->
-<script async src="https://plausible.io/js/pa-SplqFtwNmkspNbht9wwlS.js"></script>
+<!-- Plausible: warm the connection in head so the deferred script
+     resolves DNS + TLS while the body parses, but the script itself
+     loads after window.load so it can't extend FCP/LCP on slow networks. -->
+<link rel="preconnect" href="https://plausible.io" crossorigin />
 <script>
+  // queue Plausible calls until the real script loads
   window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-  plausible.init()
+  plausible.init();
+  // load the analytics script after the page is interactive
+  addEventListener('load', function () {
+    var s = document.createElement('script');
+    s.defer = true;
+    s.src = 'https://plausible.io/js/pa-SplqFtwNmkspNbht9wwlS.js';
+    document.head.appendChild(s);
+  });
 </script>
 </head>
 <body>
