@@ -84,7 +84,7 @@
 <meta property="og:image" content="https://getscribe.dev/og.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. 3,921 articles. $0/sync. ~70s." />
+<meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Nearly 7,000 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
 
 <!-- Twitter / X -->
@@ -93,7 +93,7 @@
 <meta name="twitter:title" content="scribe — your knowledge base, written by your tools" />
 <meta name="twitter:description" content="A single-binary CLI that turns your git repos, Claude Code/Codex sessions, and self-sent links into a curated, searchable knowledge base. Runs on cron. Local-capable." />
 <meta name="twitter:image" content="https://getscribe.dev/og.png" />
-<meta name="twitter:image:alt" content="scribe — 3,921 articles, $0/sync, ~70s per run." />
+<meta name="twitter:image:alt" content="scribe — nearly 7,000 docs, $0/sync, ~70s per run." />
 
 <!-- JSON-LD: SoftwareApplication -->
 <script type="application/ld+json">
@@ -1906,7 +1906,7 @@
         </div>
         <div class="hero__stats">
           <div class="stat">
-            <div class="stat__num">3,921<span class="unit">articles</span></div>
+            <div class="stat__num">6,977<span class="unit">documents</span></div>
             <div class="stat__label">maintainer's KB · zero typed by hand</div>
           </div>
           <div class="stat">
@@ -2021,7 +2021,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h6L13.5 6v7.5c0 .55-.45 1-1 1h-8.5c-.55 0-1-.45-1-1V3.5c0-.55.45-1 1-1z"/><path d="M9.5 2.5V6h4"/><path d="M5.5 9.5h5M5.5 11.5h3"/></svg>
         </div>
         <h3>Plain markdown you own</h3>
-        <p>A git repo of plain markdown files with YAML frontmatter. Push to your own GitHub, Gitea, or Forgejo — no SaaS backend, no vendor lock-in. Open in Obsidian, VS Code, vim, or mdbook.</p>
+        <p>File over app — the corpus has to outlive the pipeline. A git repo of plain markdown with YAML frontmatter. Push to your own GitHub, Gitea, or Forgejo; open in Obsidian, VS Code, vim, or mdbook. <strong>No SaaS, no vendor lock-in.</strong></p>
       </article>
 
       <article class="feature">
@@ -2423,7 +2423,7 @@ scribe doctor <span class="flag">--section</span> localmode
         <p class="local__body">No remaining <code>claude -p</code> callsite in a normal <code>scribe sync</code>. Per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, relations migrate — every LLM op fires through bounded JSON-envelope subtasks against your local Ollama server. <code>ollama ps</code> shows the work; <code>ollama</code> does it.</p>
         <div class="local__metrics">
           <div class="metric">
-            <div class="metric__num">3,921<span class="unit">articles</span></div>
+            <div class="metric__num">6,977<span class="unit">documents</span></div>
             <div class="metric__label">verified end-to-end</div>
           </div>
           <div class="metric">
@@ -2447,7 +2447,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <span class="y-cmt">→ absorb pass 1  ...........  atomic facts grounded</span>
 <span class="y-cmt">→ absorb pass 2  ...........  fan-out: 24 entity pages</span>
 <span class="y-cmt">→ retrieval-context splice ..  done</span>
-<span class="y-cmt">→ qmd reindex .............  3,921 → 3,945 articles</span>
+<span class="y-cmt">→ qmd reindex .............  6,952 → 6,977 articles</span>
 <span class="y-key">ok</span>  <span class="y-str">0 errors</span>  <span class="y-num">$0.00</span>  <span class="y-num">68.4s</span></pre>
       </div>
     </div>
@@ -2733,7 +2733,7 @@ scribe doctor <span class="flag">--section</span> localmode
     targets.forEach(t => io.observe(t));
   })();
 
-  // ---------- hero stat count-up (3,921) ----------
+  // ---------- hero stat count-up (6,977) ----------
   (() => {
     const target = document.querySelector('.hero__stats .stat:first-child .stat__num');
     if (!target) return;
@@ -2821,7 +2821,7 @@ scribe doctor <span class="flag">--section</span> localmode
         '<span class="out-dim">absorb pass 1 ....</span> grounding atomic facts',
         '<span class="out-dim">absorb pass 2 ....</span> fan-out → <span class="out-em">24 entity pages</span>',
         '<span class="out-dim">retrieval splice .</span> 24 articles enriched',
-        '<span class="out-dim">qmd reindex ......</span> 3,921 → <span class="out-em">3,945 articles</span>',
+        '<span class="out-dim">qmd reindex ......</span> 6,952 → <span class="out-em">6,977 articles</span>',
         '<span class="out-ok">ok</span>  0 errors  <span class="out-em">$0.00</span>  68.4s'
       ]
     },
