@@ -4,7 +4,7 @@
 # and the favicons. HTML keeps the default (must-revalidate) so
 # deploys propagate immediately.
 
-/og.png
+/og-v2.png
   Cache-Control: public, max-age=31536000, immutable
 
 /og-card.html
