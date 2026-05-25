@@ -678,11 +678,43 @@ func checkState(root string) []check {
 			Section: "state", Name: "scripts/projects.json", Status: statusOK,
 			Detail: fmt.Sprintf("%d projects", len(m.Projects)),
 		})
+		// A scribe KB listed as one of its own source projects is the
+		// signature of the self-extraction bug: the KB re-ingests its own
+		// wiki and accumulates duplicate pages. Extraction now skips these,
+		// but the duplicates already on disk need a manual sweep — surface
+		// the offending entries so the user knows where to look.
+		var kbProjects []string
+		for pname, entry := range m.Projects {
+			if entry != nil && isScribeKB(entry.Path) {
+				kbProjects = append(kbProjects, pname)
+			}
+		}
+		if len(kbProjects) > 0 {
+			sort.Strings(kbProjects)
+			out = append(out, check{
+				Section: "state", Name: "kb-as-project", Status: statusWarn,
+				Detail: "manifest lists scribe KB(s) as source projects: " + strings.Join(kbProjects, ", ") +
+					" (now skipped, but may have created duplicate wiki pages)",
+				Fix: "remove the entry from scripts/projects.json and review the wiki for duplicates (e.g. *.md.md)",
+			})
+		}
 	} else {
 		out = append(out, check{
 			Section: "state", Name: "scripts/projects.json", Status: statusFail,
 			Detail: err.Error(),
 			Fix:    "restore from git or rerun `scribe sync` to rebuild",
+		})
+	}
+
+	// Unsubstituted template placeholders that leaked into KB paths
+	// (e.g. projects/{{DOMAIN}}/…): a prompt var the extractor never filled,
+	// echoed by the model into a title→path. The prompt seam now strips these,
+	// but committed artifacts need a sweep. `lint --fix` removes them.
+	if arts := findPlaceholderArtifacts(root); len(arts) > 0 {
+		out = append(out, check{
+			Section: "state", Name: "placeholder-artifacts", Status: statusWarn,
+			Detail: "unsubstituted template placeholder(s) leaked into KB paths: " + strings.Join(arts, ", "),
+			Fix:    "run `scribe lint --fix` to remove (git-recoverable)",
 		})
 	}
 

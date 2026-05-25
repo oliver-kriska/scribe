@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -126,6 +127,7 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 	homeProjects := filepath.Join(os.Getenv("HOME"), "Projects") + "/"
 
 	root, _ := kbDir()
+	kbExcludeClause := buildKBExcludeClause(root)
 	cfg := loadConfig(root)
 	keywords, weights := cfg.Triage.Resolve()
 
@@ -158,11 +160,11 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 	WHERE s.message_count > 5
 		AND s.summary NOT LIKE 'You are working in%%'
 		AND (%s) > 0
-		%s %s %s
+		%s %s %s %s
 	ORDER BY %s
 	LIMIT %d`,
 		ctes, homeProjects, scoreExpr, selectCols, anyHitExpr,
-		excludeClause, projectClause, t.messageLimitClause(), t.orderClause(), t.Top)
+		excludeClause, kbExcludeClause, projectClause, t.messageLimitClause(), t.orderClause(), t.Top)
 
 	rows, err := db.Query(query) //nolint:noctx,gosec // G701: scribe-owned SQL; CLI top-level
 	if err != nil {
@@ -338,6 +340,23 @@ func buildExcludeClause(ids []string) string {
 		quoted[i] = "'" + clean + "'"
 	}
 	return "AND s.session_id NOT IN (" + strings.Join(quoted, ",") + ")"
+}
+
+// buildKBExcludeClause excludes sessions whose working directory is the KB
+// root or nested inside it. Sessions spent curating the wiki are full of the
+// KB's own content; mining them re-emits that content as "new" articles —
+// the session-side twin of the KB-extracts-itself loop. Empty root yields no
+// clause. project_path comparisons use substr (not LIKE) so `_`/`%` in a real
+// path can't act as wildcards; the literal is single-quote escaped.
+func buildKBExcludeClause(root string) string {
+	if root == "" {
+		return ""
+	}
+	r := strings.ReplaceAll(filepath.Clean(root), "'", "''")
+	// utf8 rune count: SQLite substr() counts characters, so the prefix
+	// length must match the character length of "<root>/".
+	n := utf8.RuneCountInString(filepath.Clean(root)) + 1
+	return fmt.Sprintf("AND s.project_path != '%s' AND substr(s.project_path, 1, %d) != '%s/'", r, n, r)
 }
 
 // triageCategoryAlias maps a category name to the short SQL alias used in

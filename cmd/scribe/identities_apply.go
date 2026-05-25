@@ -285,7 +285,7 @@ func insertOrExtendAliases(fm string, toAdd []string) string {
 			blk := make([]string, 0, 1+len(items))
 			blk = append(blk, "aliases:")
 			for _, it := range items {
-				blk = append(blk, "  - "+it)
+				blk = append(blk, "  - "+yamlQuoteScalar(it))
 			}
 			lines[i] = strings.Join(blk, "\n")
 			return strings.Join(lines, "\n")
@@ -302,7 +302,7 @@ func insertOrExtendAliases(fm string, toAdd []string) string {
 		}
 		var newLines []string
 		for _, a := range toAdd {
-			newLines = append(newLines, "  - "+a)
+			newLines = append(newLines, "  - "+yamlQuoteScalar(a))
 		}
 		out := append([]string{}, lines[:insertAt]...)
 		out = append(out, newLines...)
@@ -312,7 +312,7 @@ func insertOrExtendAliases(fm string, toAdd []string) string {
 	// `aliases:` not present — append the whole block.
 	lines = append(lines, "aliases:")
 	for _, a := range toAdd {
-		lines = append(lines, "  - "+a)
+		lines = append(lines, "  - "+yamlQuoteScalar(a))
 	}
 	return strings.Join(lines, "\n")
 }

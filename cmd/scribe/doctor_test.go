@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -278,6 +279,48 @@ func TestCheckState_Parsers(t *testing.T) {
 	}
 }
 
+// TestCheckState_FlagsKBAsProject asserts doctor surfaces the self-extraction
+// contamination: a manifest project whose path is itself a scribe KB. This is
+// how an already-affected user finds the source of their duplicate pages.
+func TestCheckState_FlagsKBAsProject(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "scripts"))
+	mustMkdir(t, filepath.Join(root, "wiki"))
+
+	// A "project" that is actually a scribe KB (has scribe.yaml).
+	kbProject := filepath.Join(root, "..", "some-kb")
+	mustMkdir(t, kbProject)
+	mustWrite(t, filepath.Join(kbProject, "scribe.yaml"), "owner_name: T\n")
+	// A genuine project (no marker).
+	plain := filepath.Join(root, "..", "plain-proj")
+	mustMkdir(t, plain)
+
+	manifest := fmt.Sprintf(`{"projects":{"some-kb":{"path":%q,"domain":"general"},"plain-proj":{"path":%q,"domain":"general"}},"domain_aliases":{},"ignored_paths":[]}`, kbProject, plain)
+	mustWrite(t, filepath.Join(root, "scripts", "projects.json"), manifest)
+
+	results := checkState(root)
+
+	var found *check
+	for i := range results {
+		if results[i].Name == "kb-as-project" {
+			found = &results[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a kb-as-project check, got none")
+	}
+	if found.Status != statusWarn {
+		t.Errorf("status = %q, want warn", found.Status)
+	}
+	if !strings.Contains(found.Detail, "some-kb") {
+		t.Errorf("detail should name the offending project, got %q", found.Detail)
+	}
+	if strings.Contains(found.Detail, "plain-proj") {
+		t.Errorf("plain project wrongly flagged: %q", found.Detail)
+	}
+}
+
 // TestPrintChecksJSON sanity-checks the JSON schema so downstream consumers
 // (monitoring probes) get stable keys.
 func TestPrintChecksJSON(t *testing.T) {
@@ -336,6 +379,38 @@ func mustTime(t *testing.T, s string) time.Time {
 		t.Fatalf("parse time %q: %v", s, err)
 	}
 	return tm
+}
+
+// TestCheckState_FlagsPlaceholderArtifacts asserts doctor surfaces an
+// unsubstituted {{VAR}} template placeholder that leaked into a KB path, so an
+// affected user is pointed at `scribe lint --fix`.
+func TestCheckState_FlagsPlaceholderArtifacts(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "scripts"))
+	mustMkdir(t, filepath.Join(root, "wiki"))
+	mustWrite(t, filepath.Join(root, "scripts", "projects.json"),
+		`{"projects":{},"domain_aliases":{},"ignored_paths":[]}`)
+	mustMkdir(t, filepath.Join(root, "projects", "{{DOMAIN}}"))
+	mustWrite(t, filepath.Join(root, "projects", "{{DOMAIN}}", "scribe_analysis.md"), "leaked")
+
+	results := checkState(root)
+
+	var found *check
+	for i := range results {
+		if results[i].Name == "placeholder-artifacts" {
+			found = &results[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a placeholder-artifacts check, got none")
+	}
+	if found.Status != statusWarn {
+		t.Errorf("status = %q, want warn", found.Status)
+	}
+	if !strings.Contains(found.Detail, "{{DOMAIN}}") {
+		t.Errorf("detail should name the offending path, got %q", found.Detail)
+	}
 }
 
 func mustMkdir(t *testing.T, path string) {

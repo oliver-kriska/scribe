@@ -43,6 +43,11 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 		if meta == nil || meta.ID == "" || processed[meta.ID] {
 			return
 		}
+		// Never mine a session spent inside the KB — distilling it would
+		// re-emit the wiki's own content as new articles.
+		if sessionInKB(root, meta.Cwd) {
+			return
+		}
 		cands = append(cands, candidate{path: p, id: meta.ID, cwd: meta.Cwd})
 	})
 	if walkErr != nil {

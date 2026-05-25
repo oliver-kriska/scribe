@@ -97,6 +97,38 @@ func TestBuildExcludeClause(t *testing.T) {
 	})
 }
 
+// TestBuildKBExcludeClause covers the session-side guard that keeps work
+// done inside the KB out of the mining pipeline (the session twin of the
+// KB-extracts-itself loop).
+func TestBuildKBExcludeClause(t *testing.T) {
+	t.Run("empty root yields no clause", func(t *testing.T) {
+		if got := buildKBExcludeClause(""); got != "" {
+			t.Errorf("got %q, want empty", got)
+		}
+	})
+
+	t.Run("excludes root and nested cwds", func(t *testing.T) {
+		got := buildKBExcludeClause("/Users/x/kb")
+		want := "AND s.project_path != '/Users/x/kb' AND substr(s.project_path, 1, 12) != '/Users/x/kb/'"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("single quotes in path are escaped", func(t *testing.T) {
+		got := buildKBExcludeClause("/Users/o'brien/kb")
+		// Each literal must double its single quote so the path can't
+		// break out of the SQL string. Two literals → four quote-chars
+		// from escaping plus the four wrapping quotes = even, balanced.
+		if strings.Contains(got, "o'brien") {
+			t.Errorf("single quote not escaped: %q", got)
+		}
+		if !strings.Contains(got, "o''brien") {
+			t.Errorf("expected doubled quote, got %q", got)
+		}
+	})
+}
+
 // TestBuildProjectClause covers the --project filter's sanitizer. The
 // allowed charset is broader (adds / and .) because project paths have
 // those; everything else is still stripped.

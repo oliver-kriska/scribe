@@ -12,13 +12,15 @@ type LintCmd struct {
 	Files   []string `arg:"" optional:"" help:"Files to lint. If empty, lints all wiki articles."`
 	Changed bool     `help:"Lint only uncommitted git changes." short:"c"`
 
-	Contradictions bool   `help:"Run LLM-based contradiction check instead of structural lints. Writes wiki/_contradictions.md."`
-	Since          string `help:"For --contradictions: only check articles changed since this duration (e.g., 7d, 24h). Empty = all."`
-	Max            int    `help:"For --contradictions: max articles to include in one LLM call." default:"20"`
-	DryRun         bool   `help:"For --contradictions and --fix: preview without calling LLM / writing files." short:"n"`
-	OutputMD       string `help:"For --contradictions: override the output markdown path." default:""`
+	Contradictions bool    `help:"Run LLM-based contradiction check instead of structural lints. Writes wiki/_contradictions.md."`
+	Duplicates     bool    `help:"Structural (no-LLM) content-duplicate scan: exact-body hashes + token overlap. Writes wiki/_duplicates.md. Report-only — never deletes."`
+	Threshold      float64 `help:"For --duplicates: overlap-coefficient threshold for near-dup pairs (0 = default 0.60)." default:"0"`
+	Since          string  `help:"For --contradictions: only check articles changed since this duration (e.g., 7d, 24h). Empty = all."`
+	Max            int     `help:"For --contradictions: max articles to include in one LLM call." default:"20"`
+	DryRun         bool    `help:"For --contradictions and --fix: preview without calling LLM / writing files." short:"n"`
+	OutputMD       string  `help:"For --contradictions: override the output markdown path." default:""`
 
-	Fix bool `help:"Deterministically repair frontmatter: missing tags/related/sources/confidence/domain/dates; normalize YYYY/MM/DD → YYYY-MM-DD; strip trailing whitespace. Never touches title/type."`
+	Fix bool `help:"Deterministically repair frontmatter: missing tags/related/sources/confidence/domain/dates; normalize YYYY/MM/DD → YYYY-MM-DD; strip trailing whitespace. Never touches title/type. On a full run (no files / not --changed) also removes self-ingestion duplicate pages (foo.md.md, foo_md.md), collapses byte-identical duplicate pages, and removes paths with an unsubstituted {{VAR}} template placeholder — all git-recoverable."`
 
 	Resolve    bool `help:"Read wiki/_contradictions.md, weigh pairs by authority+updated+confidence, write proposals to wiki/_resolution-proposals.md. Never auto-applies — human reviews."`
 	Identities bool `help:"Detect same-person mentions across wiki + raw (emails, @handles, name variants) and write clustering proposals to wiki/_identity-proposals.md."`
@@ -30,6 +32,9 @@ type LintCmd struct {
 func (l *LintCmd) Run() error {
 	if l.Contradictions {
 		return runContradictionsCheck(l.Since, l.Max, l.DryRun, l.OutputMD)
+	}
+	if l.Duplicates {
+		return runDuplicatesCheck(l.Threshold, l.OutputMD, l.DryRun)
 	}
 	if l.Resolve {
 		return runResolveContradictions(l.OutputMD, l.DryRun)
@@ -227,6 +232,33 @@ func (l *LintCmd) Run() error {
 		}
 	}
 
+	// Phase 5: Self-ingestion duplicate artifacts. The fingerprint of the
+	// KB-extracts-itself bug — a filename fed back in as a title. Doubled
+	// ".md.md" extensions are always malformed (ERROR); slugified
+	// "<x>_md.md" files that shadow an existing "<x>.md" are likely
+	// duplicates (WARN). Both are remediated by `scribe lint --fix`. Only
+	// on a full scan — it's a cross-KB structural check.
+	if !l.Changed {
+		fmt.Println("Phase 5: Self-ingestion artifacts")
+		for _, d := range findSelfIngestionDuplicates(root) {
+			if d.Shape == "doubled-ext" {
+				errors++
+				fmt.Printf("  ERROR %s: doubled .md extension — malformed page (run `scribe lint --fix`)\n", d.Rel)
+			} else {
+				warnings++
+				fmt.Printf("  WARN %s: looks like a filename-as-title duplicate of %s (run `scribe lint --fix`)\n", d.Rel, d.CanonicalRel)
+			}
+		}
+		// Directories named after the KB itself — the KB filed pages under
+		// a project folder for itself when its curation sessions were mined.
+		// Contents may hold unique fragments, so this is a review pointer,
+		// not an auto-fix.
+		for _, dir := range findSelfNamedDirs(root) {
+			warnings++
+			fmt.Printf("  WARN %s/: directory named after the KB itself — likely self-ingested pages; review and merge into canonical articles\n", dir)
+		}
+	}
+
 	runStats = map[string]any{
 		"files_checked": len(files),
 		"errors":        errors,
@@ -254,6 +286,21 @@ func (l *LintCmd) runFix() error {
 	if err != nil {
 		return err
 	}
+
+	// KB-wide structural cleanup runs only on a full `--fix` (no explicit
+	// files, not --changed): remove/rename the filename-as-title duplicate
+	// artifacts the self-ingestion bug left behind, collapse byte-identical
+	// duplicate pages, and remove paths carrying an unsubstituted {{VAR}}
+	// template placeholder. Done before the per-file frontmatter pass so
+	// removed files aren't then re-read, and so a renamed `foo.md.md → foo.md`
+	// gets frontmatter-repaired in the same run. All three are git-recoverable.
+	dupRemoved, dupRenamed, exactRemoved, phRemoved := 0, 0, 0, 0
+	if !l.Changed && len(l.Files) == 0 {
+		dupRemoved, dupRenamed = fixSelfIngestionDuplicates(root, l.DryRun)
+		exactRemoved = fixByteIdenticalDuplicates(root, l.DryRun)
+		phRemoved = fixPlaceholderArtifacts(root, l.DryRun)
+	}
+
 	var files []string
 	switch {
 	case l.Changed:
@@ -272,7 +319,7 @@ func (l *LintCmd) runFix() error {
 			return err
 		}
 	}
-	if len(files) == 0 {
+	if len(files) == 0 && dupRemoved == 0 && dupRenamed == 0 && exactRemoved == 0 && phRemoved == 0 {
 		fmt.Println("no files in scope")
 		return nil
 	}
@@ -284,12 +331,21 @@ func (l *LintCmd) runFix() error {
 	if l.DryRun {
 		verb = "would fix"
 	}
-	fmt.Printf("\n%s %d file(s), skipped %d\n", verb, fixed, skipped)
+	fmt.Printf("\n%s %d file(s), skipped %d", verb, fixed, skipped)
+	if dupRemoved > 0 || dupRenamed > 0 || exactRemoved > 0 || phRemoved > 0 {
+		fmt.Printf("; duplicates: removed %d, renamed %d, byte-identical %d; placeholder-paths %d",
+			dupRemoved, dupRenamed, exactRemoved, phRemoved)
+	}
+	fmt.Println()
 	runStats = map[string]any{
-		"files_scanned": len(files),
-		"files_fixed":   fixed,
-		"files_skipped": skipped,
-		"dry_run":       l.DryRun,
+		"files_scanned":       len(files),
+		"files_fixed":         fixed,
+		"files_skipped":       skipped,
+		"dup_removed":         dupRemoved,
+		"dup_renamed":         dupRenamed,
+		"dup_exact_removed":   exactRemoved,
+		"placeholder_removed": phRemoved,
+		"dry_run":             l.DryRun,
 	}
 	return nil
 }

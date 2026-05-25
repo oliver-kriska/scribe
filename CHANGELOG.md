@@ -2,6 +2,60 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.27] — 2026-05-25
+
+Stop a KB from ingesting itself, and ship the cleanup tooling for KBs already
+hit. Reported by a user whose `scribe.yaml` repo was being processed as one of
+its own source projects, producing duplicate wiki pages (`readme.md`,
+`readme.md.md`, `readme_md.md`). The trigger had **six** independent entry
+points, plus a feedback loop — every sync auto-commits, so the KB's git SHA
+changes and it re-extracts on every run — so the duplicates grew without bound.
+Empirically the contamination came through **session mining**, not project
+discovery, so the session-side guards are load-bearing, not just the obvious
+"detect `scribe.yaml` and skip".
+
+### Fix — a KB can no longer ingest itself (all six vectors)
+- Shared predicate `isScribeKB` / `isWithinKB` / `sessionInKB` (manifest.go),
+  consulted at every ingestion door:
+  - project discovery, Claude + Codex — `manifest.isIgnored`
+  - already-manifested re-extraction — `projectsNeedingExtraction` (sync.go)
+  - cron triage SQL — `buildKBExcludeClause` (triage.go)
+  - SessionEnd hook queue, which mines by ID and bypassed triage — `hook.go`
+  - legacy IDs already in the pending queue — `preFilterSessions` (sync.go)
+  - Codex session mining — `codex_mine.go`
+- `validateActionPath` (wiki_actions.go) refuses to *write* a doubled `.md.md`
+  page — closes the filename-as-title fingerprint at the seam.
+
+### Add — cleanup tooling for KBs already contaminated
+- `scribe lint` flags self-ingestion artifacts: `*.md.md` (ERROR), `<x>_md.md`
+  shadowing `<x>.md` (WARN), and directories named after the KB itself (WARN).
+- `scribe lint --fix` (full run) now also, all git-recoverable:
+  - removes/renames the filename-as-title duplicates (`foo.md.md`, `foo_md.md`),
+  - collapses **byte-identical** duplicate pages, keeping the shallower
+    canonical path (frontmatter-differing near-twins stay a human call),
+  - removes paths carrying an unsubstituted `{{VAR}}` template placeholder
+    (e.g. `projects/{{DOMAIN}}/…`).
+- `scribe lint --duplicates` (new): structural, no-LLM content-duplicate scan —
+  exact normalized-body hashes + token-overlap near-dups via an inverted index
+  — writes `wiki/_duplicates.md` for review. Report-only.
+- `scribe doctor` adds `kb-as-project` (manifest lists a scribe KB) and
+  `placeholder-artifacts` (a `{{VAR}}` leaked into a KB path) warnings.
+- New weekly `lint-duplicates` LaunchAgent (Sat 1:15am); `scribe cron install`
+  picks it up. The existing weekly `lint --fix` job runs the cleanups above.
+
+### Fix — alias YAML corruption (surfaced during the sweep)
+- `apply-identities` wrote unquoted `- @handle` alias entries — invalid YAML
+  that silently corrupted `people/*.md`. `yamlQuoteScalar` (new) quotes at every
+  alias-write site; `normalizeAliasesBlock` (lint_fix.go) repairs already-broken
+  files via `lint --fix`, conservatively (already-valid quoting is left intact).
+
+### Tests
+- New coverage: KB-detection predicates, triage exclude clause, doubled-ext
+  path rejection, doctor `kb-as-project` + `placeholder-artifacts`,
+  self-ingestion / byte-identical / placeholder dup detection + fix, YAML scalar
+  quoting, alias-block repair, content-duplicate exact + near tiers. `make ci`
+  clean (golangci-lint 0 issues, `-race`, govulncheck).
+
 ## [0.2.24] — 2026-05-16
 
 Unify envelope content sanitization into one apply-time seam. 0.2.23

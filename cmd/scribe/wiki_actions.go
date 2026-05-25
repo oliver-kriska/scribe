@@ -607,6 +607,15 @@ func validateActionPath(root, rel string) (string, error) {
 	if strings.HasPrefix(filepath.Base(cleaned), "_") {
 		return "", fmt.Errorf("path %q targets a scribe-generated artifact (underscore-prefixed); models must not write these", rel)
 	}
+	// Reject the doubled markdown extension. A page never legitimately ends
+	// in ".md.md" — it's the fingerprint of a filename being fed back in as
+	// a title (a KB README → article "readme.md" → "readme.md.md"). The
+	// primary fix stops the KB from re-ingesting itself; this gate ensures
+	// the malformed name surfaces as a recorded error for ANY source instead
+	// of silently materializing a duplicate page.
+	if strings.HasSuffix(strings.ToLower(filepath.Base(cleaned)), ".md.md") {
+		return "", fmt.Errorf("path %q has a doubled .md extension (malformed — likely a filename used as a title)", rel)
+	}
 	abs := filepath.Join(root, cleaned)
 	// Walk the wiki dirs and accept the path if it's rooted in any.
 	parts := strings.SplitN(cleaned, string(os.PathSeparator), 2)

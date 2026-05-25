@@ -754,6 +754,16 @@ func (s *SyncCmd) projectsNeedingExtraction(manifest *Manifest) []string {
 			continue
 		}
 
+		// Defense in depth for manifests written before KB self-detection
+		// existed: a KB that was already discovered into the manifest must
+		// still never extract itself (doing so re-ingests its own wiki and
+		// compounds duplicates every run). New discovery already filters
+		// these out via manifest.isIgnored → isScribeKB.
+		if isScribeKB(entry.Path) {
+			logMsg("sync", " [%s] is a scribe KB — skipping (a KB never extracts itself)", pname)
+			continue
+		}
+
 		if s.Force {
 			result = append(result, pname)
 			continue
@@ -949,9 +959,10 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 
 // sessionFilterStats captures the per-session numbers the pre-filter looks at.
 type sessionFilterStats struct {
-	UserMsgs   int
-	TotalChars int
-	Found      bool
+	UserMsgs    int
+	TotalChars  int
+	ProjectPath string
+	Found       bool
 }
 
 // filterVerdict returns "" (keep) or a reason string (skip).
@@ -980,17 +991,26 @@ func querySessionStats(db *sql.DB, sid string) sessionFilterStats {
 	err := db.QueryRow(`
 		SELECT
 			COALESCE(SUM(CASE WHEN type = 'user' THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(LENGTH(text_content)), 0)
+			COALESCE(SUM(LENGTH(text_content)), 0),
+			COALESCE(MAX(s.project_path), '')
 		FROM messages m
 		JOIN sessions s ON s.id = m.session_id
-		WHERE s.session_id = ?`, sid).Scan(&st.UserMsgs, &st.TotalChars)
+		WHERE s.session_id = ?`, sid).Scan(&st.UserMsgs, &st.TotalChars, &st.ProjectPath)
 	st.Found = (err == nil)
 	return st
 }
 
-// preFilterSessions removes sessions that are too mechanical to be worth extracting.
-// Queries ccrider DB directly for message stats. Returns filtered list + skipped IDs.
-func preFilterSessions(dbPath string, sessionIDs []string) (kept, skipped []string) {
+// preFilterSessions removes sessions that are too mechanical to be worth
+// extracting, and — independently — sessions that were spent inside the KB
+// itself (mining those re-emits the wiki's own content). Queries ccrider DB
+// directly for message stats + cwd. Returns filtered list + skipped IDs.
+//
+// The KB drop here is the chokepoint every *normal* session ID flows through
+// (both triage picks and hook-queued pending IDs are merged before this
+// call), so it also neutralizes any KB sessions queued before the hook-side
+// guard shipped. Triage's SQL exclusion covers the large-session path that
+// bypasses this filter.
+func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped []string) {
 	if len(sessionIDs) == 0 {
 		return sessionIDs, nil
 	}
@@ -1002,10 +1022,19 @@ func preFilterSessions(dbPath string, sessionIDs []string) (kept, skipped []stri
 	}
 	defer db.Close()
 
+	kbSkipped := 0
 	for _, sid := range sessionIDs {
 		stats := querySessionStats(db, sid)
 		if !stats.Found {
 			kept = append(kept, sid) // On error, keep the session.
+			continue
+		}
+		if sessionInKB(root, stats.ProjectPath) {
+			// Drop silently (not into `skipped`): the caller marks
+			// skipped IDs as mechanically processed, which would be the
+			// wrong reason. KB sessions can't resurface anyway — triage
+			// now excludes them and the hook no longer queues them.
+			kbSkipped++
 			continue
 		}
 		if stats.filterVerdict() != "" {
@@ -1013,6 +1042,9 @@ func preFilterSessions(dbPath string, sessionIDs []string) (kept, skipped []stri
 			continue
 		}
 		kept = append(kept, sid)
+	}
+	if kbSkipped > 0 {
+		logMsg("sync", "pre-filter: dropped %d session(s) run inside the KB (never mine the KB into itself)", kbSkipped)
 	}
 	return kept, skipped
 }
@@ -1438,7 +1470,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 	// Pre-filter: skip mechanical sessions with too few user messages or content.
 	cfg := loadConfig(root)
 	if len(normalIDs) > 0 {
-		kept, skipped := preFilterSessions(cfg.CcriderDB, normalIDs)
+		kept, skipped := preFilterSessions(root, cfg.CcriderDB, normalIDs)
 		if len(skipped) > 0 {
 			logMsg("sync", "pre-filter: skipped %d mechanical sessions (<%d user msgs or <500 chars)", len(skipped), 3)
 			// Mark skipped sessions so they're not re-triaged.

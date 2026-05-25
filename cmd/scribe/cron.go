@@ -99,6 +99,13 @@ func scribeJobs(root, binary string) []cronJob {
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 1, Minute: 0, Weekday: 6}}},
 		},
 		{
+			Name:     "lint-duplicates",
+			Desc:     "Weekly content-duplicate scan → wiki/_duplicates.md (Sat 1:15am — after lint-fix)",
+			Command:  cd + binary + " lint --duplicates",
+			LogFile:  filepath.Join(logDir, "scribe-lint-duplicates.log"),
+			Schedule: schedSpec{Calendar: []calTime{{Hour: 1, Minute: 15, Weekday: 6}}},
+		},
+		{
 			Name:     "capture-imessage",
 			Desc:     "iMessage capture every 4h",
 			Command:  cd + binary + " capture --fetch",

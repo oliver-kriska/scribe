@@ -116,6 +116,14 @@ func (c *SessionEndHookCmd) Run() error {
 		return c.skip("session %s has %d messages (< %d)", sessionID, msgCount, c.MinMessages)
 	}
 
+	// 5b. Never queue a session that was spent inside the KB. Mining it
+	//     re-emits the wiki's own content as "new" articles — the
+	//     session-side twin of the KB-extracts-itself loop that produces
+	//     duplicate pages. Cheap indexed lookup, well within the budget.
+	if pp := querySessionProjectPath(db, sessionID); sessionInKB(root, pp) {
+		return c.skip("session %s ran inside the KB (%s) — not mining the KB into itself", sessionID, pp)
+	}
+
 	// 6. Skip if already processed by a previous extraction — no point
 	//    re-queueing something the LLM has already chewed on.
 	sessionsLog := filepath.Join(root, "wiki", "_sessions_log.json")
@@ -238,6 +246,22 @@ func queryMessageCount(db *sql.DB, sessionID string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// querySessionProjectPath returns the working directory recorded for a
+// session, or "" on any error. Used to keep sessions spent inside the KB out
+// of the pending queue.
+func querySessionProjectPath(db *sql.DB, sessionID string) string {
+	var p string
+	//nolint:noctx // hook path — fast, no cancellation
+	err := db.QueryRow(
+		`SELECT COALESCE(project_path, '') FROM sessions WHERE session_id = ?`,
+		sessionID,
+	).Scan(&p)
+	if err != nil {
+		return ""
+	}
+	return p
 }
 
 // quickScoreSession computes a single-session knowledge-density score

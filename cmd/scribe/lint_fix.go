@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -109,6 +110,17 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 		}
 	}
 
+	// Normalize a block-form `aliases:` list: re-indent stray items to two
+	// spaces, single-quote entries that need it (@handles, etc.), and drop
+	// duplicates. This repairs the invalid-YAML frontmatter the un-quoted
+	// identity-apply writer used to emit (`  - @omarsar0`) so the file lint
+	// rejected becomes a real FIX instead of a perpetual SKIP. No-op on a
+	// well-formed list, so it's idempotent.
+	if newLines, didFix := normalizeAliasesBlock(lines); didFix {
+		lines = newLines
+		changes = append(changes, "normalized aliases block (quoting/indent/dedup)")
+	}
+
 	// Append missing keys with safe defaults.
 	today := time.Now().Format("2006-01-02")
 	missingDefaults := []struct {
@@ -190,6 +202,98 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 		return nil, nil, nil
 	}
 	return changes, result, nil
+}
+
+// aliasItemRE matches a YAML block-sequence item at any indentation, so a
+// stray over-indented entry (the corruption shape) is still collected.
+var aliasItemRE = regexp.MustCompile(`^\s*-\s+(.*)$`)
+
+// canonicalAliasItem decides the value text to place after "  - " for one
+// raw alias entry, and the case-insensitive key used to dedup it. It is
+// deliberately conservative: an entry that is already validly quoted (single
+// or double) is kept verbatim, so well-formed files don't churn; only a bare
+// value that YAML would misparse (e.g. an @handle) gets quoted. Returns an
+// empty key for a blank entry so the caller skips it.
+func canonicalAliasItem(raw string) (lineVal, dedupKey string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", ""
+	}
+	// Already quoted and balanced → trust as valid, keep the original text.
+	// Dedup on the unquoted inner value.
+	if len(raw) >= 2 {
+		q := raw[0]
+		if (q == '"' || q == '\'') && raw[len(raw)-1] == q {
+			inner := raw[1 : len(raw)-1]
+			if q == '\'' {
+				inner = strings.ReplaceAll(inner, "''", "'")
+			}
+			return raw, strings.ToLower(inner)
+		}
+	}
+	// Unquoted: quote only if YAML needs it; otherwise keep verbatim.
+	return yamlQuoteScalar(raw), strings.ToLower(raw)
+}
+
+// normalizeAliasesBlock rewrites a block-form `aliases:` list into a clean,
+// valid form: every entry re-emitted at two-space indent, quoted when YAML
+// needs it, with case-insensitive duplicates removed (first spelling wins).
+// Returns (lines, false) when there is no block-form aliases list or it is
+// already clean — so the fixer stays idempotent. Inline form
+// (`aliases: [a, b]`) is left untouched.
+func normalizeAliasesBlock(lines []string) ([]string, bool) {
+	idx := -1
+	for i, line := range lines {
+		if k, rest, ok := splitFrontmatterLine(line); ok && k == "aliases" {
+			if strings.TrimSpace(rest) != "" {
+				return lines, false // inline or scalar form — leave alone
+			}
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return lines, false
+	}
+
+	// Collect contiguous list items (any indent) following the key. The
+	// first non-item, non-blank line ends the block (typically the next
+	// column-0 key).
+	end := idx + 1
+	var items []string
+	seen := make(map[string]bool)
+	for j := idx + 1; j < len(lines); j++ {
+		m := aliasItemRE.FindStringSubmatch(lines[j])
+		if m == nil {
+			if strings.TrimSpace(lines[j]) == "" {
+				end = j + 1
+				continue
+			}
+			break
+		}
+		end = j + 1
+		lineVal, dedupKey := canonicalAliasItem(m[1])
+		if dedupKey == "" || seen[dedupKey] {
+			continue
+		}
+		seen[dedupKey] = true
+		items = append(items, lineVal)
+	}
+
+	rebuilt := make([]string, 0, len(items)+1)
+	rebuilt = append(rebuilt, "aliases:")
+	for _, it := range items {
+		rebuilt = append(rebuilt, "  - "+it)
+	}
+
+	old := lines[idx:end]
+	if slices.Equal(old, rebuilt) {
+		return lines, false
+	}
+	out := append([]string{}, lines[:idx]...)
+	out = append(out, rebuilt...)
+	out = append(out, lines[end:]...)
+	return out, true
 }
 
 // topDir returns the first path segment of a KB-relative path

@@ -79,6 +79,92 @@ func TestManifestIsIgnored(t *testing.T) {
 	}
 }
 
+// TestIsScribeKB asserts the marker-file detection that keeps a KB from
+// extracting itself. A directory is a scribe KB iff it holds scribe.yaml.
+func TestIsScribeKB(t *testing.T) {
+	t.Parallel()
+	kb := t.TempDir()
+	if isScribeKB(kb) {
+		t.Fatal("empty dir reported as scribe KB")
+	}
+	if err := os.WriteFile(filepath.Join(kb, "scribe.yaml"), []byte("owner_name: Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !isScribeKB(kb) {
+		t.Error("dir with scribe.yaml not reported as scribe KB")
+	}
+}
+
+// TestIsWithinKB covers the path-only containment check used to keep
+// sessions run inside the KB out of the mining pipeline.
+func TestIsWithinKB(t *testing.T) {
+	t.Parallel()
+	root := "/Users/x/kb"
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/Users/x/kb", true},              // the root itself
+		{"/Users/x/kb/wiki", true},         // nested
+		{"/Users/x/kb/projects/a/b", true}, // deeply nested
+		{"/Users/x/kb-other", false},       // sibling sharing a prefix — must NOT match
+		{"/Users/x/other", false},          // unrelated
+		{"/Users/x/kb/../kb/wiki", true},   // cleaned to within
+		{"", false},                        // empty path
+	}
+	for _, tc := range cases {
+		if got := isWithinKB(root, tc.path); got != tc.want {
+			t.Errorf("isWithinKB(%q, %q) = %v, want %v", root, tc.path, got, tc.want)
+		}
+	}
+	if isWithinKB("", "/anything") {
+		t.Error("empty root must never contain a path")
+	}
+}
+
+// TestSessionInKB confirms a session is excluded from mining when its cwd is
+// the active KB (or a subdir) OR any other scribe KB on disk.
+func TestSessionInKB(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()  // pretend active KB
+	other := t.TempDir() // a different KB on disk
+	plain := t.TempDir() // an ordinary project
+	if err := os.WriteFile(filepath.Join(other, "scribe.yaml"), []byte("owner_name: T\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if sessionInKB(root, plain) {
+		t.Errorf("plain project %q wrongly excluded", plain)
+	}
+	if !sessionInKB(root, root) {
+		t.Error("active KB root not excluded")
+	}
+	if !sessionInKB(root, filepath.Join(root, "wiki")) {
+		t.Error("subdir of active KB not excluded")
+	}
+	if !sessionInKB(root, other) {
+		t.Errorf("other scribe KB %q not excluded", other)
+	}
+}
+
+// TestManifestIsIgnored_SkipsScribeKB is the regression guard for the
+// reported duplicate-page bug: a KB checked out under a tracked project
+// root must be excluded from discovery so it never re-ingests its own
+// wiki. Uses a real on-disk dir because the check stats scribe.yaml.
+func TestManifestIsIgnored_SkipsScribeKB(t *testing.T) {
+	t.Parallel()
+	kb := t.TempDir() // deep enough to clear the segment-count + TCC checks
+	m := &Manifest{}
+	if m.isIgnored(kb) {
+		t.Skipf("temp dir %q is already ignored on this platform (depth/TCC); cannot isolate the scribe.yaml check", kb)
+	}
+	if err := os.WriteFile(filepath.Join(kb, "scribe.yaml"), []byte("owner_name: Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !m.isIgnored(kb) {
+		t.Errorf("scribe KB %q not ignored — discovery would conscript it into its own pipeline", kb)
+	}
+}
+
 // TestManifestResolveDomain covers the two-level alias lookup: first
 // the leaf name, then "parent/leaf". Fallback is "general". This is the
 // source of truth for the domain field in extracted wiki articles, so

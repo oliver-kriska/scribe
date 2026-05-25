@@ -112,7 +112,49 @@ func (m *Manifest) isIgnored(path string) bool {
 	if isTCCProtected(path) {
 		return true
 	}
+	// A scribe KB must never be conscripted into its own pipeline.
+	// Extracting a KB feeds the KB's own wiki articles back through the
+	// extractor, which the LLM re-materializes as near-duplicate pages
+	// (the reported readme.md → readme.md.md → readme_md.md fan-out).
+	// Worse, every sync commits to the KB and bumps its git SHA, so the
+	// self-extract retriggers on every run and the duplicates compound.
+	// Detect the canonical scribe.yaml marker and skip — this covers the
+	// active KB and any other KB the user keeps on disk.
+	if isScribeKB(path) {
+		return true
+	}
 	return slices.Contains(m.IgnoredPaths, path)
+}
+
+// isScribeKB reports whether path is the root of a scribe knowledge base,
+// detected by the scribe.yaml marker that `scribe init` always writes.
+// Discovery and extraction both consult this so a KB is never processed as
+// one of its own source projects.
+func isScribeKB(path string) bool {
+	return fileExists(filepath.Join(path, "scribe.yaml"))
+}
+
+// isWithinKB reports whether path is the KB root at `root` or nested inside
+// it. Path-only (no stat), so it works for session cwds that may no longer
+// exist on disk. Used to keep work done *inside* the KB out of the mining
+// pipeline.
+func isWithinKB(root, path string) bool {
+	if root == "" || path == "" {
+		return false
+	}
+	r := filepath.Clean(root)
+	p := filepath.Clean(path)
+	return p == r || strings.HasPrefix(p, r+string(filepath.Separator))
+}
+
+// sessionInKB reports whether a session whose working directory was
+// projectPath should be excluded from mining because it was spent inside a
+// scribe KB — the active KB at `root` (or a subdir of it), or any other KB
+// on disk (scribe.yaml marker). Mining such a session re-emits the wiki's
+// own content as "new" articles, the same self-ingestion loop that produces
+// duplicate pages on the extraction side.
+func sessionInKB(root, projectPath string) bool {
+	return isWithinKB(root, projectPath) || isScribeKB(projectPath)
 }
 
 // tccProtectedSubdirs are top-level $HOME subdirectories gated by macOS TCC.

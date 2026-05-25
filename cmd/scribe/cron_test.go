@@ -84,3 +84,20 @@ func TestRenderCrontab(t *testing.T) {
 		})
 	}
 }
+
+// TestScribeJobsIncludesLintDuplicates guards the weekly structural
+// content-duplicate scan being part of the installed schedule.
+func TestScribeJobsIncludesLintDuplicates(t *testing.T) {
+	var found bool
+	for _, j := range scribeJobs("/kb", "scribe") {
+		if j.Name == "lint-duplicates" {
+			found = true
+			if !strings.Contains(j.Command, "lint --duplicates") {
+				t.Errorf("lint-duplicates command = %q, want it to run `lint --duplicates`", j.Command)
+			}
+		}
+	}
+	if !found {
+		t.Error("scribeJobs is missing the lint-duplicates weekly job")
+	}
+}

@@ -123,6 +123,35 @@ func TestValidateActionPath_RejectsUnderscorePrefixedArtifacts(t *testing.T) {
 	}
 }
 
+// TestValidateActionPath_RejectsDoubledMdExtension guards the visible
+// symptom of the KB-self-ingestion bug: a filename fed back in as a title
+// (KB README → article "readme.md" → page "readme.md.md"). No legitimate
+// page ends in ".md.md", so the gate turns it into a recorded error for any
+// source instead of a silent duplicate.
+func TestValidateActionPath_RejectsDoubledMdExtension(t *testing.T) {
+	root := t.TempDir()
+	rejected := []string{
+		"wiki/readme.md.md",
+		"wiki/README.MD.MD", // case-insensitive
+		"projects/foo/readme.md.md",
+	}
+	for _, p := range rejected {
+		if _, err := validateActionPath(root, p); err == nil {
+			t.Errorf("expected %q to be rejected (doubled .md extension)", p)
+		}
+	}
+	accepted := []string{
+		"wiki/readme.md",
+		"wiki/2026-05-25.notes.md", // a dotted stem is fine; only ".md.md" is malformed
+		"wiki/readme_md.md",        // distinct (underscore) basename — not the doubled-ext shape
+	}
+	for _, p := range accepted {
+		if _, err := validateActionPath(root, p); err != nil {
+			t.Errorf("expected %q to be accepted, got: %v", p, err)
+		}
+	}
+}
+
 // Layer 2 (0.2.18): an `append` whose target is missing is promoted to
 // `create` rather than erroring — the model's intent (this content
 // belongs at this path) is still satisfiable. Layer 1 runs first, so a

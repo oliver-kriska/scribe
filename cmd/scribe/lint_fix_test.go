@@ -5,6 +5,107 @@ import (
 	"testing"
 )
 
+// TestNormalizeAliasesBlock_RepairsCorruption reproduces the people/*.md
+// frontmatter the un-quoted identity-apply writer produced — a bare @handle
+// (invalid YAML) plus over-indented duplicate entries — and asserts the
+// normalizer quotes, re-indents, and dedups it.
+func TestNormalizeAliasesBlock_RepairsCorruption(t *testing.T) {
+	lines := []string{
+		"aliases:",
+		"  - Omar Sanseviero",
+		"  - @omarsar0",
+		"    - '@omarsar0'",
+		"    - Omar Sanseviero",
+		"authority: opinion",
+	}
+	got, changed := normalizeAliasesBlock(lines)
+	if !changed {
+		t.Fatal("expected the malformed block to be changed")
+	}
+	want := []string{
+		"aliases:",
+		"  - Omar Sanseviero",
+		"  - '@omarsar0'",
+		"authority: opinion",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("line count = %d, want %d:\n%v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestNormalizeAliasesBlock_Idempotent: a clean block is left untouched, so
+// `lint --fix` doesn't churn well-formed files every run.
+func TestNormalizeAliasesBlock_Idempotent(t *testing.T) {
+	lines := []string{
+		"aliases:",
+		"  - Omar Sanseviero",
+		"  - '@omarsar0'",
+		"authority: opinion",
+	}
+	if _, changed := normalizeAliasesBlock(lines); changed {
+		t.Error("clean aliases block should not be reported as changed")
+	}
+	// Inline form must be left alone.
+	inline := []string{"aliases: [a, b]", "authority: opinion"}
+	if _, changed := normalizeAliasesBlock(inline); changed {
+		t.Error("inline aliases form should not be touched")
+	}
+	// Already-valid DOUBLE-quoted @handles must be preserved verbatim, not
+	// rewritten to single quotes — otherwise every people/*.md churns on
+	// each run (the over-eager-normalizer regression).
+	doubleQuoted := []string{
+		"aliases:",
+		`  - "@karpathy"`,
+		"  - Andrej Karpathy",
+		"domain: general",
+	}
+	if _, changed := normalizeAliasesBlock(doubleQuoted); changed {
+		t.Error(`valid "@handle" double-quoted block must not be rewritten`)
+	}
+}
+
+// TestAutoFixArticle_RepairsInvalidAliasYAML: end-to-end, a file lint rejects
+// for invalid alias YAML becomes a real FIX (not a SKIP).
+func TestAutoFixArticle_RepairsInvalidAliasYAML(t *testing.T) {
+	in := `---
+title: "Omar Sanseviero"
+type: person
+aliases:
+  - Omar Sanseviero
+  - @omarsar0
+    - '@omarsar0'
+created: 2026-04-13
+updated: 2026-04-13
+tags: []
+related: []
+sources: []
+confidence: medium
+domain: general
+---
+
+Body.
+`
+	changes, out, err := autoFixArticle("", "people/omar-sanseviero.md", []byte(in))
+	if err != nil {
+		t.Fatalf("expected repair, got SKIP error: %v", err)
+	}
+	if out == nil || len(changes) == 0 {
+		t.Fatal("expected the file to be fixed")
+	}
+	// The result must now be valid frontmatter.
+	if _, perr := parseFrontmatter(out); perr != nil {
+		t.Errorf("output still invalid YAML: %v\n%s", perr, out)
+	}
+	if !strings.Contains(string(out), "  - '@omarsar0'") {
+		t.Errorf("expected quoted @handle in output:\n%s", out)
+	}
+}
+
 func TestAutoFixArticle_AddsMissingDefaults(t *testing.T) {
 	in := `---
 title: "Example"
