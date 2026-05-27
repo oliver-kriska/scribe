@@ -362,7 +362,7 @@ Validates: Ollama reachable; `llm.model` pulled; `absorb.pass2_model` pulled; `a
 | ----------------------------- | ------------------- | ------- | ---------------------------------------- |
 | `contextualize`, `facts`      | `gemma3:4b`         | 8192    | Cheap, high-throughput per-chunk pass    |
 | `absorb.pass1`                | inherits `llm.model`| 8192    | Entity-list extraction, fast             |
-| `absorb.pass2`                | `gemma3:27b`        | 16384   | Highest-quality wiki writes; pin per-op  |
+| `absorb.pass2`                | `gemma3:27b`        | 16384   | Highest-quality wiki writes; pin per-op. On Apple Silicon prefer MoE `qwen3:30b-a3b` (~4× faster, same class) |
 | `dream`, `assess`, `deep`     | inherits `llm.model`| 16384–32768 | Envelope orchestrators                |
 | `session-mine`                | inherits `llm.model`| 16384   | Transcript inlined, capped at 24K chars  |
 
@@ -375,16 +375,19 @@ On the next `scribe sync` (or any subcommand) scribe will:
 
 No manual `ollama pull` needed — though `ollama pull gemma3:12b && ollama pull gemma3:27b` ahead of time avoids a cold-start delay on the first sync.
 
-**Recommended models (April 2026):**
+**Recommended models (May 2026):**
 
 | Model         | Size   | When to pick                                     |
 | ------------- | ------ | ------------------------------------------------ |
 | `gemma3:4b`   | 3.3 GB | **Default.** Best speed/quality on Apple Silicon |
+| `qwen3:30b-a3b-instruct-2507` | ~18 GB | **Best higher-quality local pick on Apple Silicon.** MoE (~3B active) → 27–30B-class quality at small-model speed; ideal for `absorb.pass2` in place of dense `gemma3:27b` |
 | `qwen3:4b`    | ~2.5 GB | Richer prose, slightly more verbose              |
 | `llama3.2:3b` | ~2 GB  | Smaller footprint, older-generation              |
 | `phi4-mini:3.8b` | ~2.5 GB | Reasoning-focused, less natural writing output |
 
 All are free and work with scribe's auto-pull. Pick with `model: <tag>` in scribe.yaml. llama.cpp's `llama-server` exposes the same `/api/generate` shape, so `ollama_url: http://localhost:8080` also works if you prefer raw llama.cpp over Ollama.
+
+> **Apple Silicon tip.** LLM decode is memory-bandwidth-bound, so dense 24–32B models are slow on non-Max chips (≈10 tok/s for a 27–31B on an M4 Pro). Mixture-of-Experts models like `qwen3:30b-a3b-instruct` activate only ~3B params per token, reaching ≈40 tok/s on Ollama (≈90 tok/s via MLX) at similar quality — the better high-quality pick when you don't have an M-series Max/Ultra.
 
 > **Note.** Local-mode covers every LLM-driven subcommand as of 0.2.14 — `dream`, `assess`, `deep`, `session-mine` (including Codex session mining, which inherits the `session_mine:` backend), `relations migrate`, and the four absorb passes. `contextualize` was first (pre-0.2.11); Phase 4A added `facts_provider: ollama`; Phase 4B added `pass2_mode: json` + `pass2_provider: ollama` (0.2.11); Phase 4C/4D/4E (0.2.14) ported the four remaining `claude -p` orchestrators onto bounded JSON-envelope subtasks, and a top-level `llm:` block now wires it together so flipping the whole pipeline is one line of yaml.
 

@@ -254,8 +254,16 @@ func contextualizeOne(root, rawPath, model string) error {
 		articleContent = articleContent[:maxRawArticleBytesForContextualize] + "\n\n[…article truncated for contextualization]"
 	}
 
+	// Feed the known source into the prompt as an authoritative field so the
+	// model attributes from fact, not guesswork. Small models otherwise
+	// hallucinate the source (or copy the example paragraph's source) — see
+	// .claude/research/2026-05-27-local-model-selection-m4-research.md. scribe
+	// captures source_url/source_path + title in frontmatter at ingest time.
+	sourceMeta := contextualizeSourceMeta(articleBytes)
+
 	prompt, err := loadPrompt("contextualize.md", map[string]string{
 		"ARTICLE_CONTENT": articleContent,
+		"SOURCE_META":     sourceMeta,
 	})
 	if err != nil {
 		return fmt.Errorf("load prompt: %w", err)
@@ -330,6 +338,41 @@ func insertRetrievalContext(content, paragraph string) (string, error) {
 
 func retrievalContextBlock(paragraph string) string {
 	return fmt.Sprintf("\n%s\n> **Retrieval context (auto):** %s\n\n", retrievalContextMarker, paragraph)
+}
+
+// contextualizeSourceMeta renders an authoritative source hint from a raw
+// article's frontmatter for the contextualize prompt's {{SOURCE_META}} slot.
+// scribe records the origin at ingest (source_url for fetched pages,
+// source_path for local files) plus the title; passing it verbatim stops
+// small models inventing an attribution. Returns "" when no usable metadata
+// exists, in which case the prompt instructs the model to infer from the body.
+func contextualizeSourceMeta(raw []byte) string {
+	fm, err := parseFrontmatterRaw(raw)
+	if err != nil || fm == nil {
+		return ""
+	}
+	str := func(k string) string {
+		if s, ok := fm[k].(string); ok {
+			return strings.TrimSpace(s)
+		}
+		return ""
+	}
+	var parts []string
+	if title := str("title"); title != "" {
+		parts = append(parts, fmt.Sprintf("Title: %q", title))
+	}
+	src := str("source_url")
+	if src == "" {
+		src = str("source_path")
+	}
+	if src != "" {
+		parts = append(parts, "Source: "+src)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Known source (authoritative — use this for attribution, do not invent another): " +
+		strings.Join(parts, " · ")
 }
 
 // sanitizeContextParagraph cleans common LLM output artifacts — wrapping

@@ -2,6 +2,35 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.28] — 2026-05-27
+
+Make `contextualize` attribute from fact, not guesswork — and recommend a
+Mixture-of-Experts local model that delivers 27–30B-class quality at
+small-model speed on Apple Silicon.
+
+### Fix — contextualize attributes from captured source metadata
+- New `contextualizeSourceMeta` (contextualize.go) pulls `title` +
+  `source_url`/`source_path` from each raw article's frontmatter and feeds it
+  into the `contextualize.md` prompt as an authoritative `{{SOURCE_META}}`
+  field, instructing the model to take the publisher from the source URL's
+  domain — not from an organization merely *discussed inside* the article.
+- Removes the small-model failure where the retrieval paragraph invented the
+  source (e.g. a 4B model attributing a Turing Post newsletter to "Jack Clark
+  at Anthropic", or copying the prompt's own example paragraph). Both raw and
+  wiki contextualize paths flow through the one fixed function; the change is
+  provider/model-agnostic (Anthropic or Ollama).
+- No regression: articles without a source field (~30% of a real corpus) fall
+  back to body inference exactly as before, and `loadPrompt`'s placeholder
+  guard strips an unsupplied `{{SOURCE_META}}` cleanly.
+
+### Docs — recommend qwen3:30b-a3b for high-quality local writes
+- README local-mode now recommends `qwen3:30b-a3b-instruct-2507` (MoE, ~3B
+  active params) for the high-quality `absorb.pass2` role on Apple Silicon:
+  benchmarked ~4× faster than dense `gemma3:27b` (≈41 vs ≈10 tok/s on an M4
+  Pro, ≈90 tok/s via MLX) at comparable quality, because LLM decode is
+  memory-bandwidth-bound and MoE activates far fewer params per token.
+  `gemma3:4b` remains the default contextualize model.
+
 ## [0.2.27] — 2026-05-25
 
 Stop a KB from ingesting itself, and ship the cleanup tooling for KBs already
