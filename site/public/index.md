@@ -122,4 +122,4 @@ Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patter
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-05-16
+**Last updated:** 2026-05-27
