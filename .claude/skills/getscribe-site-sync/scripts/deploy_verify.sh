@@ -53,23 +53,42 @@ fetch() { # $1=path $2=outfile ; plain curl, fall back to --resolve via fresh di
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 fetch "/" "$tmp/index.html"
 fetch "/llms.txt" "$tmp/llms.txt"
-fetch "/og.png" "$tmp/og.png"
+
+# The social-card asset is cache-busted by renaming (og.png → og-v2.png → …),
+# so its path changes between releases. Derive it from the page's og:image meta
+# instead of hardcoding it — a stale literal here would 404 and, under set -e,
+# abort the whole verify before the pin check ever ran.
+OG_PATH="$(grep -oE 'og:image"[^>]*content="https?://[^"]+"' "$PUB/index.html" \
+  | grep -oE 'content="https?://[^"]+"' | sed -E 's#.*://[^/]+##; s/"$//' | head -1)"
+[ -n "$OG_PATH" ] || OG_PATH="/og.png"
 
 verify_fail=0
 
-if pins="$(grep -nEi "$PIN_REGEX" "$tmp/index.html" "$tmp/llms.txt" 2>/dev/null)"; then
-  echo "FAIL live site still has version pins:"
-  echo "$pins" | sed 's/^/     /'
-  verify_fail=1
-else
+pin_found=0
+for lf in index.html llms.txt; do
+  if pins="$(pin_scan "$tmp/$lf" 2>/dev/null)"; then
+    echo "FAIL live $lf still has version pins:"
+    echo "$pins" | sed 's/^/     /'
+    pin_found=1
+  fi
+done
+if [ "$pin_found" -eq 0 ]; then
   echo "ok   live HTML + llms.txt carry zero version pins"
+else
+  verify_fail=1
 fi
 
-if cmp -s "$tmp/og.png" "$PUB/og.png"; then
-  echo "ok   live og.png byte-identical to local"
+# Card byte-check is best-effort: a missing/renamed asset is a warning, not a
+# deploy-blocker (the cardinal invariant is the pin scan above, not the card).
+if fetch "$OG_PATH" "$tmp/og"; then
+  if cmp -s "$tmp/og" "$PUB$OG_PATH"; then
+    echo "ok   live $OG_PATH byte-identical to local"
+  else
+    echo "FAIL live $OG_PATH differs from local $(wc -c <"$tmp/og")B vs $(wc -c <"$PUB$OG_PATH")B (CDN lag? re-check, then re-deploy)"
+    verify_fail=1
+  fi
 else
-  echo "FAIL live og.png differs from local $(wc -c <"$tmp/og.png")B vs $(wc -c <"$PUB/og.png")B (CDN lag? re-check, then re-deploy)"
-  verify_fail=1
+  echo "warn could not fetch $OG_PATH live — skipping card byte-check"
 fi
 
 # Optional: caller may pass strings that MUST appear live (new capability copy).

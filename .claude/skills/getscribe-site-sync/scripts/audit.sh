@@ -20,7 +20,7 @@ fatal=0
 
 echo "── version-pin scan ($PUB) ──"
 for f in "${SURFACES[@]}"; do
-  if hits="$(grep -nEi "$PIN_REGEX" "$PUB/$f" 2>/dev/null)"; then
+  if hits="$(pin_scan "$PUB/$f" 2>/dev/null)"; then
     echo "PIN  $f:"
     echo "$hits" | sed 's/^/     /'
     fatal=1
@@ -34,9 +34,9 @@ TMPL="$SKILL_DIR/assets/og.svg.tmpl"
 if [ ! -f "$TMPL" ]; then
   echo "PIN  missing og template ($TMPL) — cannot regenerate an evergreen card"
   fatal=1
-elif grep -nEi "$PIN_REGEX" "$TMPL" >/dev/null 2>&1; then
+elif tmpl_hits="$(pin_scan "$TMPL")"; then
   echo "PIN  og.svg.tmpl carries a version — the card would bake it into pixels:"
-  grep -nEi "$PIN_REGEX" "$TMPL" | sed 's/^/     /'
+  echo "$tmpl_hits" | sed 's/^/     /'
   fatal=1
 else
   echo "ok   og template present and version-free"
