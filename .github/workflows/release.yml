@@ -42,16 +42,23 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: go.mod
 
       - name: Run GoReleaser in cross-compile container
+        # The image base is Go 1.26.2 (goreleaser-cross has no 1.26.3/1.26.4
+        # tag yet). GOTOOLCHAIN=auto makes the in-container build honor the
+        # `go 1.26.4` directive in go.mod by fetching that toolchain, so the
+        # release binary is built against the patched stdlib regardless of
+        # the image's base Go. Bump the image tag to a 1.26.4 base once one
+        # ships and the download step goes away.
         run: |
           docker run --rm \
             -v "$PWD":/go/src/github.com/oliver-kriska/scribe \
             -w /go/src/github.com/oliver-kriska/scribe \
             -e GITHUB_TOKEN \
             -e HOMEBREW_TAP_GITHUB_TOKEN \
-            ghcr.io/goreleaser/goreleaser-cross:v1.26.2-2 \
+            -e GOTOOLCHAIN=auto \
+            ghcr.io/goreleaser/goreleaser-cross:v1.26.2-3 \
             release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
