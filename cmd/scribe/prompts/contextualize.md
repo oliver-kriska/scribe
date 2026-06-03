@@ -8,11 +8,13 @@ Below is the raw article content. Read it and produce **one paragraph of 3–5 s
 2. **3–5 named concepts, entities, decisions, or tools** from the article. Use proper nouns wherever possible — that is what embeddings match against.
 3. **One-sentence framing** of what a reader would look up this article to find.
 
+**Name the topics, not the numbers.** Do NOT restate specific statistics, percentages, ratios, or comparative multipliers (e.g. "32.3%", "two-thirds of citations", "4× longer"). Embeddings match on the named entities, not the figures, and restating a figure is where errors creep in — name *what* the article measures, not the measured value. Proper nouns that happen to contain digits (model names, versions like "GPT-4" or "Llama 3.1") are fine. If you cite a date, use only the **Published** date from the Known source line above — never infer one from the body.
+
 Output ONLY the paragraph — no markdown, no frontmatter, no headings, no lists, no commentary, no preamble like "Here is the context". Just the paragraph text.
 
 ## Example output
 
-Thread by Artem Zhutov contrasting Karpathy's LLM wiki architecture with Google NotebookLM's embedding-based retrieval. Compares token cost of wiki-style ingestion (44K tokens per question across 19 sources) against NotebookLM's instant-embedding approach over 50 sources. Argues wikis are worth the cost only for PhD-level research, team wikis, or competitive analysis — and advocates converting knowledge into Claude Code skills integrated into daily routines (using Ray Dalio's 5-step decision framework as an example). Core tension: persistent structured wiki vs embedded-retrieval NotebookLM.
+Thread by Artem Zhutov contrasting Karpathy's LLM wiki architecture with Google NotebookLM's embedding-based retrieval. Weighs the token cost of wiki-style ingestion against NotebookLM's instant-embedding approach. Argues wikis are worth the cost only for PhD-level research, team wikis, or competitive analysis — and advocates converting knowledge into Claude Code skills integrated into daily routines (using Ray Dalio's decision framework as an example). Core tension: persistent structured wiki vs embedded-retrieval NotebookLM.
 
 ## Raw article
 

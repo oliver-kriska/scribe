@@ -85,6 +85,16 @@ func TestContextualizeSourceMeta(t *testing.T) {
 			want: []string{"https://e.com"},
 		},
 		{
+			name: "published date surfaced as authoritative",
+			raw:  "---\ntitle: T\nsource_url: \"https://e.com\"\npublished: \"March 2, 2026\"\ncaptured: \"2026-06-03\"\n---\nb\n",
+			want: []string{"Published: March 2, 2026"},
+		},
+		{
+			name: "date field used when published absent (yaml-parsed date)",
+			raw:  "---\ntitle: T\nsource_path: \"/x.md\"\ndate: 2026-03-02\n---\nb\n",
+			want: []string{"Published: 2026-03-02"},
+		},
+		{
 			name: "no usable metadata yields empty (prompt falls back to inference)",
 			raw:  "---\ndomain: general\n---\nbody\n",
 			want: nil,
@@ -117,4 +127,43 @@ func TestContextualizeSourceMeta(t *testing.T) {
 			t.Errorf("source_path should be omitted when source_url present: %q", got)
 		}
 	})
+	t.Run("captured date never leaks into source meta", func(t *testing.T) {
+		// The ingest `captured:` date is what a small model mistook for the
+		// study date (2026-06-03 audit). It must never be surfaced.
+		got := contextualizeSourceMeta([]byte("---\ntitle: T\nsource_url: \"https://e.com\"\npublished: \"March 2, 2026\"\ncaptured: \"2026-06-03\"\n---\nb\n"))
+		if strings.Contains(got, "2026-06-03") {
+			t.Errorf("captured date must not appear in source meta: %q", got)
+		}
+		if !strings.Contains(got, "Published: March 2, 2026") {
+			t.Errorf("published date should be surfaced: %q", got)
+		}
+	})
+}
+
+func TestDegenerateContextReason(t *testing.T) {
+	// body is the frontmatter-stripped article; the breadcrumb is its first
+	// line, mirroring the article-05 failure where the model echoed it.
+	body := "AI Search, Data & Studies\nSome real body content about the topic.\n"
+	valid := "Thread by Jane Doe analyzing the architecture of distributed consensus systems, contrasting several coordination protocols and their tradeoffs, and framing when a team would reach for each approach in production. Useful for engineers comparing strategies."
+	tests := []struct {
+		name       string
+		text       string
+		degenerate bool
+	}{
+		{"breadcrumb echo", "AI Search, Data & Studies", true},
+		{"too short fragment", "Short note about a topic and tools", true},
+		{"no sentence punctuation", strings.TrimSpace(strings.Repeat("word ", 30)), true},
+		{"valid paragraph", valid, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reason := degenerateContextReason(tc.text, body)
+			if tc.degenerate && reason == "" {
+				t.Errorf("expected degenerate, got accepted")
+			}
+			if !tc.degenerate && reason != "" {
+				t.Errorf("expected accepted, got rejected: %s", reason)
+			}
+		})
+	}
 }

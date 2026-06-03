@@ -249,7 +249,13 @@ func contextualizeOne(root, rawPath, model string) error {
 	if err != nil {
 		return fmt.Errorf("read raw: %w", err)
 	}
-	articleContent := string(articleBytes)
+	// Strip the YAML frontmatter before sending: the body is what we
+	// summarize, and the frontmatter carries an ingest `captured:` date
+	// that small models otherwise grab as the publication date — the
+	// 2026-06-03 audit caught a study dated "June 2026" that was really
+	// the capture date. The authoritative source + publication date go
+	// through SOURCE_META instead, labeled and unambiguous.
+	articleContent := stripFrontmatter(string(articleBytes))
 	if len(articleContent) > maxRawArticleBytesForContextualize {
 		articleContent = articleContent[:maxRawArticleBytesForContextualize] + "\n\n[…article truncated for contextualization]"
 	}
@@ -281,6 +287,15 @@ func contextualizeOne(root, rawPath, model string) error {
 	text = sanitizeContextParagraph(text)
 	if text == "" {
 		return fmt.Errorf("empty context paragraph")
+	}
+	// Reject degenerate output rather than splice it. Small models on
+	// table/image-dense articles fall back to echoing the first line (the
+	// 2026-06-03 audit caught a breadcrumb "AI Search, Data & Studies"
+	// written as the whole summary). Returning an error means the caller
+	// skips this file without recording the idempotency marker, so the
+	// next run retries instead of persisting garbage into the index.
+	if reason := degenerateContextReason(text, articleContent); reason != "" {
+		return fmt.Errorf("degenerate context paragraph: %s", reason)
 	}
 
 	// Save paragraph to staging for debugging/inspection.
@@ -368,10 +383,21 @@ func contextualizeSourceMeta(raw []byte) string {
 	if src != "" {
 		parts = append(parts, "Source: "+src)
 	}
+	// Surface the publication date as authoritative so a date in the
+	// paragraph (if the prompt allows one) is the real one, not the
+	// ingest `captured:` date. stringFromAny handles both quoted strings
+	// and yaml-parsed dates (time.Time).
+	pub := stringFromAny(fm["published"])
+	if pub == "" {
+		pub = stringFromAny(fm["date"])
+	}
+	if pub != "" {
+		parts = append(parts, "Published: "+pub)
+	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return "Known source (authoritative — use this for attribution, do not invent another): " +
+	return "Known source (authoritative — use this for attribution and the only date you may cite, do not invent another): " +
 		strings.Join(parts, " · ")
 }
 
@@ -409,6 +435,33 @@ func sanitizeContextParagraph(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "§§PARA§§", "\n\n")
 	return strings.TrimSpace(s)
+}
+
+// degenerateContextReason returns a non-empty reason when a generated
+// context paragraph is too poor to splice into the KB, or "" when it is
+// acceptable. It catches the small-model failure modes the 2026-06-03
+// audit found: the model echoing a heading/breadcrumb instead of
+// summarizing (no prose), or returning a fragment far below the asked
+// 60–120 words. The word floor is deliberately well under the target
+// (25, not 60) so only genuine degeneracy is rejected, not a slightly
+// terse-but-valid paragraph. body is the (frontmatter-stripped) article
+// used for verbatim-echo detection.
+func degenerateContextReason(text, body string) string {
+	words := strings.Fields(text)
+	if len(words) < 25 {
+		return fmt.Sprintf("too short (%d words, want 60–120)", len(words))
+	}
+	if !strings.ContainsAny(text, ".!?") {
+		return "no sentence punctuation (likely a heading/breadcrumb echo)"
+	}
+	norm := strings.TrimSpace(strings.ToLower(text))
+	for _, line := range strings.Split(body, "\n") {
+		l := strings.TrimSpace(strings.ToLower(line))
+		if l != "" && l == norm {
+			return "verbatim echo of a source line"
+		}
+	}
+	return ""
 }
 
 // fileHasMarker returns true if a file contains the given marker.
