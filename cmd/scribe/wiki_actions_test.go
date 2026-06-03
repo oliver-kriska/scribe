@@ -923,3 +923,163 @@ func TestApplyWikiActions_SanitizeContentEnablesRemap(t *testing.T) {
 		t.Errorf("entity not re-homed under wiki/: %v", statErr)
 	}
 }
+
+// --- Dream blind-write guards (B1/B2/B3) ---------------------------------
+//
+// Dream runs blind: the model sees article metadata, never bodies. These
+// tests pin the executor guards that stop a hallucinated envelope from
+// destroying curated content. See the 2026-06-03 ingestion-quality audit.
+
+// TestApplyWikiActions_DreamOptionsRefuseClobber: under dream's exact
+// options (AllowOverwrite off, ProtectProvenance on) a `create` against an
+// existing curated doc is refused — the 88→40 master-doc gutting vector.
+func TestApplyWikiActions_DreamOptionsRefuseClobber(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "research", "master.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := "---\ntitle: Master\ntype: research\ndomain: general\nsources:\n  - /raw/a.md\n  - /raw/b.md\n---\n\n| study | finding |\n|---|---|\n| A | x |\n"
+	if err := os.WriteFile(target, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op:      "create",
+		Path:    "research/master.md",
+		Content: "---\ntitle: Master\ntype: research\ndomain: general\n---\n\nthin hallucinated body\n",
+	}}}
+	res, _ := applyWikiActions(root, env, ApplyOptions{SanitizeContent: true, ProtectProvenance: true})
+	if len(res.Applied) != 0 {
+		t.Errorf("blind create over existing curated doc must be refused; applied=%v", res.Applied)
+	}
+	got, _ := os.ReadFile(target)
+	if string(got) != orig {
+		t.Errorf("curated doc was clobbered:\n%s", string(got))
+	}
+}
+
+// TestApplyWikiActions_ProtectProvenanceDropsIdentityKeys: update_frontmatter
+// under ProtectProvenance keeps allowlisted keys (updated) and drops
+// provenance/identity keys (sources, title) the blind model invented.
+func TestApplyWikiActions_ProtectProvenanceDropsIdentityKeys(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "research", "doc.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := "---\ntitle: Real Title\nsources:\n  - /raw/a.md\nupdated: 2026-01-01\n---\n\nbody\n"
+	if err := os.WriteFile(target, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op:   "update_frontmatter",
+		Path: "research/doc.md",
+		Frontmatter: map[string]any{
+			"updated": "2026-06-03",
+			"sources": "session:abc",
+			"title":   "Hallucinated",
+		},
+	}}}
+	res, _ := applyWikiActions(root, env, ApplyOptions{ProtectProvenance: true})
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	s := mustRead(t, target)
+	// yaml.Marshal may quote the scalar (updated: "2026-06-03"); assert on
+	// the value + key, not an exact unquoted rendering.
+	if !strings.Contains(s, "updated:") || !strings.Contains(s, "2026-06-03") || strings.Contains(s, "2026-01-01") {
+		t.Errorf("allowlisted key `updated` not applied:\n%s", s)
+	}
+	if strings.Contains(s, "session:abc") {
+		t.Errorf("provenance key `sources` was overwritten:\n%s", s)
+	}
+	if !strings.Contains(s, "/raw/a.md") {
+		t.Errorf("original sources lost:\n%s", s)
+	}
+	if strings.Contains(s, "Hallucinated") || !strings.Contains(s, "Real Title") {
+		t.Errorf("identity key `title` was overwritten:\n%s", s)
+	}
+}
+
+// TestApplyWikiActions_ProtectProvenanceAllDroppedIsNoOp: when every key the
+// model sent is non-allowlisted, the action is a skip (not an error) and the
+// file is untouched byte-for-byte.
+func TestApplyWikiActions_ProtectProvenanceAllDroppedIsNoOp(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "research", "doc.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := "---\ntitle: T\nsources:\n  - /raw/a.md\n---\n\nbody\n"
+	if err := os.WriteFile(target, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op:          "update_frontmatter",
+		Path:        "research/doc.md",
+		Frontmatter: map[string]any{"sources": "session:x", "created": "2026-06-03"},
+	}}}
+	res, _ := applyWikiActions(root, env, ApplyOptions{ProtectProvenance: true})
+	if len(res.Errors) != 0 {
+		t.Fatalf("full-drop should be a no-op, not an error: %v", res.Errors)
+	}
+	if len(res.Skipped) != 1 {
+		t.Errorf("expected 1 skipped, got applied=%v skipped=%v", res.Applied, res.Skipped)
+	}
+	if mustRead(t, target) != orig {
+		t.Errorf("file changed on full-drop no-op")
+	}
+}
+
+// TestApplyWikiActions_ProtectProvenanceOffKeepsKeys: without the flag the
+// pre-existing behavior is unchanged — every key is merged.
+func TestApplyWikiActions_ProtectProvenanceOffKeepsKeys(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "research", "doc.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("---\ntitle: T\n---\n\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op:          "update_frontmatter",
+		Path:        "research/doc.md",
+		Frontmatter: map[string]any{"sources": "session:x"},
+	}}}
+	res, _ := applyWikiActions(root, env, ApplyOptions{})
+	if len(res.Errors) != 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if !strings.Contains(mustRead(t, target), "session:x") {
+		t.Errorf("without ProtectProvenance, sources should merge as before")
+	}
+}
+
+// TestApplyWikiActions_DecayMarkerIdempotent: a second decay append onto a
+// file that already carries the marker is skipped, so two dream passes leave
+// exactly one marker.
+func TestApplyWikiActions_DecayMarkerIdempotent(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "wiki", "stale.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("---\ntitle: S\n---\n\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	marker := "\n<!-- decay-candidate 2026-06-03 -->\n"
+	mk := func() WikiActionEnvelope {
+		return WikiActionEnvelope{Actions: []WikiAction{{Op: "append", Path: "wiki/stale.md", Content: marker}}}
+	}
+	if res, _ := applyWikiActions(root, mk(), ApplyOptions{}); len(res.Applied) != 1 {
+		t.Fatalf("first decay append should write; got %v", res)
+	}
+	res2, _ := applyWikiActions(root, mk(), ApplyOptions{})
+	if len(res2.Skipped) != 1 {
+		t.Errorf("second decay append should skip; got applied=%v skipped=%v", res2.Applied, res2.Skipped)
+	}
+	if n := strings.Count(mustRead(t, target), decayCandidateMarker); n != 1 {
+		t.Errorf("decay marker should appear exactly once, got %d", n)
+	}
+}

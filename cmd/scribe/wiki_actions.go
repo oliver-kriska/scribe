@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	gosync "sync"
 	"time"
@@ -173,6 +174,16 @@ type ApplyOptions struct {
 	// inherits the same content robustness the path/op guards already
 	// give for free.
 	SanitizeContent bool
+	// ProtectProvenance: restrict op=update_frontmatter to a safe
+	// allowlist (updateFrontmatterAllowlist) and drop identity/provenance
+	// keys (sources, created, title, …). Set by the dream orchestrator,
+	// the only envelope consumer that runs blind — it sees article
+	// metadata but never bodies, so any frontmatter value it emits beyond
+	// a date bump is invented. A real 2026-06-03 scriptorium incident had
+	// dream overwrite a research doc's `sources:` (14 study paths) with a
+	// single session ref. Other consumers see full source content and may
+	// legitimately set provenance, so they leave this off.
+	ProtectProvenance bool
 	// ValidFactIDs: the set of fact IDs the facts pass produced for the
 	// source article. Brackets not in this set are stripped. Only
 	// consulted when SanitizeContent is true. nil ⇒ strip ALL [cNN-fM]
@@ -199,6 +210,46 @@ type ApplyResult struct {
 // Phase 4C: after the WikiAction list, Meta actions execute in order.
 // Meta failures land in result.Errors like wiki actions; a bad meta
 // op does not prevent earlier wiki actions from sticking on disk.
+// decayCandidateMarker is the prefix of the HTML comment dream appends to
+// flag a stale-but-not-deleted article. The date suffix varies, so callers
+// match on the prefix to test presence.
+const decayCandidateMarker = "<!-- decay-candidate"
+
+// updateFrontmatterAllowlist is the set of frontmatter keys a blind
+// consumer (dream, via ApplyOptions.ProtectProvenance) may write through
+// op=update_frontmatter. Everything else — provenance (sources,
+// source_url, source_path, created), identity (title, type, domain, id),
+// and any unknown key — is dropped, because the model that proposed it
+// never saw the file's body and cannot have a grounded value for it. The
+// schema only ever asks dream for a date bump; this keeps it to that plus
+// light triage metadata.
+var updateFrontmatterAllowlist = map[string]bool{
+	"updated":    true,
+	"reviewed":   true,
+	"status":     true,
+	"confidence": true,
+	"decay":      true,
+	"tags":       true,
+	"related":    true,
+}
+
+// filterProvenanceKeys splits an update_frontmatter merge map into the
+// keys safe for a blind consumer to write and the keys dropped for being
+// outside updateFrontmatterAllowlist. Order of dropped keys is sorted so
+// log lines are deterministic.
+func filterProvenanceKeys(m map[string]any) (kept map[string]any, dropped []string) {
+	kept = make(map[string]any, len(m))
+	for k, v := range m {
+		if updateFrontmatterAllowlist[k] {
+			kept[k] = v
+			continue
+		}
+		dropped = append(dropped, k)
+	}
+	sort.Strings(dropped)
+	return kept, dropped
+}
+
 func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (ApplyResult, error) {
 	res := ApplyResult{}
 	if root == "" {
@@ -263,6 +314,17 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 				res.Skipped = append(res.Skipped, a.Path)
 				continue
 			}
+			// Decay-marker idempotency: dream re-proposes a decay append
+			// without seeing the prior marker, so a second pass would
+			// double-stamp. If the content is a decay marker and the file
+			// already carries one, skip — the article is already flagged.
+			if strings.Contains(a.Content, decayCandidateMarker) {
+				if existing, rerr := os.ReadFile(abs); rerr == nil && strings.Contains(string(existing), decayCandidateMarker) {
+					logMsg("envelope", "action[%d] append: %s already has a decay marker, skipping", i, a.Path)
+					res.Skipped = append(res.Skipped, a.Path)
+					continue
+				}
+			}
 			if err := appendToFile(abs, a.Content); err != nil {
 				// Model picked the wrong op for a new file. The intent
 				// ("this content belongs at this path") is still
@@ -303,11 +365,25 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] update_frontmatter %q: empty frontmatter map", i, a.Path))
 				continue
 			}
+			updates := a.Frontmatter
+			if opts.ProtectProvenance {
+				kept, dropped := filterProvenanceKeys(updates)
+				if len(dropped) > 0 {
+					logMsg("envelope", "action[%d] update_frontmatter %s: dropped non-allowlisted key(s) %v", i, a.Path, dropped)
+				}
+				if len(kept) == 0 {
+					// Nothing left to write — the model only tried to touch
+					// provenance/identity fields. Treat as a no-op, not an error.
+					res.Skipped = append(res.Skipped, a.Path)
+					continue
+				}
+				updates = kept
+			}
 			if opts.DryRun {
 				res.Skipped = append(res.Skipped, a.Path)
 				continue
 			}
-			if err := updateFrontmatter(abs, a.Frontmatter); err != nil {
+			if err := updateFrontmatter(abs, updates); err != nil {
 				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] update_frontmatter %q: %v", i, a.Path, err))
 				continue
 			}
