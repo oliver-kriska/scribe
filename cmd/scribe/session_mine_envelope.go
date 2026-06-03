@@ -164,7 +164,12 @@ func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, pr
 			return false, err
 		}
 	}
-	res, applyErr := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
+	// Session-mine writes entities distilled from a transcript — a different
+	// source than any existing curated doc, so it must not overwrite one. A
+	// session referencing the ahrefs studies overwrote that 14-study hub with
+	// a session-grounded stub on 2026-06-03; entityWriterApplyOptions keeps
+	// create create-if-absent and protects provenance frontmatter.
+	res, applyErr := applyWikiActions(root, env, entityWriterApplyOptions())
 	if applyErr != nil {
 		return false, applyErr
 	}

@@ -114,7 +114,9 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 			}
 		}
 
-		res, applyErr := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
+		// Same class as session-mine: entities distilled from a Codex
+		// transcript must not overwrite an existing curated doc.
+		res, applyErr := applyWikiActions(root, env, entityWriterApplyOptions())
 		if applyErr != nil {
 			logMsg("sync", "codex envelope %s apply error: %v", c.id, applyErr)
 			continue

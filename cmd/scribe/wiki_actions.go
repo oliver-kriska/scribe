@@ -250,6 +250,23 @@ func filterProvenanceKeys(m map[string]any) (kept map[string]any, dropped []stri
 	return kept, dropped
 }
 
+// entityWriterApplyOptions is the executor policy for envelope consumers
+// that mine or assess a *different* source than the docs they may touch —
+// dream (blind metadata), session-mine, codex-mine, assess, and project
+// extract. For them, op=create means "add a new entity," never "overwrite
+// an existing curated doc," so AllowOverwrite stays off; ProtectProvenance
+// stops a stray update_frontmatter from rewriting sources/created/title.
+//
+// Only pass-2 absorb (which regenerates an entity page from its full
+// source) and deep extract (which inlines the directory's file contents)
+// legitimately opt into AllowOverwrite. A copy-pasted AllowOverwrite:true
+// on session-mine caused the 2026-06-03 master-doc gutting — it overwrote
+// a 14-study research hub with a session-grounded reconstruction. Naming
+// the policy here keeps the next consumer from re-introducing the default.
+func entityWriterApplyOptions() ApplyOptions {
+	return ApplyOptions{SanitizeContent: true, ProtectProvenance: true}
+}
+
 func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (ApplyResult, error) {
 	res := ApplyResult{}
 	if root == "" {

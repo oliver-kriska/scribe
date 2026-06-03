@@ -67,18 +67,13 @@ func runDreamOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, t
 	if err != nil {
 		return fmt.Errorf("dream: parse envelope: %w", err)
 	}
-	// Dream is the only envelope consumer that runs blind: the orient
-	// packet above is article *metadata* (path/title/type/updated) — the
-	// model never sees a file body. So unlike pass-2 (which reads the full
-	// source before regenerating a page), any whole-file content dream
-	// emits is invented. AllowOverwrite stays false so a hallucinated
-	// `create` can't clobber an existing curated doc — dream's only valid
-	// create is a new stub, which is create-if-absent by definition.
-	// ProtectProvenance likewise stops a blind update_frontmatter from
-	// overwriting sources/created/title. Both close the 2026-06-03
-	// master-doc gutting; see d06cc70 (0.2.18) for the same incident class
-	// on _-prefixed artifacts.
-	res, err := applyWikiActions(root, env, ApplyOptions{SanitizeContent: true, ProtectProvenance: true})
+	// Dream runs the blindest of all: the orient packet above is article
+	// *metadata* (path/title/type/updated), never a body, so any whole-file
+	// content it emits is invented. entityWriterApplyOptions keeps
+	// AllowOverwrite off (its only valid create is a new stub) and protects
+	// provenance frontmatter. See d06cc70 (0.2.18) for the same incident
+	// class on _-prefixed artifacts.
+	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
 	if err != nil {
 		return fmt.Errorf("dream: apply actions: %w", err)
 	}

@@ -1083,3 +1083,22 @@ func TestApplyWikiActions_DecayMarkerIdempotent(t *testing.T) {
 		t.Errorf("decay marker should appear exactly once, got %d", n)
 	}
 }
+
+// TestEntityWriterApplyOptions pins the shared policy for mining/assess/
+// extract/dream consumers: never overwrite an existing curated doc, always
+// protect provenance, always sanitize. The 2026-06-03 master-doc gutting
+// was a copy-pasted AllowOverwrite:true on session-mine; this guards the
+// regression at the policy seam (TestApplyWikiActions_DreamOptionsRefuseClobber
+// proves the same options refuse a clobber at the executor).
+func TestEntityWriterApplyOptions(t *testing.T) {
+	opts := entityWriterApplyOptions()
+	if opts.AllowOverwrite {
+		t.Error("entity-writer consumers must not overwrite existing curated docs")
+	}
+	if !opts.ProtectProvenance {
+		t.Error("entity-writer consumers must protect provenance frontmatter")
+	}
+	if !opts.SanitizeContent {
+		t.Error("entity-writer consumers must sanitize envelope content")
+	}
+}

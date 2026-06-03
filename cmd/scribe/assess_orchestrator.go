@@ -69,7 +69,9 @@ func runAssessOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, 
 	if err != nil {
 		return fmt.Errorf("assess: parse envelope: %w", err)
 	}
-	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true})
+	// Assess writes new gap/structure notes; it has no business overwriting
+	// an existing curated doc or rewriting its provenance.
+	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
 	if err != nil {
 		return fmt.Errorf("assess: apply actions: %w", err)
 	}
