@@ -2,6 +2,55 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.2.29] — 2026-06-03
+
+Harden the shared LLM-action executor against the failure class behind a real
+KB-corruption incident: destructive ops (overwrite, provenance writes, decay
+flags) are now gated by how much the model that proposed them actually saw.
+Plus a contextualize-quality fix and a clean security baseline.
+
+### Fix — only a content-grounded consumer may overwrite a curated doc
+- `applyWikiActions` is shared by ~8 consumers; the `AllowOverwrite: true`
+  option — designed for pass-2 absorb, which regenerates a page from that
+  page's *own* full source — had been copy-pasted to every call site. A
+  session-mine run consequently overwrote an 88-line, 14-study research hub
+  with a thin session-grounded reconstruction.
+- New `entityWriterApplyOptions()` policy: dream, session-mine, codex-mine,
+  assess, project-extract, and deep-extract all run with `AllowOverwrite`
+  off and `ProtectProvenance` on. **pass-2 absorb is now the only consumer
+  that overwrites** — a single, defensible line.
+- `ProtectProvenance` restricts `update_frontmatter` to a safe key allowlist
+  (`updated`, `status`, `tags`, …) and drops identity/provenance keys
+  (`sources`, `created`, `title`, …) a blind consumer cannot have grounded.
+
+### Fix — decay markers can no longer land on fresh docs
+- The decay-candidate marker asserts "stale, >60 days old, deletion
+  candidate." A dream run that ignored the (often empty) stale list had
+  stamped 114 markers on docs updated <60 days prior. `applyWikiActions` now
+  refuses a decay-marker append when the target's `updated:` is within 60
+  days, and skips a double-stamp when a marker is already present. Both
+  guards run before the dry-run gate, so `dream --dry-run` surfaces them.
+- The legacy monolithic `dream.md` delete step now re-verifies staleness from
+  the article's own `updated:` and never deletes on a marker alone — closing
+  the only path that could act destructively on a bogus marker.
+
+### Fix — contextualize stops leaking the capture date and inverting stats
+- The raw article's YAML frontmatter (which carries an ingest `captured:`
+  date) is stripped before the model sees the body; the authoritative source
+  and publication date are passed via `SOURCE_META` instead. Kills the
+  "study dated June 2026" class where a small model grabbed the capture month
+  as the publication date.
+- The prompt adds a "name the topics, not the numbers" rule, and a new
+  `degenerateContextReason` check rejects breadcrumb/echo output instead of
+  splicing it — the file is retried next run rather than persisting garbage.
+
+### Build — one Go-version source, clean vuln baseline
+- Go toolchain pinned to 1.26.4 from a single place (go.mod `toolchain` plus
+  `go-version-file` in CI); clears stdlib advisories GO-2026-5037 /
+  GO-2026-5039 and bumps x/net, x/sys, x/crypto, x/text, and
+  html-to-markdown/v2. `make ci` (test + race + golangci-lint + govulncheck)
+  is green.
+
 ## [0.2.28] — 2026-05-27
 
 Make `contextualize` attribute from fact, not guesswork — and recommend a
