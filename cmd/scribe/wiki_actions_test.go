@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -1100,5 +1101,134 @@ func TestEntityWriterApplyOptions(t *testing.T) {
 	}
 	if !opts.SanitizeContent {
 		t.Error("entity-writer consumers must sanitize envelope content")
+	}
+}
+
+// writeDecayTarget creates a wiki article with the given `updated:` date and
+// returns its absolute path. Empty updated omits the field entirely.
+func writeDecayTarget(t *testing.T, root, name, updated string) string {
+	t.Helper()
+	target := filepath.Join(root, "wiki", name)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fm := "---\ntitle: S\n"
+	if updated != "" {
+		fm += "updated: " + updated + "\n"
+	}
+	fm += "---\n\nbody\n"
+	if err := os.WriteFile(target, []byte(fm), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return target
+}
+
+// TestTargetIsFreshForDecay pins the date math that decides whether a decay
+// marker is legitimate. Fresh (updated within decayStaleDays) ⇒ true;
+// genuinely stale, missing date, malformed date, and missing file all ⇒
+// false (fail-open: only block when freshness is provable).
+func TestTargetIsFreshForDecay(t *testing.T) {
+	root := t.TempDir()
+	today := time.Now().Format("2006-01-02")
+	stale := time.Now().AddDate(0, 0, -decayStaleDays-30).Format("2006-01-02")
+	// One day inside the window is unambiguously fresh; one day past it is
+	// unambiguously stale. The exact cutoff day is intentionally untested —
+	// it depends on time.Now()'s time-of-day, and the guard inherits that
+	// fuzz from dreamStaleCandidates on purpose (see targetIsFreshForDecay).
+	justInside := time.Now().AddDate(0, 0, -decayStaleDays+1).Format("2006-01-02")
+
+	cases := []struct {
+		name    string
+		updated string
+		want    bool
+	}{
+		{"updated-today", today, true},
+		{"updated-90d-ago", stale, false},
+		{"just-inside-window", justInside, true},
+		{"no-updated-field", "", false},
+		{"malformed-date", "not-a-date", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			abs := writeDecayTarget(t, root, tc.name+".md", tc.updated)
+			if got := targetIsFreshForDecay(abs); got != tc.want {
+				t.Errorf("targetIsFreshForDecay(updated=%q) = %v, want %v", tc.updated, got, tc.want)
+			}
+		})
+	}
+	t.Run("missing-file", func(t *testing.T) {
+		if targetIsFreshForDecay(filepath.Join(root, "wiki", "ghost.md")) {
+			t.Error("missing file must be treated as not-fresh (fail-open), got true")
+		}
+	})
+}
+
+// TestApplyWikiActions_DecayRefusesFreshDoc proves the executor staleness
+// guard: a decay marker append onto a doc updated within decayStaleDays is
+// skipped (not written), regardless of what the model proposed. This is the
+// hard guarantee behind the 2026-06-03 incident where 114 markers landed on
+// docs updated <60 days prior.
+func TestApplyWikiActions_DecayRefusesFreshDoc(t *testing.T) {
+	root := t.TempDir()
+	today := time.Now().Format("2006-01-02")
+	target := writeDecayTarget(t, root, "fresh.md", today)
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "append", Path: "wiki/fresh.md", Content: "\n<!-- decay-candidate " + today + " -->\n",
+	}}}
+	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Skipped) != 1 || len(res.Applied) != 0 {
+		t.Fatalf("fresh doc decay marker should be skipped; got applied=%v skipped=%v", res.Applied, res.Skipped)
+	}
+	if strings.Contains(mustRead(t, target), decayCandidateMarker) {
+		t.Error("fresh doc must not receive a decay marker on disk")
+	}
+}
+
+// TestApplyWikiActions_DecayAllowsStaleDoc is the complement: a genuinely
+// stale doc (updated well beyond decayStaleDays) still accepts the marker, so
+// the guard rejects only the self-contradictory case, not all decay marking.
+func TestApplyWikiActions_DecayAllowsStaleDoc(t *testing.T) {
+	root := t.TempDir()
+	today := time.Now().Format("2006-01-02")
+	stale := time.Now().AddDate(0, 0, -decayStaleDays-30).Format("2006-01-02")
+	target := writeDecayTarget(t, root, "old.md", stale)
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "append", Path: "wiki/old.md", Content: "\n<!-- decay-candidate " + today + " -->\n",
+	}}}
+	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Applied) != 1 {
+		t.Fatalf("stale doc decay marker should be written; got applied=%v skipped=%v errors=%v", res.Applied, res.Skipped, res.Errors)
+	}
+	if !strings.Contains(mustRead(t, target), decayCandidateMarker) {
+		t.Error("stale doc should carry the decay marker on disk")
+	}
+}
+
+// TestApplyWikiActions_DecayGuardFiresInDryRun proves the guard sits BEFORE
+// the dry-run gate, so `dream --dry-run` reports a refusal (Skipped) on a
+// fresh doc rather than a phantom "would append" — and writes nothing.
+func TestApplyWikiActions_DecayGuardFiresInDryRun(t *testing.T) {
+	root := t.TempDir()
+	today := time.Now().Format("2006-01-02")
+	target := writeDecayTarget(t, root, "fresh.md", today)
+	before := mustRead(t, target)
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "append", Path: "wiki/fresh.md", Content: "\n<!-- decay-candidate " + today + " -->\n",
+	}}}
+	res, err := applyWikiActions(root, env, ApplyOptions{DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Skipped) != 1 {
+		t.Fatalf("dry-run fresh-doc decay should be skipped by the guard; got %+v", res)
+	}
+	if mustRead(t, target) != before {
+		t.Error("dry-run must not modify the file")
 	}
 }

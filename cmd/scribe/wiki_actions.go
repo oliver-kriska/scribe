@@ -215,6 +215,54 @@ type ApplyResult struct {
 // match on the prefix to test presence.
 const decayCandidateMarker = "<!-- decay-candidate"
 
+// decayStaleDays is the age threshold the decay-candidate marker asserts:
+// the marker means "this article's `updated:` is more than this many days
+// old and it has no inbound/outbound links — a deletion candidate." It is
+// the same window dreamStaleCandidates uses to build the STALE list it
+// hands the model. The executor refuses a decay-marker append on any doc
+// younger than this, so a model that ignores the (often empty) STALE list
+// cannot mass-mismark fresh docs — the 2026-06-03 scriptorium incident
+// stamped 114 markers, every one on a doc updated <60 days prior.
+const decayStaleDays = 60
+
+// targetIsFreshForDecay reports whether the file at abs is too recently
+// `updated:` to be a legitimate decay candidate — i.e. its date is within
+// decayStaleDays of now. A marker on such a doc is self-contradictory.
+//
+// Fail-open on uncertainty: a missing file, unparseable frontmatter, or an
+// absent/malformed `updated:` returns false (NOT fresh), so the marker is
+// allowed through and the B3 idempotency guard still applies. We only
+// block when we can prove the doc is fresh. The date comparison mirrors
+// dreamStaleCandidates exactly (parse "2006-01-02", compare to a
+// now-decayStaleDays cutoff) so the executor guard and the prompt's STALE
+// list never disagree about which side of the line a doc sits on.
+func targetIsFreshForDecay(abs string) bool {
+	raw, err := os.ReadFile(abs)
+	if err != nil {
+		return false
+	}
+	fm, err := parseFrontmatter(raw)
+	if err != nil || fm == nil {
+		return false
+	}
+	updated := stringFromAny(fm.Updated)
+	if updated == "" {
+		return false
+	}
+	t, err := time.Parse("2006-01-02", updated)
+	if err != nil {
+		return false
+	}
+	cutoff := time.Now().AddDate(0, 0, -decayStaleDays)
+	// Fresh ⇔ not stale, and "stale" is defined identically to
+	// dreamStaleCandidates: t.Before(cutoff). This guard is its exact
+	// complement (!t.Before), computed from the same time.Now()-derived
+	// cutoff, so the executor and the prompt's STALE list can never
+	// disagree about which side of the line a doc sits on — including the
+	// sub-day boundary, which both inherit from time.Now()'s time-of-day.
+	return !t.Before(cutoff)
+}
+
 // updateFrontmatterAllowlist is the set of frontmatter keys a blind
 // consumer (dream, via ApplyOptions.ProtectProvenance) may write through
 // op=update_frontmatter. Everything else — provenance (sources,
@@ -250,19 +298,27 @@ func filterProvenanceKeys(m map[string]any) (kept map[string]any, dropped []stri
 	return kept, dropped
 }
 
-// entityWriterApplyOptions is the executor policy for envelope consumers
-// that mine or assess a *different* source than the docs they may touch —
-// dream (blind metadata), session-mine, codex-mine, assess, and project
-// extract. For them, op=create means "add a new entity," never "overwrite
-// an existing curated doc," so AllowOverwrite stays off; ProtectProvenance
-// stops a stray update_frontmatter from rewriting sources/created/title.
+// entityWriterApplyOptions is the executor policy for every envelope
+// consumer that writes entities from a source OTHER than the doc it may
+// touch — dream (blind metadata), session-mine, codex-mine, assess,
+// project extract, and deep extract. For all of them op=create means "add
+// a new entity," never "overwrite an existing curated doc," so
+// AllowOverwrite stays off; ProtectProvenance stops a stray
+// update_frontmatter from rewriting sources/created/title.
 //
-// Only pass-2 absorb (which regenerates an entity page from its full
-// source) and deep extract (which inlines the directory's file contents)
-// legitimately opt into AllowOverwrite. A copy-pasted AllowOverwrite:true
-// on session-mine caused the 2026-06-03 master-doc gutting — it overwrote
-// a 14-study research hub with a session-grounded reconstruction. Naming
-// the policy here keeps the next consumer from re-introducing the default.
+// pass-2 absorb is the ONLY consumer that opts into AllowOverwrite: it
+// regenerates an entity page from that page's own full source, so
+// replacing the stale version is the intended operation. Every other
+// consumer writes from a secondary source and must not clobber. A
+// copy-pasted AllowOverwrite:true on session-mine caused the 2026-06-03
+// master-doc gutting — it overwrote a 14-study research hub with a
+// session-grounded reconstruction. deep was the last create-only consumer
+// still carrying the permissive literal: it inlines a project directory's
+// files (so it is content-visible for its *source*) but is blind to any
+// existing KB doc it might collide with by slug, so AllowOverwrite would
+// silently clobber the first dir's entity with a second dir's on a slug
+// collision. It joins this policy too. Naming it here keeps the next
+// consumer from re-introducing the default.
 func entityWriterApplyOptions() ApplyOptions {
 	return ApplyOptions{SanitizeContent: true, ProtectProvenance: true}
 }
@@ -327,20 +383,34 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 			res.Applied = append(res.Applied, a.Path)
 
 		case "append":
-			if opts.DryRun {
-				res.Skipped = append(res.Skipped, a.Path)
-				continue
-			}
-			// Decay-marker idempotency: dream re-proposes a decay append
-			// without seeing the prior marker, so a second pass would
-			// double-stamp. If the content is a decay marker and the file
-			// already carries one, skip — the article is already flagged.
+			// Decay-marker guards run BEFORE the dry-run gate so a
+			// `dream --dry-run` surfaces the refusal too (both are
+			// read-only). dream re-proposes a decay append blind to the
+			// target's age and to any prior marker, so two failure modes
+			// are gated here:
+			//   1. Idempotency (B3): the file already carries a marker — a
+			//      second pass would double-stamp. Skip.
+			//   2. Staleness: the marker asserts the doc is >decayStaleDays
+			//      old, but its `updated:` is within that window, so the
+			//      marker is self-contradictory. A model that ignored the
+			//      (often empty) STALE list mass-mismarked 114 fresh docs
+			//      on 2026-06-03. Refuse so the executor, not the prompt,
+			//      is the guarantee.
 			if strings.Contains(a.Content, decayCandidateMarker) {
 				if existing, rerr := os.ReadFile(abs); rerr == nil && strings.Contains(string(existing), decayCandidateMarker) {
 					logMsg("envelope", "action[%d] append: %s already has a decay marker, skipping", i, a.Path)
 					res.Skipped = append(res.Skipped, a.Path)
 					continue
 				}
+				if targetIsFreshForDecay(abs) {
+					logMsg("envelope", "action[%d] append: %s updated within %dd — refusing decay marker on a fresh doc", i, a.Path, decayStaleDays)
+					res.Skipped = append(res.Skipped, a.Path)
+					continue
+				}
+			}
+			if opts.DryRun {
+				res.Skipped = append(res.Skipped, a.Path)
+				continue
 			}
 			if err := appendToFile(abs, a.Content); err != nil {
 				// Model picked the wrong op for a new file. The intent

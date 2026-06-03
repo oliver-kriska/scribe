@@ -40,7 +40,7 @@ ONE envelope. Cover:
 
 3. **Stub creation** — for entity names appearing in 3+ articles that don't have a wiki page, emit a `create` action with a 2-3 sentence stub plus wikilinks back to sources.
 
-4. **Decay tagging** — for articles in the stale list with no signal of value, emit an `append` action that adds `<!-- decay-candidate {{TODAY}} -->` as the last line.
+4. **Decay tagging** — ONLY for a path that appears **verbatim in the stale-candidates list above** and shows no signal of value, emit an `append` action adding `<!-- decay-candidate {{TODAY}} -->` as the last line. Never decay-mark a path that is not in that list — the list is the only evidence you have of an article's age, and a marker means "older than 60 days." If the stale list is empty, emit **zero** decay actions. (The executor independently refuses a decay marker on any doc whose `updated:` is within 60 days, so an off-list guess is dropped, not written.)
 
 5. **Meta** — emit ONE `log_append` MetaAction with a one-line summary: `## [{{TODAY}}] dream | <summary>`.
 
