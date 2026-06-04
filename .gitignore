@@ -31,6 +31,13 @@ coverage.txt
 # Release workspace
 .goreleaser/
 
+# Local scratch — benchmarks, x-post drafts, ad-hoc analysis (not for public repo)
+/scratchpad/
+
+# Session-generated analysis docs (keep committed plans, ignore dated analysis)
+/docs/2026-*
+/docs/envelope-*
+
 # Secrets — never commit
 .env
 

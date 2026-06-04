@@ -1,0 +1,44 @@
+# Deploys the getscribe.dev marketing site (Cloudflare Workers static assets)
+# whenever something under site/ changes on main. The Worker name and the
+# getscribe.dev / www custom-domain routes live in site/wrangler.toml; this
+# job just runs `wrangler deploy` from that directory.
+#
+# Requires two repo Actions secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN   — token scoped to Workers Scripts:Edit on the IdeaX account
+#   CLOUDFLARE_ACCOUNT_ID  — same value as in the repo-root .env
+#
+# Manual run (e.g. to redeploy without a site change):
+#   gh workflow run deploy-site.yml --ref main
+
+name: deploy-site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/deploy-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: site
+          command: deploy
+          # Pinned for reproducibility; bump when you bump the local wrangler.
+          wranglerVersion: "4.95.0"

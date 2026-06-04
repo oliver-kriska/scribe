@@ -1,8 +1,8 @@
 # scribe — your knowledge base, written by your tools
 
-> A single-binary CLI that turns your git repos, Claude Code and Codex sessions, and self-sent links into a curated, semantically searchable knowledge base. Auto-discovers projects from both Claude Code and Codex, and both agents get the same query-KB + write-drop-files handshake. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend.
+> Memory your AI agents read before they decide — not a second brain you maintain and never reopen. A single-binary CLI that turns your git repos, Claude Code and Codex sessions, and self-sent links into a curated, semantically searchable knowledge base. Auto-discovers projects from both Claude Code and Codex, and both agents get the same query-KB + write-drop-files handshake. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend.
 
-**License:** MIT · **Repo:** <https://github.com/oliver-kriska/scribe> · **Maintainer's KB:** 3,445 articles, zero typed by hand
+**License:** MIT · **Repo:** <https://github.com/oliver-kriska/scribe> · **Maintainer's KB:** 7,472 articles, zero typed by hand
 
 ---
 
@@ -33,7 +33,7 @@ After `scribe init` + `scribe cron install`, five things happen on their own. Ne
 
 5. **Weekly cleanup — Dream cycle prunes, merges, breaks down (100% Ollama).** Sundays at 02:00, `scribe dream` runs a 4-phase consolidation pass: ORIENT (read-only inventory), SIGNAL (gather contradictions and stale articles), CONSOLIDATE (merge duplicates, promote rough notes to full articles, break dense ones into per-entity sub-pages), PRUNE + INDEX (drop superseded content, refresh `_index.md`, `_hot.md`, `_backlinks.json`). Three other weekly passes handle conflict resolution, identity clustering, and high-confidence alias auto-application.
 
-   **Dream runs 100% on Ollama.** The hour-long monolithic `claude -p` path is replaced with a Go orchestrator that walks the orient packet itself, inlines it into one bounded prompt, and parses one `EnvelopeV2` JSON document back. With `llm.provider: ollama` the entire weekly cycle runs locally — verified end-to-end on a 3,445-article KB in ~70s on `gemma3:12b` at `num_ctx=16384`. The legacy monolithic path is still available via `dream.mode: monolithic`.
+   **Dream runs 100% on Ollama.** The hour-long monolithic `claude -p` path is replaced with a Go orchestrator that walks the orient packet itself, inlines it into one bounded prompt, and parses one `EnvelopeV2` JSON document back. With `llm.provider: ollama` the entire weekly cycle runs locally — verified end-to-end on a 7,472-article KB in ~70s on `gemma3:12b` at `num_ctx=16384`. The legacy monolithic path is still available via `dream.mode: monolithic`.
 
 The loop closes here: every absorb tick reindexes `qmd`; the next time you open Claude Code (via the MCP `mcp__plugin_qmd_qmd__query` tool) or Codex (via shell `qmd query`) in any project, the agent finds whatever scribe just wrote. When the same problem comes up in a different repo, the agent pulls the prior solution before suggesting code — and if that session produces a new lesson, it writes a drop file, and the cycle repeats.
 
@@ -67,14 +67,14 @@ A single line in `scribe.yaml` flips the entire pipeline — per-project extract
 # scribe.yaml
 llm:
   provider: ollama
-  model: qwen2.5-coder:14b     # general-purpose; falls through to per-op overrides
+  model: gemma3:12b             # cross-op default
   ollama_url: http://localhost:11434
-  num_ctx: 16384               # bumped from 8192 to keep dense-article tails intact
+  num_ctx: 16384               # keeps dense-article tails intact
 ```
 
-Per-op overrides (e.g. keep `contextualize` on cheap `gemma3:4b` while `pass2` uses `qwen2.5-coder:14b`) still work — set the per-op `provider`/`model` explicitly and they win over the top-level block. Then `scribe doctor --section localmode` validates the setup before kicking off a sync. scribe auto-pulls models on first use; no manual `ollama pull` needed.
+Per-op overrides (e.g. pin `contextualize` and `pass2` on the MoE `qwen3:30b-a3b` for higher quality, or use `gemma4` as a lighter fallback) still work — set the per-op `provider`/`model` explicitly and they win over the top-level block. Then `scribe doctor --section localmode` validates the setup before kicking off a sync. scribe auto-pulls models on first use; no manual `ollama pull` needed.
 
-**No cost asterisk.** Every LLM step that fires during a normal `scribe sync` — per-project extraction, the two-pass absorb, and the weekly dream/assess/deep/session-mine passes — runs through bounded JSON-envelope subtasks against your local Ollama server. There is no remaining `claude -p` callsite, so `ollama ps` shows the work and `ollama` does it. Verified end-to-end against the 3,445-article scriptorium KB on `gemma3:12b` — a full sync makes zero Anthropic calls.
+**No cost asterisk.** Every LLM step that fires during a normal `scribe sync` — per-project extraction, the two-pass absorb, and the weekly dream/assess/deep/session-mine passes — runs through bounded JSON-envelope subtasks against your local Ollama server. There is no remaining `claude -p` callsite, so `ollama ps` shows the work and `ollama` does it. Verified end-to-end against a 7,472-article KB on `gemma3:12b` — a full sync makes zero Anthropic calls.
 
 ## Search from anywhere
 
@@ -103,6 +103,9 @@ A single-binary Go CLI that builds a personal, LLM-written knowledge base from y
 **How is scribe different from RAG, Obsidian, or claude-memory-compiler?**
 RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.
 
+**Is this just another "second brain"?**
+No — and that's the point. A second brain is notes *you* read, connect, and think in; many people build one, stop reopening it, and end up with a graveyard of notes plus a monthly token bill. scribe is the opposite: memory your *agent* reads before it decides. It stores the reasoning behind a choice — "you solved this then, this way; you picked this library because; the research result was X, sources Y" — not summaries that lower the quality of material you wanted to read in full. And it's cheap to query: most lookups are plain-text matches over markdown, with vectors only when the question is fuzzy. It pays off most where the expensive half of the job is rebuilding context rather than deciding — which is exactly developer work.
+
 **Does scribe require an Anthropic API key?**
 No. Every LLM op in scribe — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining `claude -p` callsite in a normal `scribe sync`. A single line in `scribe.yaml` flips the whole pipeline: `llm.provider: ollama`. Per-op overrides still work if you want to keep some passes on Anthropic.
 
@@ -122,4 +125,4 @@ Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patter
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-05-27
+**Last updated:** 2026-06-04

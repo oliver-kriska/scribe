@@ -1,6 +1,6 @@
 # scribe
 
-> A single-binary Go CLI that turns your git repos, Claude Code and Codex sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. Auto-discovers projects from both Claude Code and Codex, and writes a query-KB + drop-file handshake into both agents' global instruction files. Cross-project, cron-driven, and runs 100% on local Ollama with zero API spend.
+> Memory your AI agents read before they decide — not a second brain you maintain and never reopen. A single-binary Go CLI that turns your git repos, Claude Code and Codex sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. Auto-discovers projects from both Claude Code and Codex, and writes a query-KB + drop-file handshake into both agents' global instruction files. Cross-project, cron-driven, and runs 100% on local Ollama with zero API spend.
 
 scribe is an LLM-written knowledge base pipeline. It mines:
 
@@ -12,7 +12,7 @@ scribe is an LLM-written knowledge base pipeline. It mines:
 
 It writes a wiki of typed markdown articles (decisions, patterns, learnings, tools, research, projects) with YAML frontmatter and `[[wikilink]]` connections, indexed by qmd for semantic search. The whole pipeline runs on macOS LaunchAgents or Linux cron — set up once with `scribe init` + `scribe cron install`, then your KB grows on its own. `scribe init` also writes a handshake block into both `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, so Claude Code and Codex sessions query the KB before decisions (Claude via the qmd MCP server, Codex via shell `qmd query`) and write reusable lessons back as drop files under the same shared `.claude/<your-kb-name>/` path.
 
-The product is the curated wiki, not raw chunks. Every dense source fans out into multiple entity-first wiki pages via a two-pass absorb. LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities. **Every LLM op in scribe — per-project extraction, absorb, dream, assess, deep, session-mine, relations migrate — routes through a local Ollama server when `llm.provider: ollama` is set; there is no remaining `claude -p` callsite in a normal `scribe sync`.** The maintainer's KB (scriptorium) is 3,445 articles, none typed by hand.
+The product is the curated wiki, not raw chunks. Every dense source fans out into multiple entity-first wiki pages via a two-pass absorb. LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities. **Every LLM op in scribe — per-project extraction, absorb, dream, assess, deep, session-mine, relations migrate — routes through a local Ollama server when `llm.provider: ollama` is set; there is no remaining `claude -p` callsite in a normal `scribe sync`.** The maintainer's KB (scriptorium) is 7,472 articles, none typed by hand.
 
 ## Resources
 
