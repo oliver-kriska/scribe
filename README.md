@@ -1,10 +1,10 @@
 # scribe
 
-`scribe` is a single-binary CLI that creates and maintains a personal, LLM-written knowledge base. It continuously extracts reusable knowledge from your git repos, Claude Code sessions (via [`ccrider`](https://github.com/neilberkman/ccrider)'s FTS5 index) and Codex CLI sessions, links you iMessage to yourself as bookmarks (your own number is the world's most portable read-it-later list), and local files, then compiles it into a curated wiki that [`qmd`](https://github.com/tobi/qmd) indexes for semantic search. Every LLM step resolves through one top-level `llm:` provider block: Anthropic's Claude by default, or a 100% local [Ollama](https://ollama.com) server (gemma3 / qwen3, $0 API cost) — flipping the whole pipeline to free/offline is one line of yaml.
+`scribe` is a single-binary CLI that creates and maintains a personal, LLM-written knowledge base. It continuously extracts reusable knowledge from your git repos, Claude Code sessions (via [`ccrider`](https://github.com/neilberkman/ccrider)'s FTS5 index) and Codex CLI sessions, links you iMessage to yourself as bookmarks (your own number is the world's most portable read-it-later list), and local files, then compiles it into a curated wiki that [`qmd`](https://github.com/tobi/qmd) indexes for semantic search. Every LLM step resolves through one top-level `llm:` provider block: Anthropic's Claude by default, or a 100% local [Ollama](https://ollama.com) server (qwen3 / gemma4 / gemma3, $0 API cost) — flipping the whole pipeline to free/offline is one line of yaml.
 
 **Not a second brain.** scribe writes a personal *context corpus* — durable LLM memory that survives session boundaries and crosses projects. You almost never read the KB directly; Claude Code and Codex do, every session. The human is at the end of the pipeline, consuming an answer, not navigating a graph. The corpus is plain markdown in git, so it outlives the pipeline that wrote it — if scribe disappears tomorrow, the KB is still yours.
 
-**Not a RAG pipeline. Not a Karpathy-style LLM wiki.** scribe keeps raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are indexed, both are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch the implicit entities that aren't literally named in the text. The whole pipeline can run fully local on Ollama (gemma3:4b / qwen3:4b, $0 API cost).
+**Not a RAG pipeline. Not a Karpathy-style LLM wiki.** scribe keeps raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are indexed, both are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch the implicit entities that aren't literally named in the text. The whole pipeline can run fully local on Ollama (qwen3 / gemma4 / gemma3, $0 API cost).
 
 Your KB is a private git repo you own. `scribe init` scaffolds it from embedded templates; you pick the KB name, domains, owner context, and capture handles. After the first run you edit `scribe.yaml` freely — everything that used to be hardcoded lives there. Then `scribe cron install` drops a set of macOS LaunchAgents (Linux: paste-ready crontab lines) and the KB starts growing on its own every time you commit code, use Claude Code, or text yourself a link.
 
@@ -356,13 +356,13 @@ scribe doctor --section localmode
 
 Validates: Ollama reachable; `llm.model` pulled; `absorb.pass2_model` pulled; `absorb.atomic_facts` on (recommended under local pass-2); `sync.daily_anthropic_output_token_ceiling` configured.
 
-**What runs where on a typical 32 GB Mac:**
+**What runs where on a typical 32–64 GB Mac:**
 
 | Op                            | Default model       | num_ctx | Notes                                    |
 | ----------------------------- | ------------------- | ------- | ---------------------------------------- |
-| `contextualize`, `facts`      | `gemma3:4b`         | 8192    | Cheap, high-throughput per-chunk pass    |
-| `absorb.pass1`                | inherits `llm.model`| 8192    | Entity-list extraction, fast             |
-| `absorb.pass2`                | `gemma3:27b`        | 16384   | Highest-quality wiki writes; pin per-op. On Apple Silicon prefer MoE `qwen3:30b-a3b` (~4× faster, same class) |
+| `absorb.pass1`, `facts`       | `gemma3:4b`         | 8192    | Cheap, high-throughput per-chunk pass    |
+| `contextualize`               | `qwen3:30b-a3b`    | 16384   | Quality-critical; `gemma4` is the lighter fallback if RAM-constrained |
+| `absorb.pass2`                | `qwen3:30b-a3b`    | 16384   | Highest-quality wiki writes. On Apple Silicon MoE is ~4× faster than dense `gemma3:27b` at same quality |
 | `dream`, `assess`, `deep`     | inherits `llm.model`| 16384–32768 | Envelope orchestrators                |
 | `session-mine`                | inherits `llm.model`| 16384   | Transcript inlined, capped at 24K chars  |
 
@@ -375,19 +375,22 @@ On the next `scribe sync` (or any subcommand) scribe will:
 
 No manual `ollama pull` needed — though `ollama pull gemma3:12b && ollama pull gemma3:27b` ahead of time avoids a cold-start delay on the first sync.
 
-**Recommended models (May 2026):**
+**Recommended models (June 2026):**
 
-| Model         | Size   | When to pick                                     |
-| ------------- | ------ | ------------------------------------------------ |
-| `gemma3:4b`   | 3.3 GB | **Default.** Best speed/quality on Apple Silicon |
-| `qwen3:30b-a3b-instruct-2507` | ~18 GB | **Best higher-quality local pick on Apple Silicon.** MoE (~3B active) → 27–30B-class quality at small-model speed; ideal for `absorb.pass2` in place of dense `gemma3:27b` |
-| `qwen3:4b`    | ~2.5 GB | Richer prose, slightly more verbose              |
-| `llama3.2:3b` | ~2 GB  | Smaller footprint, older-generation              |
-| `phi4-mini:3.8b` | ~2.5 GB | Reasoning-focused, less natural writing output |
+The table below is empirically benchmarked — every model was tested on the same two hard cases (an inverted-ratio extraction and a fabricated-date hallucination) through scribe's real contextualize pipeline. "Passes both" means it produced correct output on both; "fails" means it reproduced a defect. Pick based on your RAM budget and quality needs.
+
+| Model         | Size   | Speed | When to pick                                     |
+| ------------- | ------ | ----- | ------------------------------------------------ |
+| `qwen3:30b-a3b-instruct-2507` | ~19 GB | ~15–18s/doc | **Best quality + speed.** MoE (~3B active) → 30B-class quality at small-model speed. Richest entity coverage, best retrieval signal. Ideal for `contextualize` and `absorb.pass2`. Passes both. |
+| `gemma4` (12B dense) | 9.6 GB | ~25–27s/doc | **Best lighter fallback.** Passes both, good entity coverage, 256K context. Half the RAM of qwen3. Use when RAM is tight or as a drop-in upgrade from gemma3:12b. |
+| `gemma3:12b`  | 8.1 GB | ~21–25s/doc | Legacy fallback. Passes both but superseded by gemma4 (better benchmarks, same RAM class). |
+| `gemma3:4b`   | 3.3 GB | ~9–17s/doc | **Fast classifier.** Good for `absorb.pass1` (entity-list extraction) and `facts`. **Avoid for contextualize** — reproduced both benchmark defects even under the fixed pipeline. |
+| `qwen3:4b`    | ~2.5 GB | — | Richer prose than gemma3:4b, slightly more verbose. |
+| `phi4-mini:3.8b` | ~2.5 GB | — | Reasoning-focused, less natural writing output. |
 
 All are free and work with scribe's auto-pull. Pick with `model: <tag>` in scribe.yaml. llama.cpp's `llama-server` exposes the same `/api/generate` shape, so `ollama_url: http://localhost:8080` also works if you prefer raw llama.cpp over Ollama.
 
-> **Apple Silicon tip.** LLM decode is memory-bandwidth-bound, so dense 24–32B models are slow on non-Max chips (≈10 tok/s for a 27–31B on an M4 Pro). Mixture-of-Experts models like `qwen3:30b-a3b-instruct` activate only ~3B params per token, reaching ≈40 tok/s on Ollama (≈90 tok/s via MLX) at similar quality — the better high-quality pick when you don't have an M-series Max/Ultra.
+> **Apple Silicon tip.** LLM decode is memory-bandwidth-bound, so dense 24–32B models are slow on non-Max chips (≈10 tok/s for a 27–31B on an M4 Pro). Mixture-of-Experts models like `qwen3:30b-a3b-instruct` activate only ~3B params per token, reaching ≈40 tok/s on Ollama (≈90 tok/s via MLX) at similar quality — the better high-quality pick when you don't have an M-series Max/Ultra. Dense `gemma4` (12B) hits ~25s/doc on an M4 Pro — a good middle ground when 19 GB for the MoE model is too much.
 
 > **Note.** Local-mode covers every LLM-driven subcommand as of 0.2.14 — `dream`, `assess`, `deep`, `session-mine` (including Codex session mining, which inherits the `session_mine:` backend), `relations migrate`, and the four absorb passes. `contextualize` was first (pre-0.2.11); Phase 4A added `facts_provider: ollama`; Phase 4B added `pass2_mode: json` + `pass2_provider: ollama` (0.2.11); Phase 4C/4D/4E (0.2.14) ported the four remaining `claude -p` orchestrators onto bounded JSON-envelope subtasks, and a top-level `llm:` block now wires it together so flipping the whole pipeline is one line of yaml.
 
