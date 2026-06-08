@@ -86,6 +86,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,000 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
+<meta property="article:modified_time" content="2026-06-08T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -175,6 +176,54 @@
         "@type": "Answer",
         "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday at 02:00 for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
       }
+    },
+    {
+      "@type": "Question",
+      "name": "Is scribe an alternative to RAG for a personal knowledge base?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, which is cheaper and more predictable than vector recall, and the curated wiki stays small enough for an agent to read whole."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is scribe different from Code Insights, AnythingLLM, or Obsidian?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Code Insights turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them — plus your git repos and self-sent URLs — into a portable markdown wiki in git that your agents read back before they decide. AnythingLLM is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. Obsidian is a manual notes tool you type into yourself, whereas scribe writes the notes for you."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is scribe an AnythingLLM alternative?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. scribe is an AnythingLLM alternative for people who want an LLM wiki instead of a RAG server: it is a compiled knowledge base — plain markdown in git, no vector database, no server to run — where AnythingLLM is a RAG chat app built around a vector store and documents you upload. The concrete difference is that scribe auto-captures knowledge from your Claude Code and Codex coding sessions into portable markdown your agents read back before they decide, instead of you uploading files to chat with."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does scribe build a knowledge base from my Claude Code and Codex sessions automatically?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with BM25 keyword density to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles. You set it up once with scribe init and scribe cron install, and the knowledge base grows on its own."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is scribe local-first, and does it work without an API key?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The entire pipeline can run 100% locally against an Ollama server with no Anthropic API key — a single line in scribe.yaml flips every LLM op (extraction, absorb, dream, session-mine) to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does scribe have full-text (BM25) search, and does it run on cron?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes to both. The knowledge base is indexed by qmd for BM25 keyword search and semantic vector search, and because it's plain markdown you can also grep it from any terminal or query it from inside your agent. The whole pipeline runs unattended on macOS LaunchAgents or Linux cron."
+      }
     }
   ]
 }
@@ -189,6 +238,32 @@
   "name": "scribe",
   "description": "Your knowledge base, written by your tools.",
   "inLanguage": "en"
+}
+</script>
+
+<!-- JSON-LD: TechArticle (freshness signal — bump dateModified on every content change) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "scribe — the compiled, LLM-written knowledge base for AI coding sessions",
+  "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your Claude Code and Codex sessions, git repos, and self-sent URLs into a curated, BM25-searchable wiki your agents read before they decide. Local-first and capable of running 100% on Ollama.",
+  "url": "https://getscribe.dev/",
+  "image": "https://getscribe.dev/og-v2.png",
+  "datePublished": "2026-05-14",
+  "dateModified": "2026-06-08",
+  "inLanguage": "en",
+  "author": {
+    "@type": "Person",
+    "name": "Oliver Kriška",
+    "url": "https://github.com/oliver-kriska"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "Oliver Kriška",
+    "url": "https://github.com/oliver-kriska"
+  },
+  "about": ["compiled knowledge base", "LLM Wiki", "RAG alternative", "Claude Code", "Codex", "local-first AI", "BM25 search", "Ollama"]
 }
 </script>
 <script>
@@ -1450,6 +1525,22 @@
     letter-spacing: 0.05em;
   }
 
+  /* quick buyer-intent comparison — capability rows × named-tool columns */
+  .cmp-quick-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .cmp-quick { min-width: 680px; }
+  .cmp-quick thead th { white-space: normal; }
+  .cmp-quick tbody th { width: 30%; }
+  .cmp-quick thead th:nth-child(2),
+  .cmp-quick tbody td:nth-child(2) {
+    background: var(--accent-soft);
+    color: var(--fg);
+  }
+  .cmp-quick thead th:nth-child(2) {
+    color: var(--fg);
+    font-weight: 700;
+  }
+  .cmp-quick tbody td:nth-child(2) { font-weight: 500; }
+
   .cmp__caption {
     color: var(--muted);
     font-size: 12.5px;
@@ -1648,6 +1739,7 @@
   @media (max-width: 720px) {
     .cmp { display: none; }
     .cmp-cards { display: flex; }
+    .cmp-quick-wrap > .cmp-quick { display: table; } /* keep buyer-intent table; it scrolls */
   }
   @media (max-width: 640px) {
     .stage { grid-template-columns: 1fr; gap: 14px; padding: 22px 20px 20px; }
@@ -1891,7 +1983,7 @@
           Your knowledge base, <span class="accent">written by your tools.</span>
         </h1>
         <p class="hero__sub">
-          <strong>Memory your AI agents read before they decide</strong> — not a second brain you maintain and never reopen. A single-binary CLI that turns your <strong>git repos</strong>, <strong>Claude Code &amp; Codex sessions</strong>, and self-sent URLs into a curated, semantically searchable wiki. Cross-project, cron-driven, and capable of running <strong>100% locally on Ollama</strong> for zero API spend.
+          <strong>scribe is the compiled, LLM-written knowledge base</strong> — the &ldquo;LLM Wiki&rdquo; pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It&rsquo;s memory your AI agents read before they decide, not a second brain you maintain and never reopen — turning your <strong>git repos</strong>, <strong>Claude Code &amp; Codex sessions</strong>, and self-sent URLs into a curated, semantically searchable wiki. Cross-project, cron-driven, and capable of running <strong>100% locally on Ollama</strong> for zero API spend.
         </p>
         <div class="hero__cta">
           <a class="btn btn--accent" href="#install">
@@ -2105,8 +2197,83 @@
     <header class="s__head">
       <div class="s__eyebrow">How it compares</div>
       <h2 class="s__title">Not RAG. Not Obsidian. Not another LLM-on-every-session burner.</h2>
-      <p class="s__sub">The "second brain" debate is about notes <em>you</em> read. scribe isn't that — it's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler) — a curated wiki on top of raw sources kept verbatim, small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
+      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25, so there's nothing to embed and nothing to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that — it's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler) — a curated wiki on top of raw sources kept verbatim, small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
     </header>
+
+    <!-- buyer-intent comparison — head-to-head with the tools AI engines suggest instead of scribe -->
+    <div class="cmp-quick-wrap">
+      <table class="cmp cmp-quick">
+        <thead>
+          <tr>
+            <th scope="col">Capability</th>
+            <th scope="col">scribe</th>
+            <th scope="col">RAG<span class="cmp__note">LangChain · LlamaIndex</span></th>
+            <th scope="col">Code Insights<span class="cmp__note">@code-insights/cli</span></th>
+            <th scope="col">AnythingLLM</th>
+            <th scope="col">Obsidian</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Auto-written from your dev work</th>
+            <td><span class="cmp__yes">Yes</span></td>
+            <td><span class="cmp__no">You index docs</span></td>
+            <td><span class="cmp__yes">Yes</span></td>
+            <td><span class="cmp__no">You upload docs</span></td>
+            <td><span class="cmp__no">You type notes</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Sources captured</th>
+            <td><span class="cmp__yes">Sessions + git + URLs</span></td>
+            <td><span class="cmp__no">Docs you feed</span></td>
+            <td><span class="cmp__partial">Coding sessions only</span></td>
+            <td><span class="cmp__no">Docs you upload</span></td>
+            <td><span class="cmp__no">Notes you write</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Output is portable markdown in git</th>
+            <td><span class="cmp__yes">Yes</span></td>
+            <td><span class="cmp__no">Vector chunks</span></td>
+            <td><span class="cmp__no">SQLite dashboard</span></td>
+            <td><span class="cmp__no">Vector store</span></td>
+            <td><span class="cmp__yes">Yes</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Vector DB required?</th>
+            <td><span class="cmp__yes">Not needed</span></td>
+            <td><span class="cmp__no">Required</span></td>
+            <td><span class="cmp__yes">Not needed</span></td>
+            <td><span class="cmp__no">Required</span></td>
+            <td><span class="cmp__yes">Not needed</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Full-text (BM25) search</th>
+            <td><span class="cmp__yes">qmd · FTS5</span></td>
+            <td><span class="cmp__no">Vector recall only</span></td>
+            <td><span class="cmp__partial">Dashboard analytics</span></td>
+            <td><span class="cmp__partial">Vector chat</span></td>
+            <td><span class="cmp__yes">Yes</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Agents read it back before deciding</th>
+            <td><span class="cmp__yes">CLAUDE.md / AGENTS.md</span></td>
+            <td><span class="cmp__partial">If you wire it</span></td>
+            <td><span class="cmp__no">Human dashboard</span></td>
+            <td><span class="cmp__no">You chat with it</span></td>
+            <td><span class="cmp__no">No</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Local-first, no API key (Ollama)</th>
+            <td><span class="cmp__yes">100% Ollama</span></td>
+            <td><span class="cmp__partial">Local embeddings</span></td>
+            <td><span class="cmp__yes">Ollama option</span></td>
+            <td><span class="cmp__yes">Local LLM + DB</span></td>
+            <td><span class="cmp__partial">AI add-ons need keys</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cmp__caption">scribe is the only one of these that auto-writes a portable, git-versioned markdown wiki your agents read before they decide — with no vector database. Unlike AnythingLLM, scribe stores plain markdown in git and needs no vector database or running server. Snapshot 2026-06-08; tool capabilities change, so check each project's docs before deciding.</p>
 
     <div class="cmp-wrap">
       <table class="cmp">
@@ -2564,6 +2731,36 @@ scribe doctor <span class="flag">--section</span> localmode
         <summary>What does the cron schedule look like?</summary>
         <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday at 02:00 for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
       </details>
+
+      <details class="q">
+        <summary>Is scribe an alternative to RAG for a personal knowledge base?</summary>
+        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong> — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the curated wiki stays small enough for an agent to read whole.</div>
+      </details>
+
+      <details class="q">
+        <summary>How is scribe different from Code Insights, AnythingLLM, or Obsidian?</summary>
+        <div class="answer"><strong>Code Insights</strong> turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them — plus your git repos and self-sent URLs — into a portable markdown wiki in git that your agents read back before they decide. <strong>AnythingLLM</strong> is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. <strong>Obsidian</strong> is a manual notes tool you type into yourself — scribe writes the notes for you.</div>
+      </details>
+
+      <details class="q">
+        <summary>Is scribe an AnythingLLM alternative?</summary>
+        <div class="answer">Yes. scribe is an <strong>AnythingLLM alternative</strong> for people who want an <strong>LLM wiki</strong> instead of a RAG server: it's a compiled knowledge base — plain markdown in git, no vector database, no server to run — where AnythingLLM is a RAG chat app built around a vector store and documents you upload. The concrete difference: scribe auto-captures knowledge from your <strong>Claude Code and Codex coding sessions</strong> into portable markdown your agents read back before they decide, instead of you uploading files to chat with.</div>
+      </details>
+
+      <details class="q">
+        <summary>Does scribe build a knowledge base from my Claude Code and Codex sessions automatically?</summary>
+        <div class="answer">Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with <strong>BM25 keyword density</strong> to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles. You set it up once with <code>scribe init</code> and <code>scribe cron install</code>, and the knowledge base grows on its own.</div>
+      </details>
+
+      <details class="q">
+        <summary>Is scribe local-first, and does it work without an API key?</summary>
+        <div class="answer">Yes. The entire pipeline can run <strong>100% locally against an Ollama server</strong> with no Anthropic API key — a single line in <code>scribe.yaml</code> flips every LLM op (extraction, absorb, dream, session-mine) to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync.</div>
+      </details>
+
+      <details class="q">
+        <summary>Does scribe have full-text (BM25) search, and does it run on cron?</summary>
+        <div class="answer">Yes to both. The knowledge base is indexed by <code>qmd</code> for <strong>BM25 keyword search</strong> and semantic vector search, and because it's plain markdown you can also <code>grep</code> it from any terminal or query it from inside your agent. The whole pipeline runs unattended on macOS LaunchAgents or Linux cron.</div>
+      </details>
     </div>
   </div>
 </section>
@@ -2618,7 +2815,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT · last updated 2026-05-16</span>
+      <span>MIT · last updated 2026-06-08</span>
       <span>github.com/oliver-kriska/scribe</span>
     </div>
   </div>
