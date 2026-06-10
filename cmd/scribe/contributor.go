@@ -93,7 +93,8 @@ func stampContributor(root string) {
 // (_index.md, _unfetched-links.md, …) are scribe-generated artifacts,
 // not articles, and are excluded.
 func newWikiMarkdownFiles(root string) []string {
-	args := []string{"status", "--porcelain", "--untracked-files=all", "--"}
+	args := make([]string, 0, 4+len(wikiDirs))
+	args = append(args, "status", "--porcelain", "--untracked-files=all", "--")
 	args = append(args, wikiDirs...)
 	out := runCmd(root, "git", args...)
 	if out == "" {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,7 @@ func initTestGitRepo(t *testing.T, name string) string {
 		{"config", "user.name", name},
 		{"config", "user.email", "test@example.com"},
 	} {
-		cmd := exec.Command("git", args...)
+		cmd := exec.CommandContext(context.Background(), "git", args...)
 		cmd.Dir = root
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -58,7 +59,7 @@ func TestStampContributor(t *testing.T) {
 	// A tracked, committed article must never be re-stamped.
 	writeTestArticle(t, root, "wiki/old-article.md", article)
 	for _, args := range [][]string{{"add", "wiki/old-article.md"}, {"commit", "-q", "-m", "seed", "--no-gpg-sign"}} {
-		cmd := exec.Command("git", args...)
+		cmd := exec.CommandContext(context.Background(), "git", args...)
 		cmd.Dir = root
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -167,7 +168,7 @@ func TestNewWikiMarkdownFilesStatusParsing(t *testing.T) {
 	writeTestArticle(t, root, "wiki/untracked.md", "---\ntitle: U\n---\n")
 	writeTestArticle(t, root, "wiki/staged.md", "---\ntitle: S\n---\n")
 	writeTestArticle(t, root, "wiki/notes.txt", "not markdown")
-	cmd := exec.Command("git", "add", "wiki/staged.md")
+	cmd := exec.CommandContext(context.Background(), "git", "add", "wiki/staged.md")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git add: %v\n%s", err, out)
