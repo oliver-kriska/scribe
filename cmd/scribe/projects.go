@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -137,8 +139,35 @@ func (c *ProjectsIgnoreCmd) Run() error {
 		}
 		manifest.ignoreProject(name)
 		fmt.Printf("ignored %s (path blocked from re-discovery)\n", name)
+		printOrphanedArticlesHint(root, name)
 	}
 	return manifest.save()
+}
+
+// printOrphanedArticlesHint tells the user when an ignored project
+// leaves extracted articles behind in the KB. Ignoring only stops
+// future discovery/extraction — already-written pages stay searchable
+// until someone deals with them, which is easy to forget.
+func printOrphanedArticlesHint(root, name string) {
+	if n := projectArticleCount(root, name); n > 0 {
+		fmt.Printf("  note: %d article(s) under projects/%s/ remain in the KB — review and remove or merge them if no longer wanted\n", n, name)
+	}
+}
+
+// projectArticleCount counts the .md articles under projects/<name>/.
+func projectArticleCount(root, name string) int {
+	count := 0
+	_ = filepath.WalkDir(filepath.Join(root, "projects", name), func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // skip unreadable, continue walk
+		}
+		base := d.Name()
+		if strings.HasSuffix(base, ".md") && !strings.HasPrefix(base, "_") && !strings.HasPrefix(base, ".") {
+			count++
+		}
+		return nil
+	})
+	return count
 }
 
 type ProjectsReviewCmd struct{}
@@ -180,6 +209,7 @@ loop:
 				approved++
 			case "i", "ignore":
 				manifest.ignoreProject(name)
+				printOrphanedArticlesHint(root, name)
 				ignored++
 			case "s", "skip", "":
 				// leave pending

@@ -114,11 +114,11 @@ func TestRunBootstrap_ThrowawayPathSkipsGlobals(t *testing.T) {
 	<-done
 
 	out := string(output)
-	if !strings.Contains(out, "throwaway/temp path") {
-		t.Errorf("expected throwaway warning in output; got:\n%s", out)
+	if !strings.Contains(out, "Init plan") {
+		t.Errorf("expected init plan in output; got:\n%s", out)
 	}
-	if !strings.Contains(out, "Re-run with --bind") {
-		t.Errorf("expected --bind suggestion in output; got:\n%s", out)
+	if !strings.Contains(out, "temp path — pass --bind") {
+		t.Errorf("expected throwaway disclosure with --bind hint in the plan; got:\n%s", out)
 	}
 	// CLAUDE.md must not have been written.
 	claudeMD := filepath.Join(fakeHome, ".claude", "CLAUDE.md")
