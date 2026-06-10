@@ -34,6 +34,17 @@ team: true
 # as this file, values there always win. That's where personal capture
 # handles or extra source filters belong in a shared KB.
 
+# Secret scan — team-mode credential gate. Staged articles containing
+# real-shaped tokens (AWS/GitHub/Anthropic/OpenAI keys, PEM blocks,
+# passwords in URLs, …) are held back from commit with a loud log line;
+# doctor lists anything still on disk. The matched value is never
+# printed. Add `scribe:allow` on a line to mark a placeholder.
+# Trust-locked: a pushed change here can't weaken another member's gate.
+# secret_scan:
+#   disable: false
+#   generic: false        # noisy generic key=value rule, entropy-gated
+#   allow_paths: []       # KB-relative globs to exempt, e.g. wiki/examples
+
 # Subscriptions surface teammates' incoming articles after each pull —
 # matches print to the sync log; notify: true also fires a macOS
 # notification. Personal preference, so set it in scribe.local.yaml:

@@ -51,15 +51,18 @@ const localConfigName = "scribe.local.yaml"
 //   - OllamaURL: prompts (with file contents) are POSTed here; a pushed
 //     remote URL would exfiltrate everything the pipeline reads.
 //   - CodexMine: enables an additional transcript source.
+//   - SecretScan: the credential gate — a pushed disable/allow_paths
+//     change must not weaken what another member's machine commits.
 type sensitiveConfig struct {
-	Team              bool          `json:"team"`
-	Sources           SourcesConfig `json:"sources"`
-	ClaudeProjectsDir string        `json:"claude_projects_dir"`
-	CodexSessionsDir  string        `json:"codex_sessions_dir"`
-	CcriderDB         string        `json:"ccrider_db"`
-	Capture           CaptureConfig `json:"capture"`
-	OllamaURL         string        `json:"ollama_url"`
-	CodexMine         bool          `json:"codex_mine"`
+	Team              bool             `json:"team"`
+	Sources           SourcesConfig    `json:"sources"`
+	ClaudeProjectsDir string           `json:"claude_projects_dir"`
+	CodexSessionsDir  string           `json:"codex_sessions_dir"`
+	CcriderDB         string           `json:"ccrider_db"`
+	Capture           CaptureConfig    `json:"capture"`
+	OllamaURL         string           `json:"ollama_url"`
+	CodexMine         bool             `json:"codex_mine"`
+	SecretScan        SecretScanConfig `json:"secret_scan"`
 }
 
 func sensitiveFrom(cfg *ScribeConfig) sensitiveConfig {
@@ -72,6 +75,7 @@ func sensitiveFrom(cfg *ScribeConfig) sensitiveConfig {
 		Capture:           cfg.Capture,
 		OllamaURL:         cfg.LLM.OllamaURL,
 		CodexMine:         cfg.Codex.Mine,
+		SecretScan:        cfg.SecretScan,
 	}
 }
 
@@ -96,6 +100,7 @@ func (s sensitiveConfig) applyTo(cfg *ScribeConfig) {
 	cfg.Capture = s.Capture
 	cfg.LLM.OllamaURL = s.OllamaURL
 	cfg.Codex.Mine = s.CodexMine
+	cfg.SecretScan = s.SecretScan
 }
 
 // trustRecord is one approved sensitive snapshot for one KB root.
@@ -253,6 +258,7 @@ func sensitiveDiff(trusted, current sensitiveConfig) []string {
 		{"capture", trusted.Capture, current.Capture},
 		{"llm.ollama_url", trusted.OllamaURL, current.OllamaURL},
 		{"codex.mine", trusted.CodexMine, current.CodexMine},
+		{"secret_scan", trusted.SecretScan, current.SecretScan},
 	}
 	var out []string
 	for _, p := range pairs {

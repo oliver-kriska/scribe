@@ -120,10 +120,15 @@ type ScribeConfig struct {
 	// independently. Matches print to the sync log; notify=true also
 	// fires a macOS notification (best effort).
 	Subscriptions SubscriptionsConfig `yaml:"subscriptions"`
-	Assess        AssessConfig        `yaml:"assess"`
-	DeepIngest    DeepIngestConfig    `yaml:"deep_ingest"`
-	Extract       ExtractConfig       `yaml:"extract"`
-	Meta          MetaConfig          `yaml:"meta"`
+	// SecretScan tunes the team-mode credential gate (secrets.go) that
+	// holds staged articles back from commit when they contain
+	// real-shaped tokens. Trust-locked: a pushed `disable: true` can't
+	// switch another member's gate off.
+	SecretScan SecretScanConfig `yaml:"secret_scan"`
+	Assess     AssessConfig     `yaml:"assess"`
+	DeepIngest DeepIngestConfig `yaml:"deep_ingest"`
+	Extract    ExtractConfig    `yaml:"extract"`
+	Meta       MetaConfig       `yaml:"meta"`
 }
 
 // MetaConfig controls the envelope's MetaAction surface — the side-

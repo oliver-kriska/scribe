@@ -778,6 +778,25 @@ func checkState(root string) []check {
 		})
 	}
 
+	// Team-mode secret scan over the KB on disk: catches both files the
+	// commit gate is currently holding back AND leaks that landed in
+	// the repo before the gate existed (or via another member's
+	// disabled gate). Lines are rule label + file:line — never the
+	// matched text.
+	if cfg := loadConfig(root); cfg != nil && cfg.Team && !cfg.SecretScan.Disable {
+		if findings := findSecretsInKB(root, cfg.SecretScan.Generic); len(findings) > 0 {
+			shown := findings
+			if len(shown) > 5 {
+				shown = append(append([]string{}, shown[:5]...), "…")
+			}
+			out = append(out, check{
+				Section: "state", Name: "secrets-in-articles", Status: statusWarn,
+				Detail: fmt.Sprintf("%d credential-shaped value(s) in KB articles: %s", len(findings), strings.Join(shown, ", ")),
+				Fix:    "rewrite the line (rotate the credential if real), or add 'scribe:allow' on the line for placeholders",
+			})
+		}
+	}
+
 	// Unresolved merge-conflict markers in articles — the hazard of team
 	// KBs with pull-before-sync: a botched merge lands "<<<<<<< HEAD"
 	// blocks that poison search and LLM context until resolved.
