@@ -295,6 +295,14 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 		if !sourceAllowed(cfg, cwd) {
 			return
 		}
+		// Linked worktrees fold into the main repo's project — see
+		// worktreeMainRoot and SyncCmd.foldWorktree.
+		if main := worktreeMainRoot(cwd); main != "" {
+			if n, changed := s.foldWorktree(root, manifest, cfg, cwd, main, "codex"); changed {
+				discovered += n
+			}
+			return
+		}
 		if !hasSignificantContent(cwd) {
 			return
 		}

@@ -737,6 +737,27 @@ func checkState(root string) []check {
 				Fix: "remove the entry from scripts/projects.json and review the wiki for duplicates (e.g. *.md.md)",
 			})
 		}
+		// Manifest entries that are themselves linked worktrees predate
+		// worktree folding: they duplicate the main repo's extraction
+		// (one project per ticket branch). New discoveries fold
+		// automatically; existing entries need a manual ignore.
+		var worktreeProjects []string
+		for pname, entry := range m.Projects {
+			if entry == nil || !dirExists(entry.Path) {
+				continue
+			}
+			if main := worktreeMainRoot(entry.Path); main != "" {
+				worktreeProjects = append(worktreeProjects, fmt.Sprintf("%s (worktree of %s)", pname, main))
+			}
+		}
+		if len(worktreeProjects) > 0 {
+			sort.Strings(worktreeProjects)
+			out = append(out, check{
+				Section: "state", Name: "worktree-projects", Status: statusWarn,
+				Detail: "manifest entry is a linked git worktree, duplicating the main repo: " + strings.Join(worktreeProjects, ", "),
+				Fix:    "run `scribe projects ignore <name>` — discovery folds worktrees into the main repo's entry and still collects their drop/research files",
+			})
+		}
 	} else {
 		out = append(out, check{
 			Section: "state", Name: "scripts/projects.json", Status: statusFail,
