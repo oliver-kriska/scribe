@@ -139,8 +139,12 @@ func gitHasStagedChanges(repoPath string) bool {
 	return errors.As(err, &exitErr)
 }
 
-// gitAddWiki stages wiki content directories.
+// gitAddWiki stages wiki content directories. Before staging, new
+// articles get a `contributor:` frontmatter stamp — this funnel is
+// shared by every commit path, so attribution lands regardless of
+// which writer (envelope executor or tool-mode model) created the file.
 func gitAddWiki(root string) {
+	stampContributor(root)
 	args := make([]string, 0, 1+len(wikiDirs)+2)
 	args = append(args, "add")
 	args = append(args, wikiDirs...)

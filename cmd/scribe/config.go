@@ -1763,6 +1763,12 @@ func userConfigPath() string {
 // userConfig holds settings from the user-level config file (~/.config/scribe/config.yaml).
 type userConfig struct {
 	KBDir string `yaml:"kb_dir"`
+	// Contributor overrides the identity stamped into the
+	// `contributor:` frontmatter of newly created articles. Lives in
+	// the per-person config (not the KB's scribe.yaml) so members of a
+	// shared team KB each attribute their own extractions. Empty means
+	// fall back to `git config user.name` / user.email.
+	Contributor string `yaml:"contributor"`
 }
 
 // loadUserConfig reads the user-level config. Returns zero value if missing.
@@ -1828,6 +1834,12 @@ type Frontmatter struct {
 	Aliases any    `yaml:"aliases,omitempty"`
 	Status  string `yaml:"status,omitempty"`
 	Rolling bool   `yaml:"rolling,omitempty"`
+	// Contributor records who first created the article — stamped
+	// automatically at commit time (stampContributor) from the user
+	// config or git identity. In shared team KBs this is the provenance
+	// signal beyond git blame; dream's contradiction resolution may
+	// consult it when weighing competing claims.
+	Contributor string `yaml:"contributor,omitempty"`
 	// Stack is intentionally `any`: scaffolding (project overview frontmatter,
 	// LLM-written drops) sometimes ships it as a YAML list (`stack: [Go, ...]`)
 	// and sometimes as a plain string ("Go + SQLite + CGO"). Both shapes are
