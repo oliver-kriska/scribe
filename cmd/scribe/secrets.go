@@ -327,7 +327,7 @@ func shannonEntropy(s string) float64 {
 	return e
 }
 
-// holdSecretFiles is the commit gate: scan the STAGED wiki markdown
+// holdSecretFiles is the commit gate: scan the STAGED KB markdown
 // and unstage any file with a hit, with a loud (secret-free) log line
 // per finding. Per-file hold, never a whole-run abort — sync runs on
 // cron and one quoted token must not wedge the pipeline. Held files
@@ -339,7 +339,7 @@ func holdSecretFiles(root string, cfg *ScribeConfig) {
 	if cfg == nil || !cfg.Team || cfg.SecretScan.Disable {
 		return
 	}
-	for _, rel := range stagedWikiMarkdown(root) {
+	for _, rel := range stagedKBMarkdown(root) {
 		if secretScanPathExempt(cfg, rel) {
 			continue
 		}
@@ -364,12 +364,16 @@ func holdSecretFiles(root string, cfg *ScribeConfig) {
 	}
 }
 
-// stagedWikiMarkdown lists staged .md files under the wiki content
-// dirs (added/copied/modified).
-func stagedWikiMarkdown(root string) []string {
-	args := make([]string, 0, 5+len(wikiDirs))
+// stagedKBMarkdown lists staged .md files under the wiki content dirs
+// AND raw/ (added/copied/modified). raw/ matters: `scribe commit`
+// stages everything except output/, and URL absorbs + inbox ingests
+// land under raw/articles — without it a credential inside absorbed
+// content would commit unscanned.
+func stagedKBMarkdown(root string) []string {
+	args := make([]string, 0, 6+len(wikiDirs))
 	args = append(args, "diff", "--cached", "--name-only", "--diff-filter=ACM", "--")
 	args = append(args, wikiDirs...)
+	args = append(args, "raw")
 	out := runCmd(root, "git", args...)
 	if out == "" {
 		return nil

@@ -123,23 +123,27 @@ func TestHoldSecretFiles(t *testing.T) {
 		repo := initTestGitRepo(t, "Gate Tester")
 		writeKBFile(t, repo, "wiki/leaky.md", "---\ntitle: Leaky\n---\n\nkey: "+fakeAWSKey()+"\n")
 		writeKBFile(t, repo, "wiki/clean.md", "---\ntitle: Clean\n---\n\nnothing here\n")
-		gitRun(t, repo, "add", "wiki")
+		writeKBFile(t, repo, "raw/articles/absorbed.md", "# Absorbed page\n\ntoken: "+fakeGitHubToken()+"\n")
+		gitRun(t, repo, "add", "wiki", "raw")
 		return repo
 	}
 	stagedSet := func(repo string) map[string]bool {
 		out := map[string]bool{}
-		for _, f := range stagedWikiMarkdown(repo) {
+		for _, f := range stagedKBMarkdown(repo) {
 			out[f] = true
 		}
 		return out
 	}
 
-	// Team mode: leaky held, clean stays.
+	// Team mode: leaky wiki + raw files held, clean stays.
 	repo := setup(t)
 	holdSecretFiles(repo, &ScribeConfig{Team: true})
 	staged := stagedSet(repo)
 	if staged["wiki/leaky.md"] {
 		t.Error("leaky file still staged in team mode")
+	}
+	if staged["raw/articles/absorbed.md"] {
+		t.Error("leaky raw/ file still staged in team mode")
 	}
 	if !staged["wiki/clean.md"] {
 		t.Error("clean file was unstaged")
