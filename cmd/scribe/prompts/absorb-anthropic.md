@@ -68,6 +68,12 @@ Emit EXACTLY ONE JSON object to stdout. No prose before or after. No markdown fe
 
 7. **Article size:** stay under 150 lines per article. If you exceed it, the topic was too broad — split into more `create` actions.
 
+## Avoid duplicates
+
+- One topic = one article: never emit two `create` actions with near-identical titles or slugs.
+- If a natural home for a brief claim exists in an article visible in your context, prefer `append`/`replace_section` over creating a parallel page, and reuse its exact title in `[[Wikilinks]]`.
+- Do not create a thin stub for knowledge that almost certainly has a page already — fold it into the closest planned page or drop it. A near-duplicate page splits future updates across files and corrupts contradiction resolution.
+
 ## Output reminder
 
 Stdout must be ONE JSON object matching `WikiActionEnvelope`. No prose. No code fences.

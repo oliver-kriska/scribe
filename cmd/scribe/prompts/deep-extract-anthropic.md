@@ -48,6 +48,12 @@ Frontmatter required: `title`, `type`, `created: {{TODAY}}`, `updated: {{TODAY}}
 - Quote load-bearing claims as `> "..."\n> — Source: <file>`.
 - ALWAYS include the log_append meta op.
 
+## Avoid duplicates
+
+- One topic = one article: never emit two `create` actions with near-identical titles or slugs.
+- If a relevant article is visible in the context you were given (related sessions, inlined files, any article path shown), extend it via `append`/`replace_section` instead of creating a parallel page, and reuse its exact title in `related:` wikilinks.
+- Generic knowledge that almost certainly has a page already (well-known patterns, common tool facts) does not get a new stub — fold it into `rolling_memory_append` where available, or drop it. A near-duplicate page splits future updates across files and corrupts contradiction resolution.
+
 ## Output reminder
 
 Stdout must be ONE JSON object matching `WikiActionEnvelope` v2. No prose. No code fences.
