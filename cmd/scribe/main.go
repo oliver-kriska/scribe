@@ -56,6 +56,7 @@ type CLI struct {
 	Assess         AssessCmd         `cmd:"" help:"One-shot parallel deep assessment of a project (5 tracks + consolidation)."`
 	Doctor         DoctorCmd         `cmd:"" help:"Health check (deps, config, cron, state, run freshness). Read-only."`
 	Digest         DigestCmd         `cmd:"" help:"Regenerate wiki/_digest.md — deterministic team dashboard (activity, findings, owners)."`
+	Promote        PromoteCmd        `cmd:"" help:"Copy an article into another scribe KB with provenance (personal → team promotion)."`
 	InstallTools   InstallToolsCmd   `cmd:"" name:"install-tools" help:"Bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion."`
 	Fda            FDACmd            `cmd:"" name:"fda" help:"Probe macOS Full Disk Access for chat.db and guide the user through granting it."`
 	Cost           CostCmd           `cmd:"" help:"Summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger."`
