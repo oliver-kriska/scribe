@@ -430,6 +430,7 @@ scribe projects review       # interactively approve/ignore pending projects
 scribe projects approve --all # approve everything pending
 scribe config diff  # team KBs: show sensitive scribe.yaml keys changed since last trusted
 scribe config trust # team KBs: approve the current sensitive keys
+scribe config update # append commented docs for options added since your scribe.yaml was scaffolded
 scribe sync --sessions       # mine Claude Code (ccrider) + Codex CLI sessions (when codex.mine is on)
 scribe sync --estimate       # token estimate for pending work (no LLM calls)
 scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml

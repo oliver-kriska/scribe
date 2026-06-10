@@ -11,8 +11,9 @@ import (
 // per-machine snapshot; this command is how the user inspects drift and
 // accepts a legitimate change.
 type ConfigCmd struct {
-	Diff  ConfigDiffCmd  `cmd:"" help:"Show sensitive scribe.yaml keys that changed since they were last trusted."`
-	Trust ConfigTrustCmd `cmd:"" help:"Approve the current repo scribe.yaml sensitive keys as trusted."`
+	Diff   ConfigDiffCmd   `cmd:"" help:"Show sensitive scribe.yaml keys that changed since they were last trusted."`
+	Trust  ConfigTrustCmd  `cmd:"" help:"Approve the current repo scribe.yaml sensitive keys as trusted."`
+	Update ConfigUpdateCmd `cmd:"" help:"Append commented docs for options added since scribe.yaml was scaffolded."`
 }
 
 type ConfigDiffCmd struct{}
