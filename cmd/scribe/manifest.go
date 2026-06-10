@@ -114,6 +114,19 @@ func loadManifest(root string) (*Manifest, error) {
 	path := filepath.Join(root, "scripts", "projects.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
+		// Shared-KB clones gitignore scripts/projects.json so each
+		// machine keeps its own manifest (paths and SHAs are machine-
+		// local). On such a clone the file legitimately doesn't exist
+		// yet — start empty and let the first save create it. Only when
+		// the scribe.yaml marker proves this is a KB root; a bad -C /
+		// SCRIBE_KB still fails loudly.
+		if os.IsNotExist(err) && isScribeKB(root) {
+			return &Manifest{
+				Projects:      make(map[string]*ProjectEntry),
+				DomainAliases: make(map[string]string),
+				path:          path,
+			}, nil
+		}
 		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 	var m Manifest
@@ -134,6 +147,11 @@ func loadManifest(root string) (*Manifest, error) {
 func (m *Manifest) save() error {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
+		return err
+	}
+	// Fresh shared-KB clones may not have scripts/ yet (git doesn't
+	// track empty dirs and projects.json is gitignored there).
+	if err := os.MkdirAll(filepath.Dir(m.path), 0o755); err != nil {
 		return err
 	}
 	data = append(data, '\n')
