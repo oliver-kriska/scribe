@@ -2,9 +2,9 @@
 # Install: `brew install lefthook && lefthook install`
 # Uninstall: `lefthook uninstall`
 #
-# Ships a minimum viable gate: mod-tidy drift, vet, gofmt. The pre-push gate
-# adds race-detected tests and golangci-lint (if installed locally). CGO and
-# sqlite_fts5 are mandatory for scribe — tests won't compile without them.
+# Ships a minimum viable gate: mod-tidy drift, vet, gofmt, golangci-lint.
+# The pre-push gate adds race-detected tests. CGO and sqlite_fts5 are
+# mandatory for scribe — tests won't compile without them.
 
 pre-commit:
   parallel: true
@@ -15,6 +15,16 @@ pre-commit:
     go-vet:
       glob: "*.go"
       run: go vet -tags sqlite_fts5 ./...
+    # Same linter `make ci` runs — without it here, commits land that
+    # later fail CI and need amending. Cached runs take a few seconds.
+    lint:
+      glob: "*.go"
+      run: |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          golangci-lint run --timeout=3m --build-tags=sqlite_fts5
+        else
+          echo "golangci-lint not installed — skipping (brew install golangci-lint)"
+        fi
     gofmt:
       glob: "*.go"
       run: |
