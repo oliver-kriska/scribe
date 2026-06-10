@@ -40,6 +40,7 @@ var (
 	toolsRE    = regexp.MustCompile(`(?i)(uses|integrates with|depends on|powered by|built with|replaced) [A-Z][a-zA-Z]*`)
 )
 
+//nolint:gocognit // LLM-driving path with 0% test coverage — decompose only once a stub-provider harness exists, a blind refactor risks silent behavior drift
 func (s *ScanCmd) Run() error {
 	projectPath, err := filepath.Abs(s.Path)
 	if err != nil {

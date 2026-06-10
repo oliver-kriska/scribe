@@ -29,6 +29,7 @@ var excludedDirNames = map[string]bool{
 	"evals":        true,
 }
 
+//nolint:gocognit // LLM-driving path with 0% test coverage — decompose only once a stub-provider harness exists, a blind refactor risks silent behavior drift
 func (d *DeepCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {

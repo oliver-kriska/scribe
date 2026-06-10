@@ -275,6 +275,8 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 // entities target the same article (rare but possible when Pass 1 proposes
 // variant labels). If throughput becomes a problem, guard concurrent writes
 // with a per-wiki-path lock and parallelize.
+//
+//nolint:gocognit // concurrent LLM pipeline with stop-the-world rate-limit semantics and 0% test coverage — decompose only once a stub-provider harness exists
 func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	cfg := loadConfig(root)
 	plansDir := filepath.Join(root, "output", "absorb-plans")

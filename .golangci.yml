@@ -28,11 +28,20 @@ linters:
     - unused
     - misspell
     - revive
+    - dupl
+    - gocognit
 
   settings:
     errcheck:
       check-type-assertions: true
       check-blank: false
+    # Complexity ratchet: the 2026-06-10 refactor round brought every
+    # covered function under 60 (worst offenders were 107/97/95/90/85).
+    # The three still above are 0%-coverage LLM drivers carrying explicit
+    # //nolint:gocognit markers with reasons — don't add new ones;
+    # decompose at write time instead.
+    gocognit:
+      min-complexity: 60
     misspell:
       locale: US
     gosec:
