@@ -12,6 +12,23 @@ owner_context: |
 domains:
 {{range .Domains}}  - {{.}}
 {{end}}
+# Source filters — which project paths discovery may enroll. Evaluated
+# before a project ever lands in the manifest; projects already tracked
+# are managed via `scribe projects`. Patterns: a plain path covers
+# everything beneath it; globs (~/work-*) match the path or any of its
+# ancestors; exclude always wins over include. Empty include = allow all.
+{{if or .SourcesInclude .SourcesExclude}}sources:
+{{if .SourcesInclude}}  include:
+{{range .SourcesInclude}}    - "{{.}}"
+{{end}}{{end}}{{if .SourcesExclude}}  exclude:
+{{range .SourcesExclude}}    - "{{.}}"
+{{end}}{{end}}{{else}}# sources:
+#   include:
+#     - ~/work
+#     - ~/Projects/client-*
+#   exclude:
+#     - ~/Projects/personal
+{{end}}
 # Paths
 claude_projects_dir: ~/.claude/projects
 # Codex CLI rollouts (~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl). Scanned
