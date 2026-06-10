@@ -144,6 +144,64 @@ func TestSessionInKB(t *testing.T) {
 	if !sessionInKB(root, other) {
 		t.Errorf("other scribe KB %q not excluded", other)
 	}
+	// Multi-KB hardening: a session run in a SUBDIRECTORY of another KB
+	// must be excluded too — the exact-root check used to miss this, so
+	// KB A would mine sessions spent inside KB B's wiki.
+	sub := filepath.Join(other, "wiki", "deep")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !sessionInKB(root, sub) {
+		t.Errorf("subdir %q of another scribe KB not excluded", sub)
+	}
+}
+
+func TestWithinScribeKB(t *testing.T) {
+	t.Parallel()
+	kb := t.TempDir()
+	if err := os.WriteFile(filepath.Join(kb, "scribe.yaml"), []byte("owner_name: T\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(kb, "projects", "nested")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plain := t.TempDir()
+
+	if !withinScribeKB(kb) {
+		t.Error("KB root not detected")
+	}
+	if !withinScribeKB(sub) {
+		t.Error("nested KB subdir not detected")
+	}
+	if withinScribeKB(plain) {
+		t.Errorf("plain dir %q wrongly detected as inside a KB", plain)
+	}
+	if withinScribeKB("") {
+		t.Error("empty path must not match")
+	}
+}
+
+// TestManifestIsIgnored_SkipsNestedKBPath: discovery must also refuse a
+// project path that sits INSIDE another KB (e.g. a Claude session run in
+// ~/team-kb/wiki/), not just the KB root itself.
+func TestManifestIsIgnored_SkipsNestedKBPath(t *testing.T) {
+	t.Parallel()
+	kb := t.TempDir()
+	sub := filepath.Join(kb, "wiki", "topic")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manifest{}
+	if m.isIgnored(sub) {
+		t.Skipf("temp dir %q already ignored on this platform; cannot isolate the check", sub)
+	}
+	if err := os.WriteFile(filepath.Join(kb, "scribe.yaml"), []byte("owner_name: Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !m.isIgnored(sub) {
+		t.Errorf("path %q inside a scribe KB not ignored — KB B would be harvested into KB A", sub)
+	}
 }
 
 // TestManifestIsIgnored_SkipsScribeKB is the regression guard for the

@@ -822,8 +822,8 @@ func (s *SyncCmd) projectsNeedingExtraction(manifest *Manifest) []string {
 		// still never extract itself (doing so re-ingests its own wiki and
 		// compounds duplicates every run). New discovery already filters
 		// these out via manifest.isIgnored → isScribeKB.
-		if isScribeKB(entry.Path) {
-			logMsg("sync", " [%s] is a scribe KB — skipping (a KB never extracts itself)", pname)
+		if withinScribeKB(entry.Path) {
+			logMsg("sync", " [%s] is (inside) a scribe KB — skipping (KBs never harvest themselves or each other)", pname)
 			continue
 		}
 

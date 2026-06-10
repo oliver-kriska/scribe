@@ -724,7 +724,7 @@ func checkState(root string) []check {
 		// the offending entries so the user knows where to look.
 		var kbProjects []string
 		for pname, entry := range m.Projects {
-			if entry != nil && isScribeKB(entry.Path) {
+			if entry != nil && withinScribeKB(entry.Path) {
 				kbProjects = append(kbProjects, pname)
 			}
 		}
