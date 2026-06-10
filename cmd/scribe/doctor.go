@@ -815,6 +815,23 @@ func checkState(root string) []check {
 		})
 	}
 
+	// scribe.yaml scaffolded before an option existed never mentions it —
+	// no migration needed (absent keys default safely), but the user
+	// can't opt into what they can't see. OK-level: informational.
+	if data, err := os.ReadFile(filepath.Join(root, "scribe.yaml")); err == nil {
+		if missing := missingTemplateBlocks(string(data)); len(missing) > 0 {
+			keys := make([]string, 0, len(missing))
+			for _, seg := range missing {
+				keys = append(keys, seg.key)
+			}
+			out = append(out, check{
+				Section: "state", Name: "config-options", Status: statusOK,
+				Detail: fmt.Sprintf("scribe.yaml predates %d option(s): %s", len(missing), strings.Join(keys, ", ")),
+				Fix:    "run `scribe config update` to append commented docs (defaults unchanged)",
+			})
+		}
+	}
+
 	statePath := filepath.Join(root, "scripts", "imessage-state.json")
 	if _, err := loadCaptureState(statePath); err == nil {
 		out = append(out, check{Section: "state", Name: "scripts/imessage-state.json", Status: statusOK, Detail: "parsed"})
