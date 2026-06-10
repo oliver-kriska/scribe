@@ -68,6 +68,13 @@ sources: ["raw/imports/filename.md", "https://url"]
 ---
 ```
 
+### Optional fields (all types)
+
+`contributor:` — who first created the article. scribe stamps this
+automatically on new articles at commit time (from `contributor:` in
+`~/.config/scribe/config.yaml`, falling back to `git config user.name`).
+Don't remove it; only set it manually when writing on someone's behalf.
+
 ### Type-specific fields
 
 **project**: `status` (active | paused | completed | idea), `stack`
