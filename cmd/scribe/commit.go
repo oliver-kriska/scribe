@@ -93,6 +93,9 @@ func (c *CommitCmd) Run() error {
 	// Stage everything except output/
 	runCmd(root, "git", "add", "--ignore-errors", "--", ".", ":!output/")
 
+	// Team-mode credential gate — same funnel as gitAddWiki.
+	holdSecretFiles(root, loadConfig(root))
+
 	// Commit
 	if err := gitCommit(root, msg); err != nil {
 		return fmt.Errorf("commit failed: %w", err)

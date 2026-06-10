@@ -268,6 +268,9 @@ func gitAddWiki(root string) {
 	cmd := exec.Command("git", args...) //nolint:noctx // git add subprocess
 	cmd.Dir = root
 	_ = cmd.Run()
+	// Team-mode credential gate: anything staged above that contains a
+	// real-shaped secret is unstaged again, loudly (secrets.go).
+	holdSecretFiles(root, loadConfig(root))
 }
 
 // gitCommit creates a commit with the given message. Captures stderr so callers

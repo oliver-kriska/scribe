@@ -536,6 +536,18 @@ own sessions and repos; git is the merge layer.
      like; personal repos can't slip into the team manifest. Like the other
      `sources` keys, it's trust-locked — a pushed change to it warns instead of
      applying.
+   - **Secret-scan gate**: before any team-mode commit, staged articles are
+     scanned for credential-shaped values (AWS/GitHub/Slack/Stripe/OpenAI/
+     Anthropic key formats, PEM headers, JWTs, passwords in URLs — gitleaks-style
+     rules with entropy confirmation). A file with a hit is **held back** from
+     the commit and logged loudly (`SECRET HELD: file:line [rule]` — never the
+     value itself); everything clean still commits, so cron keeps flowing. Mark
+     deliberate placeholders with `scribe:allow` on the line, exempt paths via
+     `secret_scan.allow_paths`, or opt into the noisier generic
+     `key = "value"` rule with `secret_scan.generic: true`. The `secret_scan`
+     block is trust-locked like `sources` — a pushed change weakening it warns
+     instead of applying. `scribe doctor` also scans the whole KB on disk, so
+     leaks that predate the gate surface too.
    - **Push conflicts** retry once through `git pull --rebase`; scribe never
      force-pushes. KB history is append-only.
 
