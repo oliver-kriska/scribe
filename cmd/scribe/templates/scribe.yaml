@@ -30,6 +30,12 @@ team: true
 # are managed via `scribe projects`. Patterns: a plain path covers
 # everything beneath it; globs (~/work-*) match the path or any of its
 # ancestors; exclude always wins over include. Empty include = allow all.
+#
+# allowed_remotes filters by git identity instead of path: when set,
+# only repos whose origin remote matches an entry (any spelling —
+# https://, git@host:, or bare host/org) are discovered, and repos
+# WITHOUT an origin remote are rejected. The team-KB guard: members
+# keep checkouts wherever they like, but only org repos enroll.
 {{if or .SourcesInclude .SourcesExclude}}sources:
 {{if .SourcesInclude}}  include:
 {{range .SourcesInclude}}    - "{{.}}"
@@ -41,6 +47,8 @@ team: true
 #     - ~/Projects/client-*
 #   exclude:
 #     - ~/Projects/personal
+#   allowed_remotes:
+#     - github.com/myorg
 {{end}}
 # Paths
 claude_projects_dir: ~/.claude/projects

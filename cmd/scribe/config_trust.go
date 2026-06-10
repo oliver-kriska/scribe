@@ -246,6 +246,7 @@ func sensitiveDiff(trusted, current sensitiveConfig) []string {
 		{"team", trusted.Team, current.Team},
 		{"sources.include", trusted.Sources.Include, current.Sources.Include},
 		{"sources.exclude", trusted.Sources.Exclude, current.Sources.Exclude},
+		{"sources.allowed_remotes", trusted.Sources.AllowedRemotes, current.Sources.AllowedRemotes},
 		{"claude_projects_dir", trusted.ClaudeProjectsDir, current.ClaudeProjectsDir},
 		{"codex_sessions_dir", trusted.CodexSessionsDir, current.CodexSessionsDir},
 		{"ccrider_db", trusted.CcriderDB, current.CcriderDB},

@@ -24,6 +24,16 @@ type SourcesConfig struct {
 	// Exclude: a path matching any entry is never discovered, even if
 	// it also matches an include. Exclude always wins.
 	Exclude []string `yaml:"exclude"`
+	// AllowedRemotes: when non-empty, a project must have a git origin
+	// remote whose normalized URL (see normalizeRemoteURL) matches one
+	// of these entries on a path-segment boundary — "github.com/myorg"
+	// covers github.com/myorg/api but not github.com/myorg-fork/api.
+	// Repos WITHOUT an origin remote are rejected outright: in a team
+	// KB this is the guard that only org repos get discovered, no
+	// matter where members keep their checkouts, so an unidentifiable
+	// repo can't slip through. Entries accept any remote spelling
+	// (https://, git@host:, bare host/org) — both sides normalize.
+	AllowedRemotes []string `yaml:"allowed_remotes"`
 }
 
 // sourceAllowed reports whether discovery may enroll the project at
@@ -37,11 +47,38 @@ func sourceAllowed(cfg *ScribeConfig, path string) bool {
 			return false
 		}
 	}
+	if !remoteAllowed(cfg.Sources.AllowedRemotes, path) {
+		return false
+	}
 	if len(cfg.Sources.Include) == 0 {
 		return true
 	}
 	for _, pattern := range cfg.Sources.Include {
 		if sourcePatternMatches(pattern, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// remoteAllowed implements sources.allowed_remotes: with a non-empty
+// allowlist, the repo's normalized origin remote must prefix-match an
+// entry on a segment boundary. No origin remote → rejected (the
+// allowlist is exactly the "only repos we can identify" stance).
+func remoteAllowed(allowed []string, path string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	key := repoLedgerKey(path)
+	if key == "" {
+		return false
+	}
+	for _, a := range allowed {
+		entry := normalizeRemoteURL(a)
+		if entry == "" {
+			continue
+		}
+		if key == entry || strings.HasPrefix(key, entry+"/") {
 			return true
 		}
 	}

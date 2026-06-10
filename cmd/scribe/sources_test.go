@@ -138,3 +138,75 @@ func TestInitTemplateGitignoreTeamMode(t *testing.T) {
 		t.Errorf("gitignore lost its base entries:\n%s", out)
 	}
 }
+
+func TestRemoteAllowed(t *testing.T) {
+	matching := initTestGitRepo(t, "Remote Tester")
+	gitRun(t, matching, "remote", "add", "origin", "git@github.com:myorg/api.git")
+
+	other := initTestGitRepo(t, "Remote Tester")
+	gitRun(t, other, "remote", "add", "origin", "https://github.com/elsewhere/thing.git")
+
+	// Prefix trap: "myorg-fork" must NOT match an allowlist of "myorg".
+	fork := initTestGitRepo(t, "Remote Tester")
+	gitRun(t, fork, "remote", "add", "origin", "git@github.com:myorg-fork/api.git")
+
+	noRemote := initTestGitRepo(t, "Remote Tester")
+	nonGit := t.TempDir()
+
+	allow := []string{"github.com/myorg"}
+
+	if !remoteAllowed(nil, other) {
+		t.Error("empty allowlist must allow everything")
+	}
+	if !remoteAllowed(allow, matching) {
+		t.Error("repo under allowed org rejected")
+	}
+	if remoteAllowed(allow, other) {
+		t.Error("repo from other org allowed")
+	}
+	if remoteAllowed(allow, fork) {
+		t.Error("segment-boundary violation: myorg-fork matched myorg")
+	}
+	if remoteAllowed(allow, noRemote) {
+		t.Error("repo without origin remote must be rejected")
+	}
+	if remoteAllowed(allow, nonGit) {
+		t.Error("non-git dir must be rejected")
+	}
+
+	// Entry spelled as a full URL still matches an scp-like origin.
+	if !remoteAllowed([]string{"https://github.com/myorg/api.git"}, matching) {
+		t.Error("https-spelled allowlist entry did not match ssh origin")
+	}
+	// Exact repo entry does not cover sibling repos.
+	if remoteAllowed([]string{"github.com/myorg/api"}, fork) {
+		t.Error("exact repo entry matched a different repo")
+	}
+}
+
+func TestSourceAllowedWithRemotes(t *testing.T) {
+	repo := initTestGitRepo(t, "Remote Tester")
+	gitRun(t, repo, "remote", "add", "origin", "git@github.com:myorg/api.git")
+
+	// Remote allowlist alone gates discovery.
+	cfg := &ScribeConfig{Sources: SourcesConfig{AllowedRemotes: []string{"github.com/myorg"}}}
+	if !sourceAllowed(cfg, repo) {
+		t.Error("matching repo rejected")
+	}
+	if sourceAllowed(cfg, t.TempDir()) {
+		t.Error("remote-less dir allowed despite allowlist")
+	}
+
+	// Exclude still wins over a matching remote.
+	cfg.Sources.Exclude = []string{repo}
+	if sourceAllowed(cfg, repo) {
+		t.Error("excluded path allowed because its remote matched")
+	}
+	cfg.Sources.Exclude = nil
+
+	// Include and remote allowlist must BOTH pass.
+	cfg.Sources.Include = []string{t.TempDir()}
+	if sourceAllowed(cfg, repo) {
+		t.Error("repo outside include allowed because its remote matched")
+	}
+}
