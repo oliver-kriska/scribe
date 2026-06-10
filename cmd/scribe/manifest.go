@@ -178,15 +178,16 @@ func (m *Manifest) isIgnored(path string) bool {
 	if isTCCProtected(path) {
 		return true
 	}
-	// A scribe KB must never be conscripted into its own pipeline.
-	// Extracting a KB feeds the KB's own wiki articles back through the
+	// A scribe KB must never be conscripted into a pipeline — its own or
+	// another KB's. Extracting a KB feeds wiki articles back through the
 	// extractor, which the LLM re-materializes as near-duplicate pages
 	// (the reported readme.md → readme.md.md → readme_md.md fan-out).
 	// Worse, every sync commits to the KB and bumps its git SHA, so the
 	// self-extract retriggers on every run and the duplicates compound.
-	// Detect the canonical scribe.yaml marker and skip — this covers the
-	// active KB and any other KB the user keeps on disk.
-	if isScribeKB(path) {
+	// The walk-up check covers the active KB, any other KB on disk, and
+	// project paths nested anywhere INSIDE a KB (a session run in
+	// ~/team-kb/wiki/ must not enroll that subdir as a project here).
+	if withinScribeKB(path) {
 		return true
 	}
 	return slices.Contains(m.IgnoredPaths, path)
@@ -198,6 +199,27 @@ func (m *Manifest) isIgnored(path string) bool {
 // one of its own source projects.
 func isScribeKB(path string) bool {
 	return fileExists(filepath.Join(path, "scribe.yaml"))
+}
+
+// withinScribeKB reports whether path is a KB root OR nested anywhere
+// inside one, by walking up to / looking for the scribe.yaml marker.
+// This is the check ingestion paths must use: with multiple KBs on one
+// machine (personal + team), a Claude session run in a SUBDIRECTORY of
+// KB B (~/team-kb/wiki/) must not be discovered or mined into KB A —
+// the exact-root isScribeKB misses that case. KBs never harvest each
+// other, at any depth.
+func withinScribeKB(path string) bool {
+	if path == "" {
+		return false
+	}
+	for dir := filepath.Clean(path); ; dir = filepath.Dir(dir) {
+		if isScribeKB(dir) {
+			return true
+		}
+		if dir == filepath.Dir(dir) { // reached filesystem root
+			return false
+		}
+	}
 }
 
 // isWithinKB reports whether path is the KB root at `root` or nested inside
@@ -220,7 +242,7 @@ func isWithinKB(root, path string) bool {
 // own content as "new" articles, the same self-ingestion loop that produces
 // duplicate pages on the extraction side.
 func sessionInKB(root, projectPath string) bool {
-	return isWithinKB(root, projectPath) || isScribeKB(projectPath)
+	return isWithinKB(root, projectPath) || withinScribeKB(projectPath)
 }
 
 // tccProtectedSubdirs are top-level $HOME subdirectories gated by macOS TCC.
