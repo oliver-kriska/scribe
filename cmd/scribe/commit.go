@@ -85,6 +85,11 @@ func (c *CommitCmd) Run() error {
 	}
 	msg := fmt.Sprintf("auto: %s (%s)", time.Now().Format("2006-01-02"), strings.Join(parts, ", "))
 
+	// New articles written by a sync whose commit was debounced (or that
+	// died before committing) land here — stamp contributor before they
+	// get staged, same as the gitAddWiki funnel.
+	stampContributor(root)
+
 	// Stage everything except output/
 	runCmd(root, "git", "add", "--ignore-errors", "--", ".", ":!output/")
 
