@@ -259,6 +259,18 @@ func (l *LintCmd) Run() error {
 		}
 	}
 
+	// Phase 6: Unresolved merge-conflict markers. Team KBs auto-pull, so
+	// a botched merge can leave "<<<<<<< HEAD" blocks inside articles
+	// where they poison search and LLM context. Hard error — the file is
+	// broken until a human resolves it.
+	if !l.Changed {
+		fmt.Println("Phase 6: Conflict markers")
+		for _, h := range findConflictMarkers(root) {
+			errors++
+			fmt.Printf("  ERROR %s:%d: unresolved git conflict marker — resolve the merge and recommit\n", h.Rel, h.Line)
+		}
+	}
+
 	runStats = map[string]any{
 		"files_checked": len(files),
 		"errors":        errors,
