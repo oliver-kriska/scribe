@@ -75,11 +75,34 @@ type ProjectsApproveCmd struct {
 	All   bool     `help:"Approve every pending project."`
 }
 
+// withSyncLock runs fn while holding the sync advisory lock. The
+// projects commands do load → mutate → save on the manifest; without
+// the lock a cron sync's own saves interleave and whichever writes
+// last silently reverts the other (an approval flips back to pending,
+// or a sync's collected research vanishes). Sync probe-acquires the
+// same lock and skips its run when busy, so holding it here is safe.
+func withSyncLock(root string, fn func() error) error {
+	cfg := loadConfig(root)
+	lf, ok, err := acquireLock(lockPathFor(cfg.LockDir, "sync"))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("a sync is running (lock busy) — retry in a moment")
+	}
+	defer releaseLock(lf)
+	return fn()
+}
+
 func (c *ProjectsApproveCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
 		return err
 	}
+	return withSyncLock(root, func() error { return c.run(root) })
+}
+
+func (c *ProjectsApproveCmd) run(root string) error {
 	manifest, err := loadManifest(root)
 	if err != nil {
 		return err
@@ -128,6 +151,10 @@ func (c *ProjectsIgnoreCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	return withSyncLock(root, func() error { return c.run(root) })
+}
+
+func (c *ProjectsIgnoreCmd) run(root string) error {
 	manifest, err := loadManifest(root)
 	if err != nil {
 		return err
@@ -177,6 +204,13 @@ func (c *ProjectsReviewCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	// The lock is held for the whole interactive session: a cron sync
+	// firing mid-review skips that run (it probes the same lock), which
+	// beats it silently reverting decisions made on a stale snapshot.
+	return withSyncLock(root, func() error { return c.run(root) })
+}
+
+func (c *ProjectsReviewCmd) run(root string) error {
 	manifest, err := loadManifest(root)
 	if err != nil {
 		return err

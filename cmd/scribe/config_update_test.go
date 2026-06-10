@@ -24,8 +24,12 @@ func TestTemplateConfigSegments(t *testing.T) {
 		}
 		byKey[s.key] = s
 	}
-	// The blocks this command exists for must survive parsing.
-	for _, want := range []string{"owners", "secret_scan", "subscriptions"} {
+	// The blocks this command exists for must survive parsing. `sources`
+	// comes from the fallback list: its template block lives inside
+	// {{if}} directives, which the parser drops — without the fallback,
+	// allowed_remotes (the team discovery gate) could never be surfaced
+	// to pre-existing KBs.
+	for _, want := range []string{"owners", "secret_scan", "subscriptions", "sources"} {
 		seg, ok := byKey[want]
 		if !ok {
 			t.Errorf("missing segment %q", want)
@@ -35,6 +39,23 @@ func TestTemplateConfigSegments(t *testing.T) {
 		if len(seg.lines) < 2 {
 			t.Errorf("segment %q has no docs: %v", want, seg.lines)
 		}
+	}
+	if !strings.Contains(strings.Join(byKey["sources"].lines, "\n"), "allowed_remotes") {
+		t.Error("sources fallback segment lost allowed_remotes documentation")
+	}
+}
+
+func TestConfigMentionsKeyGenerousComments(t *testing.T) {
+	for _, content := range []string{
+		"sources:\n", "# sources:\n", "#  sources:\n", "## sources:\n", "#sources:\n",
+	} {
+		if !configMentionsKey(content, "sources") {
+			t.Errorf("mention not detected in %q", content)
+		}
+	}
+	// Indented sub-keys are NOT top-level mentions.
+	if configMentionsKey("capture:\n  sources:\n", "sources") {
+		t.Error("indented sub-key counted as a top-level mention")
 	}
 }
 

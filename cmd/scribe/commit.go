@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -37,25 +38,31 @@ func (c *CommitCmd) Run() error {
 		releaseLock(lf)
 	}
 
-	// Check for changes (excluding output/)
-	changes := runCmd(root, "git", "status", "--porcelain", "--", ".", ":!output/")
-	if changes == "" {
+	// Check for changes (excluding output/). Raw output, not runCmd:
+	// porcelain's first column may be a space (` M`), and runCmd's
+	// TrimSpace would eat it on the first line, shifting the path slice.
+	statusCmd := exec.Command("git", "status", "--porcelain", "--", ".", ":!output/") //nolint:noctx // quick status probe
+	statusCmd.Dir = root
+	statusOut, _ := statusCmd.Output()
+	changes := string(statusOut)
+	if strings.TrimSpace(changes) == "" {
 		return nil
 	}
 
 	// Count changes by category
 	var wikiN, rawN, configN int
 	for line := range strings.SplitSeq(changes, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+		// git status --porcelain: 2 status columns, one space, then the
+		// path. Column math, no trimming — see above.
+		if len(line) < 4 {
 			continue
 		}
-		// git status --porcelain: first 2 chars are status, then space, then path
-		// Find the path portion (after the status prefix)
-		path := line
-		if len(line) > 3 {
-			path = line[3:]
+		path := line[3:]
+		// Renames render as "old -> new"; count the destination.
+		if i := strings.Index(path, " -> "); i >= 0 {
+			path = path[i+4:]
 		}
+		path = strings.Trim(path, `"`)
 		switch {
 		case hasAnyPrefix(path, wikiDirs):
 			wikiN++

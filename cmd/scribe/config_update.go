@@ -150,14 +150,54 @@ func templateConfigSegments() []templateSegment {
 		}
 		out = append(out, seg)
 	}
+	covered := map[string]bool{}
+	for _, seg := range out {
+		covered[seg.key] = true
+	}
+	for _, fb := range fallbackConfigSegments {
+		if !covered[fb.key] {
+			out = append(out, fb)
+		}
+	}
 	return out
+}
+
+// fallbackConfigSegments covers keys whose template blocks live inside
+// Go-template conditionals — every line starts with {{, so the parser
+// above drops them. Without a fallback, `scribe config update` could
+// never surface them to pre-existing KBs, and sources.allowed_remotes
+// (the team discovery gate) is aimed at exactly that audience.
+var fallbackConfigSegments = []templateSegment{
+	{
+		key: "sources",
+		lines: []string{
+			"# sources gates which project paths discovery may enroll. include /",
+			"# exclude match path prefixes or globs (also against ancestors);",
+			"# exclude always wins over include. Empty include = allow all.",
+			"# allowed_remotes filters by git identity instead of path: when set,",
+			"# only repos whose origin remote matches an entry (any spelling —",
+			"# https://, git@host:, or bare host/org) are discovered, and repos",
+			"# WITHOUT an origin remote are rejected.",
+			"# sources:",
+			"#   include:",
+			"#     - ~/work",
+			"#     - ~/Projects/client-*",
+			"#   exclude:",
+			"#     - ~/Projects/personal",
+			"#   allowed_remotes:",
+			"#     - github.com/myorg",
+		},
+	},
 }
 
 // configMentionsKey reports whether the user file already has the
 // top-level key, active or commented — either way the user can see the
-// option exists, so appending would duplicate.
+// option exists, so appending would duplicate. Generous on comment
+// spelling (`#key:`, `##  key:`) since this is a skip-check: a false
+// positive merely leaves a block unappended, while strictness would
+// re-append blocks next to hand-edited comments forever.
 func configMentionsKey(content, key string) bool {
-	re := regexp.MustCompile(`(?m)^(?:# ?)?` + regexp.QuoteMeta(key) + `:`)
+	re := regexp.MustCompile(`(?m)^(?:#+[ \t]{0,3})?` + regexp.QuoteMeta(key) + `:`)
 	return re.MatchString(content)
 }
 
