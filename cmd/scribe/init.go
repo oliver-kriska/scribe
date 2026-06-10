@@ -286,7 +286,12 @@ func (c *InitCmd) runBootstrap() error {
 		fmt.Println("                  changes with `scribe config diff`, accept with `scribe config trust`")
 		fmt.Println("  personal bits:  per-user settings (capture handles, extra filters) go in the")
 		fmt.Println("                  gitignored scribe.local.yaml — they always win over scribe.yaml")
-		fmt.Println("  consolidation:  run `scribe dream` on ONE machine only (see README → Shared team KBs)")
+		fmt.Println("  secret gate:    staged articles are scanned for credential-shaped values before")
+		fmt.Println("                  every commit; offending files are held back and logged. Decide as")
+		fmt.Println("                  a team whether to also enable secret_scan.generic (catches")
+		fmt.Println("                  unprefixed `password = ...` leaks, at the cost of noise)")
+		fmt.Println("  consolidation:  `scribe dream` coordinates itself via a committed lease — the")
+		fmt.Println("                  first machine claims the weekly cycle, the rest skip")
 	}
 
 	// Offer to walk the user through Full Disk Access right now. Only on
