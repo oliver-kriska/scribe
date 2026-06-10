@@ -329,6 +329,35 @@ func defaultProjectRoots() map[string]bool {
 	return roots
 }
 
+// entryForPath finds the project entry whose Path — or one of whose
+// recorded worktrees — matches path (symlink-tolerant). The keyed
+// projectName lookup alone is wrong in two ways: a worktree's basename
+// differs from the project key (its sessions would bypass per-project
+// gates), and two repos sharing a basename collide on the key (one
+// project's gate would govern the other's sessions).
+func (m *Manifest) entryForPath(path string) *ProjectEntry {
+	if m == nil || path == "" {
+		return nil
+	}
+	if e, ok := m.Projects[projectName(path)]; ok && e != nil && samePath(e.Path, path) {
+		return e
+	}
+	for _, e := range m.Projects {
+		if e == nil {
+			continue
+		}
+		if samePath(e.Path, path) {
+			return e
+		}
+		for _, w := range e.Worktrees {
+			if samePath(w, path) {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
 // projectName derives a canonical project name from a path.
 func projectName(path string) string {
 	parent := filepath.Base(filepath.Dir(path))

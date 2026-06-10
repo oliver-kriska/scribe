@@ -426,6 +426,41 @@ func TestDoctorWarnsOnWorktreeProjectEntry(t *testing.T) {
 	}
 }
 
+func TestEntryForPath(t *testing.T) {
+	wtDir := filepath.Join(t.TempDir(), "branches", "feature-x")
+	mainDir := filepath.Join(t.TempDir(), "projects", "api")
+	for _, d := range []string{wtDir, mainDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entry := &ProjectEntry{Path: mainDir, Worktrees: []string{wtDir}}
+	m := &Manifest{Projects: map[string]*ProjectEntry{"projects-api": entry}}
+
+	if got := m.entryForPath(mainDir); got != entry {
+		t.Error("main path did not resolve to its entry")
+	}
+	if got := m.entryForPath(wtDir); got != entry {
+		t.Error("worktree path did not resolve to the main entry")
+	}
+	if got := m.entryForPath(filepath.Join(t.TempDir(), "unrelated")); got != nil {
+		t.Errorf("unknown path resolved to %+v", got)
+	}
+	// Basename collision: same name, different path → no match.
+	other := filepath.Join(t.TempDir(), "elsewhere", "api")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.entryForPath(other); got != nil {
+		t.Errorf("basename collision resolved to %+v", got)
+	}
+
+	var nilM *Manifest
+	if nilM.entryForPath(mainDir) != nil {
+		t.Error("nil manifest must resolve nothing")
+	}
+}
+
 // projectKeys lists manifest project names for failure messages.
 func projectKeys(m *Manifest) []string {
 	keys := make([]string, 0, len(m.Projects))

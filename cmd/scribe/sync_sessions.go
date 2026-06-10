@@ -105,7 +105,12 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 			continue
 		}
 		if manifest != nil && stats.ProjectPath != "" {
-			if entry, ok := manifest.Projects[projectName(stats.ProjectPath)]; ok && !entry.IsApproved() {
+			// entryForPath rather than a keyed lookup: a session run
+			// inside a pending project's WORKTREE must inherit the
+			// pending status (the worktree's basename is not a manifest
+			// key), and a basename collision must not let one project's
+			// approval state govern another's sessions.
+			if entry := manifest.entryForPath(stats.ProjectPath); entry != nil && !entry.IsApproved() {
 				pendingSkipped++
 				continue
 			}
@@ -381,9 +386,14 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 			if err := s.rebuildAndReindex(root); err != nil {
 				logMsg("sync", "checkpoint reindex error: %v", err)
 			}
-			if err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, totalMined)); err != nil {
+			committed, err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, totalMined))
+			if err != nil {
 				logMsg("sync", "checkpoint commit error: %v", err)
-			} else {
+			} else if committed {
+				// Only attribute the batch when a commit actually
+				// happened — on the debounce/nothing-staged paths the
+				// shortstat would describe the PREVIOUS commit. Unrecorded
+				// IDs stay in batchIDs and ride into the next checkpoint.
 				recordBatchOutcome(root, label, batchIDs)
 				batchIDs = nil
 			}
@@ -436,9 +446,10 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 			if err := s.rebuildAndReindex(root); err != nil {
 				logMsg("sync", "checkpoint reindex error: %v", err)
 			}
-			if err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, totalMined)); err != nil {
+			committed, err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, totalMined))
+			if err != nil {
 				logMsg("sync", "checkpoint commit error: %v", err)
-			} else {
+			} else if committed {
 				recordBatchOutcome(root, label, batchIDs)
 				batchIDs = nil
 			}
@@ -517,11 +528,15 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 	}
 
 	// Pass 1: Normal sessions (<=300 messages) — batches of 3, 10min timeout.
-	normalIDs := s.triageSessionIDs(s.SessionsMax, "--message-limit", "300")
+	// Over-fetch 3x the budget: the pre-filter below drops KB, pending-
+	// project, and mechanical sessions AFTER triage, so trimming to the
+	// budget first would let a noisy unapproved project's sessions occupy
+	// every slot and starve approved projects indefinitely (they rank
+	// N+1 forever). The trim to SessionsMax happens after the filter.
+	normalIDs := s.triageSessionIDs(s.SessionsMax*3, "--message-limit", "300")
 
-	// Merge pending IDs ahead of triage picks, then trim to the slot budget.
-	// Pending items go first so high-value sessions jump the queue; trim
-	// keeps the parallel extractor from blowing past SessionsMax.
+	// Merge pending IDs ahead of triage picks so high-value sessions
+	// jump the queue.
 	if len(pendingIDs) > 0 {
 		seen := make(map[string]bool, len(pendingIDs)+len(normalIDs))
 		merged := make([]string, 0, len(pendingIDs)+len(normalIDs))
@@ -536,9 +551,6 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 				seen[id] = true
 				merged = append(merged, id)
 			}
-		}
-		if len(merged) > s.SessionsMax {
-			merged = merged[:s.SessionsMax]
 		}
 		normalIDs = merged
 	}
@@ -569,6 +581,12 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 			}
 		}
 		normalIDs = kept
+	}
+
+	// Trim to the slot budget AFTER filtering, so dropped sessions never
+	// consume extraction slots and the parallel extractor stays bounded.
+	if len(normalIDs) > s.SessionsMax {
+		normalIDs = normalIDs[:s.SessionsMax]
 	}
 
 	if len(normalIDs) > 0 {
