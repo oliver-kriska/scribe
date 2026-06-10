@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -53,7 +54,7 @@ type secretRule struct {
 	Allow      []*regexp.Regexp
 	MinEntropy float64
 	Group      int
-	MaxLine    int  // skip longer lines; 0 = 64KB default
+	MaxLine    int  // scan only the first MaxLine bytes of longer lines; 0 = 64KB default
 	Generic    bool // only active with secret_scan.generic: true
 }
 
@@ -255,10 +256,14 @@ func scanContentForSecrets(content []byte, includeGeneric bool) []secretHit {
 			if maxLine == 0 {
 				maxLine = defaultSecretMaxLine
 			}
-			if len(line) > maxLine {
-				continue
+			// Truncate rather than skip: minified HTML→markdown output
+			// (raw/ absorbs) routinely packs whole pages into one line,
+			// and skipping it would blind every rule to that content.
+			scanLine := line
+			if len(scanLine) > maxLine {
+				scanLine = scanLine[:maxLine]
 			}
-			m := r.Re.FindSubmatch(line)
+			m := r.Re.FindSubmatch(scanLine)
 			if m == nil {
 				continue
 			}
@@ -327,7 +332,7 @@ func shannonEntropy(s string) float64 {
 	return e
 }
 
-// holdSecretFiles is the commit gate: scan the STAGED KB markdown
+// holdSecretFiles is the commit gate: scan every STAGED markdown file
 // and unstage any file with a hit, with a loud (secret-free) log line
 // per finding. Per-file hold, never a whole-run abort — sync runs on
 // cron and one quoted token must not wedge the pipeline. Held files
@@ -335,53 +340,85 @@ func shannonEntropy(s string) float64 {
 // a human resolves (rewrite the line or add `scribe:allow`). Active
 // only for team KBs; secret_scan.disable: false is trust-locked, so a
 // pushed config change can't switch the gate off.
-func holdSecretFiles(root string, cfg *ScribeConfig) {
+//
+// Returns false when a file that needed holding could not be unstaged
+// (or its staged content could not be read for scanning): a detected
+// or unscannable secret may still be staged, so callers must skip the
+// commit — the staged changes simply roll over to the next run, same
+// as the debounce path.
+func holdSecretFiles(root string, cfg *ScribeConfig) bool {
 	if cfg == nil || !cfg.Team || cfg.SecretScan.Disable {
-		return
+		return true
 	}
-	for _, rel := range stagedKBMarkdown(root) {
+	safe := true
+	for _, rel := range stagedMarkdown(root) {
 		if secretScanPathExempt(cfg, rel) {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(root, rel))
+		// Scan the INDEX blob, not the worktree file: they differ after
+		// a post-add edit, and a staged-then-deleted file has no
+		// worktree copy at all — reading the worktree would fail open.
+		data, err := stagedBlob(root, rel)
 		if err != nil {
+			// Fail closed: a blob that can't be read can't be proven
+			// clean. Hold it; the next run rescans.
+			logMsg("git", "SECRET GATE: %s — staged content unreadable (%v), holding unscanned", rel, err)
+			safe = unstageHeld(root, rel) && safe
 			continue
 		}
 		hits := scanContentForSecrets(data, cfg.SecretScan.Generic)
 		if len(hits) == 0 {
 			continue
 		}
-		// `git reset -q --` rather than `restore --staged`: identical on a
-		// normal repo, but it also works on an unborn branch (fresh KB
-		// before its first commit), where restore can't resolve HEAD.
-		if _, err := runCmdErr(root, "git", "reset", "-q", "--", rel); err != nil {
-			logMsg("git", "SECRET HELD: %s — unstage failed (%v), commit may include it; resolve immediately", rel, err)
+		if !unstageHeld(root, rel) {
+			safe = false
 			continue
 		}
 		for _, h := range hits {
 			logMsg("git", "SECRET HELD: %s:%d [%s] — file held back from commit; rewrite the line or add 'scribe:allow' if it's a placeholder", rel, h.Line, h.Label)
 		}
 	}
+	return safe
 }
 
-// stagedKBMarkdown lists staged .md files under the wiki content dirs
-// AND raw/ (added/copied/modified). raw/ matters: `scribe commit`
-// stages everything except output/, and URL absorbs + inbox ingests
-// land under raw/articles — without it a credential inside absorbed
-// content would commit unscanned.
-func stagedKBMarkdown(root string) []string {
-	args := make([]string, 0, 6+len(wikiDirs))
-	args = append(args, "diff", "--cached", "--name-only", "--diff-filter=ACM", "--")
-	args = append(args, wikiDirs...)
-	args = append(args, "raw")
-	out := runCmd(root, "git", args...)
+// unstageHeld removes rel from the index, reporting whether the hold
+// took. `git reset -q --` rather than `restore --staged`: identical on
+// a normal repo, but it also works on an unborn branch (fresh KB
+// before its first commit), where restore can't resolve HEAD.
+func unstageHeld(root, rel string) bool {
+	if _, err := runCmdErr(root, "git", "reset", "-q", "--", rel); err != nil {
+		logMsg("git", "SECRET HELD: %s — unstage failed (%v), a secret may still be staged; skipping this commit", rel, err)
+		return false
+	}
+	return true
+}
+
+// stagedBlob reads the staged (index) content of rel. Plain Output()
+// rather than runCmd: the content must arrive byte-exact, untrimmed,
+// and never merged with stderr.
+func stagedBlob(root, rel string) ([]byte, error) {
+	cmd := exec.Command("git", "show", ":"+rel) //nolint:noctx // git show subprocess
+	cmd.Dir = root
+	return cmd.Output()
+}
+
+// stagedMarkdown lists every staged .md file (added/copied/modified),
+// repo-wide. No pathspec restriction: `scribe commit` stages with a
+// DENYLIST (everything except output/), so an allowlist here would let
+// staged markdown outside the known dirs commit unscanned. -z keeps
+// non-ASCII paths intact (default core.quotepath C-escapes them, which
+// dodges the .md suffix check), and --no-renames turns a rename+edit
+// back into an A entry — rename detection reports status R, which
+// --diff-filter=ACM silently drops.
+func stagedMarkdown(root string) []string {
+	out := runCmd(root, "git", "diff", "--cached", "--name-only", "-z", "--no-renames", "--diff-filter=ACM")
 	if out == "" {
 		return nil
 	}
 	var files []string
-	for line := range strings.SplitSeq(out, "\n") {
-		if l := strings.TrimSpace(line); l != "" && strings.HasSuffix(l, ".md") {
-			files = append(files, l)
+	for p := range strings.SplitSeq(out, "\x00") {
+		if p != "" && strings.HasSuffix(p, ".md") {
+			files = append(files, p)
 		}
 	}
 	return files
@@ -398,8 +435,10 @@ func secretScanPathExempt(cfg *ScribeConfig, rel string) bool {
 	return false
 }
 
-// findSecretsInKB scans all KB articles (wiki dirs + raw/articles) for
-// doctor — committed leaks AND held-back files both live on disk.
+// findSecretsInKB scans all KB articles (wiki dirs + all of raw/) for
+// doctor — committed leaks AND held-back files both live on disk. The
+// raw/ walk matches the gate's repo-wide scope: a file the gate holds
+// must keep showing up here until a human resolves it.
 func findSecretsInKB(root string, includeGeneric bool) []string {
 	var findings []string
 	record := func(path string, content []byte) error {
@@ -410,7 +449,7 @@ func findSecretsInKB(root string, includeGeneric bool) []string {
 		return nil
 	}
 	_ = walkAllMarkdown(root, record)
-	rawDir := filepath.Join(root, "raw", "articles")
+	rawDir := filepath.Join(root, "raw")
 	_ = filepath.Walk(rawDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
 			return nil //nolint:nilerr // skip unreadable, continue walk

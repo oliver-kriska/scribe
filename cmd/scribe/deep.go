@@ -207,16 +207,19 @@ func (d *DeepCmd) Run() error {
 		runCmd(root, "qmd", "embed")
 
 		if gitIsDirty(root) {
-			gitAddWiki(root)
-			commitMsg := fmt.Sprintf("deep-extract: %s %s (%d batches)",
-				d.Project, time.Now().Format("2006-01-02"), batchNum)
-			if err := gitCommit(root, commitMsg); err != nil {
-				logMsg("deep", "warning: commit failed: %v", err)
+			if !gitAddWiki(root) {
+				logMsg("deep", "commit skipped: a detected secret could not be held back — resolve and rerun")
 			} else {
-				if err := gitPush(root); err != nil {
-					logMsg("deep", "warning: push failed: %v", err)
+				commitMsg := fmt.Sprintf("deep-extract: %s %s (%d batches)",
+					d.Project, time.Now().Format("2006-01-02"), batchNum)
+				if err := gitCommit(root, commitMsg); err != nil {
+					logMsg("deep", "warning: commit failed: %v", err)
 				} else {
-					logMsg("deep", "committed and pushed")
+					if err := gitPush(root); err != nil {
+						logMsg("deep", "warning: push failed: %v", err)
+					} else {
+						logMsg("deep", "committed and pushed")
+					}
 				}
 			}
 		}

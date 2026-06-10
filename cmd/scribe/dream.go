@@ -148,7 +148,9 @@ func (d *DreamCmd) Run() error {
 		_ = scribeIndex.Run()
 		logMsg("dream", "index/backlinks rebuilt")
 
-		gitAddWiki(root)
+		if !gitAddWiki(root) {
+			return fmt.Errorf("dream commit skipped: a detected secret could not be held back")
+		}
 		if err := gitCommit(root, commitMsg); err != nil {
 			return fmt.Errorf("dream commit: %w", err)
 		}
