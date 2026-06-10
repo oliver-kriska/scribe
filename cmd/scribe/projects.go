@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
 )
 
 // ProjectsCmd manages which discovered projects participate in the
@@ -42,6 +43,7 @@ func (c *ProjectsListCmd) Run() error {
 	}
 	sort.Strings(names)
 
+	tw := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
 	shown := 0
 	for _, name := range names {
 		e := manifest.Projects[name]
@@ -52,9 +54,10 @@ func (c *ProjectsListCmd) Run() error {
 		if c.Pending && status != statusPending {
 			continue
 		}
-		fmt.Printf("%-10s %-30s %-15s %s\n", status, name, e.Domain, e.Path)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", status, name, e.Domain, e.Path)
 		shown++
 	}
+	tw.Flush()
 	if shown == 0 {
 		if c.Pending {
 			fmt.Println("no pending projects")

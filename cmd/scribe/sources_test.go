@@ -115,3 +115,26 @@ func TestInitTemplateRendersSourcesBlock(t *testing.T) {
 		t.Error("rendered scribe.yaml lost the commented sources example")
 	}
 }
+
+func TestInitTemplateGitignoreTeamMode(t *testing.T) {
+	vars := templateVars{TeamMode: true}
+	out, err := renderTemplate("templates/gitignore", vars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "scripts/projects.json") {
+		t.Errorf("--team gitignore must exclude the manifest:\n%s", out)
+	}
+
+	vars.TeamMode = false
+	out, err = renderTemplate("templates/gitignore", vars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "scripts/projects.json") {
+		t.Errorf("single-user gitignore must NOT exclude the manifest:\n%s", out)
+	}
+	if !strings.Contains(out, "output/") {
+		t.Errorf("gitignore lost its base entries:\n%s", out)
+	}
+}

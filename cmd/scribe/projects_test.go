@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -151,6 +152,34 @@ func TestLoadManifestFreshSharedClone(t *testing.T) {
 	// (bad -C / SCRIBE_KB must fail loudly).
 	if _, err := loadManifest(t.TempDir()); err == nil {
 		t.Error("loadManifest on non-KB dir should error")
+	}
+}
+
+func TestDoctorWarnsOnPendingProjects(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := `{"projects":{"waiting":{"path":"/p/waiting","domain":"general","status":"pending"}},"domain_aliases":{},"ignored_paths":[]}`
+	if err := os.WriteFile(filepath.Join(root, "scripts", "projects.json"), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	checks := checkState(root)
+	found := false
+	for _, ck := range checks {
+		if ck.Name == "pending-projects" {
+			found = true
+			if ck.Status != statusWarn {
+				t.Errorf("pending-projects status = %s, want warn", ck.Status)
+			}
+			if !strings.Contains(ck.Detail, "waiting") || ck.Fix == "" {
+				t.Errorf("pending-projects check missing detail/fix: %+v", ck)
+			}
+		}
+	}
+	if !found {
+		t.Error("doctor checkState did not surface pending projects")
 	}
 }
 

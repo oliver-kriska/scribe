@@ -423,6 +423,7 @@ kb_dir: /home/alice/my-kb
 ```sh
 scribe init         # bootstrap a KB or check an existing one
 scribe init --allow ~/work --disallow ~/personal   # scaffold with discovery filters baked in
+scribe init --team -p ~/team-kb --allow ~/work     # scaffold a shared team KB (per-machine manifest)
 scribe sync         # discover → extract → absorb → reindex
 scribe projects     # list discovered projects with status
 scribe projects review       # interactively approve/ignore pending projects
@@ -472,15 +473,16 @@ own sessions and repos; git is the merge layer.
 1. **One member bootstraps the team KB** and pushes it to a private remote:
 
    ```sh
-   scribe init -p ~/team-kb --kb-name teamkb --allow ~/work
+   scribe init -p ~/team-kb --kb-name teamkb --team --allow ~/work
    cd ~/team-kb
-   echo "scripts/projects.json" >> .gitignore   # manifest is per-machine — see below
    git remote add origin git@github.com:yourorg/team-kb.git
    git push -u origin main
    ```
 
-   The `--allow` filter is committed in `scribe.yaml` and applies to every member
-   (`~` expands per-machine), so personal projects never leak into the team repo.
+   `--team` gitignores the per-machine manifest (see below) and prints these
+   setup steps. The `--allow` filter is committed in `scribe.yaml` and applies
+   to every member (`~` expands per-machine), so personal projects never leak
+   into the team repo.
 
 2. **Everyone else clones and points scribe at it** (per session or per cron job):
 
