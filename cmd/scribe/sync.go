@@ -365,6 +365,16 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 			continue
 		}
 
+		// Linked worktrees fold into the main repo's project instead of
+		// enrolling as their own — see worktreeMainRoot. The worktree
+		// path is recorded for drop/research collection.
+		if main := worktreeMainRoot(decoded); main != "" {
+			if n, changed := s.foldWorktree(root, manifest, cfg, decoded, main, "claude"); changed {
+				discovered += n
+			}
+			continue
+		}
+
 		if !hasSignificantContent(decoded) {
 			continue
 		}
@@ -419,6 +429,61 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 	discovered += codexCount
 
 	return discovered, nil
+}
+
+// foldWorktree handles a discovered path that turned out to be a linked
+// worktree of `main`: the worktree is recorded on the main project's
+// entry (creating that entry first when the main repo was never itself
+// discovered). `source` is the scanner that found it ("claude" or
+// "codex"). Returns (newProjects, changed). The worktree inherits the
+// main repo's filters — a worktree of an ignored/filtered repo is
+// dropped entirely.
+func (s *SyncCmd) foldWorktree(root string, manifest *Manifest, cfg *ScribeConfig, worktree, main, source string) (int, bool) {
+	if manifest.isIgnored(main) || !sourceAllowed(cfg, main) {
+		return 0, false
+	}
+	// A pre-existing entry for the worktree itself (enrolled before
+	// folding existed) keeps working until the user ignores it — doctor
+	// flags those. Don't also record it on the main entry, or its drops
+	// would be collected twice.
+	if wEntry, ok := manifest.Projects[projectName(worktree)]; ok && wEntry != nil && wEntry.Path == worktree {
+		return 0, false
+	}
+	mname := projectName(main)
+	if existing, ok := manifest.Projects[mname]; ok {
+		if s.DryRun || !existing.recordWorktree(worktree) {
+			return 0, false
+		}
+		logMsg("sync", " [%s] %s — recorded for drop/research collection", mname, describeWorktreeFold(worktree, main))
+		if err := manifest.save(); err != nil {
+			logMsg("sync", "manifest save failed: %v", err)
+		}
+		return 0, true
+	}
+
+	if !hasSignificantContent(main) {
+		return 0, false
+	}
+	domain := manifest.resolveDomain(main)
+	status := discoveryStatus(cfg)
+	logMsg("sync", " DISCOVERED (via %s worktree)%s: %s -> %s (domain: %s)", source, pendingTag(status), mname, main, domain)
+	if s.DryRun {
+		return 1, true
+	}
+	manifest.Projects[mname] = &ProjectEntry{
+		Path:           main,
+		Domain:         domain,
+		DiscoveredFrom: source,
+		Status:         status,
+		Worktrees:      []string{worktree},
+	}
+	if err := manifest.save(); err != nil {
+		logMsg("sync", "manifest save failed: %v", err)
+	}
+	if status != statusPending {
+		ensureRepoYAML(root, main, mname, domain)
+	}
+	return 1, true
 }
 
 // discoveryStatus returns the manifest status for a newly discovered
@@ -493,30 +558,21 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 		if !entry.IsApproved() {
 			continue
 		}
-		dropDir := filepath.Join(entry.Path, ".claude", kb)
-		if !dirExists(dropDir) {
-			continue
-		}
-
-		drops, err := filepath.Glob(filepath.Join(dropDir, "*.md"))
-		if err != nil || len(drops) == 0 {
-			continue
-		}
-
-		// Filter to unprocessed drops (newer than last_drop_processed).
+		// Scan the main checkout plus recorded worktrees — drop files
+		// written in a worktree can be branch-specific and never appear
+		// in the main checkout.
 		var unprocessed []string
-		if entry.LastDropProcessed != "" {
-			cutoff, err := time.Parse(time.RFC3339, entry.LastDropProcessed)
-			if err == nil {
-				for _, d := range drops {
-					info, err := os.Stat(d)
-					if err == nil && info.ModTime().After(cutoff) {
-						unprocessed = append(unprocessed, d)
-					}
-				}
+		for _, base := range entry.collectionPaths() {
+			dropDir := filepath.Join(base, ".claude", kb)
+			if !dirExists(dropDir) {
+				continue
 			}
-		} else {
-			unprocessed = drops
+			drops, err := filepath.Glob(filepath.Join(dropDir, "*.md"))
+			if err != nil || len(drops) == 0 {
+				continue
+			}
+			// Filter to unprocessed drops (newer than last_drop_processed).
+			unprocessed = append(unprocessed, filterNewerThan(drops, entry.LastDropProcessed)...)
 		}
 
 		if len(unprocessed) == 0 {
@@ -547,6 +603,35 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 	return totalDrops
 }
 
+// filterNewerThan returns the files modified after the RFC3339 cutoff.
+// Empty cutoff means everything is new; an unparseable cutoff means
+// nothing is (preserving the pre-worktree collector behavior).
+func filterNewerThan(files []string, cutoff string) []string {
+	if cutoff == "" {
+		return files
+	}
+	t, err := time.Parse(time.RFC3339, cutoff)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err == nil && info.ModTime().After(t) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// researchFile is one collected .claude/research/ markdown file: its
+// absolute path plus its path relative to the research dir it came from
+// (used for the flattened destination name).
+type researchFile struct {
+	path string
+	rel  string
+}
+
 // collectResearchFiles gathers unprocessed .claude/research/**/*.md files from tracked projects
 // and copies them into raw/articles/ with proper frontmatter for the absorb pipeline.
 func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
@@ -556,40 +641,33 @@ func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 		if !entry.IsApproved() {
 			continue
 		}
-		researchDir := filepath.Join(entry.Path, ".claude", "research")
-		if !dirExists(researchDir) {
-			continue
-		}
-
-		// Walk the entire research directory tree for .md files.
-		var files []string
-		_ = filepath.WalkDir(researchDir, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil //nolint:nilerr // skip unreadable or directory, continue walk
+		// Scan the main checkout plus recorded worktrees — research
+		// written in a worktree can be branch-specific and worth
+		// keeping even though extraction only runs on the main path.
+		var unscanned []researchFile
+		for _, base := range entry.collectionPaths() {
+			researchDir := filepath.Join(base, ".claude", "research")
+			if !dirExists(researchDir) {
+				continue
 			}
-			if strings.HasSuffix(path, ".md") {
-				files = append(files, path)
-			}
-			return nil
-		})
-		if len(files) == 0 {
-			continue
-		}
 
-		// Filter to files newer than last scan.
-		var unscanned []string
-		if entry.LastResearchScanned != "" {
-			cutoff, err := time.Parse(time.RFC3339, entry.LastResearchScanned)
-			if err == nil {
-				for _, f := range files {
-					info, err := os.Stat(f)
-					if err == nil && info.ModTime().After(cutoff) {
-						unscanned = append(unscanned, f)
-					}
+			// Walk the entire research directory tree for .md files.
+			var files []string
+			_ = filepath.WalkDir(researchDir, func(path string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil //nolint:nilerr // skip unreadable or directory, continue walk
 				}
+				if strings.HasSuffix(path, ".md") {
+					files = append(files, path)
+				}
+				return nil
+			})
+
+			// Filter to files newer than last scan.
+			for _, f := range filterNewerThan(files, entry.LastResearchScanned) {
+				rel, _ := filepath.Rel(researchDir, f)
+				unscanned = append(unscanned, researchFile{path: f, rel: rel})
 			}
-		} else {
-			unscanned = files
 		}
 
 		if len(unscanned) == 0 {
@@ -604,13 +682,13 @@ func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 
 		collected := 0
 		for _, f := range unscanned {
-			data, err := os.ReadFile(f)
+			data, err := os.ReadFile(f.path)
 			if err != nil {
 				continue
 			}
 
 			// Build a flat dest filename from the relative path within research/.
-			rel, _ := filepath.Rel(researchDir, f)
+			rel := f.rel
 			flatName := strings.ReplaceAll(rel, string(filepath.Separator), "-")
 			content := string(data)
 
@@ -632,7 +710,7 @@ func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 				title = strings.Join(words, " ")
 
 				fm := fmt.Sprintf("---\ntitle: \"%s\"\nsource_path: \"%s\"\ningested_at: \"%s\"\nformat: markdown\ndomain: %s\nproject: %s\n---\n\n",
-					title, f, time.Now().UTC().Format(time.RFC3339), domain, pname)
+					title, f.path, time.Now().UTC().Format(time.RFC3339), domain, pname)
 				content = fm + content
 			}
 

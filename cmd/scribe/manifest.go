@@ -33,6 +33,13 @@ type ProjectEntry struct {
 	// reads as "claude" for back-compat — every entry written before
 	// this field existed came in via the Claude scanner.
 	DiscoveredFrom string `json:"discovered_from,omitempty"`
+	// Worktrees lists linked git-worktree checkouts of this project that
+	// discovery folded into this entry instead of enrolling separately.
+	// Extraction runs on Path only (worktrees share the repo's history),
+	// but drop-file and research collection scan these too — a worktree
+	// can carry branch-specific drops/.claude/research that the main
+	// checkout doesn't have. Machine-local paths, like Path.
+	Worktrees []string `json:"worktrees,omitempty"`
 	// Status gates whether the project participates in the pipeline.
 	// "pending" means discovered but not yet approved by the user —
 	// extraction, drop/research collection, and session mining all skip
