@@ -39,6 +39,18 @@ func worktreeMainRoot(path string) string {
 	return main
 }
 
+// samePath reports whether two paths refer to the same directory,
+// tolerating symlink asymmetry: git emits physical paths while session
+// decodes are logical (macOS /var vs /private/var).
+func samePath(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, err1 := filepath.EvalSymlinks(a)
+	rb, err2 := filepath.EvalSymlinks(b)
+	return err1 == nil && err2 == nil && ra == rb
+}
+
 // recordWorktree folds a discovered worktree path into the main
 // project's manifest entry. Returns true when the entry changed (caller
 // saves). Idempotent; never records the main path itself.

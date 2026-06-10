@@ -206,6 +206,72 @@ func TestFoldWorktreeDiscoversMain(t *testing.T) {
 	}
 }
 
+// TestFoldWorktreeBasenameCollision: two repos with the same basename
+// map to the same projectName. The fold must not record this repo's
+// worktree on the OTHER repo's entry (drops would be collected under
+// the wrong project), nor overwrite that entry via the create branch.
+func TestFoldWorktreeBasenameCollision(t *testing.T) {
+	main, wt := initRepoWithWorktree(t)
+	kbRoot := t.TempDir()
+
+	other := filepath.Join(t.TempDir(), "elsewhere", projectName(main))
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manifest{
+		Projects: map[string]*ProjectEntry{
+			projectName(main): {Path: other, Domain: "general"},
+		},
+		path: filepath.Join(kbRoot, "scripts", "projects.json"),
+	}
+	s := &SyncCmd{}
+
+	derived := worktreeMainRoot(wt)
+	if n, changed := s.foldWorktree(kbRoot, m, &ScribeConfig{}, wt, derived, "claude"); n != 0 || changed {
+		t.Errorf("collision fold = (%d, %v), want (0, false)", n, changed)
+	}
+	entry := m.Projects[projectName(main)]
+	if entry.Path != other {
+		t.Errorf("foreign entry overwritten: path = %q, want %q", entry.Path, other)
+	}
+	if len(entry.Worktrees) != 0 {
+		t.Errorf("foreign entry gained worktrees: %v", entry.Worktrees)
+	}
+}
+
+// TestFoldWorktreeFromSubdir: session cwds are often subdirectories of
+// the worktree. The fold must record the worktree ROOT (where drops and
+// research live), not the cwd.
+func TestFoldWorktreeFromSubdir(t *testing.T) {
+	main, wt := initRepoWithWorktree(t)
+	kbRoot := t.TempDir()
+
+	subdir := filepath.Join(wt, "docs", "deep")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pname := projectName(main)
+	m := &Manifest{
+		Projects: map[string]*ProjectEntry{
+			pname: {Path: main, Domain: "general"},
+		},
+		path: filepath.Join(kbRoot, "scripts", "projects.json"),
+	}
+	s := &SyncCmd{}
+
+	derived := worktreeMainRoot(subdir)
+	if derived == "" {
+		t.Fatal("worktreeMainRoot did not resolve from a subdir")
+	}
+	if n, changed := s.foldWorktree(kbRoot, m, &ScribeConfig{}, subdir, derived, "claude"); n != 0 || !changed {
+		t.Fatalf("fold from subdir = (%d, %v), want (0, true)", n, changed)
+	}
+	got := m.Projects[pname].Worktrees
+	if len(got) != 1 || got[0] != wt {
+		t.Errorf("worktrees = %v, want the worktree root [%s]", got, wt)
+	}
+}
+
 func TestFoldWorktreeSkipsLegacyWorktreeEntry(t *testing.T) {
 	main, wt := initRepoWithWorktree(t)
 	kbRoot := t.TempDir()
