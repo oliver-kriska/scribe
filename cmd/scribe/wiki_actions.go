@@ -347,135 +347,20 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 		opts.RemapUnknownTopToWiki = true
 	}
 	for i, a := range env.Actions {
-		abs, err := validateActionPath(root, a.Path)
-		if err != nil && opts.RemapUnknownTopToWiki && errors.Is(err, errUnknownTopDir) {
-			// Model invented a top dir (e.g. "middleware/"). Re-home the
-			// page under wiki/ rather than losing the entity. The remap
-			// is re-validated through the same gate, so absolute/
-			// traversal/underscore paths (which failed above with a
-			// different error and never reach here) cannot slip in.
-			remapped := filepath.Join("wiki", a.Path)
-			if rabs, rerr := validateActionPath(root, remapped); rerr == nil {
-				logMsg("envelope", "action[%d] %s: remapped out-of-bounds path %q -> %q", i, a.Op, a.Path, remapped)
-				abs, err, a.Path = rabs, nil, remapped
-			}
-		}
+		abs, err := resolveActionPath(root, i, &a, opts)
 		if err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] %s %q: %v", i, a.Op, a.Path, err))
 			continue
 		}
 		switch a.Op {
 		case "create":
-			if !opts.AllowOverwrite {
-				if _, err := os.Stat(abs); err == nil {
-					res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: file exists and AllowOverwrite=false", i, a.Path))
-					continue
-				}
-			}
-			if opts.DryRun {
-				res.Skipped = append(res.Skipped, a.Path)
-				continue
-			}
-			if err := writeFileAtomic(abs, []byte(a.Content), 0o644); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: %v", i, a.Path, err))
-				continue
-			}
-			res.Applied = append(res.Applied, a.Path)
-
+			applyCreateAction(&res, i, abs, a, opts)
 		case "append":
-			// Decay-marker guards run BEFORE the dry-run gate so a
-			// `dream --dry-run` surfaces the refusal too (both are
-			// read-only). dream re-proposes a decay append blind to the
-			// target's age and to any prior marker, so two failure modes
-			// are gated here:
-			//   1. Idempotency (B3): the file already carries a marker — a
-			//      second pass would double-stamp. Skip.
-			//   2. Staleness: the marker asserts the doc is >decayStaleDays
-			//      old, but its `updated:` is within that window, so the
-			//      marker is self-contradictory. A model that ignored the
-			//      (often empty) STALE list mass-mismarked 114 fresh docs
-			//      on 2026-06-03. Refuse so the executor, not the prompt,
-			//      is the guarantee.
-			if strings.Contains(a.Content, decayCandidateMarker) {
-				if existing, rerr := os.ReadFile(abs); rerr == nil && strings.Contains(string(existing), decayCandidateMarker) {
-					logMsg("envelope", "action[%d] append: %s already has a decay marker, skipping", i, a.Path)
-					res.Skipped = append(res.Skipped, a.Path)
-					continue
-				}
-				if targetIsFreshForDecay(abs) {
-					logMsg("envelope", "action[%d] append: %s updated within %dd — refusing decay marker on a fresh doc", i, a.Path, decayStaleDays)
-					res.Skipped = append(res.Skipped, a.Path)
-					continue
-				}
-			}
-			if opts.DryRun {
-				res.Skipped = append(res.Skipped, a.Path)
-				continue
-			}
-			if err := appendToFile(abs, a.Content); err != nil {
-				// Model picked the wrong op for a new file. The intent
-				// ("this content belongs at this path") is still
-				// satisfiable — promote to create rather than losing
-				// the generation. Layer-1 path validation already ran,
-				// so this can never resurrect a _-prefixed write.
-				if errors.Is(err, fs.ErrNotExist) {
-					if werr := writeFileAtomic(abs, []byte(a.Content), 0o644); werr != nil {
-						res.Errors = append(res.Errors, fmt.Sprintf("action[%d] append→create %q: %v", i, a.Path, werr))
-						continue
-					}
-					logMsg("envelope", "action[%d] append target missing, promoted to create: %s", i, a.Path)
-					res.Applied = append(res.Applied, a.Path)
-					continue
-				}
-				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] append %q: %v", i, a.Path, err))
-				continue
-			}
-			res.Applied = append(res.Applied, a.Path)
-
+			applyAppendAction(&res, i, abs, a, opts)
 		case "replace_section":
-			if a.Heading == "" {
-				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] replace_section %q: heading required", i, a.Path))
-				continue
-			}
-			if opts.DryRun {
-				res.Skipped = append(res.Skipped, a.Path)
-				continue
-			}
-			if err := replaceSection(abs, a.Heading, a.Content); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] replace_section %q: %v", i, a.Path, err))
-				continue
-			}
-			res.Applied = append(res.Applied, a.Path)
-
+			applyReplaceSectionAction(&res, i, abs, a, opts)
 		case "update_frontmatter":
-			if len(a.Frontmatter) == 0 {
-				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] update_frontmatter %q: empty frontmatter map", i, a.Path))
-				continue
-			}
-			updates := a.Frontmatter
-			if opts.ProtectProvenance {
-				kept, dropped := filterProvenanceKeys(updates)
-				if len(dropped) > 0 {
-					logMsg("envelope", "action[%d] update_frontmatter %s: dropped non-allowlisted key(s) %v", i, a.Path, dropped)
-				}
-				if len(kept) == 0 {
-					// Nothing left to write — the model only tried to touch
-					// provenance/identity fields. Treat as a no-op, not an error.
-					res.Skipped = append(res.Skipped, a.Path)
-					continue
-				}
-				updates = kept
-			}
-			if opts.DryRun {
-				res.Skipped = append(res.Skipped, a.Path)
-				continue
-			}
-			if err := updateFrontmatter(abs, updates); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] update_frontmatter %q: %v", i, a.Path, err))
-				continue
-			}
-			res.Applied = append(res.Applied, a.Path)
-
+			applyUpdateFrontmatterAction(&res, i, abs, a, opts)
 		default:
 			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] unknown op %q (path=%q)", i, a.Op, a.Path))
 		}
@@ -488,6 +373,149 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 		res.Applied = append(res.Applied, metaActionLabel(m))
 	}
 	return res, nil
+}
+
+// resolveActionPath validates the action's path, optionally re-homing a
+// hallucinated top dir under wiki/. Mutates a.Path on remap so the
+// caller's logging reflects where the write actually landed.
+func resolveActionPath(root string, i int, a *WikiAction, opts ApplyOptions) (string, error) {
+	abs, err := validateActionPath(root, a.Path)
+	if err != nil && opts.RemapUnknownTopToWiki && errors.Is(err, errUnknownTopDir) {
+		// Model invented a top dir (e.g. "middleware/"). Re-home the
+		// page under wiki/ rather than losing the entity. The remap
+		// is re-validated through the same gate, so absolute/
+		// traversal/underscore paths (which failed above with a
+		// different error and never reach here) cannot slip in.
+		remapped := filepath.Join("wiki", a.Path)
+		if rabs, rerr := validateActionPath(root, remapped); rerr == nil {
+			logMsg("envelope", "action[%d] %s: remapped out-of-bounds path %q -> %q", i, a.Op, a.Path, remapped)
+			abs, err, a.Path = rabs, nil, remapped
+		}
+	}
+	return abs, err
+}
+
+// applyCreateAction writes a new page; an existing file is an error
+// unless the consumer opted into AllowOverwrite (only pass-2 absorb —
+// see entityWriterApplyOptions).
+func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts ApplyOptions) {
+	if !opts.AllowOverwrite {
+		if _, err := os.Stat(abs); err == nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: file exists and AllowOverwrite=false", i, a.Path))
+			return
+		}
+	}
+	if opts.DryRun {
+		res.Skipped = append(res.Skipped, a.Path)
+		return
+	}
+	if err := writeFileAtomic(abs, []byte(a.Content), 0o644); err != nil {
+		res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: %v", i, a.Path, err))
+		return
+	}
+	res.Applied = append(res.Applied, a.Path)
+}
+
+// applyAppendAction appends to an existing page, promoting to create
+// when the target is missing.
+func applyAppendAction(res *ApplyResult, i int, abs string, a WikiAction, opts ApplyOptions) {
+	// Decay-marker guards run BEFORE the dry-run gate so a
+	// `dream --dry-run` surfaces the refusal too (both are
+	// read-only). dream re-proposes a decay append blind to the
+	// target's age and to any prior marker, so two failure modes
+	// are gated here:
+	//   1. Idempotency (B3): the file already carries a marker — a
+	//      second pass would double-stamp. Skip.
+	//   2. Staleness: the marker asserts the doc is >decayStaleDays
+	//      old, but its `updated:` is within that window, so the
+	//      marker is self-contradictory. A model that ignored the
+	//      (often empty) STALE list mass-mismarked 114 fresh docs
+	//      on 2026-06-03. Refuse so the executor, not the prompt,
+	//      is the guarantee.
+	if strings.Contains(a.Content, decayCandidateMarker) {
+		if existing, rerr := os.ReadFile(abs); rerr == nil && strings.Contains(string(existing), decayCandidateMarker) {
+			logMsg("envelope", "action[%d] append: %s already has a decay marker, skipping", i, a.Path)
+			res.Skipped = append(res.Skipped, a.Path)
+			return
+		}
+		if targetIsFreshForDecay(abs) {
+			logMsg("envelope", "action[%d] append: %s updated within %dd — refusing decay marker on a fresh doc", i, a.Path, decayStaleDays)
+			res.Skipped = append(res.Skipped, a.Path)
+			return
+		}
+	}
+	if opts.DryRun {
+		res.Skipped = append(res.Skipped, a.Path)
+		return
+	}
+	if err := appendToFile(abs, a.Content); err != nil {
+		// Model picked the wrong op for a new file. The intent
+		// ("this content belongs at this path") is still
+		// satisfiable — promote to create rather than losing
+		// the generation. Layer-1 path validation already ran,
+		// so this can never resurrect a _-prefixed write.
+		if errors.Is(err, fs.ErrNotExist) {
+			if werr := writeFileAtomic(abs, []byte(a.Content), 0o644); werr != nil {
+				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] append→create %q: %v", i, a.Path, werr))
+				return
+			}
+			logMsg("envelope", "action[%d] append target missing, promoted to create: %s", i, a.Path)
+			res.Applied = append(res.Applied, a.Path)
+			return
+		}
+		res.Errors = append(res.Errors, fmt.Sprintf("action[%d] append %q: %v", i, a.Path, err))
+		return
+	}
+	res.Applied = append(res.Applied, a.Path)
+}
+
+// applyReplaceSectionAction swaps one heading's section body.
+func applyReplaceSectionAction(res *ApplyResult, i int, abs string, a WikiAction, opts ApplyOptions) {
+	if a.Heading == "" {
+		res.Errors = append(res.Errors, fmt.Sprintf("action[%d] replace_section %q: heading required", i, a.Path))
+		return
+	}
+	if opts.DryRun {
+		res.Skipped = append(res.Skipped, a.Path)
+		return
+	}
+	if err := replaceSection(abs, a.Heading, a.Content); err != nil {
+		res.Errors = append(res.Errors, fmt.Sprintf("action[%d] replace_section %q: %v", i, a.Path, err))
+		return
+	}
+	res.Applied = append(res.Applied, a.Path)
+}
+
+// applyUpdateFrontmatterAction merges frontmatter keys, dropping
+// provenance/identity fields for ProtectProvenance consumers.
+func applyUpdateFrontmatterAction(res *ApplyResult, i int, abs string, a WikiAction, opts ApplyOptions) {
+	if len(a.Frontmatter) == 0 {
+		res.Errors = append(res.Errors, fmt.Sprintf("action[%d] update_frontmatter %q: empty frontmatter map", i, a.Path))
+		return
+	}
+	updates := a.Frontmatter
+	if opts.ProtectProvenance {
+		kept, dropped := filterProvenanceKeys(updates)
+		if len(dropped) > 0 {
+			logMsg("envelope", "action[%d] update_frontmatter %s: dropped non-allowlisted key(s) %v", i, a.Path, dropped)
+		}
+		if len(kept) == 0 {
+			// Nothing left to write — the model only tried to touch
+			// provenance/identity fields. Treat as a no-op, not an error.
+			res.Skipped = append(res.Skipped, a.Path)
+			return
+		}
+		updates = kept
+	}
+	if opts.DryRun {
+		res.Skipped = append(res.Skipped, a.Path)
+		return
+	}
+	if err := updateFrontmatter(abs, updates); err != nil {
+		res.Errors = append(res.Errors, fmt.Sprintf("action[%d] update_frontmatter %q: %v", i, a.Path, err))
+		return
+	}
+	res.Applied = append(res.Applied, a.Path)
 }
 
 // allowedDomainsForRoot resolves the domain set the executor accepts
