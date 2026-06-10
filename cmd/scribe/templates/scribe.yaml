@@ -53,6 +53,13 @@ sync:
   max_absorb: 5
   parallel_extractions: 3
   checkpoint_interval: 5
+  # auto_approve: newly discovered projects normally land as "pending"
+  # and wait for `scribe projects review` before anything is extracted,
+  # collected, or mined from them (the mise/direnv trust model — new
+  # sources need a nod first). Set true to enroll every discovered
+  # project immediately, like scribe did before 0.2.30.
+  # auto_approve: false
+
   # commit_debounce_minutes: suppresses auto-commit+push when the last KB
   # commit was less than this many minutes ago. Useful on busy cron
   # cadences (5min ingests → many tiny commits). Staged changes roll over

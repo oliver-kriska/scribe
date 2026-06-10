@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -32,6 +33,53 @@ type ProjectEntry struct {
 	// reads as "claude" for back-compat — every entry written before
 	// this field existed came in via the Claude scanner.
 	DiscoveredFrom string `json:"discovered_from,omitempty"`
+	// Status gates whether the project participates in the pipeline.
+	// "pending" means discovered but not yet approved by the user —
+	// extraction, drop/research collection, and session mining all skip
+	// it until `scribe projects approve` (or review) flips it. Empty or
+	// "approved" means active: every entry written before this field
+	// existed was auto-enrolled, so empty MUST read as approved.
+	Status string `json:"status,omitempty"`
+}
+
+// Project status values. statusApproved is written explicitly only by
+// the approve command — auto-approved discoveries leave Status empty so
+// pre-existing manifests round-trip byte-identical.
+const (
+	statusApproved = "approved"
+	statusPending  = "pending"
+)
+
+// IsApproved reports whether the project participates in extraction and
+// collection. Empty status is approved for back-compat (see Status doc).
+func (e *ProjectEntry) IsApproved() bool {
+	return e != nil && (e.Status == "" || e.Status == statusApproved)
+}
+
+// pendingProjects returns the sorted names of projects awaiting approval.
+func (m *Manifest) pendingProjects() []string {
+	var names []string
+	for name, e := range m.Projects {
+		if e != nil && e.Status == statusPending {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ignoreProject removes a project from the manifest and blocks its path
+// from re-discovery via IgnoredPaths. Idempotent.
+func (m *Manifest) ignoreProject(name string) {
+	e, ok := m.Projects[name]
+	if !ok {
+		return
+	}
+	if e != nil && e.Path != "" && !slices.Contains(m.IgnoredPaths, e.Path) {
+		m.IgnoredPaths = append(m.IgnoredPaths, e.Path)
+		sort.Strings(m.IgnoredPaths)
+	}
+	delete(m.Projects, name)
 }
 
 // DiscoveredSource normalises the back-compat default. Pre-existing

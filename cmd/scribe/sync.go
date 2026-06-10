@@ -133,6 +133,9 @@ func (s *SyncCmd) Run() error {
 	}
 	counters.discovered = discovered
 	logMsg("sync", "discovered %d new projects", discovered)
+	if pending := manifest.pendingProjects(); len(pending) > 0 {
+		logMsg("sync", "%d project(s) pending approval — run `scribe projects review` (or set sync.auto_approve: true)", len(pending))
+	}
 
 	if s.DiscoverOnly {
 		logMsg("sync", "discover-only mode, stopping")
@@ -142,6 +145,9 @@ func (s *SyncCmd) Run() error {
 		}
 		sort.Strings(names)
 		for _, name := range names {
+			if !manifest.Projects[name].IsApproved() {
+				name += " (pending)"
+			}
 			fmt.Println(name)
 		}
 		return nil
@@ -363,7 +369,8 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 		}
 
 		domain := manifest.resolveDomain(decoded)
-		logMsg("sync", " DISCOVERED: %s -> %s (domain: %s)", pname, decoded, domain)
+		status := discoveryStatus(cfg)
+		logMsg("sync", " DISCOVERED%s: %s -> %s (domain: %s)", pendingTag(status), pname, decoded, domain)
 		discovered++
 
 		if s.DryRun {
@@ -374,13 +381,18 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 			Path:           decoded,
 			Domain:         domain,
 			DiscoveredFrom: "claude",
+			Status:         status,
 		}
 		if err := manifest.save(); err != nil {
 			logMsg("sync", "manifest save failed: %v", err)
 		}
 
-		// Create .repo.yaml in the project's wiki directory.
-		s.ensureRepoYAML(root, decoded, pname, domain)
+		// Create .repo.yaml in the project's wiki directory — approved
+		// projects only; a pending project gets its KB dir when the user
+		// approves it, not before.
+		if status != statusPending {
+			ensureRepoYAML(root, decoded, pname, domain)
+		}
 	}
 
 	codexCount, err := s.discoverCodex(root, manifest, cfg)
@@ -392,8 +404,26 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 	return discovered, nil
 }
 
+// discoveryStatus returns the manifest status for a newly discovered
+// project: pending by default, empty (= approved, byte-identical to
+// pre-approval manifests) when sync.auto_approve is set.
+func discoveryStatus(cfg *ScribeConfig) string {
+	if cfg != nil && cfg.Sync.AutoApprove {
+		return ""
+	}
+	return statusPending
+}
+
+// pendingTag renders the log suffix for a discovery line.
+func pendingTag(status string) string {
+	if status == statusPending {
+		return " (pending approval)"
+	}
+	return ""
+}
+
 // ensureRepoYAML creates a .repo.yaml in the KB project directory if it doesn't exist.
-func (s *SyncCmd) ensureRepoYAML(root, projectPath, pname, domain string) {
+func ensureRepoYAML(root, projectPath, pname, domain string) {
 	// Determine the wiki directory for this project.
 	wikiDir := filepath.Join(root, "projects", strings.ToLower(filepath.Base(projectPath)))
 	if domain != "general" {
@@ -443,6 +473,9 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 	kb := kbName(root)
 
 	for pname, entry := range manifest.Projects {
+		if !entry.IsApproved() {
+			continue
+		}
 		dropDir := filepath.Join(entry.Path, ".claude", kb)
 		if !dirExists(dropDir) {
 			continue
@@ -503,6 +536,9 @@ func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 	total := 0
 
 	for pname, entry := range manifest.Projects {
+		if !entry.IsApproved() {
+			continue
+		}
 		researchDir := filepath.Join(entry.Path, ".claude", "research")
 		if !dirExists(researchDir) {
 			continue
@@ -747,6 +783,16 @@ func (s *SyncCmd) projectsNeedingExtraction(manifest *Manifest) []string {
 	for pname, entry := range manifest.Projects {
 		// If --extract specified, only consider that project.
 		if s.Extract != "" && pname != s.Extract {
+			continue
+		}
+
+		// Pending projects wait for `scribe projects approve` — the
+		// summary hint already printed during discovery, so skip quietly
+		// unless the user named this project explicitly.
+		if !entry.IsApproved() {
+			if s.Extract == pname {
+				logMsg("sync", " [%s] pending approval — run `scribe projects approve %s` first", pname, pname)
+			}
 			continue
 		}
 
@@ -1022,7 +1068,15 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 	}
 	defer db.Close()
 
+	// Approval gate: sessions spent in a pending (not yet approved)
+	// project are dropped silently — not marked processed — so triage can
+	// re-surface them once the user approves the project. Manifest load
+	// failure fails open (no approval filtering), matching the DB-open
+	// behavior above.
+	manifest, _ := loadManifest(root)
+
 	kbSkipped := 0
+	pendingSkipped := 0
 	for _, sid := range sessionIDs {
 		stats := querySessionStats(db, sid)
 		if !stats.Found {
@@ -1037,6 +1091,12 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 			kbSkipped++
 			continue
 		}
+		if manifest != nil && stats.ProjectPath != "" {
+			if entry, ok := manifest.Projects[projectName(stats.ProjectPath)]; ok && !entry.IsApproved() {
+				pendingSkipped++
+				continue
+			}
+		}
 		if stats.filterVerdict() != "" {
 			skipped = append(skipped, sid)
 			continue
@@ -1045,6 +1105,9 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 	}
 	if kbSkipped > 0 {
 		logMsg("sync", "pre-filter: dropped %d session(s) run inside the KB (never mine the KB into itself)", kbSkipped)
+	}
+	if pendingSkipped > 0 {
+		logMsg("sync", "pre-filter: deferred %d session(s) from pending project(s) — approve via `scribe projects review`", pendingSkipped)
 	}
 	return kept, skipped
 }
