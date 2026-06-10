@@ -64,6 +64,41 @@ func TestGitDigestActivity(t *testing.T) {
 	}
 }
 
+func TestDigestWindowAnchoredToContentCommits(t *testing.T) {
+	root := initTestGitRepo(t, "Alice")
+	writeKBFile(t, root, "wiki/first.md", "---\ntitle: First\ndomain: backend\n---\n\nbody\n")
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "content")
+
+	before := buildDigest(root, &ScribeConfig{}, 7)
+
+	// Underscore machinery commits (the digest regenerating itself,
+	// index rebuilds) must not move the window — otherwise every sync's
+	// digest commit changes the next digest and the file churns forever.
+	writeKBFile(t, root, "wiki/_digest.md", before)
+	writeKBFile(t, root, "wiki/_index.md", "- [[First]]\n")
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "machinery")
+
+	if after := buildDigest(root, &ScribeConfig{}, 7); after != before {
+		t.Errorf("digest changed after machinery-only commit:\nbefore: %q\nafter:  %q", before, after)
+	}
+
+	if _, ok := digestWindowAnchor(root); !ok {
+		t.Fatal("no anchor despite content commit")
+	}
+}
+
+func TestDigestWindowAnchorEmptyRepo(t *testing.T) {
+	root := initTestGitRepo(t, "Alice")
+	if _, ok := digestWindowAnchor(root); ok {
+		t.Error("anchor reported on repo with no content commits")
+	}
+	if activity := gitDigestActivity(root, 7); activity != nil {
+		t.Errorf("activity on empty repo: %+v", activity)
+	}
+}
+
 func TestBuildDigestContent(t *testing.T) {
 	root := initTestGitRepo(t, "Alice")
 	writeKBFile(t, root, "wiki/good.md", "---\ntitle: Good\ndomain: backend\n---\n\nbody\n")
