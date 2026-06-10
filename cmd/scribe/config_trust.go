@@ -48,8 +48,13 @@ const localConfigName = "scribe.local.yaml"
 //   - ClaudeProjectsDir / CodexSessionsDir / CcriderDB: discovery and
 //     session-mining inputs — repointing them changes what gets read.
 //   - Capture: iMessage ingestion (handles + filters) — personal data.
-//   - OllamaURL: prompts (with file contents) are POSTed here; a pushed
-//     remote URL would exfiltrate everything the pipeline reads.
+//   - OllamaURL (global + every per-op override): prompts (with file
+//     contents) are POSTed here; a pushed remote URL would exfiltrate
+//     everything the pipeline reads. The per-op keys win over the
+//     global one in the resolver chain, so locking only llm.ollama_url
+//     would leave seven bypass routes. Per-op `provider` flips stay
+//     unlocked: with every URL locked they can only redirect to an
+//     already-trusted endpoint, and providers are a routine local tune.
 //   - CodexMine: enables an additional transcript source.
 //   - SecretScan: the credential gate — a pushed disable/allow_paths
 //     change must not weaken what another member's machine commits.
@@ -63,6 +68,14 @@ type sensitiveConfig struct {
 	OllamaURL         string           `json:"ollama_url"`
 	CodexMine         bool             `json:"codex_mine"`
 	SecretScan        SecretScanConfig `json:"secret_scan"`
+
+	ExtractOllamaURL       string `json:"extract_ollama_url"`
+	DreamOllamaURL         string `json:"dream_ollama_url"`
+	SessionMineOllamaURL   string `json:"session_mine_ollama_url"`
+	AssessOllamaURL        string `json:"assess_ollama_url"`
+	DeepIngestOllamaURL    string `json:"deep_ingest_ollama_url"`
+	RelationsOllamaURL     string `json:"relations_ollama_url"`
+	ContextualizeOllamaURL string `json:"contextualize_ollama_url"`
 }
 
 func sensitiveFrom(cfg *ScribeConfig) sensitiveConfig {
@@ -76,6 +89,14 @@ func sensitiveFrom(cfg *ScribeConfig) sensitiveConfig {
 		OllamaURL:         cfg.LLM.OllamaURL,
 		CodexMine:         cfg.Codex.Mine,
 		SecretScan:        cfg.SecretScan,
+
+		ExtractOllamaURL:       cfg.Extract.OllamaURL,
+		DreamOllamaURL:         cfg.Dream.OllamaURL,
+		SessionMineOllamaURL:   cfg.SessionMine.OllamaURL,
+		AssessOllamaURL:        cfg.Assess.OllamaURL,
+		DeepIngestOllamaURL:    cfg.DeepIngest.OllamaURL,
+		RelationsOllamaURL:     cfg.Relations.OllamaURL,
+		ContextualizeOllamaURL: cfg.Absorb.Contextualize.OllamaURL,
 	}
 }
 
@@ -101,6 +122,14 @@ func (s sensitiveConfig) applyTo(cfg *ScribeConfig) {
 	cfg.LLM.OllamaURL = s.OllamaURL
 	cfg.Codex.Mine = s.CodexMine
 	cfg.SecretScan = s.SecretScan
+
+	cfg.Extract.OllamaURL = s.ExtractOllamaURL
+	cfg.Dream.OllamaURL = s.DreamOllamaURL
+	cfg.SessionMine.OllamaURL = s.SessionMineOllamaURL
+	cfg.Assess.OllamaURL = s.AssessOllamaURL
+	cfg.DeepIngest.OllamaURL = s.DeepIngestOllamaURL
+	cfg.Relations.OllamaURL = s.RelationsOllamaURL
+	cfg.Absorb.Contextualize.OllamaURL = s.ContextualizeOllamaURL
 }
 
 // trustRecord is one approved sensitive snapshot for one KB root.
@@ -175,8 +204,21 @@ func enforceConfigTrust(root string, cfg *ScribeConfig) {
 	}
 
 	if rec != nil && rec.Sensitive.Team {
-		if sensitiveFrom(cfg).hash() != rec.Sensitive.hash() {
+		// Compare the RAW repo view against the record — the record was
+		// written from a raw parse (repoSensitiveView), while cfg here
+		// already carries $HOME-prefilled discovery paths. Hashing cfg
+		// would flag every scribe.yaml that legitimately omits a
+		// prefilled key as drifted, forever, with `scribe config diff`
+		// simultaneously showing nothing. An unreadable/unparseable file
+		// counts as drift: run on the trusted values.
+		repoView, ok := repoSensitiveView(root)
+		if !ok || repoView.hash() != rec.Sensitive.hash() {
 			rec.Sensitive.applyTo(cfg)
+			// The trusted snapshot stores raw values, so keys the
+			// approved scribe.yaml never set come back as empty strings —
+			// refill the built-in discovery defaults the revert wiped.
+			// (LLM URL defaults are applied later in loadConfig.)
+			fillDiscoveryDefaults(cfg)
 			logAutoFlipOnce("trust-drift:"+root, "trust",
 				"scribe.yaml sensitive settings changed since last approval — running on trusted values; review with `scribe config diff`, accept with `scribe config trust`")
 		}
@@ -259,6 +301,13 @@ func sensitiveDiff(trusted, current sensitiveConfig) []string {
 		{"llm.ollama_url", trusted.OllamaURL, current.OllamaURL},
 		{"codex.mine", trusted.CodexMine, current.CodexMine},
 		{"secret_scan", trusted.SecretScan, current.SecretScan},
+		{"extract.ollama_url", trusted.ExtractOllamaURL, current.ExtractOllamaURL},
+		{"dream.ollama_url", trusted.DreamOllamaURL, current.DreamOllamaURL},
+		{"session_mine.ollama_url", trusted.SessionMineOllamaURL, current.SessionMineOllamaURL},
+		{"assess.ollama_url", trusted.AssessOllamaURL, current.AssessOllamaURL},
+		{"deep_ingest.ollama_url", trusted.DeepIngestOllamaURL, current.DeepIngestOllamaURL},
+		{"relations.ollama_url", trusted.RelationsOllamaURL, current.RelationsOllamaURL},
+		{"absorb.contextualize.ollama_url", trusted.ContextualizeOllamaURL, current.ContextualizeOllamaURL},
 	}
 	var out []string
 	for _, p := range pairs {

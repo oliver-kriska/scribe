@@ -530,6 +530,22 @@ func pullBeforeSyncEnabled(cfg *ScribeConfig) bool {
 // that spans projects or has no project binding at all.
 var universalDomains = []string{"personal", "general"}
 
+// fillDiscoveryDefaults sets the built-in $HOME-based discovery paths on
+// any field still empty. loadConfig prefills these before unmarshal; the
+// trust layer's drift revert calls it again because the trusted snapshot
+// stores raw (possibly empty) values that wipe the prefill.
+func fillDiscoveryDefaults(cfg *ScribeConfig) {
+	if cfg.ClaudeProjectsDir == "" {
+		cfg.ClaudeProjectsDir = filepath.Join(os.Getenv("HOME"), ".claude", "projects")
+	}
+	if cfg.CodexSessionsDir == "" {
+		cfg.CodexSessionsDir = filepath.Join(os.Getenv("HOME"), ".codex", "sessions")
+	}
+	if cfg.CcriderDB == "" {
+		cfg.CcriderDB = filepath.Join(os.Getenv("HOME"), ".config", "ccrider", "sessions.db")
+	}
+}
+
 // loadConfig reads scribe.yaml from the KB root. Returns defaults if not found.
 func loadConfig(root string) *ScribeConfig {
 	cfg := &ScribeConfig{

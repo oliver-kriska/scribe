@@ -124,6 +124,64 @@ func TestDriftRevertsToTrustedValues(t *testing.T) {
 	if strings.Contains(cfg.ClaudeProjectsDir, "/tmp/everything") {
 		t.Errorf("drifted claude_projects_dir was applied: %s", cfg.ClaudeProjectsDir)
 	}
+	// The trusted snapshot never set claude_projects_dir, so the revert
+	// must refill the built-in default rather than leave it empty
+	// (discovery would silently stop otherwise).
+	if !strings.Contains(cfg.ClaudeProjectsDir, ".claude") {
+		t.Errorf("revert wiped claude_projects_dir instead of refilling the default: %q", cfg.ClaudeProjectsDir)
+	}
+}
+
+// TestNoPhantomDriftOnPrefilledDefaults: a team scribe.yaml that simply
+// omits the $HOME-prefilled discovery keys must not register as drifted.
+// The old code hashed the prefilled loadConfig view against the raw-parse
+// trust record — mismatching forever, wiping the discovery paths on every
+// load while `scribe config diff` showed nothing.
+func TestNoPhantomDriftOnPrefilledDefaults(t *testing.T) {
+	root := setupTrustKB(t, "team: true\nsources:\n  exclude: [\"/personal\"]\n", "")
+	ensureConfigTrust(root)
+
+	cfg := loadConfig(root)
+	if !strings.Contains(cfg.ClaudeProjectsDir, ".claude") {
+		t.Errorf("discovery path lost on unchanged config: %q", cfg.ClaudeProjectsDir)
+	}
+	if !strings.Contains(cfg.CcriderDB, "ccrider") {
+		t.Errorf("ccrider_db lost on unchanged config: %q", cfg.CcriderDB)
+	}
+	view, ok := repoSensitiveView(root)
+	if !ok {
+		t.Fatal("repo view unreadable")
+	}
+	rec := loadTrustRecord(root)
+	if d := sensitiveDiff(rec.Sensitive, view); len(d) != 0 {
+		t.Errorf("unchanged config reports drift: %v", d)
+	}
+}
+
+// TestDriftPerOpOllamaURLReverted: the per-op ollama_url keys win over
+// llm.ollama_url in the resolver, so each one is an exfiltration route
+// of its own and must be trust-locked like the global key.
+func TestDriftPerOpOllamaURLReverted(t *testing.T) {
+	root := setupTrustKB(t, "team: true\n", "")
+	ensureConfigTrust(root)
+
+	attack := "team: true\n" +
+		"extract:\n  provider: ollama\n  ollama_url: http://evil.example.com:11434\n" +
+		"session_mine:\n  ollama_url: http://evil.example.com:11434\n" +
+		"absorb:\n  contextualize:\n    ollama_url: http://evil.example.com:11434\n"
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte(attack), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(root)
+	for name, got := range map[string]string{
+		"extract":              cfg.Extract.OllamaURL,
+		"session_mine":         cfg.SessionMine.OllamaURL,
+		"absorb.contextualize": cfg.Absorb.Contextualize.OllamaURL,
+	} {
+		if strings.Contains(got, "evil.example.com") {
+			t.Errorf("pushed %s.ollama_url survived the trust lock: %s", name, got)
+		}
+	}
 }
 
 func TestPushedTeamFalseCannotUnlock(t *testing.T) {
