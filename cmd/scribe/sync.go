@@ -116,10 +116,12 @@ func (s *SyncCmd) Run() error {
 	// has no remote, or when the user disables it via sync.always_pull_before_sync.
 	// Failures (offline, auth, rebase conflict) log and continue — we do
 	// not want a flaky network call to crash a local sync run.
+	pulledRemote := false
 	if !s.DryRun && pullBeforeSyncEnabled(cfg) {
 		if ok, pulled, pErr := pullRebase(root); pErr != nil {
 			logMsg("sync", "pull skipped: %s (continuing)", pErr)
 		} else if ok && pulled {
+			pulledRemote = true
 			logMsg("sync", "pulled new commits from remote")
 		}
 	}
@@ -238,8 +240,11 @@ func (s *SyncCmd) Run() error {
 	}
 	counters.absorbed = absorbed
 
-	// Phase 3: Reindex + commit.
-	if counters.extracted > 0 || counters.sessionsScanned > 0 || counters.absorbed > 0 {
+	// Phase 3: Reindex + commit. pulledRemote forces a reindex even when
+	// this run produced nothing locally — in a shared KB, a teammate's
+	// pulled commits would otherwise sit unindexed until the next local
+	// extraction happens to fire.
+	if counters.extracted > 0 || counters.sessionsScanned > 0 || counters.absorbed > 0 || pulledRemote {
 		if err := s.rebuildAndReindex(root); err != nil {
 			logMsg("sync", "reindex error: %v", err)
 		}

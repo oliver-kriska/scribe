@@ -124,6 +124,36 @@ func TestApproveProjectCreatesRepoYAML(t *testing.T) {
 	}
 }
 
+func TestLoadManifestFreshSharedClone(t *testing.T) {
+	// A shared-KB clone gitignores scripts/projects.json: the scribe.yaml
+	// marker alone must yield an empty manifest, and the first save must
+	// create scripts/ itself.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte("kb_name: team\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := loadManifest(root)
+	if err != nil {
+		t.Fatalf("loadManifest on fresh clone: %v", err)
+	}
+	if len(m.Projects) != 0 {
+		t.Errorf("expected empty manifest, got %d projects", len(m.Projects))
+	}
+	m.Projects["p"] = &ProjectEntry{Path: "/p", Status: statusPending}
+	if err := m.save(); err != nil {
+		t.Fatalf("save on fresh clone: %v", err)
+	}
+	if !fileExists(filepath.Join(root, "scripts", "projects.json")) {
+		t.Error("save did not create scripts/projects.json")
+	}
+
+	// Without the scribe.yaml marker a missing manifest is still an error
+	// (bad -C / SCRIBE_KB must fail loudly).
+	if _, err := loadManifest(t.TempDir()); err == nil {
+		t.Error("loadManifest on non-KB dir should error")
+	}
+}
+
 func TestManifestStatusRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {

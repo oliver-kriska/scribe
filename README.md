@@ -495,7 +495,11 @@ This is for the Claude Desktop **app** only — Claude Code and Codex CLI alread
 
 ```sh
 scribe init         # bootstrap a KB or check an existing one
+scribe init --allow ~/work --disallow ~/personal   # scaffold with discovery filters baked in
 scribe sync         # discover → extract → absorb → reindex
+scribe projects     # list discovered projects with status
+scribe projects review       # interactively approve/ignore pending projects
+scribe projects approve --all # approve everything pending
 scribe sync --sessions       # mine Claude Code (ccrider) + Codex CLI sessions (when codex.mine is on)
 scribe sync --estimate       # token estimate for pending work (no LLM calls)
 scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml
@@ -526,6 +530,79 @@ scribe cron {install,status,uninstall}
 ```
 
 Run `scribe <cmd> --help` for the full flag set of each. A handful of internal plumbing commands (`backlinks`, `index`, `orphans`, `validate`, `hook`, `hot`, `write`, `debug`, `sessions`, `commit`, `scan`, `deep`) are also available — they're invoked by `scribe sync` and `scribe dream` under the hood, but can be run standalone for debugging.
+
+---
+
+## Shared team KBs
+
+scribe is single-user by design, but a small team (10–20 devs working on the same
+group of repos) can pool knowledge through a plain shared git repo — no server, no
+accounts, no new security surface. Each member runs their own scribe against their
+own sessions and repos; git is the merge layer.
+
+### The recipe
+
+1. **One member bootstraps the team KB** and pushes it to a private remote:
+
+   ```sh
+   scribe init -p ~/team-kb --kb-name teamkb --allow ~/work
+   cd ~/team-kb
+   echo "scripts/projects.json" >> .gitignore   # manifest is per-machine — see below
+   git remote add origin git@github.com:yourorg/team-kb.git
+   git push -u origin main
+   ```
+
+   The `--allow` filter is committed in `scribe.yaml` and applies to every member
+   (`~` expands per-machine), so personal projects never leak into the team repo.
+
+2. **Everyone else clones and points scribe at it** (per session or per cron job):
+
+   ```sh
+   git clone git@github.com:yourorg/team-kb.git ~/team-kb
+   SCRIBE_KB=~/team-kb scribe sync
+   ```
+
+   The first sync rebuilds a fresh machine-local manifest, discovers that member's
+   projects (as `pending` — they approve with `scribe projects review`), and starts
+   extracting.
+
+3. **That's the whole setup.** The pieces below make multi-writer work:
+
+   - `scripts/projects.json` is **gitignored** because it holds machine-local
+     absolute paths, git SHAs, and approval decisions. Sharing it breaks when two
+     members clone the same repo at different paths; per-machine manifests make
+     approval and extraction state private while articles stay shared.
+   - **`contributor:` frontmatter** is stamped automatically on every new article
+     from each member's git identity (`git config user.name`, overridable via
+     `contributor:` in `~/.config/scribe/config.yaml`) — provenance without git
+     archaeology.
+   - **Pull-before-sync** (`sync.always_pull_before_sync`, default on) rebases on
+     teammates' commits before every run, and a pull that brings new articles
+     triggers a qmd reindex even when the local run extracted nothing.
+   - **Push conflicts** retry once through `git pull --rebase`; scribe never
+     force-pushes. KB history is append-only.
+
+### Quality control
+
+forest's worry — "easier to get dirty or bad patterns" — is handled by machinery
+that already runs per-KB: the `confidence:` rubric is scored at extraction time,
+`authority:` ranks canonical decisions over opinions when articles disagree, and
+the weekly `scribe dream` cycle detects and resolves contradictions across the
+whole KB. The `contributor:` field gives dream a provenance signal when weighing
+competing claims.
+
+### Caveats (honest ones)
+
+- **Run `scribe dream` on one machine only** (rotate if you like). Concurrent
+  dream cycles on the same KB produce duplicate consolidation churn.
+- **`scribe cron install` manages one KB per machine** — the LaunchAgent labels
+  are fixed. Run your personal KB on cron and sync the team KB with a manual
+  cron line (`SCRIBE_KB=~/team-kb scribe sync`), or vice versa.
+- **Concurrent edits to the same article can conflict** like any git repo. The
+  append-heavy article layout keeps this rare; resolve by hand and re-run sync.
+- **Session transcripts never leave the machine.** Only the distilled wiki
+  articles are committed — but review what extraction writes before you wire a
+  team remote, and keep anything sensitive behind `sources.exclude`.
 
 ---
 

@@ -1809,21 +1809,33 @@ func kbDir() (string, error) {
 	}
 	// 3. User-level config (~/.config/scribe/config.yaml)
 	if uc := loadUserConfig(); uc.KBDir != "" {
-		if _, err := os.Stat(filepath.Join(uc.KBDir, "scripts", "projects.json")); err == nil {
+		if isKBRoot(uc.KBDir) {
 			return uc.KBDir, nil
 		}
 	}
-	// 4. Walk up from cwd looking for scripts/projects.json (written by `scribe init`)
+	// 4. Walk up from cwd looking for a KB marker (written by `scribe init`)
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	for dir := cwd; dir != "/"; dir = filepath.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(dir, "scripts", "projects.json")); err == nil {
+		if isKBRoot(dir) {
 			return dir, nil
 		}
 	}
 	return "", fmt.Errorf("cannot find scribe KB root; run `scribe init` inside your KB checkout, use -C <path>, or set SCRIBE_KB")
+}
+
+// isKBRoot reports whether dir is a scribe KB root. Two markers:
+// scripts/projects.json (the original marker; per-machine state) or
+// scribe.yaml (always committed, via isScribeKB). A fresh clone of a
+// shared team KB gitignores projects.json, so scribe.yaml is what makes
+// the checkout resolvable before the first sync recreates the manifest.
+func isKBRoot(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, "scripts", "projects.json")); err == nil {
+		return true
+	}
+	return isScribeKB(dir)
 }
 
 // Frontmatter represents YAML frontmatter from a wiki article.
