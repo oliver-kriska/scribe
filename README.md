@@ -529,6 +529,13 @@ own sessions and repos; git is the merge layer.
      skips it and fast-forwards its local marker — two members tracking the same
      repo don't both burn LLM calls producing duplicate articles. Repos without
      an `origin` remote don't participate (no shared identity).
+   - **`sources.allowed_remotes`** filters discovery by git identity instead of
+     filesystem path: when set, only repos whose `origin` remote falls under a
+     listed org/host (e.g. `github.com/myorg`) enroll, and repos without an
+     origin remote are rejected outright. Members keep checkouts wherever they
+     like; personal repos can't slip into the team manifest. Like the other
+     `sources` keys, it's trust-locked — a pushed change to it warns instead of
+     applying.
    - **Push conflicts** retry once through `git pull --rebase`; scribe never
      force-pushes. KB history is append-only.
 
