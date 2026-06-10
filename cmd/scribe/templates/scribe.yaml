@@ -12,6 +12,15 @@ owner_context: |
 domains:
 {{range .Domains}}  - {{.}}
 {{end}}
+# Owners route quality findings (stale articles, contradictions, conflict
+# markers) to a named person per domain in the team digest (`scribe digest`).
+# Coarse on purpose — a name per domain, not per-file CODEOWNERS, because
+# fine-grained ownership maps rot. Names should match each member's
+# `contributor:` identity. Unowned domains are listed in the digest.
+# owners:
+#   backend: "Alice"
+#   infra: "Bob"
+
 {{if .TeamMode}}# Shared team KB. This activates the config trust layer: sensitive keys
 # in this file (sources, capture, ingestion dirs, ollama_url) are locked
 # to a per-machine approved snapshot — when a pushed change alters them,

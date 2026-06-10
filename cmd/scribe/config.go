@@ -76,10 +76,18 @@ type ScribeConfig struct {
 	// Sources scopes which project paths discovery may enroll —
 	// include/exclude path globs evaluated before a project ever lands
 	// in the manifest. See SourcesConfig (sources.go) for semantics.
-	Sources      SourcesConfig `yaml:"sources"`
-	CcriderDB    string        `yaml:"ccrider_db"`
-	LockDir      string        `yaml:"lock_dir"`
-	DefaultModel string        `yaml:"default_model"`
+	Sources SourcesConfig `yaml:"sources"`
+	// Owners routes quality findings (stale articles, contradictions,
+	// conflict markers) to a named person per domain in the team digest.
+	// Coarse on purpose — domain granularity, not per-file CODEOWNERS,
+	// because fine-grained ownership maps themselves rot. The documented
+	// killer of shared KBs is "everyone assumes someone else will update
+	// the page"; a name per domain is the cheapest fix. Keys are domain
+	// names; values are display names matching `contributor:`.
+	Owners       map[string]string `yaml:"owners"`
+	CcriderDB    string            `yaml:"ccrider_db"`
+	LockDir      string            `yaml:"lock_dir"`
+	DefaultModel string            `yaml:"default_model"`
 	// KBName is the display-level name of this KB, used for:
 	//   - the drop-file directory other projects write to
 	//     (`.claude/<kb_name>/*.md`)
