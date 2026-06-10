@@ -245,15 +245,25 @@ func gitHasStagedChanges(repoPath string) bool {
 // which writer (envelope executor or tool-mode model) created the file.
 func gitAddWiki(root string) {
 	stampContributor(root)
+	// A pathspec that matches nothing makes the whole `git add` fatal
+	// (nothing gets staged), so only paths that exist on disk join the
+	// command — a KB missing a content dir or the extraction ledger
+	// (absent until the first post-upgrade extraction) must not block
+	// staging everything else.
 	args := make([]string, 0, 1+len(wikiDirs)+3)
 	args = append(args, "add")
-	args = append(args, wikiDirs...)
-	args = append(args, "scripts/projects.json", "log.md")
-	// A pathspec that matches nothing makes the whole `git add` fatal
-	// (nothing gets staged), so the ledger — absent until the first
-	// post-upgrade extraction — only joins once it exists on disk.
-	if fileExists(filepath.Join(root, "scripts", "extraction-ledger.json")) {
-		args = append(args, "scripts/extraction-ledger.json")
+	for _, d := range wikiDirs {
+		if dirExists(filepath.Join(root, d)) {
+			args = append(args, d)
+		}
+	}
+	for _, f := range []string{"scripts/projects.json", "scripts/extraction-ledger.json", "log.md"} {
+		if fileExists(filepath.Join(root, f)) {
+			args = append(args, f)
+		}
+	}
+	if len(args) == 1 {
+		return
 	}
 	cmd := exec.Command("git", args...) //nolint:noctx // git add subprocess
 	cmd.Dir = root
