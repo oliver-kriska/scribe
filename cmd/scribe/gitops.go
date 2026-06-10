@@ -142,10 +142,11 @@ func conflictedFiles(repoPath string) []string {
 }
 
 // autoResolveDerivedConflicts finishes a conflicted rebase when every
-// conflicted file is derived/regenerable, returning true once the
-// rebase completed. Any other conflict — or failure to converge —
-// aborts the rebase so the working tree is restored; the error then
-// names the file a human must merge.
+// conflicted file is derived/regenerable (either side wins) or a team
+// coordination file with a semantic merger (sides are merged — see
+// gitmerge.go), returning true once the rebase completed. Any other
+// conflict — or failure to converge — aborts the rebase so the working
+// tree is restored; the error then names the file a human must merge.
 func autoResolveDerivedConflicts(repoPath string) (bool, error) {
 	if !rebaseInProgress(repoPath) {
 		return false, nil
@@ -153,12 +154,19 @@ func autoResolveDerivedConflicts(repoPath string) (bool, error) {
 	for round := 0; round < 20 && rebaseInProgress(repoPath); round++ {
 		conflicted := conflictedFiles(repoPath)
 		for _, f := range conflicted {
-			if !derivedRegenerable[f] {
+			if !derivedRegenerable[f] && semanticMergers[f] == nil {
 				_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
 				return false, fmt.Errorf("conflict in %s needs manual resolution (rebase aborted, working tree restored)", f)
 			}
 		}
 		for _, f := range conflicted {
+			if semanticMergers[f] != nil {
+				if !semanticResolve(repoPath, f) {
+					_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
+					return false, fmt.Errorf("semantic merge of %s failed (rebase aborted)", f)
+				}
+				continue
+			}
 			// Either side works — the file regenerates right after the
 			// pull. --theirs picks the local-commit version during a
 			// rebase; a delete/modify conflict has no blob to check out,
@@ -171,6 +179,18 @@ func autoResolveDerivedConflicts(repoPath string) (bool, error) {
 				_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
 				return false, fmt.Errorf("staging %s during auto-resolve failed: %w (rebase aborted)", f, err)
 			}
+		}
+		// A resolution identical to the upstream side empties the
+		// replayed commit; `rebase --continue` refuses an empty commit,
+		// so skip it instead (the remote already has the content).
+		if !gitHasStagedChanges(repoPath) && len(conflictedFiles(repoPath)) == 0 {
+			if _, err := runCmdErr(repoPath, "git", "rebase", "--skip"); err != nil {
+				if rebaseInProgress(repoPath) {
+					continue
+				}
+				return false, fmt.Errorf("rebase --skip failed: %w", err)
+			}
+			continue
 		}
 		if _, err := runCmdErr(repoPath, "git", "-c", "core.editor=true", "rebase", "--continue"); err != nil {
 			if rebaseInProgress(repoPath) {
@@ -350,10 +370,12 @@ func gitPush(root string) error {
 		return err
 	}
 	logMsg("git", "push rejected (non-fast-forward); attempting `git pull --rebase`")
-	pullCmd := exec.Command("git", "-C", root, "pull", "--rebase", "--autostash") //nolint:noctx // git pull subprocess
-	pullCmd.Stdout = os.Stdout
-	pullCmd.Stderr = os.Stderr
-	if rerr := pullCmd.Run(); rerr != nil {
+	// Route through pullRebase, not a raw `git pull --rebase`: it
+	// auto-resolves derived/coordination-file conflicts and ABORTS any
+	// other conflicted rebase. The raw command used to return non-zero
+	// and leave the repo mid-rebase with markers on disk for hours —
+	// the exact state the conflict machinery exists to prevent.
+	if ok, _, rerr := pullRebase(root); !ok || rerr != nil {
 		logMsg("git", "pull --rebase failed: %v — resolve manually then push", rerr)
 		return err
 	}

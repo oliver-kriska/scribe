@@ -49,6 +49,29 @@ func TestDreamLeaseActiveAt(t *testing.T) {
 	}
 }
 
+func TestDreamLeaseOwnedBy(t *testing.T) {
+	l := &dreamLease{Host: "MacBook-Pro", By: "alice"}
+	if !l.ownedBy("MacBook-Pro", "alice") {
+		t.Error("own lease not recognized")
+	}
+	// Default hostnames collide — the contributor must disambiguate.
+	if l.ownedBy("MacBook-Pro", "bob") {
+		t.Error("same hostname, different contributor treated as owned")
+	}
+	if l.ownedBy("other-host", "alice") {
+		t.Error("different host treated as owned")
+	}
+	// Pre-By leases (or unknown local contributor) compare by host only.
+	legacy := &dreamLease{Host: "MacBook-Pro"}
+	if !legacy.ownedBy("MacBook-Pro", "bob") {
+		t.Error("legacy lease without By must fall back to host compare")
+	}
+	var nilLease *dreamLease
+	if nilLease.ownedBy("x", "y") {
+		t.Error("nil lease owned by nobody")
+	}
+}
+
 func TestAcquireDreamLease(t *testing.T) {
 	root := initTestGitRepo(t, "Lease Tester")
 	now := time.Now()

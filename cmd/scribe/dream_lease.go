@@ -68,6 +68,20 @@ func (l *dreamLease) activeAt(now time.Time) bool {
 	return err == nil && now.Before(exp)
 }
 
+// ownedBy reports whether the lease belongs to this machine+user.
+// Hostname alone collides on default names (every fresh Mac is
+// "MacBook-Pro"); the contributor disambiguates when both sides carry
+// one. Leases written before the By field existed compare by host only.
+func (l *dreamLease) ownedBy(host, by string) bool {
+	if l == nil || l.Host != host {
+		return false
+	}
+	if l.By == "" || by == "" {
+		return true
+	}
+	return l.By == by
+}
+
 func hostnameShort() string {
 	h, err := os.Hostname()
 	if err != nil || h == "" {
@@ -81,24 +95,28 @@ func hostnameShort() string {
 
 // acquireDreamLease claims the dream cycle for this machine. Flow:
 // pull (freshest lease state), check, claim, commit+push the claim.
-// A failed push means someone raced us — pull again and re-check; the
-// loser backs off. Returns (acquired, holder) where holder names the
-// machine that beat us. Best-effort by design: with the remote
-// unreachable both machines may dream once, which only costs a
-// duplicate consolidation pass.
+// A failed push means someone raced us — the pull's semantic lease
+// merger (gitmerge.go) resolves the conflict in the REMOTE's favor, so
+// re-reading the file shows the true winner; the loser backs off, and
+// if the slot turned out free after all (their lease expired, or
+// unrelated commits raced us) we re-claim once. Returns (acquired,
+// holder) where holder names the machine that beat us. Best-effort by
+// design: with the remote unreachable both machines may dream once,
+// which only costs a duplicate consolidation pass.
 func acquireDreamLease(root string, now time.Time) (bool, string) {
 	if _, _, err := pullRebase(root); err != nil {
 		logMsg("dream", "lease pull skipped: %s (continuing)", err)
 	}
 
 	host := hostnameShort()
-	if lease := readDreamLease(root); lease.activeAt(now) && lease.Host != host {
+	by := resolveContributor(root)
+	if lease := readDreamLease(root); lease.activeAt(now) && !lease.ownedBy(host, by) {
 		return false, lease.Host
 	}
 
 	claim := &dreamLease{
 		Host:       host,
-		By:         resolveContributor(root),
+		By:         by,
 		AcquiredAt: now.UTC().Format(time.RFC3339),
 		ExpiresAt:  now.Add(dreamLeaseHours * time.Hour).UTC().Format(time.RFC3339),
 	}
@@ -110,14 +128,26 @@ func acquireDreamLease(root string, now time.Time) (bool, string) {
 
 	if gitRemoteURL(root) != "" {
 		if err := gitPush(root); err != nil {
-			// Push race: a teammate claimed first. Their claim arrives in
-			// the pull; if it's active and not ours, back off.
 			if _, _, pErr := pullRebase(root); pErr != nil {
-				logMsg("dream", "lease re-check pull failed: %s — proceeding", pErr)
+				logMsg("dream", "lease re-check pull failed: %s — proceeding (worst case: one duplicated dream cycle)", pErr)
 				return true, ""
 			}
-			if cur := readDreamLease(root); cur != nil && cur.Host != host && cur.activeAt(now) {
+			cur := readDreamLease(root)
+			if cur.activeAt(now) && !cur.ownedBy(host, by) {
 				return false, cur.Host
+			}
+			if !cur.ownedBy(host, by) {
+				// Our claim lost the merge but the slot is free — the
+				// winner's lease already expired or was released.
+				// Re-claim once so the cycle we're about to run is
+				// visible to the team.
+				if err := writeDreamLease(root, claim); err != nil {
+					return true, ""
+				}
+				commitDreamLease(root, "dream: lease claim by "+host)
+			}
+			if err := gitPush(root); err != nil {
+				logMsg("dream", "lease push retry failed: %v — proceeding (worst case: one duplicated dream cycle)", err)
 			}
 		}
 	}
@@ -125,11 +155,13 @@ func acquireDreamLease(root string, now time.Time) (bool, string) {
 }
 
 // releaseDreamLease expires this machine's lease once the cycle ends,
-// so the slot frees immediately instead of after the full window. The
-// commit rides out with dream's own commit/push flow.
+// so the slot frees ahead of the full window. The release commit
+// reaches the remote with the next push from this machine (dream's own
+// flow already ran, so typically the next sync) — until then teammates
+// see the original expiry, which the lease window's slack absorbs.
 func releaseDreamLease(root string) {
 	lease := readDreamLease(root)
-	if lease == nil || lease.Host != hostnameShort() {
+	if lease == nil || !lease.ownedBy(hostnameShort(), resolveContributor(root)) {
 		return
 	}
 	lease.ExpiresAt = time.Now().UTC().Format(time.RFC3339)

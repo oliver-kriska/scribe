@@ -15,6 +15,11 @@ import (
 // the remote URL is the identity every member shares: when a teammate
 // extracts org/repo at SHA X and pushes, everyone else's next sync sees
 // the ledger entry and skips re-extracting the same revision.
+//
+// Two members extracting concurrently (same cron slots) conflict on
+// this file as a matter of course — pullRebase merges those
+// semantically (gitmerge.go: union of entries, newest per repo) so a
+// ledger conflict never aborts a pull.
 type extractionLedger struct {
 	Repos map[string]ledgerEntry `json:"repos"`
 
