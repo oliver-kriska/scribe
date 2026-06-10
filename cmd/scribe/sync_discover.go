@@ -124,15 +124,31 @@ func (s *SyncCmd) foldWorktree(root string, manifest *Manifest, cfg *ScribeConfi
 	if manifest.isIgnored(main) || !sourceAllowed(cfg, main) {
 		return 0, false
 	}
+	// The discovered path is a session cwd, which is often a
+	// SUBDIRECTORY of the worktree. Drops and .claude/research live at
+	// the worktree root — record that, or collection scans the wrong
+	// dir forever.
+	if top := runCmd(worktree, "git", "rev-parse", "--show-toplevel"); top != "" {
+		worktree = top
+	}
 	// A pre-existing entry for the worktree itself (enrolled before
 	// folding existed) keeps working until the user ignores it — doctor
 	// flags those. Don't also record it on the main entry, or its drops
 	// would be collected twice.
-	if wEntry, ok := manifest.Projects[projectName(worktree)]; ok && wEntry != nil && wEntry.Path == worktree {
+	if wEntry, ok := manifest.Projects[projectName(worktree)]; ok && wEntry != nil && samePath(wEntry.Path, worktree) {
 		return 0, false
 	}
 	mname := projectName(main)
 	if existing, ok := manifest.Projects[mname]; ok {
+		// Basename collision: ~/src/api and ~/work/api both name "api".
+		// Folding this repo's worktree onto the OTHER repo's entry would
+		// route its drops and research under the wrong project — and
+		// falling through to the create branch would overwrite that
+		// entry. Leave it alone, loudly.
+		if !samePath(existing.Path, main) {
+			logMsg("sync", " worktree %s: main %s collides with existing project %q at %s — not folding", worktree, main, mname, existing.Path)
+			return 0, false
+		}
 		if s.DryRun || !existing.recordWorktree(worktree) {
 			return 0, false
 		}
