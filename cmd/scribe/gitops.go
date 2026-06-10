@@ -243,7 +243,11 @@ func gitHasStagedChanges(repoPath string) bool {
 // articles get a `contributor:` frontmatter stamp — this funnel is
 // shared by every commit path, so attribution lands regardless of
 // which writer (envelope executor or tool-mode model) created the file.
-func gitAddWiki(root string) {
+//
+// Returns false when the secret gate detected a credential it could
+// not hold back — the staged set is then unsafe and callers must skip
+// the commit (staged changes roll to the next run).
+func gitAddWiki(root string) bool {
 	stampContributor(root)
 	// A pathspec that matches nothing makes the whole `git add` fatal
 	// (nothing gets staged), so only paths that exist on disk join the
@@ -263,14 +267,14 @@ func gitAddWiki(root string) {
 		}
 	}
 	if len(args) == 1 {
-		return
+		return true
 	}
 	cmd := exec.Command("git", args...) //nolint:noctx // git add subprocess
 	cmd.Dir = root
 	_ = cmd.Run()
 	// Team-mode credential gate: anything staged above that contains a
 	// real-shaped secret is unstaged again, loudly (secrets.go).
-	holdSecretFiles(root, loadConfig(root))
+	return holdSecretFiles(root, loadConfig(root))
 }
 
 // gitCommit creates a commit with the given message. Captures stderr so callers

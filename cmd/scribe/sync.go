@@ -328,7 +328,10 @@ func (s *SyncCmd) commitPhase(root string, counters syncCounters) {
 		return
 	}
 	msg := fmt.Sprintf("sync: auto-extract %s (%d projects)", time.Now().Format("2006-01-02"), counters.extracted)
-	gitAddWiki(root)
+	if !gitAddWiki(root) {
+		logMsg("sync", "commit skipped: a detected secret could not be held back — resolve and rerun")
+		return
+	}
 	// If gitAddWiki staged nothing (dirty files all outside staging scope),
 	// skip silently — nothing to commit.
 	if !gitHasStagedChanges(root) {
@@ -389,7 +392,10 @@ func (s *SyncCmd) commitAndPush(root, message string) error {
 		logMsg("sync", "commit debounced (%s since last commit, window %s) — staged changes roll to next run", age.Round(time.Second), window)
 		return nil
 	}
-	gitAddWiki(root)
+	if !gitAddWiki(root) {
+		logMsg("sync", "commit skipped: a detected secret could not be held back — resolve and rerun")
+		return nil
+	}
 	// After staging, verify that the scope we stage (wiki dirs + log.md etc)
 	// actually produced staged changes. Otherwise there's nothing for us to
 	// commit — the dirty bit was from files outside our scope (cmd/, .claude/,

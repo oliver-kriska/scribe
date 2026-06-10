@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -129,7 +131,7 @@ func TestHoldSecretFiles(t *testing.T) {
 	}
 	stagedSet := func(repo string) map[string]bool {
 		out := map[string]bool{}
-		for _, f := range stagedKBMarkdown(repo) {
+		for _, f := range stagedMarkdown(repo) {
 			out[f] = true
 		}
 		return out
@@ -137,7 +139,9 @@ func TestHoldSecretFiles(t *testing.T) {
 
 	// Team mode: leaky wiki + raw files held, clean stays.
 	repo := setup(t)
-	holdSecretFiles(repo, &ScribeConfig{Team: true})
+	if !holdSecretFiles(repo, &ScribeConfig{Team: true}) {
+		t.Error("successful holds must report safe-to-commit")
+	}
 	staged := stagedSet(repo)
 	if staged["wiki/leaky.md"] {
 		t.Error("leaky file still staged in team mode")
@@ -151,7 +155,9 @@ func TestHoldSecretFiles(t *testing.T) {
 
 	// Solo KB: gate inactive.
 	repo = setup(t)
-	holdSecretFiles(repo, &ScribeConfig{})
+	if !holdSecretFiles(repo, &ScribeConfig{}) {
+		t.Error("inactive gate must report safe-to-commit")
+	}
 	if !stagedSet(repo)["wiki/leaky.md"] {
 		t.Error("solo KB should not hold files")
 	}
@@ -168,6 +174,164 @@ func TestHoldSecretFiles(t *testing.T) {
 	holdSecretFiles(repo, &ScribeConfig{Team: true, SecretScan: SecretScanConfig{AllowPaths: []string{"wiki"}}})
 	if !stagedSet(repo)["wiki/leaky.md"] {
 		t.Error("allow_paths exemption ignored")
+	}
+}
+
+// TestStagedMarkdownPathRobustness covers the two listing bypasses the
+// 2026-06 review found: core.quotepath C-escaping non-ASCII filenames
+// (the quoted form fails the .md suffix check) and rename detection
+// reporting rename+edit as status R, which --diff-filter=ACM drops.
+func TestStagedMarkdownPathRobustness(t *testing.T) {
+	repo := initTestGitRepo(t, "Gate Tester")
+
+	// Non-ASCII filename, staged on an unborn branch.
+	writeKBFile(t, repo, "wiki/riešenie.md", "# riešenie\n\nkey: "+fakeAWSKey()+"\n")
+	gitRun(t, repo, "add", "wiki")
+	found := false
+	for _, f := range stagedMarkdown(repo) {
+		if f == "wiki/riešenie.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("non-ASCII staged path not listed: %v", stagedMarkdown(repo))
+	}
+	if !holdSecretFiles(repo, &ScribeConfig{Team: true}) {
+		t.Error("hold of non-ASCII path reported unsafe")
+	}
+	if len(stagedMarkdown(repo)) != 0 {
+		t.Errorf("leaky non-ASCII file still staged: %v", stagedMarkdown(repo))
+	}
+
+	// Rename + small edit: similarity stays above git's rename
+	// threshold, so without --no-renames the file vanishes from
+	// --diff-filter=ACM output entirely.
+	var big strings.Builder
+	for i := 0; i < 50; i++ {
+		big.WriteString("filler line to keep rename similarity high\n")
+	}
+	writeKBFile(t, repo, "wiki/original.md", big.String())
+	gitRun(t, repo, "add", "wiki")
+	gitRun(t, repo, "commit", "-q", "-m", "init")
+	gitRun(t, repo, "mv", "wiki/original.md", "wiki/renamed.md")
+	writeKBFile(t, repo, "wiki/renamed.md", big.String()+"key: "+fakeAWSKey()+"\n")
+	gitRun(t, repo, "add", "wiki")
+	found = false
+	for _, f := range stagedMarkdown(repo) {
+		if f == "wiki/renamed.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("renamed+edited staged path not listed: %v", stagedMarkdown(repo))
+	}
+	holdSecretFiles(repo, &ScribeConfig{Team: true})
+	for _, f := range stagedMarkdown(repo) {
+		if f == "wiki/renamed.md" {
+			t.Error("leaky renamed file still staged")
+		}
+	}
+}
+
+// TestHoldScansIndexNotWorktree pins the index-blob semantics: the
+// gate must judge what would actually be committed, not the worktree
+// copy (which can be edited after `git add`, or deleted entirely).
+func TestHoldScansIndexNotWorktree(t *testing.T) {
+	repo := initTestGitRepo(t, "Gate Tester")
+
+	// Staged content leaky, worktree since cleaned → still held.
+	writeKBFile(t, repo, "wiki/edited.md", "key: "+fakeAWSKey()+"\n")
+	gitRun(t, repo, "add", "wiki")
+	writeKBFile(t, repo, "wiki/edited.md", "clean now\n")
+	holdSecretFiles(repo, &ScribeConfig{Team: true})
+	if len(stagedMarkdown(repo)) != 0 {
+		t.Errorf("staged-leaky/worktree-clean file not held: %v", stagedMarkdown(repo))
+	}
+
+	// Staged content clean, secret only in the worktree → NOT held.
+	writeKBFile(t, repo, "wiki/later.md", "clean at staging time\n")
+	gitRun(t, repo, "add", "wiki/later.md")
+	writeKBFile(t, repo, "wiki/later.md", "key: "+fakeAWSKey()+"\n")
+	holdSecretFiles(repo, &ScribeConfig{Team: true})
+	found := false
+	for _, f := range stagedMarkdown(repo) {
+		if f == "wiki/later.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("clean staged blob was held because of a post-add worktree edit")
+	}
+
+	// Staged then deleted from the worktree → held, not skipped.
+	writeKBFile(t, repo, "wiki/ghost.md", "key: "+fakeAWSKey()+"\n")
+	gitRun(t, repo, "add", "wiki/ghost.md")
+	if err := os.Remove(filepath.Join(repo, "wiki", "ghost.md")); err != nil {
+		t.Fatal(err)
+	}
+	holdSecretFiles(repo, &ScribeConfig{Team: true})
+	for _, f := range stagedMarkdown(repo) {
+		if f == "wiki/ghost.md" {
+			t.Error("staged-then-deleted leaky file still staged")
+		}
+	}
+}
+
+// TestHoldFailureReportsUnsafe pins the fail-closed contract: when a
+// detected secret cannot be unstaged (here: index locked by a
+// concurrent process), holdSecretFiles must return false so callers
+// skip the commit.
+func TestHoldFailureReportsUnsafe(t *testing.T) {
+	repo := initTestGitRepo(t, "Gate Tester")
+	writeKBFile(t, repo, "wiki/leaky.md", "key: "+fakeAWSKey()+"\n")
+	gitRun(t, repo, "add", "wiki")
+
+	lock := filepath.Join(repo, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(lock)
+
+	if holdSecretFiles(repo, &ScribeConfig{Team: true}) {
+		t.Error("unstage failure must report unsafe-to-commit")
+	}
+}
+
+// TestHoldCoversAllStagedMarkdown: `scribe commit` stages a denylist
+// (everything except output/), so the gate scans repo-wide — markdown
+// outside wiki dirs and raw/ must be held too.
+func TestHoldCoversAllStagedMarkdown(t *testing.T) {
+	repo := initTestGitRepo(t, "Gate Tester")
+	writeKBFile(t, repo, "notes/scratch.md", "token: "+fakeGitHubToken()+"\n")
+	gitRun(t, repo, "add", ".")
+	holdSecretFiles(repo, &ScribeConfig{Team: true})
+	for _, f := range stagedMarkdown(repo) {
+		if f == "notes/scratch.md" {
+			t.Error("leaky markdown outside wiki/raw still staged")
+		}
+	}
+}
+
+// TestScanTruncatesLongLines: over-long lines are scanned up to the
+// rule's cap instead of skipped — minified absorbs pack whole pages
+// into one line.
+func TestScanTruncatesLongLines(t *testing.T) {
+	long := "prefix " + fakeAWSKey() + " " + strings.Repeat("x", defaultSecretMaxLine)
+	hits := scanContentForSecrets([]byte(long+"\n"), false)
+	if len(hits) == 0 {
+		t.Error("token at the head of an over-long line not detected")
+	}
+
+	urlLine := "see postgres://admin:s3cretPa55@db.internal/app " + strings.Repeat("y", 4096)
+	hits = scanContentForSecrets([]byte(urlLine+"\n"), false)
+	found := false
+	for _, h := range hits {
+		if h.RuleID == "url-userinfo-password" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("contextual rule skipped a line longer than its 2048 cap")
 	}
 }
 

@@ -94,7 +94,10 @@ func (c *CommitCmd) Run() error {
 	runCmd(root, "git", "add", "--ignore-errors", "--", ".", ":!output/")
 
 	// Team-mode credential gate — same funnel as gitAddWiki.
-	holdSecretFiles(root, loadConfig(root))
+	if !holdSecretFiles(root, cfg) {
+		logMsg("commit", "skipped: a detected secret could not be held back — resolve and rerun")
+		return nil
+	}
 
 	// Commit
 	if err := gitCommit(root, msg); err != nil {

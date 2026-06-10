@@ -112,7 +112,11 @@ func (c *PromoteCmd) Run() error {
 	}
 
 	if !c.NoGit && hasGit(target) {
-		gitAddWiki(target)
+		if !gitAddWiki(target) {
+			fmt.Println("warning: a detected secret in the target KB could not be held back — commit skipped; resolve there and commit manually")
+			fmt.Printf("next: the target's own sync reindexes it (or run `SCRIBE_KB=%s scribe sync` now)\n", target)
+			return nil
+		}
 		if gitHasStagedChanges(target) {
 			msg := fmt.Sprintf("promote: %s from %s", fm.Title, kbName(root))
 			if err := gitCommit(target, msg); err != nil {
