@@ -149,9 +149,6 @@ func (c *InitCmd) runBootstrap() error {
 	if err != nil {
 		return fmt.Errorf("resolve path: %w", err)
 	}
-	if err := os.MkdirAll(abs, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", abs, err)
-	}
 
 	// Refuse to overwrite an existing KB unless --force was given.
 	manifestPath := filepath.Join(abs, "scripts", "projects.json")
@@ -159,23 +156,13 @@ func (c *InitCmd) runBootstrap() error {
 		return fmt.Errorf("%s already looks like a scribe KB (scripts/projects.json exists)\nRe-run with --force to overwrite, or drop --path to run status checks", abs)
 	}
 
+	// Phase 1 — collect: every prompt happens here, before anything is
+	// written, so the plan below is derived from final answers.
 	vars, err := c.collectVars(abs)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Bootstrapping KB at %s\n\n", abs)
-	if err := writeEmbeddedTemplates(abs, vars); err != nil {
-		return err
-	}
-	if err := createKBSkeleton(abs); err != nil {
-		return err
-	}
-	if !c.NoGit {
-		if err := initGit(abs); err != nil {
-			fmt.Printf("  git init skipped: %v\n", err)
-		}
-	}
 	// Bootstrap never silently re-points an existing user config or
 	// CLAUDE.md block away from another KB — that would be destructive to
 	// someone with multiple scribes. Require --force or --yes to proceed.
@@ -188,14 +175,42 @@ func (c *InitCmd) runBootstrap() error {
 	// 76-minute sync against the throwaway, burning anthropic tokens
 	// overnight. `--bind` is the explicit opt-in for the rare case where
 	// a /tmp/ KB really is meant to be primary.
-	allowUserWrites := c.Force || c.Yes || c.Bind
-	if isThrowawayPath(abs) && !c.Bind {
-		fmt.Printf("\n%s looks like a throwaway/temp path.\n", abs)
-		fmt.Println("Refusing to retarget ~/.claude/CLAUDE.md and ~/.config/scribe/config.yaml.")
-		fmt.Println("Re-run with --bind if you really want this to be your primary KB.")
-		allowUserWrites = false
-	}
+	throwaway := isThrowawayPath(abs) && !c.Bind
+	allowUserWrites := (c.Force || c.Yes || c.Bind) && !throwaway
 	uc := loadUserConfig()
+
+	// Phase 2 — plan + consent: print every action (including the
+	// global-state writes and the ones being skipped) and get one
+	// consent for the whole plan. --yes and --check skip the prompt but
+	// still print the plan; --check stops here entirely.
+	plan := c.buildInitPlan(abs, vars, uc.KBDir, allowUserWrites, throwaway)
+	printInitPlan(abs, plan)
+	if c.Check {
+		fmt.Println("\n(--check: plan only — nothing written)")
+		return nil
+	}
+	if !c.Yes && !promptInitProceed(plan) {
+		fmt.Println("aborted — nothing written")
+		return nil
+	}
+
+	// Phase 3 — execute: one line per action as it lands, in plan order.
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", abs, err)
+	}
+
+	fmt.Printf("\nBootstrapping KB at %s\n\n", abs)
+	if err := writeEmbeddedTemplates(abs, vars); err != nil {
+		return err
+	}
+	if err := createKBSkeleton(abs); err != nil {
+		return err
+	}
+	if !c.NoGit {
+		if err := initGit(abs); err != nil {
+			fmt.Printf("  git init skipped: %v\n", err)
+		}
+	}
 	switch {
 	case uc.KBDir == abs:
 		// Idempotent re-install on the same path — always safe.
@@ -242,6 +257,14 @@ func (c *InitCmd) runBootstrap() error {
 	// just print a hint.
 	if strings.EqualFold(vars.LLMProvider, "ollama") {
 		ensureOllamaReadyOrHint(vars.LLMModel)
+	}
+
+	// Phase 4 — self-test: the dependency probe doctor would run,
+	// inline, so a missing required binary surfaces now instead of on
+	// the first cron-driven sync.
+	fmt.Println("\nSelf-test (dependencies):")
+	if missing := printDepsCheck(); missing > 0 {
+		fmt.Printf("  %d required dependency(ies) missing — install them before `scribe sync`\n", missing)
 	}
 
 	fmt.Println()
@@ -487,23 +510,7 @@ func (c *InitCmd) runStatus(root string) error {
 	fmt.Printf("KB root: %s\n\n", root)
 
 	fmt.Println("Dependencies:")
-	missingRequired := 0
-	for _, d := range scribeDeps {
-		path, err := exec.LookPath(d.Binary)
-		status := path
-		if err != nil {
-			status = "MISSING"
-			if d.Required {
-				missingRequired++
-			} else {
-				status = "missing (optional)"
-			}
-		}
-		fmt.Printf("  %-13s %s\n", d.Name, status)
-		if d.Note != "" && (err != nil || d.Required) {
-			fmt.Printf("               %s\n", d.Note)
-		}
-	}
+	missingRequired := printDepsCheck()
 
 	cfgPath := filepath.Join(root, "scribe.yaml")
 	fmt.Println("\nConfig (scribe.yaml):")
