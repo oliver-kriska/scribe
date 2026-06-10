@@ -23,10 +23,18 @@ func TestMain(m *testing.M) {
 	// Deterministic git defaults: fixtures must not inherit whatever
 	// the developer's real ~/.gitconfig sets (or doesn't). The push/
 	// rebase tests assume `main`; identity covers fixtures that forget
-	// to set repo-local user.name.
+	// to set repo-local user.name. GIT_CONFIG_GLOBAL pins git to this
+	// file even when the developer exports their own, and NOSYSTEM
+	// blocks /etc/gitconfig surprises (core.hooksPath etc.).
 	gitconfig := "[user]\n\tname = Scribe Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n"
-	if err := os.WriteFile(filepath.Join(scratch, ".gitconfig"), []byte(gitconfig), 0o644); err != nil {
+	gitconfigPath := filepath.Join(scratch, ".gitconfig")
+	if err := os.WriteFile(gitconfigPath, []byte(gitconfig), 0o644); err != nil {
 		panic(err)
+	}
+	os.Setenv("GIT_CONFIG_GLOBAL", gitconfigPath)
+	os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	for _, v := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"} {
+		os.Unsetenv(v)
 	}
 	// A developer's shell exports (SCRIBE_KB, SCRIBE_SELF_CHAT_ID, ...)
 	// must not steer test behavior either.

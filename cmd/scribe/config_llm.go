@@ -20,7 +20,7 @@ type LLMConfig struct {
 	// empty. For provider=anthropic this is a Claude alias ("haiku",
 	// "sonnet"); for ollama it's an Ollama model tag
 	// ("gemma3:4b", "qwen2.5-coder:14b"). Empty is legal —
-	// inheritOLLAMAModel and applyAbsorbDefaults fill the recommended
+	// coerceProviderModel and applyAbsorbDefaults fill the recommended
 	// local default when the user picks ollama but leaves model
 	// blank.
 	Model string `yaml:"model"`

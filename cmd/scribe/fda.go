@@ -27,8 +27,13 @@ type FDACmd struct {
 }
 
 // chatDBPath is the file whose readability determines whether the current
-// binary has Full Disk Access. Extracted so tests can point at a tempfile.
-var chatDBPath = filepath.Join(os.Getenv("HOME"), "Library", "Messages", "chat.db")
+// binary has Full Disk Access. A function, not a package var: a var
+// captures $HOME at process init — BEFORE TestMain redirects HOME to
+// its scratch dir — so any FDA test would probe the developer's real
+// chat.db through the hermeticity floor.
+func chatDBPath() string {
+	return filepath.Join(os.Getenv("HOME"), "Library", "Messages", "chat.db")
+}
 
 // fdaSystemSettingsURL is the x-apple URL scheme that jumps System Settings
 // (macOS 13+) or System Preferences (macOS ≤12) directly to the Full Disk
@@ -127,7 +132,7 @@ type fdaTarget struct {
 // tell the user which ones still need attention.
 func probeFDA() fdaState {
 	s := fdaState{Targets: fdaTargets()}
-	f, err := os.Open(chatDBPath)
+	f, err := os.Open(chatDBPath())
 	if err == nil {
 		_ = f.Close()
 		s.OK = true
@@ -228,7 +233,7 @@ func miseShadowPath() string {
 
 func printFDAStatus(s fdaState) {
 	fmt.Println("Full Disk Access probe:")
-	fmt.Printf("  chat.db path: %s\n", chatDBPath)
+	fmt.Printf("  chat.db path: %s\n", chatDBPath())
 	fmt.Println("  scribe binaries that need FDA (TCC grants per-inode — add each distinct path):")
 	for _, t := range s.Targets {
 		marker := " "

@@ -112,14 +112,25 @@ func (c *PromoteCmd) Run() error {
 	}
 
 	if !c.NoGit && hasGit(target) {
-		if !gitAddWiki(target) {
+		// Stage and commit ONLY the promoted file (pathspec commit, like
+		// commitDreamLease) — gitAddWiki would sweep whatever else is
+		// dirty in the target (a sync mid-flight, hand edits) into the
+		// promote commit.
+		destRel := relPath(target, destAbs)
+		if _, err := runCmdErr(target, "git", "add", "--", destRel); err != nil {
+			fmt.Printf("warning: target stage failed: %v — commit manually\n", err)
+		} else if !holdSecretFiles(target, loadConfig(target)) {
 			fmt.Println("warning: a detected secret in the target KB could not be held back — commit skipped; resolve there and commit manually")
-			fmt.Printf("next: the target's own sync reindexes it (or run `SCRIBE_KB=%s scribe sync` now)\n", target)
-			return nil
-		}
-		if gitHasStagedChanges(target) {
+		} else if runCmd(target, "git", "status", "--porcelain", "--", destRel) == "" {
+			fmt.Println("target already had identical content committed — nothing to commit")
+		} else if runCmd(target, "git", "diff", "--cached", "--name-only", "--", destRel) == "" {
+			// The gate held the promoted file itself. A pathspec commit
+			// would commit the WORKTREE state and bypass the hold, so
+			// stop here; the gate already logged the finding.
+			fmt.Println("note: the promoted file was held back from commit by the secret gate — resolve it in the target KB")
+		} else {
 			msg := fmt.Sprintf("promote: %s from %s", fm.Title, kbName(root))
-			if err := gitCommit(target, msg); err != nil {
+			if _, err := runCmdErr(target, "git", "commit", "--no-gpg-sign", "-m", msg, "--", destRel); err != nil {
 				fmt.Printf("warning: target commit failed: %v — commit manually\n", err)
 			} else {
 				fmt.Printf("committed in target: %s\n", msg)

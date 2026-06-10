@@ -97,9 +97,10 @@ func readCodexSessionMeta(path string) (*codexSessionMeta, error) {
 //   - files that are not `rollout-*.jsonl`
 //   - any first event that is not `session_meta` (silent skip — see readCodexSessionMeta)
 //
-// Symlinked rollout dirs are followed once via the initial Stat;
-// `filepath.WalkDir` does not recurse through symlinks, which is
-// exactly what we want — Codex never writes symlinks here.
+// Symlinked rollout dirs are followed once via the initial Stat; the
+// manual os.ReadDir walk below treats a symlinked subdir as a non-dir
+// entry and skips it, which is exactly what we want — Codex never
+// writes symlinks here.
 func walkCodexSessions(root string, fn func(meta *codexSessionMeta, sessionPath string)) error {
 	info, err := os.Stat(root)
 	if err != nil {
