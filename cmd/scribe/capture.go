@@ -107,18 +107,91 @@ func (c *CaptureCmd) Run() error {
 		captured[u] = true
 	}
 
-	type capturedURL struct {
-		URL        string
-		Date       string
-		Timestamp  time.Time
-		SourceText string
-	}
-	type capturedNote struct {
-		Text      string
-		Date      string
-		Timestamp time.Time
+	newURLs, newNotes := sortCapturedMessages(messages, captured, cfg.Capture.SkipDomains)
+
+	savedFiles := c.writeURLCaptures(rawDir, newURLs)
+	savedFiles = append(savedFiles, c.writeNoteCaptures(rawDir, newNotes)...)
+
+	logMsg("capture", "found %d URLs, %d notes, saved %d files", len(newURLs), len(newNotes), len(savedFiles))
+
+	if c.DryRun {
+		return nil
 	}
 
+	// Update state file when we captured anything.
+	if len(newURLs) > 0 || len(newNotes) > 0 {
+		today := time.Now().UTC().Format("2006-01-02")
+		state.LastCapture = &today
+		// captured map → sorted slice for stable diffs.
+		urls := make([]string, 0, len(captured))
+		for u := range captured {
+			urls = append(urls, u)
+		}
+		sort.Strings(urls)
+		state.CapturedURLs = urls
+		state.CapturedCount += len(savedFiles)
+		if err := saveCaptureState(statePath, state); err != nil {
+			return fmt.Errorf("save state: %w", err)
+		}
+	}
+
+	logMsg("capture", "done")
+	return nil
+}
+
+// capturedURL / capturedNote are the two kinds of self-chat content the
+// scan yields: a shared link (→ raw article, optionally fetched) and a
+// free-form text (→ idea note).
+type capturedURL struct {
+	URL        string
+	Date       string
+	Timestamp  time.Time
+	SourceText string
+}
+
+type capturedNote struct {
+	Text      string
+	Date      string
+	Timestamp time.Time
+}
+
+// messageURLs extracts shared links from one chat.db message — the text
+// column first, then the attributedBody blob.
+func messageURLs(m chatMessage) []string {
+	var urls []string
+	if m.Text != "" {
+		urls = append(urls, captureURLTextRE.FindAllString(m.Text, -1)...)
+	}
+
+	// Fall back to attributedBody when text has no URLs (iMessage stores
+	// shared link previews there as NSKeyedArchiver bytes). Go's regexp
+	// package treats negated character classes as Unicode-aware, which lets
+	// non-ASCII bytes through when matching against arbitrary binary data —
+	// so we scan byte-by-byte instead of using regexp here.
+	//
+	// iMessage stores each shared URL in the blob at least twice: once as
+	// the user-visible NSString and once wrapped in an NSURL NSKeyedArchive
+	// entry that looks like "<url>WHttpURL<garbage byte>/<garbage>". The
+	// byte scanner returns both, and the WHttpURL suffix is a reliable
+	// sentinel we can truncate on to recover the clean URL.
+	if len(urls) == 0 && len(m.AttributedBody) > 0 {
+		for _, decoded := range extractURLsFromBytes(m.AttributedBody) {
+			if idx := strings.Index(decoded, "WHttpURL"); idx >= 0 {
+				decoded = decoded[:idx]
+			}
+			if decoded == "" {
+				continue
+			}
+			urls = append(urls, decoded)
+		}
+	}
+	return urls
+}
+
+// sortCapturedMessages splits self-chat messages into new URL captures
+// and idea notes, marking each accepted URL in `captured` so dupes
+// within and across runs are skipped.
+func sortCapturedMessages(messages []chatMessage, captured map[string]bool, skipDomains []string) ([]capturedURL, []capturedNote) {
 	var newURLs []capturedURL
 	var newNotes []capturedNote
 
@@ -128,34 +201,7 @@ func (c *CaptureCmd) Run() error {
 			continue
 		}
 
-		var urls []string
-		if m.Text != "" {
-			urls = append(urls, captureURLTextRE.FindAllString(m.Text, -1)...)
-		}
-
-		// Fall back to attributedBody when text has no URLs (iMessage stores
-		// shared link previews there as NSKeyedArchiver bytes). Go's regexp
-		// package treats negated character classes as Unicode-aware, which lets
-		// non-ASCII bytes through when matching against arbitrary binary data —
-		// so we scan byte-by-byte instead of using regexp here.
-		//
-		// iMessage stores each shared URL in the blob at least twice: once as
-		// the user-visible NSString and once wrapped in an NSURL NSKeyedArchive
-		// entry that looks like "<url>WHttpURL<garbage byte>/<garbage>". The
-		// byte scanner returns both, and the WHttpURL suffix is a reliable
-		// sentinel we can truncate on to recover the clean URL.
-		if len(urls) == 0 && len(m.AttributedBody) > 0 {
-			for _, decoded := range extractURLsFromBytes(m.AttributedBody) {
-				if idx := strings.Index(decoded, "WHttpURL"); idx >= 0 {
-					decoded = decoded[:idx]
-				}
-				if decoded == "" {
-					continue
-				}
-				urls = append(urls, decoded)
-			}
-		}
-
+		urls := messageURLs(m)
 		ts := appleNanosToTime(m.Date)
 		dateStr := ts.UTC().Format("2006-01-02")
 
@@ -165,7 +211,7 @@ func (c *CaptureCmd) Run() error {
 				if captured[u] {
 					continue
 				}
-				if shouldSkipURL(u, cfg.Capture.SkipDomains) {
+				if shouldSkipURL(u, skipDomains) {
 					continue
 				}
 				captured[u] = true
@@ -191,11 +237,14 @@ func (c *CaptureCmd) Run() error {
 			}
 		}
 	}
+	return newURLs, newNotes
+}
 
-	var savedFiles []string
-
-	// Write URL captures as raw articles.
-	for _, item := range newURLs {
+// writeURLCaptures writes one raw article per captured URL (a stub, or
+// fetched content with --fetch). Returns the filenames written.
+func (c *CaptureCmd) writeURLCaptures(rawDir string, items []capturedURL) []string {
+	var saved []string
+	for _, item := range items {
 		slug := slugFromCapturedURL(item.URL)
 		fname := fmt.Sprintf("%s-imessage-%s.md", item.Date, slug)
 		fpath := filepath.Join(rawDir, fname)
@@ -234,16 +283,21 @@ func (c *CaptureCmd) Run() error {
 			logMsg("capture", "write failed: %s: %v", fname, err)
 			continue
 		}
-		savedFiles = append(savedFiles, fname)
+		saved = append(saved, fname)
 		if c.Fetch {
 			logMsg("capture", "  fetched: %s (via %s)", fname, via)
 			// Brief pause between fetches (matches bash behavior).
 			time.Sleep(1 * time.Second)
 		}
 	}
+	return saved
+}
 
-	// Write text notes as idea fragments.
-	for _, note := range newNotes {
+// writeNoteCaptures writes one idea-note article per captured text.
+// Returns the filenames written.
+func (c *CaptureCmd) writeNoteCaptures(rawDir string, notes []capturedNote) []string {
+	var saved []string
+	for _, note := range notes {
 		slug := slugifyText(note.Text, 50)
 		fname := fmt.Sprintf("%s-imessage-note-%s.md", note.Date, slug)
 		fpath := filepath.Join(rawDir, fname)
@@ -271,34 +325,9 @@ func (c *CaptureCmd) Run() error {
 			logMsg("capture", "write failed: %s: %v", fname, err)
 			continue
 		}
-		savedFiles = append(savedFiles, fname)
+		saved = append(saved, fname)
 	}
-
-	logMsg("capture", "found %d URLs, %d notes, saved %d files", len(newURLs), len(newNotes), len(savedFiles))
-
-	if c.DryRun {
-		return nil
-	}
-
-	// Update state file when we captured anything.
-	if len(newURLs) > 0 || len(newNotes) > 0 {
-		today := time.Now().UTC().Format("2006-01-02")
-		state.LastCapture = &today
-		// captured map → sorted slice for stable diffs.
-		urls := make([]string, 0, len(captured))
-		for u := range captured {
-			urls = append(urls, u)
-		}
-		sort.Strings(urls)
-		state.CapturedURLs = urls
-		state.CapturedCount += len(savedFiles)
-		if err := saveCaptureState(statePath, state); err != nil {
-			return fmt.Errorf("save state: %w", err)
-		}
-	}
-
-	logMsg("capture", "done")
-	return nil
+	return saved
 }
 
 // --- chat.db reader ---
