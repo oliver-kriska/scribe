@@ -778,6 +778,24 @@ func checkState(root string) []check {
 		})
 	}
 
+	// Unresolved merge-conflict markers in articles — the hazard of team
+	// KBs with pull-before-sync: a botched merge lands "<<<<<<< HEAD"
+	// blocks that poison search and LLM context until resolved.
+	if hits := findConflictMarkers(root); len(hits) > 0 {
+		names := make([]string, 0, len(hits))
+		for _, h := range hits {
+			names = append(names, fmt.Sprintf("%s:%d", h.Rel, h.Line))
+		}
+		if len(names) > 5 {
+			names = append(names[:5], "…")
+		}
+		out = append(out, check{
+			Section: "state", Name: "conflict-markers", Status: statusWarn,
+			Detail: fmt.Sprintf("%d file(s) contain unresolved git conflict markers: %s", len(hits), strings.Join(names, ", ")),
+			Fix:    "resolve the merge by hand (search the file for '<<<<<<<'), then commit",
+		})
+	}
+
 	statePath := filepath.Join(root, "scripts", "imessage-state.json")
 	if _, err := loadCaptureState(statePath); err == nil {
 		out = append(out, check{Section: "state", Name: "scripts/imessage-state.json", Status: statusOK, Detail: "parsed"})
