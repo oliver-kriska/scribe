@@ -147,6 +147,36 @@ func TestBuildDigestEmptyKB(t *testing.T) {
 	}
 }
 
+// TestDigestExcludesMachineLocalLedgers: the staleness/contradiction
+// ledgers are gitignored per-machine files — embedding them in the
+// committed digest makes its bytes diverge across members (commit
+// ping-pong). They must surface as machine-local notes instead.
+func TestDigestExcludesMachineLocalLedgers(t *testing.T) {
+	root := initTestGitRepo(t, "Alice")
+	writeKBFile(t, root, "wiki/good.md", "---\ntitle: Good\n---\n\nbody\n")
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "seed")
+
+	writeKBFile(t, root, "wiki/_staleness.jsonl",
+		`{"version":1,"id":"s-1","path":"wiki/good.md","signals":["age"]}`+"\n")
+	writeKBFile(t, root, "wiki/_contradictions.jsonl",
+		`{"version":1,"id":"c-1","pair":["wiki/a.md","wiki/b.md"]}`+"\n")
+
+	out := buildDigest(root, &ScribeConfig{}, 7)
+	for _, banned := range []string{"stale article", "contradiction"} {
+		if strings.Contains(out, banned) {
+			t.Errorf("committed digest leaked machine-local %q:\n%s", banned, out)
+		}
+	}
+
+	notes := strings.Join(digestLocalNotes(root), "\n")
+	for _, want := range []string{"1 stale article", "1 unresolved contradiction"} {
+		if !strings.Contains(notes, want) {
+			t.Errorf("local notes missing %q, got:\n%s", want, notes)
+		}
+	}
+}
+
 func TestWriteDigestFile(t *testing.T) {
 	root := initTestGitRepo(t, "Alice")
 	if err := os.MkdirAll(filepath.Join(root, "wiki"), 0o755); err != nil {
