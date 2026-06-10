@@ -58,6 +58,18 @@ func (d *DreamCmd) Run() error {
 	}
 	defer releaseLock(lf)
 
+	// Team KBs coordinate the weekly dream through a committed lease so
+	// only one machine runs it per window — replaces the manual "run
+	// dream on one machine only" rule. Solo KBs skip the round-trip.
+	if cfg.Team {
+		acquired, holder := acquireDreamLease(root, time.Now())
+		if !acquired {
+			logMsg("dream", "dream lease held by %s — skipping this cycle", holder)
+			return nil
+		}
+		defer releaseDreamLease(root)
+	}
+
 	ctx := context.Background()
 
 	// Phase 4D dispatch: orchestrator mode runs the LLM as a single

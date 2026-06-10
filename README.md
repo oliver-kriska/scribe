@@ -550,8 +550,11 @@ competing claims.
 
 ### Caveats (honest ones)
 
-- **Run `scribe dream` on one machine only** (rotate if you like). Concurrent
-  dream cycles on the same KB produce duplicate consolidation churn.
+- **Dream coordination is automatic** in team mode: a committed lease file
+  (`scripts/dream-lease.json`) lets one machine claim the weekly cycle; the
+  others see the active claim after their pull and skip. Expired leases are
+  stealable. Best-effort — with the remote unreachable, two machines may dream
+  once concurrently, which only costs duplicate consolidation churn.
 - **`scribe cron install` manages one KB per machine** — the LaunchAgent labels
   are fixed. Run your personal KB on cron and sync the team KB with a manual
   cron line (`SCRIBE_KB=~/team-kb scribe sync`), or vice versa.
