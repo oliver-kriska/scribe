@@ -122,12 +122,23 @@ func (s *SyncCmd) Run() error {
 	// Failures (offline, auth, rebase conflict) log and continue — we do
 	// not want a flaky network call to crash a local sync run.
 	pulledRemote := false
+	pulledReindexed := false
 	if !s.DryRun && pullBeforeSyncEnabled(cfg) {
 		if ok, pulled, pErr := pullRebase(root); pErr != nil {
 			logMsg("sync", "pull skipped: %s (continuing)", pErr)
 		} else if ok && pulled {
 			pulledRemote = true
 			logMsg("sync", "pulled new commits from remote")
+			// Reindex NOW, not only at the end of the run: the ingestion
+			// phases below (extraction research-before-create, absorb
+			// dedup, session mining) query qmd, and teammates' pulled
+			// articles must be searchable when those checks run — or
+			// every member re-creates pages the pull just delivered.
+			if err := s.rebuildAndReindex(root); err != nil {
+				logMsg("sync", "post-pull reindex error: %v", err)
+			} else {
+				pulledReindexed = true
+			}
 		}
 	}
 
@@ -248,8 +259,9 @@ func (s *SyncCmd) Run() error {
 	// Phase 3: Reindex + commit. pulledRemote forces a reindex even when
 	// this run produced nothing locally — in a shared KB, a teammate's
 	// pulled commits would otherwise sit unindexed until the next local
-	// extraction happens to fire.
-	if counters.extracted > 0 || counters.sessionsScanned > 0 || counters.absorbed > 0 || pulledRemote {
+	// extraction happens to fire. When the post-pull reindex already ran
+	// and nothing local was produced since, skip the redundant rerun.
+	if counters.extracted > 0 || counters.sessionsScanned > 0 || counters.absorbed > 0 || (pulledRemote && !pulledReindexed) {
 		if err := s.rebuildAndReindex(root); err != nil {
 			logMsg("sync", "reindex error: %v", err)
 		}
