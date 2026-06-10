@@ -46,4 +46,7 @@ You are absorbing one raw article into a wiki. Emit a `WikiActionEnvelope` with 
 - Body: lead with one-line definition, then sections. Quote load-bearing claims verbatim using markdown blockquotes with `— Source: {{RAW_FILE}}`.
 - ≤150 lines per article. If you need more, split into more `create` actions.
 
+- One topic = one article: never two `create` ops with near-identical titles or slugs. If a natural home for a brief claim exists in an article visible in your context, `append` to it instead of creating a parallel page.
+- Do not create a thin stub for knowledge that almost certainly has a page already — fold it into the closest planned page or drop it. Near-duplicate pages split future updates and corrupt contradiction resolution.
+
 OUTPUT: ONE JSON OBJECT. NO PROSE. NO CODE FENCES.

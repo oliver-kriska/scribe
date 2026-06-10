@@ -38,7 +38,7 @@ The wiki layer exists for **structure** (typed entity pages, wikilinks, backlink
    > — Source: {{RAW_FILE}} (section or paragraph reference if useful)
    ```
 
-5. **Write / update wiki articles** following CLAUDE.md frontmatter conventions. Set `sources:` to include the raw file path. Prefer updating an existing article over creating a near-duplicate — search first with Grep on the topic title and likely wikilinks.
+5. **Write / update wiki articles** following CLAUDE.md frontmatter conventions. Set `sources:` to include the raw file path. Research before creating: for EACH planned page, Grep `wiki/_index.md` for the candidate title's distinctive words, then Grep the content dirs for 2-3 topic keywords (this also catches `aliases:`). On a match, update that article instead — add the new claims, extend `sources:`, reuse its exact `title:` in wikilinks. Create only when the search comes back empty; a near-duplicate page splits future updates across files and corrupts contradiction resolution.
 
 6. **Score `confidence:`** using the Confidence Rubric in CLAUDE.md. Do linguistic forensics on the source: assertive language + primary evidence + action taken → `high`; mixed register + secondary source + evaluated-but-not-committed → `medium`; hedging ("maybe", "probably", "could") + single unverified opinion + speculation → `low`. Default to `medium` when unsure. Do not inflate to look authoritative — dream uses this field as the arbiter when contradictions come up, so miscalibration corrupts later resolution.
 

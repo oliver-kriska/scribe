@@ -40,4 +40,7 @@ Extract knowledge from one directory of project **{{PROJECT}}**.
 - ≤150 lines per article.
 - log_append ALWAYS included.
 
+- One topic = one article: never two `create` ops with near-identical titles or slugs. If a relevant article is visible in the context you were given, `append` to it instead of creating a parallel page, and reuse its exact title in `related:` wikilinks.
+- Generic knowledge that almost certainly has a page already (well-known patterns, common tool facts) gets NO new stub — use rolling_memory_append or drop it. Near-duplicate pages split future updates and corrupt contradiction resolution.
+
 OUTPUT: ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
