@@ -320,9 +320,10 @@ func (s *SyncCmd) mineSessionBatchesEnvelope(root string, sessionIDs []string, p
 			if err := s.rebuildAndReindex(root); err != nil {
 				logMsg("sync", "checkpoint reindex error: %v", err)
 			}
-			if err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, total)); err != nil {
+			committed, err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, total))
+			if err != nil {
 				logMsg("sync", "checkpoint commit error: %v", err)
-			} else {
+			} else if committed {
 				recordBatchOutcome(root, label, batchIDs)
 				batchIDs = nil
 			}

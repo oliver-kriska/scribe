@@ -383,28 +383,32 @@ func (s *SyncCmd) reindex(root string) error {
 	return nil
 }
 
-// commitAndPush stages wiki files, commits, and pushes. No-op if tree is clean.
-func (s *SyncCmd) commitAndPush(root, message string) error {
+// commitAndPush stages wiki files, commits, and pushes. No-op if tree
+// is clean. Returns committed=false on every no-op path (clean tree,
+// debounce, secret hold, nothing staged) — callers that attribute work
+// to "the commit that just happened" (recordBatchOutcome) must check
+// it, or they stamp this batch onto the PREVIOUS commit's SHA.
+func (s *SyncCmd) commitAndPush(root, message string) (bool, error) {
 	if !gitIsDirty(root) {
-		return nil
+		return false, nil
 	}
 	if debounced, age, window := commitDebounced(root, loadConfig(root)); debounced {
 		logMsg("sync", "commit debounced (%s since last commit, window %s) — staged changes roll to next run", age.Round(time.Second), window)
-		return nil
+		return false, nil
 	}
 	if !gitAddWiki(root) {
 		logMsg("sync", "commit skipped: a detected secret could not be held back — resolve and rerun")
-		return nil
+		return false, nil
 	}
 	// After staging, verify that the scope we stage (wiki dirs + log.md etc)
 	// actually produced staged changes. Otherwise there's nothing for us to
 	// commit — the dirty bit was from files outside our scope (cmd/, .claude/,
 	// a parallel editor, etc). Treat this as a no-op, not an error.
 	if !gitHasStagedChanges(root) {
-		return nil
+		return false, nil
 	}
 	if err := gitCommit(root, message); err != nil {
-		return err
+		return false, err
 	}
 	logMsg("sync", "committed")
 	if gitRemoteURL(root) != "" {
@@ -414,7 +418,7 @@ func (s *SyncCmd) commitAndPush(root, message string) error {
 			logMsg("sync", "pushed")
 		}
 	}
-	return nil
+	return true, nil
 }
 
 // rebuildIndexAndBacklinks runs `scribe backlinks` and `scribe index`
