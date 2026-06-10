@@ -292,6 +292,9 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 		if manifest.isIgnored(cwd) {
 			return
 		}
+		if !sourceAllowed(cfg, cwd) {
+			return
+		}
 		if !hasSignificantContent(cwd) {
 			return
 		}

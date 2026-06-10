@@ -348,6 +348,13 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 			continue
 		}
 
+		// Source filters (sources.include / sources.exclude in
+		// scribe.yaml) gate discovery before the manifest ever sees the
+		// path. Quiet skip — the filter is explicit user config.
+		if !sourceAllowed(cfg, decoded) {
+			continue
+		}
+
 		if !hasSignificantContent(decoded) {
 			continue
 		}

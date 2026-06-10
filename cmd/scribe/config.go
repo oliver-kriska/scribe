@@ -66,9 +66,13 @@ type ScribeConfig struct {
 	// ClaudeProjectsDir. Missing dir is optional — Codex is not
 	// required, doctor surfaces it as a WARN.
 	CodexSessionsDir string `yaml:"codex_sessions_dir"`
-	CcriderDB        string `yaml:"ccrider_db"`
-	LockDir          string `yaml:"lock_dir"`
-	DefaultModel     string `yaml:"default_model"`
+	// Sources scopes which project paths discovery may enroll —
+	// include/exclude path globs evaluated before a project ever lands
+	// in the manifest. See SourcesConfig (sources.go) for semantics.
+	Sources      SourcesConfig `yaml:"sources"`
+	CcriderDB    string        `yaml:"ccrider_db"`
+	LockDir      string        `yaml:"lock_dir"`
+	DefaultModel string        `yaml:"default_model"`
 	// KBName is the display-level name of this KB, used for:
 	//   - the drop-file directory other projects write to
 	//     (`.claude/<kb_name>/*.md`)

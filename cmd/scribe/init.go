@@ -74,6 +74,12 @@ type InitCmd struct {
 	// model so the first sync run doesn't pause on /api/pull.
 	Provider string `help:"LLM provider for the KB. anthropic (default) | ollama." enum:"anthropic,ollama," default:""`
 	Model    string `help:"Default model for the picked provider. Empty falls back to provider-specific recommendation."`
+	// Allow/Disallow seed sources.include / sources.exclude in the
+	// scaffolded scribe.yaml, so the very first `scribe sync` never
+	// enrolls folders the user doesn't want (work-only KB, no
+	// ~/personal, etc.). Repeatable; values may use ~ and globs.
+	Allow    []string `help:"Only discover projects under these paths/globs (writes sources.include). Repeatable." placeholder:"~/work"`
+	Disallow []string `help:"Never discover projects under these paths/globs (writes sources.exclude). Repeatable." placeholder:"~/personal"`
 }
 
 // templateVars is what every embedded template receives. One struct is easier
@@ -97,6 +103,12 @@ type templateVars struct {
 	// flips the template to emit the local-default block uncommented.
 	LLMProvider string
 	LLMModel    string
+	// SourcesInclude / SourcesExclude come from `init --allow` /
+	// `--disallow` and render the `sources:` discovery filter in the
+	// scaffolded scribe.yaml. Empty slices leave only the commented
+	// documentation block.
+	SourcesInclude []string
+	SourcesExclude []string
 }
 
 func (c *InitCmd) Run() error {
@@ -334,6 +346,8 @@ func (c *InitCmd) collectVars(abs string) (templateVars, error) {
 		Today:                time.Now().UTC().Format("2006-01-02"),
 		LLMProvider:          provider,
 		LLMModel:             model,
+		SourcesInclude:       c.Allow,
+		SourcesExclude:       c.Disallow,
 	}, nil
 }
 
