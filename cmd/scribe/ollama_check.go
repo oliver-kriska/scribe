@@ -19,7 +19,7 @@ func ensureOllamaReadyOrHint(model string) {
 		model = ollamaRecommendedModel
 	}
 	fmt.Printf("\nProbing Ollama (model=%s)...\n", model)
-	p := &ollamaProvider{baseURL: "http://localhost:11434", model: model}
+	p := &ollamaProvider{baseURL: defaultOllamaURL, model: model}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	present, err := p.listedModels(ctx)

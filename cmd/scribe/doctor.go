@@ -413,7 +413,7 @@ func checkLocalMode(cfg *ScribeConfig) []check {
 
 	url := effOllamaURL
 	if url == "" {
-		url = "http://localhost:11434"
+		url = defaultOllamaURL
 	}
 	model := effPass2Model
 

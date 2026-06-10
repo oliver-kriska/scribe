@@ -193,7 +193,7 @@ func countProposalItems(body, path string) int {
 // model — it just reports.
 func pingOllamaFast(baseURL string) error {
 	if baseURL == "" {
-		baseURL = "http://localhost:11434"
+		baseURL = defaultOllamaURL
 	}
 	o := &ollamaProvider{baseURL: baseURL, model: ""}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

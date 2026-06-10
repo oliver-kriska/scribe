@@ -359,7 +359,7 @@ func llmDefaults() LLMConfig {
 	return LLMConfig{
 		Provider:  "anthropic",
 		Model:     "",
-		OllamaURL: "http://localhost:11434",
+		OllamaURL: defaultOllamaURL,
 	}
 }
 
@@ -421,31 +421,61 @@ func inheritProviderFromLLM(label string, opProvider, opModel, opOllamaURL strin
 		ollamaURL = top.OllamaURL
 	}
 	if ollamaURL == "" {
-		ollamaURL = "http://localhost:11434"
+		ollamaURL = defaultOllamaURL
 	}
 	provider, model = coerceProviderModel(label, provider, model)
 	return provider, model, ollamaURL
+}
+
+// inheritLLMOpBase fills the trio every per-op LLM block shares:
+// provider/model/ollama_url inherit op value → top-level llm block →
+// hard default. Pointer parameters because the per-op config structs
+// are distinct types with identical field names. The caller keeps its
+// own mode/timeout/num_ctx defaults — those genuinely differ per op.
+func inheritLLMOpBase(provider, model, ollamaURL *string, llm LLMConfig) {
+	if *provider == "" {
+		*provider = llm.Provider
+	}
+	if *provider == "" {
+		*provider = "anthropic"
+	}
+	if *model == "" {
+		*model = llm.Model
+	}
+	if *ollamaURL == "" {
+		*ollamaURL = llm.OllamaURL
+	}
+	if *ollamaURL == "" {
+		*ollamaURL = defaultOllamaURL
+	}
+}
+
+// inheritNumCtx fills num_ctx: op value → top-level llm → per-op floor.
+// Only Ollama reads it; Anthropic ignores num_ctx entirely.
+func inheritNumCtx(numCtx *int, llm LLMConfig, floor int) {
+	if *numCtx <= 0 {
+		*numCtx = llm.NumCtx
+	}
+	if *numCtx <= 0 {
+		*numCtx = floor
+	}
+}
+
+// forceNonAnthropicMode auto-flips an op's mode when its provider can't
+// run the `claude -p` tools path (anything non-anthropic), logging once
+// so the user notices the override.
+func forceNonAnthropicMode(label, provider string, mode *string, forced string) {
+	if !strings.EqualFold(provider, "anthropic") && !strings.EqualFold(*mode, forced) {
+		logAutoFlipOnce(label+":"+provider, "config", "%s.provider=%q forces mode=%s (was %q)", label, provider, forced, *mode)
+		*mode = forced
+	}
 }
 
 // applyRelationsDefaults fills RelationsConfig from LLMConfig + sane
 // defaults (Phase 4A.4/4A.5). Empty fields inherit; alias swap runs
 // at the end so a Claude alias under ollama is rewritten cleanly.
 func applyRelationsDefaults(cfg *RelationsConfig, llm LLMConfig) {
-	if cfg.Provider == "" {
-		cfg.Provider = llm.Provider
-	}
-	if cfg.Provider == "" {
-		cfg.Provider = "anthropic"
-	}
-	if cfg.Model == "" {
-		cfg.Model = llm.Model
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = llm.OllamaURL
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = "http://localhost:11434"
-	}
+	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
 	cfg.Provider, cfg.Model = coerceProviderModel("relations", cfg.Provider, cfg.Model)
 }
 
@@ -454,40 +484,18 @@ func applyRelationsDefaults(cfg *RelationsConfig, llm LLMConfig) {
 // orchestrator (Phase 4D) because the legacy tools path needs
 // `claude -p`.
 func applyDreamDefaults(cfg *DreamConfig, llm LLMConfig) {
-	if cfg.Provider == "" {
-		cfg.Provider = llm.Provider
-	}
-	if cfg.Provider == "" {
-		cfg.Provider = "anthropic"
-	}
-	if cfg.Model == "" {
-		cfg.Model = llm.Model
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = llm.OllamaURL
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = "http://localhost:11434"
-	}
+	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
 	if cfg.Mode == "" {
 		cfg.Mode = "monolithic"
 	}
 	if cfg.TimeoutMin <= 0 {
 		cfg.TimeoutMin = 20
 	}
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = llm.NumCtx
-	}
-	if cfg.NumCtx <= 0 {
-		// Dream's orient packet is big (log tail + inventory + stale
-		// list + contradictions). 16384 keeps the conclusion of the
-		// inventory from being truncated.
-		cfg.NumCtx = 16384
-	}
-	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "orchestrator") {
-		logAutoFlipOnce("dream:"+cfg.Provider, "config", "dream.provider=%q forces mode=orchestrator (was %q)", cfg.Provider, cfg.Mode)
-		cfg.Mode = "orchestrator"
-	}
+	// Dream's orient packet is big (log tail + inventory + stale list +
+	// contradictions). 16384 keeps the conclusion of the inventory from
+	// being truncated.
+	inheritNumCtx(&cfg.NumCtx, llm, 16384)
+	forceNonAnthropicMode("dream", cfg.Provider, &cfg.Mode, "orchestrator")
 	cfg.Provider, cfg.Model = coerceProviderModel("dream", cfg.Provider, cfg.Model)
 }
 
@@ -495,72 +503,28 @@ func applyDreamDefaults(cfg *DreamConfig, llm LLMConfig) {
 // as Dream — Mode defaults to tools for backward compat, non-anthropic
 // provider auto-flips to envelope mode.
 func applyAssessDefaults(cfg *AssessConfig, llm LLMConfig) {
-	if cfg.Provider == "" {
-		cfg.Provider = llm.Provider
-	}
-	if cfg.Provider == "" {
-		cfg.Provider = "anthropic"
-	}
-	if cfg.Model == "" {
-		cfg.Model = llm.Model
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = llm.OllamaURL
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = "http://localhost:11434"
-	}
+	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
 	if cfg.Mode == "" {
 		cfg.Mode = "tools"
 	}
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = llm.NumCtx
-	}
-	if cfg.NumCtx <= 0 {
-		// Assess inlines top-level docs (12K char cap), source tree
-		// (200 entries), and recent git log. Even with truncation
-		// this routinely lands at 6-8K tokens.
-		cfg.NumCtx = 32768
-	}
-	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
-		logAutoFlipOnce("assess:"+cfg.Provider, "config", "assess.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
-		cfg.Mode = "envelope"
-	}
+	// Assess inlines top-level docs (12K char cap), source tree (200
+	// entries), and recent git log. Even with truncation this routinely
+	// lands at 6-8K tokens.
+	inheritNumCtx(&cfg.NumCtx, llm, 32768)
+	forceNonAnthropicMode("assess", cfg.Provider, &cfg.Mode, "envelope")
 	cfg.Provider, cfg.Model = coerceProviderModel("assess", cfg.Provider, cfg.Model)
 }
 
 func applyDeepIngestDefaults(cfg *DeepIngestConfig, llm LLMConfig) {
-	if cfg.Provider == "" {
-		cfg.Provider = llm.Provider
-	}
-	if cfg.Provider == "" {
-		cfg.Provider = "anthropic"
-	}
-	if cfg.Model == "" {
-		cfg.Model = llm.Model
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = llm.OllamaURL
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = "http://localhost:11434"
-	}
+	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
 	if cfg.Mode == "" {
 		cfg.Mode = "tools"
 	}
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = llm.NumCtx
-	}
-	if cfg.NumCtx <= 0 {
-		// Deep inlines per-directory file contents capped at 24K
-		// chars (~6K tokens) — pair with 16384 to leave headroom for
-		// the prompt and the envelope output.
-		cfg.NumCtx = 16384
-	}
-	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
-		logAutoFlipOnce("deep_ingest:"+cfg.Provider, "config", "deep_ingest.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
-		cfg.Mode = "envelope"
-	}
+	// Deep inlines per-directory file contents capped at 24K chars
+	// (~6K tokens) — pair with 16384 to leave headroom for the prompt
+	// and the envelope output.
+	inheritNumCtx(&cfg.NumCtx, llm, 16384)
+	forceNonAnthropicMode("deep_ingest", cfg.Provider, &cfg.Mode, "envelope")
 	cfg.Provider, cfg.Model = coerceProviderModel("deep_ingest", cfg.Provider, cfg.Model)
 }
 
@@ -568,21 +532,7 @@ func applyDeepIngestDefaults(cfg *DeepIngestConfig, llm LLMConfig) {
 // Dream/Assess/Deep — Mode defaults to tools for backward compat, but
 // a non-anthropic provider auto-flips to envelope.
 func applyExtractDefaults(cfg *ExtractConfig, llm LLMConfig) {
-	if cfg.Provider == "" {
-		cfg.Provider = llm.Provider
-	}
-	if cfg.Provider == "" {
-		cfg.Provider = "anthropic"
-	}
-	if cfg.Model == "" {
-		cfg.Model = llm.Model
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = llm.OllamaURL
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = "http://localhost:11434"
-	}
+	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
 	if cfg.Mode == "" {
 		cfg.Mode = "tools"
 	}
@@ -595,16 +545,8 @@ func applyExtractDefaults(cfg *ExtractConfig, llm LLMConfig) {
 	if cfg.TimeoutMin <= 0 {
 		cfg.TimeoutMin = 10
 	}
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = llm.NumCtx
-	}
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = 16384
-	}
-	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
-		logAutoFlipOnce("extract:"+cfg.Provider, "config", "extract.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
-		cfg.Mode = "envelope"
-	}
+	inheritNumCtx(&cfg.NumCtx, llm, 16384)
+	forceNonAnthropicMode("extract", cfg.Provider, &cfg.Mode, "envelope")
 	cfg.Provider, cfg.Model = coerceProviderModel("extract", cfg.Provider, cfg.Model)
 }
 
@@ -613,21 +555,7 @@ func applyExtractDefaults(cfg *ExtractConfig, llm LLMConfig) {
 // `claude -p` is the only backend that supports the ccrider MCP tools
 // the legacy path relies on.
 func applySessionMineDefaults(cfg *SessionMineConfig, llm LLMConfig) {
-	if cfg.Provider == "" {
-		cfg.Provider = llm.Provider
-	}
-	if cfg.Provider == "" {
-		cfg.Provider = "anthropic"
-	}
-	if cfg.Model == "" {
-		cfg.Model = llm.Model
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = llm.OllamaURL
-	}
-	if cfg.OllamaURL == "" {
-		cfg.OllamaURL = "http://localhost:11434"
-	}
+	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
 	if cfg.Mode == "" {
 		cfg.Mode = "tools"
 	}
@@ -637,21 +565,13 @@ func applySessionMineDefaults(cfg *SessionMineConfig, llm LLMConfig) {
 	if cfg.TimeoutMin <= 0 {
 		cfg.TimeoutMin = 8
 	}
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = llm.NumCtx
-	}
-	if cfg.NumCtx <= 0 {
-		// Default TranscriptMaxChars 24000 + prompt skeleton + related
-		// sessions block lands at 6-7K tokens. 16384 is the floor;
-		// raising TranscriptMaxChars without raising NumCtx silently
-		// truncates the conclusion of the transcript on Ollama.
-		cfg.NumCtx = 16384
-	}
+	// Default TranscriptMaxChars 24000 + prompt skeleton + related
+	// sessions block lands at 6-7K tokens. 16384 is the floor; raising
+	// TranscriptMaxChars without raising NumCtx silently truncates the
+	// conclusion of the transcript on Ollama.
+	inheritNumCtx(&cfg.NumCtx, llm, 16384)
 	// Non-anthropic provider has no MCP support → force envelope mode.
-	if !strings.EqualFold(cfg.Provider, "anthropic") && !strings.EqualFold(cfg.Mode, "envelope") {
-		logAutoFlipOnce("session_mine:"+cfg.Provider, "config", "session_mine.provider=%q forces mode=envelope (was %q)", cfg.Provider, cfg.Mode)
-		cfg.Mode = "envelope"
-	}
+	forceNonAnthropicMode("session_mine", cfg.Provider, &cfg.Mode, "envelope")
 	cfg.Provider, cfg.Model = coerceProviderModel("session_mine", cfg.Provider, cfg.Model)
 }
 
@@ -698,7 +618,7 @@ func applyMetaDefaults(cfg *MetaConfig) {
 func relationsProviderModel(root, cliModel string) (provider, model, ollamaURL string) {
 	cfg := loadConfig(root)
 	if cfg == nil {
-		return "anthropic", cliModel, "http://localhost:11434"
+		return "anthropic", cliModel, defaultOllamaURL
 	}
 	// The CLI flag wins over RelationsConfig.Model when set, so users
 	// can A/B without editing scribe.yaml. Empty flag → fall through
@@ -1082,7 +1002,7 @@ func absorbDefaults() AbsorbConfig {
 			Enabled:    &trueV,
 			Provider:   "anthropic",
 			Model:      "haiku",
-			OllamaURL:  "http://localhost:11434",
+			OllamaURL:  defaultOllamaURL,
 			MaxPerRun:  20,
 			TimeoutSec: 90,
 		},
@@ -1206,6 +1126,11 @@ absorb:
 // alias). Chosen in research/2026-04-20-ollama-model-for-contextualize.md
 // for best speed/quality balance on Apple Silicon at ~3.3 GB Q4.
 const ollamaRecommendedModel = "gemma3:4b"
+
+// defaultOllamaURL is the stock local Ollama server address — the final
+// fallback whenever neither a per-op block nor the top-level llm block
+// sets ollama_url.
+const defaultOllamaURL = "http://localhost:11434"
 
 // claudeModelAliases are the model names `claude -p` accepts. Anything in
 // this list is a red flag when the provider is ollama — the user probably
