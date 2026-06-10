@@ -1,6 +1,10 @@
 output/
 *.lock
 .DS_Store
+
+# Per-user local overrides — values here win over scribe.yaml and are
+# never shared (capture handles, personal source filters, ...).
+scribe.local.yaml
 {{if .TeamMode}}
 # Shared team KB: the manifest holds machine-local paths, SHAs, and
 # approval state — each member keeps their own (see README → Shared team KBs).

@@ -428,6 +428,8 @@ scribe sync         # discover → extract → absorb → reindex
 scribe projects     # list discovered projects with status
 scribe projects review       # interactively approve/ignore pending projects
 scribe projects approve --all # approve everything pending
+scribe config diff  # team KBs: show sensitive scribe.yaml keys changed since last trusted
+scribe config trust # team KBs: approve the current sensitive keys
 scribe sync --sessions       # mine Claude Code (ccrider) + Codex CLI sessions (when codex.mine is on)
 scribe sync --estimate       # token estimate for pending work (no LLM calls)
 scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml
@@ -501,6 +503,19 @@ own sessions and repos; git is the merge layer.
      absolute paths, git SHAs, and approval decisions. Sharing it breaks when two
      members clone the same repo at different paths; per-machine manifests make
      approval and extraction state private while articles stay shared.
+   - **Config trust** (`team: true` in scribe.yaml, written by `--team`): the
+     repo's scribe.yaml is writable by every member and auto-pulled before each
+     sync, so its *sensitive* keys — source filters, ingestion dirs, capture,
+     `ollama_url` — are locked to a per-machine snapshot trusted at first sync.
+     When a pushed change alters them, your scribe keeps running on the values
+     you trusted and warns (`scribe doctor`, sync log); you review with
+     `scribe config diff` and accept with `scribe config trust`. Pushing
+     `team: false` can't unlock the layer — enforcement is anchored in
+     `~/.config/scribe/trust.json`, outside the repo.
+   - **`scribe.local.yaml`** (gitignored, same schema) holds per-user overrides
+     that always win over the repo config. iMessage capture **never** runs from
+     the shared scribe.yaml in team mode — it's off until a member enables it
+     here, locally, themselves.
    - **`contributor:` frontmatter** is stamped automatically on every new article
      from each member's git identity (`git config user.name`, overridable via
      `contributor:` in `~/.config/scribe/config.yaml`) — provenance without git
@@ -531,7 +546,8 @@ competing claims.
   append-heavy article layout keeps this rare; resolve by hand and re-run sync.
 - **Session transcripts never leave the machine.** Only the distilled wiki
   articles are committed — but review what extraction writes before you wire a
-  team remote, and keep anything sensitive behind `sources.exclude`.
+  team remote, and keep anything sensitive behind `sources.exclude` (in your
+  `scribe.local.yaml`, so a teammate's push can't loosen it).
 
 ---
 

@@ -107,6 +107,11 @@ func (s *SyncCmd) Run() error {
 	// (loadConfig is pure as of 0.2.21).
 	if !s.DryRun {
 		maybeBackfillAbsorbBlock(root)
+		// TOFU for the team-KB config trust layer — deliberately BEFORE
+		// the pull below, so the snapshot records the config the user
+		// cloned/edited, and a drifted config arriving in the pull gets
+		// flagged instead of silently trusted.
+		ensureConfigTrust(root)
 	}
 
 	logMsg("sync", "starting")

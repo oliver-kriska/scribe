@@ -12,6 +12,19 @@ owner_context: |
 domains:
 {{range .Domains}}  - {{.}}
 {{end}}
+{{if .TeamMode}}# Shared team KB. This activates the config trust layer: sensitive keys
+# in this file (sources, capture, ingestion dirs, ollama_url) are locked
+# to a per-machine approved snapshot — when a pushed change alters them,
+# each member's scribe keeps running on the values they trusted and asks
+# them to review (`scribe config diff` / `scribe config trust`). iMessage
+# capture never runs from this file in team mode; enable it per-person in
+# the gitignored scribe.local.yaml if wanted.
+team: true
+
+{{end}}# Per-user overrides live in scribe.local.yaml (gitignored) — same schema
+# as this file, values there always win. That's where personal capture
+# handles or extra source filters belong in a shared KB.
+
 # Source filters — which project paths discovery may enroll. Evaluated
 # before a project ever lands in the manifest; projects already tracked
 # are managed via `scribe projects`. Patterns: a plain path covers

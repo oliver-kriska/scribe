@@ -56,10 +56,17 @@ var wikiDirs = []string{
 
 // ScribeConfig holds configuration loaded from scribe.yaml.
 type ScribeConfig struct {
-	OwnerName         string   `yaml:"owner_name"`
-	OwnerContext      string   `yaml:"owner_context"`
-	Domains           []string `yaml:"domains"`
-	ClaudeProjectsDir string   `yaml:"claude_projects_dir"`
+	OwnerName    string   `yaml:"owner_name"`
+	OwnerContext string   `yaml:"owner_context"`
+	Domains      []string `yaml:"domains"`
+	// Team marks a shared KB (several people pushing to one repo). It
+	// activates the config trust layer (config_trust.go): sensitive
+	// repo-config keys get locked to a per-machine approved snapshot,
+	// and iMessage capture only ever runs from scribe.local.yaml. The
+	// flag is itself a locked key — once a machine has trusted a
+	// team:true config, a pushed team:false cannot unlock it.
+	Team              bool   `yaml:"team"`
+	ClaudeProjectsDir string `yaml:"claude_projects_dir"`
 	// CodexSessionsDir is the OpenAI Codex CLI rollouts directory
 	// (~/.codex/sessions). `scribe sync --discover` walks rollouts here
 	// to find projects you've touched only via Codex, parallel to
@@ -1621,6 +1628,14 @@ func loadConfig(root string) *ScribeConfig {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		logMsg("config", "scribe.yaml has errors — falling back to defaults: %v", err)
 	}
+
+	// Trust layer (config_trust.go), in this exact order: first judge
+	// the repo-controlled view against the per-machine trust record
+	// (team KBs: drifted sensitive keys revert to trusted values,
+	// capture is hard-off), THEN apply the user-owned scribe.local.yaml
+	// so local overrides win over both the repo file and the revert.
+	enforceConfigTrust(root, cfg)
+	applyLocalOverrides(root, cfg)
 
 	// Expand ~ in paths.
 	cfg.ClaudeProjectsDir = expandHome(cfg.ClaudeProjectsDir)

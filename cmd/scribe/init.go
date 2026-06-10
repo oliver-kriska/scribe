@@ -259,6 +259,10 @@ func (c *InitCmd) runBootstrap() error {
 		fmt.Println("  push it:        git remote add origin git@github.com:yourorg/team-kb.git && git push -u origin main")
 		fmt.Println("  members clone:  git clone <remote> ~/team-kb && SCRIBE_KB=~/team-kb scribe sync")
 		fmt.Println("  approvals:      each member runs `scribe projects review` after their first sync")
+		fmt.Println("  config trust:   sensitive scribe.yaml keys are locked per-machine; review pushed")
+		fmt.Println("                  changes with `scribe config diff`, accept with `scribe config trust`")
+		fmt.Println("  personal bits:  per-user settings (capture handles, extra filters) go in the")
+		fmt.Println("                  gitignored scribe.local.yaml — they always win over scribe.yaml")
 		fmt.Println("  consolidation:  run `scribe dream` on ONE machine only (see README → Shared team KBs)")
 	}
 
