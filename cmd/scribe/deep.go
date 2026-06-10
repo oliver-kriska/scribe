@@ -179,6 +179,18 @@ func (d *DeepCmd) Run() error {
 		if err := manifest.save(); err != nil {
 			logMsg("deep", "warning: failed to save manifest: %v", err)
 		}
+
+		// Deep extraction covers regular extraction — record it in the
+		// shared ledger so teammates skip this revision too.
+		if entry.LastSHA != "no-git" && entry.LastSHA != "" {
+			if key := repoLedgerKey(projectPath); key != "" {
+				ledger := loadLedger(root)
+				ledger.record(key, entry.LastSHA, resolveContributor(root))
+				if err := ledger.save(); err != nil {
+					logMsg("deep", "warning: extraction ledger save failed: %v", err)
+				}
+			}
+		}
 	}
 
 	// Reindex and commit.

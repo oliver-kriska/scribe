@@ -523,6 +523,12 @@ own sessions and repos; git is the merge layer.
    - **Pull-before-sync** (`sync.always_pull_before_sync`, default on) rebases on
      teammates' commits before every run, and a pull that brings new articles
      triggers a qmd reindex even when the local run extracted nothing.
+   - **Extraction ledger** (`scripts/extraction-ledger.json`, committed): every
+     extraction records the repo's normalized remote URL and HEAD SHA. When a
+     teammate already extracted the revision you're about to process, your sync
+     skips it and fast-forwards its local marker — two members tracking the same
+     repo don't both burn LLM calls producing duplicate articles. Repos without
+     an `origin` remote don't participate (no shared identity).
    - **Push conflicts** retry once through `git pull --rebase`; scribe never
      force-pushes. KB history is append-only.
 

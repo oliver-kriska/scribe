@@ -82,7 +82,7 @@ func TestProjectsNeedingExtractionSkipsPending(t *testing.T) {
 		"approved-proj": {Path: approvedDir},
 		"pending-proj":  {Path: pendingDir, Status: statusPending},
 	}}
-	got := s.projectsNeedingExtraction(m)
+	got := s.projectsNeedingExtraction(t.TempDir(), m)
 	if !slices.Contains(got, "approved-proj") {
 		t.Errorf("approved project missing from %v", got)
 	}
@@ -92,7 +92,7 @@ func TestProjectsNeedingExtractionSkipsPending(t *testing.T) {
 
 	// Explicit --extract on a pending project must not extract either.
 	s.Extract = "pending-proj"
-	if got := s.projectsNeedingExtraction(m); len(got) != 0 {
+	if got := s.projectsNeedingExtraction(t.TempDir(), m); len(got) != 0 {
 		t.Errorf("--extract on pending project returned %v, want none", got)
 	}
 }
