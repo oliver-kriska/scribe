@@ -114,10 +114,16 @@ type ScribeConfig struct {
 	SessionMine SessionMineConfig `yaml:"session_mine"`
 	Codex       CodexConfig       `yaml:"codex"`
 	Dream       DreamConfig       `yaml:"dream"`
-	Assess      AssessConfig      `yaml:"assess"`
-	DeepIngest  DeepIngestConfig  `yaml:"deep_ingest"`
-	Extract     ExtractConfig     `yaml:"extract"`
-	Meta        MetaConfig        `yaml:"meta"`
+	// Subscriptions surface teammates' incoming articles after each
+	// pull — domains/tags this user cares about, typically set in the
+	// gitignored scribe.local.yaml so each member subscribes
+	// independently. Matches print to the sync log; notify=true also
+	// fires a macOS notification (best effort).
+	Subscriptions SubscriptionsConfig `yaml:"subscriptions"`
+	Assess        AssessConfig        `yaml:"assess"`
+	DeepIngest    DeepIngestConfig    `yaml:"deep_ingest"`
+	Extract       ExtractConfig       `yaml:"extract"`
+	Meta          MetaConfig          `yaml:"meta"`
 }
 
 // MetaConfig controls the envelope's MetaAction surface — the side-
