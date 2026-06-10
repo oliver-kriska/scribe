@@ -754,7 +754,7 @@ func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 // via the errgroup context; already-running extractions finish naturally.
 func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 	cfg := loadConfig(root)
-	toExtract := s.projectsNeedingExtraction(manifest)
+	toExtract := s.projectsNeedingExtraction(root, manifest)
 
 	logMsg("sync", "%d projects need extraction (max: %d)", len(toExtract), s.Max)
 	if len(toExtract) == 0 {
@@ -872,8 +872,10 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 }
 
 // projectsNeedingExtraction returns names of projects that need extraction.
-func (s *SyncCmd) projectsNeedingExtraction(manifest *Manifest) []string {
+func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []string {
 	var result []string
+	ledger := loadLedger(root)
+	manifestDirty := false
 
 	for pname, entry := range manifest.Projects {
 		// If --extract specified, only consider that project.
@@ -920,6 +922,25 @@ func (s *SyncCmd) projectsNeedingExtraction(manifest *Manifest) []string {
 		if hasGit(entry.Path) {
 			currentSHA := gitSHA(entry.Path)
 			if currentSHA != "" && currentSHA != entry.LastSHA {
+				// Team dedupe: the committed extraction ledger maps the
+				// repo's remote URL to the last extracted SHA. When a
+				// teammate already extracted this exact revision (and
+				// the pages arrived via pull), redoing the work would
+				// only produce duplicates — sync the local marker
+				// forward instead.
+				if le, ok := ledger.lookup(repoLedgerKey(entry.Path)); ok && le.SHA == currentSHA {
+					who := le.By
+					if who == "" {
+						who = "a teammate"
+					}
+					logMsg("sync", " [%s] revision %.8s already extracted by %s (%s) — skipping, syncing local marker", pname, currentSHA, who, le.ExtractedAt)
+					entry.LastSHA = currentSHA
+					if entry.LastExtracted == "" {
+						entry.LastExtracted = le.ExtractedAt
+					}
+					manifestDirty = true
+					continue
+				}
 				result = append(result, pname)
 				continue
 			}
@@ -932,6 +953,12 @@ func (s *SyncCmd) projectsNeedingExtraction(manifest *Manifest) []string {
 		}
 
 		logMsg("sync", " [%s] unchanged, skipping", pname)
+	}
+
+	if manifestDirty && !s.DryRun {
+		if err := manifest.save(); err != nil {
+			logMsg("sync", "manifest save failed: %v", err)
+		}
 	}
 
 	sort.Strings(result)
@@ -1085,6 +1112,19 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 	entry.LastSHA = currentSHA
 	entry.LastExtracted = timestamp
 	entry.LastMDScan = timestamp
+
+	// Record in the committed extraction ledger so teammates skip this
+	// revision. Load fresh under the lock — a parallel extraction of
+	// another project may have written its own entry meanwhile.
+	if currentSHA != "no-git" {
+		if key := repoLedgerKey(entry.Path); key != "" {
+			ledger := loadLedger(root)
+			ledger.record(key, currentSHA, resolveContributor(root))
+			if err := ledger.save(); err != nil {
+				logMsg("sync", " [%s] extraction ledger save failed: %v", pname, err)
+			}
+		}
+	}
 
 	// Mark drops as processed and clean up staging.
 	if dirExists(dropStaging) {

@@ -145,10 +145,16 @@ func gitHasStagedChanges(repoPath string) bool {
 // which writer (envelope executor or tool-mode model) created the file.
 func gitAddWiki(root string) {
 	stampContributor(root)
-	args := make([]string, 0, 1+len(wikiDirs)+2)
+	args := make([]string, 0, 1+len(wikiDirs)+3)
 	args = append(args, "add")
 	args = append(args, wikiDirs...)
 	args = append(args, "scripts/projects.json", "log.md")
+	// A pathspec that matches nothing makes the whole `git add` fatal
+	// (nothing gets staged), so the ledger — absent until the first
+	// post-upgrade extraction — only joins once it exists on disk.
+	if fileExists(filepath.Join(root, "scripts", "extraction-ledger.json")) {
+		args = append(args, "scripts/extraction-ledger.json")
+	}
 	cmd := exec.Command("git", args...) //nolint:noctx // git add subprocess
 	cmd.Dir = root
 	_ = cmd.Run()
