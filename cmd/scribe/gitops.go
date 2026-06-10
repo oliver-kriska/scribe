@@ -80,10 +80,110 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 		if msg == "" {
 			msg = runErr.Error()
 		}
+		// Conflicts confined to derived/regenerable files (index,
+		// backlinks, digest) are resolved without a human — and any
+		// other conflict aborts the rebase, so a cron-driven sync never
+		// leaves the repo mid-rebase with conflict markers on disk.
+		resolved, rErr := autoResolveDerivedConflicts(repoPath)
+		if resolved {
+			logMsg("git", "pull conflict on derived file(s) auto-resolved — content regenerates after pull")
+			afterSHA := gitSHA(repoPath)
+			return true, beforeSHA != "" && afterSHA != "" && beforeSHA != afterSHA, nil
+		}
+		if rErr != nil {
+			return false, false, fmt.Errorf("%s; %w", firstLine(msg), rErr)
+		}
 		return false, false, fmt.Errorf("%s", firstLine(msg))
 	}
 	afterSHA := gitSHA(repoPath)
 	return true, beforeSHA != "" && afterSHA != "" && beforeSHA != afterSHA, nil
+}
+
+// derivedRegenerable lists KB files whose content scribe fully rebuilds
+// (wiki index, backlinks, team digest). A merge conflict on them
+// carries no information — both sides go stale the moment any machine
+// regenerates — so pull auto-resolves these instead of failing.
+var derivedRegenerable = map[string]bool{
+	"wiki/_index.md":       true,
+	"wiki/_backlinks.json": true,
+	"wiki/_digest.md":      true,
+}
+
+// rebaseInProgress reports whether repoPath has a rebase mid-flight.
+func rebaseInProgress(repoPath string) bool {
+	for _, sub := range []string{"rebase-merge", "rebase-apply"} {
+		p := runCmd(repoPath, "git", "rev-parse", "--git-path", sub)
+		if p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(repoPath, p)
+		}
+		if dirExists(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// conflictedFiles returns the repo-relative paths currently unmerged.
+func conflictedFiles(repoPath string) []string {
+	out := runCmd(repoPath, "git", "diff", "--name-only", "--diff-filter=U")
+	if out == "" {
+		return nil
+	}
+	var files []string
+	for line := range strings.SplitSeq(out, "\n") {
+		if l := strings.TrimSpace(line); l != "" {
+			files = append(files, l)
+		}
+	}
+	return files
+}
+
+// autoResolveDerivedConflicts finishes a conflicted rebase when every
+// conflicted file is derived/regenerable, returning true once the
+// rebase completed. Any other conflict — or failure to converge —
+// aborts the rebase so the working tree is restored; the error then
+// names the file a human must merge.
+func autoResolveDerivedConflicts(repoPath string) (bool, error) {
+	if !rebaseInProgress(repoPath) {
+		return false, nil
+	}
+	for round := 0; round < 20 && rebaseInProgress(repoPath); round++ {
+		conflicted := conflictedFiles(repoPath)
+		for _, f := range conflicted {
+			if !derivedRegenerable[f] {
+				_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
+				return false, fmt.Errorf("conflict in %s needs manual resolution (rebase aborted, working tree restored)", f)
+			}
+		}
+		for _, f := range conflicted {
+			// Either side works — the file regenerates right after the
+			// pull. --theirs picks the local-commit version during a
+			// rebase; a delete/modify conflict has no blob to check out,
+			// so fall back to removing (regeneration recreates it).
+			if _, err := runCmdErr(repoPath, "git", "checkout", "--theirs", "--", f); err != nil {
+				_, _ = runCmdErr(repoPath, "git", "rm", "-q", "--", f)
+				continue
+			}
+			if _, err := runCmdErr(repoPath, "git", "add", "--", f); err != nil {
+				_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
+				return false, fmt.Errorf("staging %s during auto-resolve failed: %w (rebase aborted)", f, err)
+			}
+		}
+		if _, err := runCmdErr(repoPath, "git", "-c", "core.editor=true", "rebase", "--continue"); err != nil {
+			if rebaseInProgress(repoPath) {
+				continue // stopped on the next commit's conflicts — next round
+			}
+			return false, fmt.Errorf("rebase --continue failed: %w", err)
+		}
+	}
+	if rebaseInProgress(repoPath) {
+		_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
+		return false, fmt.Errorf("rebase did not converge while auto-resolving derived files (aborted)")
+	}
+	return true, nil
 }
 
 func firstLine(s string) string {
