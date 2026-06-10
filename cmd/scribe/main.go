@@ -33,6 +33,7 @@ type CLI struct {
 	Index          IndexCmd          `cmd:"" help:"Rebuild _index.md from disk."`
 	Orphans        OrphansCmd        `cmd:"" help:"Detect orphan articles and missing wikilinks."`
 	Triage         TriageCmd         `cmd:"" help:"Score sessions by knowledge density (FTS5)."`
+	Projects       ProjectsCmd       `cmd:"" help:"List, approve, ignore, or review discovered projects."`
 	Scan           ScanCmd           `cmd:"" help:"Pre-scan a project for extraction."`
 	Deep           DeepCmd           `cmd:"" help:"Deep-extract a project batch-by-directory."`
 	Capture        CaptureCmd        `cmd:"" help:"Capture iMessage self-chat URLs/notes into raw/articles/."`

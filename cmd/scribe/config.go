@@ -1511,6 +1511,15 @@ type SyncConfig struct {
 	// every run (existing behavior).
 	CommitDebounceMinutes int `yaml:"commit_debounce_minutes"`
 
+	// AutoApprove restores pre-0.2.30 discovery behavior: newly
+	// discovered projects enroll immediately instead of landing as
+	// status=pending and waiting for `scribe projects approve`. The
+	// approval gate is the default because auto-enrolling every folder
+	// Claude/Codex was ever opened in pulls repos the user doesn't care
+	// about into the KB (the mise/direnv-style trust model: new sources
+	// need a nod first).
+	AutoApprove bool `yaml:"auto_approve"`
+
 	// AlwaysPullBeforeSync runs `git pull --rebase --autostash` at the
 	// start of `scribe sync` so teammates' committed pages show up in
 	// this run before extraction/absorb starts. Silently skipped when

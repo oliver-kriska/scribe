@@ -312,7 +312,8 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 		}
 
 		domain := manifest.resolveDomain(cwd)
-		logMsg("sync", " DISCOVERED (codex): %s -> %s (domain: %s)", pname, cwd, domain)
+		status := discoveryStatus(cfg)
+		logMsg("sync", " DISCOVERED (codex)%s: %s -> %s (domain: %s)", pendingTag(status), pname, cwd, domain)
 		discovered++
 
 		if s.DryRun {
@@ -323,12 +324,15 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 			Path:           cwd,
 			Domain:         domain,
 			DiscoveredFrom: "codex",
+			Status:         status,
 		}
 		if err := manifest.save(); err != nil {
 			logMsg("sync", "manifest save failed: %v", err)
 		}
 
-		s.ensureRepoYAML(root, cwd, pname, domain)
+		if status != statusPending {
+			ensureRepoYAML(root, cwd, pname, domain)
+		}
 	})
 
 	return discovered, walkErr
