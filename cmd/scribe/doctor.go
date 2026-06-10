@@ -203,6 +203,32 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 		out = append(out, check{Section: "config", Name: "scribe.yaml", Status: statusWarn, Detail: "missing — using defaults", Fix: "scribe init"})
 	}
 
+	// Team-KB config trust (config_trust.go): drifted sensitive keys mean
+	// scribe is deliberately ignoring part of the repo config — the user
+	// must review. A team KB with no trust record yet hasn't synced since
+	// the flag was set; nudge so the lock actually engages.
+	if current, ok := repoSensitiveView(root); ok {
+		rec := loadTrustRecord(root)
+		switch {
+		case rec != nil && rec.Sensitive.Team:
+			if drift := sensitiveDiff(rec.Sensitive, current); len(drift) > 0 {
+				out = append(out, check{
+					Section: "config", Name: "config-trust", Status: statusWarn,
+					Detail: fmt.Sprintf("repo scribe.yaml drifted from trusted snapshot (%d key(s)) — running on trusted values", len(drift)),
+					Fix:    "review with `scribe config diff`, accept with `scribe config trust`, or revert the repo file",
+				})
+			} else {
+				out = append(out, check{Section: "config", Name: "config-trust", Status: statusOK, Detail: "team KB — sensitive keys locked, no drift"})
+			}
+		case current.Team:
+			out = append(out, check{
+				Section: "config", Name: "config-trust", Status: statusWarn,
+				Detail: "team: true but no trust record on this machine yet",
+				Fix:    "run `scribe config trust` (or the next `scribe sync` records it)",
+			})
+		}
+	}
+
 	if dirExists(cfg.ClaudeProjectsDir) {
 		out = append(out, check{Section: "config", Name: "claude_projects_dir", Status: statusOK, Detail: cfg.ClaudeProjectsDir})
 	} else {
