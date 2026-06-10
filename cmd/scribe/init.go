@@ -80,6 +80,12 @@ type InitCmd struct {
 	// ~/personal, etc.). Repeatable; values may use ~ and globs.
 	Allow    []string `help:"Only discover projects under these paths/globs (writes sources.include). Repeatable." placeholder:"~/work"`
 	Disallow []string `help:"Never discover projects under these paths/globs (writes sources.exclude). Repeatable." placeholder:"~/personal"`
+	// Team scaffolds a KB meant to be shared by several people through
+	// a git remote: the per-machine manifest (scripts/projects.json) is
+	// gitignored so each member keeps their own discovery/approval
+	// state, and the next-steps output prints the remote + member-clone
+	// recipe from the README. Combine with --allow to scope sources.
+	Team bool `help:"Scaffold a shared team KB (gitignores the per-machine manifest, prints the team setup steps)."`
 }
 
 // templateVars is what every embedded template receives. One struct is easier
@@ -109,6 +115,10 @@ type templateVars struct {
 	// documentation block.
 	SourcesInclude []string
 	SourcesExclude []string
+	// TeamMode (init --team) gitignores scripts/projects.json in the
+	// scaffolded KB so each member of a shared KB keeps a per-machine
+	// manifest.
+	TeamMode bool
 }
 
 func (c *InitCmd) Run() error {
@@ -243,6 +253,14 @@ func (c *InitCmd) runBootstrap() error {
 	if strings.EqualFold(vars.LLMProvider, "ollama") {
 		fmt.Println("  4. Ollama mode: `ollama serve` must be running when sync fires; `scribe doctor` probes it.")
 	}
+	if c.Team {
+		fmt.Println()
+		fmt.Println("Team KB setup (this KB is in shared mode — scripts/projects.json is gitignored):")
+		fmt.Println("  push it:        git remote add origin git@github.com:yourorg/team-kb.git && git push -u origin main")
+		fmt.Println("  members clone:  git clone <remote> ~/team-kb && SCRIBE_KB=~/team-kb scribe sync")
+		fmt.Println("  approvals:      each member runs `scribe projects review` after their first sync")
+		fmt.Println("  consolidation:  run `scribe dream` on ONE machine only (see README → Shared team KBs)")
+	}
 
 	// Offer to walk the user through Full Disk Access right now. Only on
 	// macOS with capture enabled (handle was set); Linux capture uses a
@@ -348,6 +366,7 @@ func (c *InitCmd) collectVars(abs string) (templateVars, error) {
 		LLMModel:             model,
 		SourcesInclude:       c.Allow,
 		SourcesExclude:       c.Disallow,
+		TeamMode:             c.Team,
 	}, nil
 }
 

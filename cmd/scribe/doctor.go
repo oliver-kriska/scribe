@@ -678,6 +678,19 @@ func checkState(root string) []check {
 			Section: "state", Name: "scripts/projects.json", Status: statusOK,
 			Detail: fmt.Sprintf("%d projects", len(m.Projects)),
 		})
+		// Pending projects are invisible on cron runs (the sync hint only
+		// lands in a log nobody tails) — doctor is where they must surface.
+		if pending := m.pendingProjects(); len(pending) > 0 {
+			names := pending
+			if len(names) > 5 {
+				names = append(append([]string{}, names[:5]...), "…")
+			}
+			out = append(out, check{
+				Section: "state", Name: "pending-projects", Status: statusWarn,
+				Detail: fmt.Sprintf("%d project(s) discovered but awaiting approval: %s", len(pending), strings.Join(names, ", ")),
+				Fix:    "run `scribe projects review` to approve/ignore (or set sync.auto_approve: true in scribe.yaml)",
+			})
+		}
 		// A scribe KB listed as one of its own source projects is the
 		// signature of the self-extraction bug: the KB re-ingests its own
 		// wiki and accumulates duplicate pages. Extraction now skips these,

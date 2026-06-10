@@ -91,6 +91,13 @@ func renderStatus(w io.Writer, root string) error {
 	// --- backlog: projects + sessions ---
 	renderBacklog(w, root, cfg)
 
+	// --- pending approvals (cron-invisible otherwise) ---
+	if m, err := loadManifest(root); err == nil {
+		if pending := m.pendingProjects(); len(pending) > 0 {
+			fmt.Fprintf(w, "  pending approval: %d project(s) — run `scribe projects review`\n", len(pending))
+		}
+	}
+
 	// --- contextualize provider ---
 	cx := cfg.Absorb.Contextualize
 	fmt.Fprintf(w, "  contextualize:    provider=%s  model=%s\n", cx.Provider, cx.Model)

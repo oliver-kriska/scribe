@@ -1,7 +1,11 @@
 output/
 *.lock
 .DS_Store
-
+{{if .TeamMode}}
+# Shared team KB: the manifest holds machine-local paths, SHAs, and
+# approval state — each member keeps their own (see README → Shared team KBs).
+scripts/projects.json
+{{end}}
 # Derived KB artifacts (rebuild via `scribe sections build` / `scribe contradictions build` / `scribe stale build`)
 wiki/_sections/
 wiki/_contradictions.jsonl
