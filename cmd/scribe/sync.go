@@ -256,6 +256,13 @@ func (s *SyncCmd) Run() error {
 	}
 	counters.absorbed = absorbed
 
+	// Phase 2.9: Regenerate the team digest so the committed dashboard
+	// reflects this run. Team KBs only — solo KBs can run `scribe
+	// digest` manually. Deterministic and cheap; failure never blocks.
+	if !s.DryRun && cfg.Team {
+		writeDigestFile(root, cfg)
+	}
+
 	// Phase 3: Reindex + commit. pulledRemote forces a reindex even when
 	// this run produced nothing locally — in a shared KB, a teammate's
 	// pulled commits would otherwise sit unindexed until the next local
