@@ -124,11 +124,13 @@ func (s *SyncCmd) Run() error {
 	pulledRemote := false
 	pulledReindexed := false
 	if !s.DryRun && pullBeforeSyncEnabled(cfg) {
+		preP := gitSHA(root)
 		if ok, pulled, pErr := pullRebase(root); pErr != nil {
 			logMsg("sync", "pull skipped: %s (continuing)", pErr)
 		} else if ok && pulled {
 			pulledRemote = true
 			logMsg("sync", "pulled new commits from remote")
+			surfaceSubscribedArrivals(root, cfg, preP)
 			// Reindex NOW, not only at the end of the run: the ingestion
 			// phases below (extraction research-before-create, absorb
 			// dedup, session mining) query qmd, and teammates' pulled

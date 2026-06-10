@@ -34,6 +34,14 @@ team: true
 # as this file, values there always win. That's where personal capture
 # handles or extra source filters belong in a shared KB.
 
+# Subscriptions surface teammates' incoming articles after each pull —
+# matches print to the sync log; notify: true also fires a macOS
+# notification. Personal preference, so set it in scribe.local.yaml:
+# subscriptions:
+#   domains: [backend]
+#   tags: [auth, perf]
+#   notify: true
+
 # Source filters — which project paths discovery may enroll. Evaluated
 # before a project ever lands in the manifest; projects already tracked
 # are managed via `scribe projects`. Patterns: a plain path covers
