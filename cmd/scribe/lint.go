@@ -54,34 +54,77 @@ func (l *LintCmd) Run() error {
 		return err
 	}
 
-	var files []string
+	files, err := l.targetFiles(root)
+	if err != nil {
+		return err
+	}
+	if l.Changed && len(files) == 0 {
+		fmt.Println("no changed wiki files to validate")
+		return nil
+	}
 
-	if l.Changed {
-		files, err = changedWikiFiles(root)
-		if err != nil {
-			return err
-		}
-		if len(files) == 0 {
-			fmt.Println("no changed wiki files to validate")
-			return nil
-		}
-	} else if len(l.Files) > 0 {
-		files = l.Files
+	errors, warnings := 0, 0
+	count := func(e, w int) { errors += e; warnings += w }
+
+	fmt.Println("Phase 1: Frontmatter validation")
+	count(lintFrontmatter(root, files), 0)
+	fmt.Println("Phase 2: Size checks")
+	count(0, lintSizes(root, files))
+
+	// Phases 3-6 are cross-KB structural checks — they only make sense
+	// on a full scan, not a --changed subset.
+	if !l.Changed {
+		fmt.Println("Phase 3: Orphan detection")
+		count(0, lintOrphans(root))
+		fmt.Println("Phase 4: Index consistency")
+		count(0, lintIndexConsistency(root))
+		fmt.Println("Phase 5: Self-ingestion artifacts")
+		count(lintSelfIngestion(root))
+		fmt.Println("Phase 6: Conflict markers")
+		count(lintConflictMarkers(root), 0)
+	}
+
+	runStats = map[string]any{
+		"files_checked": len(files),
+		"errors":        errors,
+		"warnings":      warnings,
+	}
+
+	// Summary
+	fmt.Println()
+	if errors > 0 {
+		return fmt.Errorf("FAILED: %d errors, %d warnings", errors, warnings)
+	}
+	if warnings > 0 {
+		fmt.Printf("PASSED with %d warnings\n", warnings)
 	} else {
-		err = walkArticles(root, func(path string, _ []byte) error {
+		fmt.Println("PASSED: all checks clean")
+	}
+	return nil
+}
+
+// targetFiles resolves the lint scope: --changed → uncommitted wiki
+// files, explicit args → as given, otherwise every article on disk.
+func (l *LintCmd) targetFiles(root string) ([]string, error) {
+	switch {
+	case l.Changed:
+		return changedWikiFiles(root)
+	case len(l.Files) > 0:
+		return l.Files, nil
+	default:
+		var files []string
+		err := walkArticles(root, func(path string, _ []byte) error {
 			files = append(files, path)
 			return nil
 		})
-		if err != nil {
-			return err
-		}
+		return files, err
 	}
+}
 
-	errors := 0
-	warnings := 0
-
-	// Phase 1: Frontmatter validation
-	fmt.Println("Phase 1: Frontmatter validation")
+// lintFrontmatter (Phase 1) validates each file's frontmatter. Returns
+// the number of files with at least one error (a file with three
+// problems counts once, matching the historical summary).
+func lintFrontmatter(root string, files []string) (errors int) {
 	for _, path := range files {
 		errs := validateFile(root, path)
 		if len(errs) > 0 {
@@ -91,9 +134,12 @@ func (l *LintCmd) Run() error {
 			}
 		}
 	}
+	return errors
+}
 
-	// Phase 2: Size checks
-	fmt.Println("Phase 2: Size checks")
+// lintSizes (Phase 2) warns on thin/bloated articles, overgrown rolling
+// files, and missing index_tier frontmatter.
+func lintSizes(root string, files []string) (warnings int) {
 	for _, path := range files {
 		content, err := os.ReadFile(path)
 		if err != nil {
@@ -138,156 +184,142 @@ func (l *LintCmd) Run() error {
 			warnings++
 		}
 	}
+	return warnings
+}
 
-	// Phase 3: Orphans and missing pages
-	if !l.Changed {
-		fmt.Println("Phase 3: Orphan detection")
-		allTitles := make(map[string]bool)
-		allTargets := make(map[string]bool)
-		inboundCount := make(map[string]int)
+// lintOrphans (Phase 3) counts articles with no inbound wikilinks and
+// wikilink targets that don't exist.
+func lintOrphans(root string) (warnings int) {
+	allTitles := make(map[string]bool)
+	allTargets := make(map[string]bool)
+	inboundCount := make(map[string]int)
 
-		// Collect titles (and aliases) from articles. Aliases from the
-		// optional `aliases:` frontmatter field share the same namespace
-		// as canonical titles so a wikilink to a known alias does not
-		// trigger a missing-page warning.
-		_ = walkArticles(root, func(_ string, content []byte) error {
-			if fm, err := parseFrontmatter(content); err == nil && fm.Title != "" {
-				allTitles[fm.Title] = true
-				for _, alias := range toStringSlice(fm.Aliases) {
-					if alias != "" {
-						allTitles[alias] = true
-					}
-				}
-				return nil
-			}
-			if title := extractTitleFast(content); title != "" {
-				allTitles[title] = true
-			}
-			return nil
-		})
-
-		// Scan ALL markdown (including _-prefixed) for wikilinks
-		_ = walkAllMarkdown(root, func(_ string, content []byte) error {
-			sourceTitle := extractTitleFast(content)
-			for _, link := range extractWikilinks(content) {
-				allTargets[link] = true
-				if link != sourceTitle {
-					inboundCount[link]++
+	// Collect titles (and aliases) from articles. Aliases from the
+	// optional `aliases:` frontmatter field share the same namespace
+	// as canonical titles so a wikilink to a known alias does not
+	// trigger a missing-page warning.
+	_ = walkArticles(root, func(_ string, content []byte) error {
+		if fm, err := parseFrontmatter(content); err == nil && fm.Title != "" {
+			allTitles[fm.Title] = true
+			for _, alias := range toStringSlice(fm.Aliases) {
+				if alias != "" {
+					allTitles[alias] = true
 				}
 			}
 			return nil
-		})
+		}
+		if title := extractTitleFast(content); title != "" {
+			allTitles[title] = true
+		}
+		return nil
+	})
 
-		orphanCount := 0
-		for title := range allTitles {
-			if inboundCount[title] == 0 && !allTargets[title] {
-				orphanCount++
+	// Scan ALL markdown (including _-prefixed) for wikilinks
+	_ = walkAllMarkdown(root, func(_ string, content []byte) error {
+		sourceTitle := extractTitleFast(content)
+		for _, link := range extractWikilinks(content) {
+			allTargets[link] = true
+			if link != sourceTitle {
+				inboundCount[link]++
 			}
 		}
-		if orphanCount > 0 {
-			fmt.Printf("  %d orphan articles (no inbound wikilinks)\n", orphanCount)
-			warnings++
-		}
+		return nil
+	})
 
-		missingCount := 0
-		for target := range allTargets {
-			if !allTitles[target] {
-				missingCount++
-			}
-		}
-		if missingCount > 0 {
-			fmt.Printf("  %d missing pages (linked but don't exist)\n", missingCount)
-			warnings++
+	orphanCount := 0
+	for title := range allTitles {
+		if inboundCount[title] == 0 && !allTargets[title] {
+			orphanCount++
 		}
 	}
+	if orphanCount > 0 {
+		fmt.Printf("  %d orphan articles (no inbound wikilinks)\n", orphanCount)
+		warnings++
+	}
 
-	// Phase 4: Index consistency
-	if !l.Changed {
-		fmt.Println("Phase 4: Index consistency")
-		indexPath := filepath.Join(root, "wiki", "_index.md")
-		if content, err := os.ReadFile(indexPath); err == nil {
-			// Count lines that *start* with "- [[", not every "- [[" occurrence.
-			// Some one-line summaries contain a second "[[X]]" after a dash
-			// (e.g. "- [[Foo]] -- [[Bar]] implements..."), which would be
-			// double-counted by strings.Count and drifts the index vs disk
-			// check from what the eye sees when grepping for bullet entries.
-			indexCount := 0
-			for line := range strings.SplitSeq(string(content), "\n") {
-				if strings.HasPrefix(line, "- [[") {
-					indexCount++
-				}
-			}
-			diskCount := 0
-			_ = walkArticles(root, func(_ string, _ []byte) error {
-				diskCount++
-				return nil
-			})
-			diff := diskCount - indexCount
-			if diff > 3 || diff < -3 {
-				fmt.Printf("  WARN index has %d entries but disk has %d articles (diff: %d)\n", indexCount, diskCount, diff)
-				warnings++
-			} else {
-				fmt.Printf("  index: %d entries, disk: %d articles\n", indexCount, diskCount)
-			}
+	missingCount := 0
+	for target := range allTargets {
+		if !allTitles[target] {
+			missingCount++
 		}
 	}
-
-	// Phase 5: Self-ingestion duplicate artifacts. The fingerprint of the
-	// KB-extracts-itself bug — a filename fed back in as a title. Doubled
-	// ".md.md" extensions are always malformed (ERROR); slugified
-	// "<x>_md.md" files that shadow an existing "<x>.md" are likely
-	// duplicates (WARN). Both are remediated by `scribe lint --fix`. Only
-	// on a full scan — it's a cross-KB structural check.
-	if !l.Changed {
-		fmt.Println("Phase 5: Self-ingestion artifacts")
-		for _, d := range findSelfIngestionDuplicates(root) {
-			if d.Shape == "doubled-ext" {
-				errors++
-				fmt.Printf("  ERROR %s: doubled .md extension — malformed page (run `scribe lint --fix`)\n", d.Rel)
-			} else {
-				warnings++
-				fmt.Printf("  WARN %s: looks like a filename-as-title duplicate of %s (run `scribe lint --fix`)\n", d.Rel, d.CanonicalRel)
-			}
-		}
-		// Directories named after the KB itself — the KB filed pages under
-		// a project folder for itself when its curation sessions were mined.
-		// Contents may hold unique fragments, so this is a review pointer,
-		// not an auto-fix.
-		for _, dir := range findSelfNamedDirs(root) {
-			warnings++
-			fmt.Printf("  WARN %s/: directory named after the KB itself — likely self-ingested pages; review and merge into canonical articles\n", dir)
-		}
+	if missingCount > 0 {
+		fmt.Printf("  %d missing pages (linked but don't exist)\n", missingCount)
+		warnings++
 	}
+	return warnings
+}
 
-	// Phase 6: Unresolved merge-conflict markers. Team KBs auto-pull, so
-	// a botched merge can leave "<<<<<<< HEAD" blocks inside articles
-	// where they poison search and LLM context. Hard error — the file is
-	// broken until a human resolves it.
-	if !l.Changed {
-		fmt.Println("Phase 6: Conflict markers")
-		for _, h := range findConflictMarkers(root) {
-			errors++
-			fmt.Printf("  ERROR %s:%d: unresolved git conflict marker — resolve the merge and recommit\n", h.Rel, h.Line)
+// lintIndexConsistency (Phase 4) compares wiki/_index.md entry count to
+// the article count on disk; small drift is normal between reindexes.
+func lintIndexConsistency(root string) (warnings int) {
+	indexPath := filepath.Join(root, "wiki", "_index.md")
+	content, err := os.ReadFile(indexPath)
+	if err != nil {
+		return 0
+	}
+	// Count lines that *start* with "- [[", not every "- [[" occurrence.
+	// Some one-line summaries contain a second "[[X]]" after a dash
+	// (e.g. "- [[Foo]] -- [[Bar]] implements..."), which would be
+	// double-counted by strings.Count and drifts the index vs disk
+	// check from what the eye sees when grepping for bullet entries.
+	indexCount := 0
+	for line := range strings.SplitSeq(string(content), "\n") {
+		if strings.HasPrefix(line, "- [[") {
+			indexCount++
 		}
 	}
-
-	runStats = map[string]any{
-		"files_checked": len(files),
-		"errors":        errors,
-		"warnings":      warnings,
-	}
-
-	// Summary
-	fmt.Println()
-	if errors > 0 {
-		return fmt.Errorf("FAILED: %d errors, %d warnings", errors, warnings)
-	}
-	if warnings > 0 {
-		fmt.Printf("PASSED with %d warnings\n", warnings)
+	diskCount := 0
+	_ = walkArticles(root, func(_ string, _ []byte) error {
+		diskCount++
+		return nil
+	})
+	diff := diskCount - indexCount
+	if diff > 3 || diff < -3 {
+		fmt.Printf("  WARN index has %d entries but disk has %d articles (diff: %d)\n", indexCount, diskCount, diff)
+		warnings++
 	} else {
-		fmt.Println("PASSED: all checks clean")
+		fmt.Printf("  index: %d entries, disk: %d articles\n", indexCount, diskCount)
 	}
-	return nil
+	return warnings
+}
+
+// lintSelfIngestion (Phase 5) flags the artifacts of the
+// KB-extracts-itself bug — a filename fed back in as a title. Doubled
+// ".md.md" extensions are always malformed (ERROR); slugified
+// "<x>_md.md" files that shadow an existing "<x>.md" are likely
+// duplicates (WARN). Both are remediated by `scribe lint --fix`.
+func lintSelfIngestion(root string) (errors, warnings int) {
+	for _, d := range findSelfIngestionDuplicates(root) {
+		if d.Shape == "doubled-ext" {
+			errors++
+			fmt.Printf("  ERROR %s: doubled .md extension — malformed page (run `scribe lint --fix`)\n", d.Rel)
+		} else {
+			warnings++
+			fmt.Printf("  WARN %s: looks like a filename-as-title duplicate of %s (run `scribe lint --fix`)\n", d.Rel, d.CanonicalRel)
+		}
+	}
+	// Directories named after the KB itself — the KB filed pages under
+	// a project folder for itself when its curation sessions were mined.
+	// Contents may hold unique fragments, so this is a review pointer,
+	// not an auto-fix.
+	for _, dir := range findSelfNamedDirs(root) {
+		warnings++
+		fmt.Printf("  WARN %s/: directory named after the KB itself — likely self-ingested pages; review and merge into canonical articles\n", dir)
+	}
+	return errors, warnings
+}
+
+// lintConflictMarkers (Phase 6) hard-errors on unresolved merge
+// markers. Team KBs auto-pull, so a botched merge can leave
+// "<<<<<<< HEAD" blocks inside articles where they poison search and
+// LLM context until a human resolves them.
+func lintConflictMarkers(root string) (errors int) {
+	for _, h := range findConflictMarkers(root) {
+		errors++
+		fmt.Printf("  ERROR %s:%d: unresolved git conflict marker — resolve the merge and recommit\n", h.Rel, h.Line)
+	}
+	return errors
 }
 
 // runFix collects the file set (--changed, explicit args, or all wiki
@@ -313,23 +345,9 @@ func (l *LintCmd) runFix() error {
 		phRemoved = fixPlaceholderArtifacts(root, l.DryRun)
 	}
 
-	var files []string
-	switch {
-	case l.Changed:
-		files, err = changedWikiFiles(root)
-		if err != nil {
-			return err
-		}
-	case len(l.Files) > 0:
-		files = l.Files
-	default:
-		err = walkArticles(root, func(path string, _ []byte) error {
-			files = append(files, path)
-			return nil
-		})
-		if err != nil {
-			return err
-		}
+	files, err := l.targetFiles(root)
+	if err != nil {
+		return err
 	}
 	if len(files) == 0 && dupRemoved == 0 && dupRenamed == 0 && exactRemoved == 0 && phRemoved == 0 {
 		fmt.Println("no files in scope")
