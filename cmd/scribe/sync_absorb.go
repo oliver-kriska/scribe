@@ -63,6 +63,7 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 		// to filename-only behavior (skip if seen, absorb if new) so a
 		// transient I/O hiccup can't strand an article.
 		sha, _ := sha256File(rawFile)
+		refresh := false
 		decision := checkAbsorbDecision(absorbLog, entry.Name(), sha)
 		switch decision {
 		case absorbDecisionSkipSameContent:
@@ -80,7 +81,10 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 			}
 			continue
 		case absorbDecisionRunRefresh:
-			logMsg("sync", "re-absorbing %s (content changed since last absorb)", entry.Name())
+			// Logged below, after the stub and strictness gates — logging
+			// here produced contradictory "re-absorbing X" → "skipping X"
+			// pairs whenever a changed file then failed a gate.
+			refresh = true
 		case absorbDecisionRun:
 			// fall through
 		}
@@ -107,6 +111,9 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 		if strictness == "high" && !rawArticleOptsIntoAbsorb(rawFile) {
 			logMsg("sync", "skipping %s (strictness=high, no absorb opt-in)", entry.Name())
 			continue
+		}
+		if refresh {
+			logMsg("sync", "re-absorbing %s (content changed since last absorb)", entry.Name())
 		}
 
 		if s.DryRun {
