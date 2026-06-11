@@ -18,7 +18,10 @@ func (c *CommitCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	return commitRun(root)
+}
 
+func commitRun(root string) error {
 	cfg := loadConfig(root)
 
 	// Hold every process lock for the duration of the commit — not just
@@ -35,29 +38,40 @@ func (c *CommitCmd) Run() error {
 	}
 	defer release()
 
-	// Check for changes (excluding output/). Raw output, not runCmd:
-	// porcelain's first column may be a space (` M`), and runCmd's
-	// TrimSpace would eat it on the first line, shifting the path slice.
+	// Fast path: nothing changed (excluding output/). Raw output, not
+	// runCmd: porcelain's first column may be a space (` M`), and
+	// runCmd's TrimSpace would eat it on the first line.
 	statusOut, _ := runCmdRaw(root, "git", "status", "--porcelain", "--", ".", ":!output/")
-	changes := string(statusOut)
-	if strings.TrimSpace(changes) == "" {
+	if strings.TrimSpace(string(statusOut)) == "" {
 		return nil
 	}
 
-	// Count changes by category
-	var wikiN, rawN, configN int
-	for line := range strings.SplitSeq(changes, "\n") {
-		// git status --porcelain: 2 status columns, one space, then the
-		// path. Column math, no trimming — see above.
-		if len(line) < 4 {
+	// New articles written by a sync whose commit was debounced (or that
+	// died before committing) land here — stamp contributor before they
+	// get staged, same as the gitAddWiki funnel.
+	stampContributor(root)
+
+	// Stage everything except output/
+	runCmd(root, "git", "add", "--ignore-errors", "--", ".", ":!output/")
+
+	// Team-mode credential gate — same funnel as gitAddWiki.
+	if !holdSecretFiles(root, cfg) {
+		logMsg("commit", "skipped: a detected secret could not be held back — resolve and rerun")
+		return nil
+	}
+
+	// Count what is ACTUALLY staged — after the gate (which may have
+	// held files back) and after git add (which may have skipped
+	// paths). The message must describe the commit, not the worktree:
+	// counting the pre-stage status shipped "(2 wiki)" on a one-file
+	// commit whenever the gate held a secret.
+	stagedOut, _ := runCmdRaw(root, "git", "diff", "--cached", "--name-only", "-z", "--no-renames")
+	var wikiN, rawN, configN, totalN int
+	for path := range strings.SplitSeq(string(stagedOut), "\x00") {
+		if path == "" {
 			continue
 		}
-		path := line[3:]
-		// Renames render as "old -> new"; count the destination.
-		if i := strings.Index(path, " -> "); i >= 0 {
-			path = path[i+4:]
-		}
-		path = strings.Trim(path, `"`)
+		totalN++
 		switch {
 		case hasAnyPrefix(path, wikiDirs):
 			wikiN++
@@ -69,6 +83,12 @@ func (c *CommitCmd) Run() error {
 			strings.HasPrefix(path, ".claude/"):
 			configN++
 		}
+	}
+	if totalN == 0 {
+		// Everything that changed was held back (or add skipped it) —
+		// an empty git commit would error, and there is nothing to say.
+		logMsg("commit", "nothing committable — pending changes were held back")
+		return nil
 	}
 
 	// Build commit message
@@ -86,20 +106,6 @@ func (c *CommitCmd) Run() error {
 		parts = append(parts, "changes")
 	}
 	msg := fmt.Sprintf("auto: %s (%s)", time.Now().Format("2006-01-02"), strings.Join(parts, ", "))
-
-	// New articles written by a sync whose commit was debounced (or that
-	// died before committing) land here — stamp contributor before they
-	// get staged, same as the gitAddWiki funnel.
-	stampContributor(root)
-
-	// Stage everything except output/
-	runCmd(root, "git", "add", "--ignore-errors", "--", ".", ":!output/")
-
-	// Team-mode credential gate — same funnel as gitAddWiki.
-	if !holdSecretFiles(root, cfg) {
-		logMsg("commit", "skipped: a detected secret could not be held back — resolve and rerun")
-		return nil
-	}
 
 	// Commit
 	if err := gitCommit(root, msg); err != nil {
