@@ -56,6 +56,9 @@ func (c *ContextualizeCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	if err := loadConfig(root).requireParseable(); err != nil {
+		return err
+	}
 	switch c.Scope {
 	case "raw":
 		return contextualizeRawArticles(root, c.Limit, c.Model, c.DryRun, c.Force)

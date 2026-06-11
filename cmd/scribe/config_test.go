@@ -125,3 +125,33 @@ func TestKBDirResolution(t *testing.T) {
 		}
 	})
 }
+
+// TestLoadConfigParseFailureIsRecorded pins LoadErr + requireParseable:
+// LLM-cost commands abort on an unparseable scribe.yaml instead of
+// running on defaults nobody chose (provider=anthropic, team=false).
+func TestLoadConfigParseFailureIsRecorded(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"),
+		[]byte("team: true\nteam: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(root)
+	if cfg.LoadErr == nil {
+		t.Fatal("LoadErr not set for duplicate-key scribe.yaml")
+	}
+	if err := cfg.requireParseable(); err == nil {
+		t.Error("requireParseable must reject a config that failed to parse")
+	}
+	if cfg.Team {
+		t.Error("broken config must not accidentally keep team=true — the gate guards via LoadErr instead")
+	}
+
+	good := t.TempDir()
+	if err := os.WriteFile(filepath.Join(good, "scribe.yaml"),
+		[]byte("owner_name: t\nteam: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := loadConfig(good); cfg.LoadErr != nil || cfg.requireParseable() != nil {
+		t.Errorf("valid config flagged unparseable: %v", cfg.LoadErr)
+	}
+}

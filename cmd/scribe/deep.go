@@ -35,6 +35,9 @@ func (d *DeepCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("resolve KB dir: %w", err)
 	}
+	if err := loadConfig(root).requireParseable(); err != nil {
+		return err
+	}
 
 	manifest, err := loadManifest(root)
 	if err != nil {

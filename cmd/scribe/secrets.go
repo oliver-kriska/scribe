@@ -346,6 +346,15 @@ func shannonEntropy(s string) float64 {
 // commit — the staged changes simply roll over to the next run, same
 // as the debounce path.
 func holdSecretFiles(root string, cfg *ScribeConfig) bool {
+	if cfg != nil && cfg.LoadErr != nil {
+		// An unparseable scribe.yaml falls back to defaults — including
+		// team=false, which would walk straight past the gate. Whether
+		// this KB is a team KB is unknowable right now, so fail closed:
+		// nothing commits until the config parses again. (E2E-proven: a
+		// duplicate YAML key pushed a live credential through here.)
+		logMsg("git", "SECRET GATE: scribe.yaml unparseable — cannot determine team mode, refusing to commit until it is fixed: %v", cfg.LoadErr)
+		return false
+	}
 	if cfg == nil || !cfg.Team || cfg.SecretScan.Disable {
 		return true
 	}

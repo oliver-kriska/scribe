@@ -93,6 +93,9 @@ func (m *RelationsMigrateCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	if err := loadConfig(root).requireParseable(); err != nil {
+		return err
+	}
 	ts := time.Now().UTC().Format("20060102T150405Z")
 	logPath := filepath.Join(root, "wiki", fmt.Sprintf("_relations_migration_%s.jsonl", ts))
 

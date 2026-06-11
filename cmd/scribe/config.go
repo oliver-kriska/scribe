@@ -55,6 +55,15 @@ var wikiDirs = []string{
 
 // ScribeConfig holds configuration loaded from scribe.yaml.
 type ScribeConfig struct {
+	// LoadErr records a scribe.yaml parse failure (duplicate key, bad
+	// indent — one sloppy merge away in a team KB). The config then
+	// holds pure defaults, which MUST NOT be trusted for anything with
+	// teeth: defaults mean team=false (secret gate off) and
+	// provider=anthropic (paid calls a KB may have routed to ollama).
+	// The secret gate fails closed on it and LLM entry commands abort
+	// via requireParseable; read-only commands may proceed on defaults.
+	LoadErr error `yaml:"-"`
+
 	OwnerName    string   `yaml:"owner_name"`
 	OwnerContext string   `yaml:"owner_context"`
 	Domains      []string `yaml:"domains"`
@@ -580,11 +589,13 @@ func loadConfig(root string) *ScribeConfig {
 	}
 	// loadConfig used to swallow yaml.Unmarshal errors silently, which
 	// meant a single duplicate key (e.g. "pass2_timeout_min" defined twice)
-	// wiped every overridden field back to defaults with zero warning. Log
-	// the failure so misconfiguration surfaces immediately — but still fall
-	// through with defaults rather than crash, so a broken config doesn't
-	// take down the whole binary.
+	// wiped every overridden field back to defaults with zero warning.
+	// Log AND record the failure: read-only commands still run on
+	// defaults, but LoadErr makes the secret gate fail closed and the
+	// LLM-cost entry points abort (the e2e sweep proved a duplicate key
+	// silently disarmed team mode and pushed a credential).
 	if err := yaml.Unmarshal(data, cfg); err != nil {
+		cfg.LoadErr = err
 		logMsg("config", "scribe.yaml has errors — falling back to defaults: %v", err)
 	}
 
@@ -724,6 +735,17 @@ func loadUserConfig() userConfig {
 	_ = yaml.Unmarshal(data, &uc)
 	uc.KBDir = expandHome(uc.KBDir)
 	return uc
+}
+
+// requireParseable is the guard for commands that spend money or write
+// through the pipeline: a config that failed to parse is running on
+// defaults nobody chose (wrong providers, team mode off). Call it right
+// after loadConfig in LLM-cost / write entry points.
+func (c *ScribeConfig) requireParseable() error {
+	if c.LoadErr != nil {
+		return fmt.Errorf("scribe.yaml is unparseable — fix it before running this command (parse error: %w)", c.LoadErr)
+	}
+	return nil
 }
 
 // kbDir resolves the knowledge base root directory.
