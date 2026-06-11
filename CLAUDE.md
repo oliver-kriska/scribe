@@ -83,6 +83,7 @@ Everything under `$SCRIBE_KB` belongs to the user's private KB repo and is never
 - **Writes are checkpointed.** Session-mining commits after each extracted session so an interrupted run doesn't lose work. Don't regress this.
 - **Run records** are appended to `$KB/output/runs/*.jsonl` by every invocation (see `writeRunRecord`). `scribe doctor --section freshness` reads them. Don't skip recording.
 - **Errors are logged to stderr, summarized to stdout.** Cron captures stdout; keep it terse.
+- **New dependencies need justification.** The module graph is deliberately lean (~30 modules). Any PR adding a `go.mod` entry must state why no existing dep covers it. Prefer shelling out to optional tools (the fzf pattern in `triage --interactive`) over importing frameworks; optional tools degrade gracefully and keep supply-chain risk on Homebrew's side.
 
 ## Testing
 

@@ -9,8 +9,10 @@
 # Publish (inside the cross image — see the workflow):
 #   goreleaser release --clean
 #
-# Dry-run locally on a single host (native builds only, no publish):
-#   goreleaser release --snapshot --clean --skip=publish,sign
+# Dry-run locally on a single host (native builds only, no publish;
+# skip sign+sbom too — cosign/syft are only guaranteed in the release
+# workflow):
+#   goreleaser release --snapshot --clean --skip=publish,sign,sbom
 
 version: 2
 
@@ -73,6 +75,33 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+
+# SBOM per release archive via syft. goreleaser-cross does NOT bundle
+# syft — the release workflow installs a checksum-verified pinned syft
+# on the runner and mounts it into the container.
+sboms:
+  - artifacts: archive
+
+# Keyless (OIDC) cosign signature over checksums.txt — one signature
+# covers every artifact transitively, since the checksum file pins them
+# all. Needs `id-token: write` plus the ACTIONS_ID_TOKEN_* env
+# passthrough in the release workflow. Verify a download with:
+#   cosign verify-blob \
+#     --certificate checksums.txt.pem --signature checksums.txt.sig \
+#     --certificate-identity-regexp 'github.com/oliver-kriska/scribe' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     checksums.txt
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    signature: "${artifact}.sig"
+    args:
+      - sign-blob
+      - --output-certificate=${certificate}
+      - --output-signature=${signature}
+      - --yes
+      - ${artifact}
+    artifacts: checksum
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
