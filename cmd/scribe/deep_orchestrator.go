@@ -57,7 +57,11 @@ func runDeepExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig,
 	if err != nil {
 		return false, fmt.Errorf("deep: apply actions: %w", err)
 	}
-	logMsg("deep", "  [%s] envelope: applied %d action(s), %d errors", relDir, len(res.Applied), len(res.Errors))
+	if len(res.Errors) > 0 {
+		logMsg("deep", "  [%s] envelope: applied %d action(s), %d errors: %v", relDir, len(res.Applied), len(res.Errors), res.Errors)
+	} else {
+		logMsg("deep", "  [%s] envelope: applied %d action(s)", relDir, len(res.Applied))
+	}
 	// Per-directory metrics accumulate into runStats as the caller
 	// iterates. We track totals not per-dir so the JSONL row stays
 	// flat.
