@@ -727,7 +727,16 @@ func loadUserConfig() userConfig {
 }
 
 // kbDir resolves the knowledge base root directory.
-// Priority: --root flag → SCRIBE_KB env → user config → CWD walk → error.
+// Priority: --root flag → SCRIBE_KB env → CWD walk → user config → error.
+//
+// The CWD walk MUST beat the user-config default: with more than one KB
+// on a machine (personal + team — the whole point of promote/team mode),
+// standing inside a KB checkout means *that* KB. Until 0.2.30 the user
+// config won, so `cd team-kb && scribe sync` silently synced the
+// personal KB — and init_plan's promise that other KBs stay reachable
+// "by running scribe inside it" was false. The user config is the
+// fallback for running scribe from arbitrary directories (cron jobs cd
+// into the KB explicitly and are unaffected either way).
 func kbDir() (string, error) {
 	// 1. Explicit --root flag
 	if globalRoot != "" {
@@ -737,21 +746,23 @@ func kbDir() (string, error) {
 	if d := os.Getenv("SCRIBE_KB"); d != "" {
 		return d, nil
 	}
-	// 3. User-level config (~/.config/scribe/config.yaml)
+	// 3. Walk up from cwd looking for a KB marker (written by `scribe init`)
+	cwd, err := os.Getwd()
+	if err == nil {
+		for dir := cwd; dir != "/"; dir = filepath.Dir(dir) {
+			if isKBRoot(dir) {
+				return dir, nil
+			}
+		}
+	}
+	// 4. User-level config (~/.config/scribe/config.yaml)
 	if uc := loadUserConfig(); uc.KBDir != "" {
 		if isKBRoot(uc.KBDir) {
 			return uc.KBDir, nil
 		}
 	}
-	// 4. Walk up from cwd looking for a KB marker (written by `scribe init`)
-	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
-	}
-	for dir := cwd; dir != "/"; dir = filepath.Dir(dir) {
-		if isKBRoot(dir) {
-			return dir, nil
-		}
 	}
 	return "", fmt.Errorf("cannot find scribe KB root; run `scribe init` inside your KB checkout, use -C <path>, or set SCRIBE_KB")
 }
