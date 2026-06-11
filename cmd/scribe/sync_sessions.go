@@ -458,10 +458,21 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 	return totalMined, false
 }
 
+// largeSessionBudget is the separate large-session (>300 msgs) lane cap.
+// It rides ON TOP of SessionsMax rather than inside it: the floor of 1
+// keeps deep sessions from starving behind a busy normal queue, at the
+// cost of `--sessions-max N` admitting up to N+max(1,N/3) total.
+func (s *SyncCmd) largeSessionBudget() int {
+	if s.SkipLarge {
+		return 0
+	}
+	return max(1, s.SessionsMax/3)
+}
+
 // mineSessions runs session mining: triage via FTS5 then extract via LLM.
 // Two passes: normal sessions (<=300 msgs, batches of 3) then large sessions (>300 msgs, one at a time).
 func (s *SyncCmd) mineSessions(root string) (int, error) {
-	logMsg("sync", "session mining (triage + extract, max %d)...", s.SessionsMax)
+	logMsg("sync", "session mining (triage + extract, %d normal + %d large)...", s.SessionsMax, s.largeSessionBudget())
 
 	// Ensure ccrider DB is fresh before triaging.
 	if out := runCmd("", "ccrider", "sync"); out != "" {
@@ -604,8 +615,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 	}
 
 	// Pass 2: Large sessions (>300 messages) — one at a time, 20min timeout.
-	if !s.SkipLarge {
-		largeMax := max(1, s.SessionsMax/3) // Process fewer large sessions per run.
+	if largeMax := s.largeSessionBudget(); largeMax > 0 {
 		largeIDs := s.triageSessionIDs(largeMax, "--min-messages", "301")
 		if len(largeIDs) > 0 {
 			logMsg("sync", "triage found %d large sessions (>300 msgs)", len(largeIDs))

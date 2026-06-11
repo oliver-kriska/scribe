@@ -29,7 +29,7 @@ type SyncCmd struct {
 	MaxAbsorb    int    `help:"Override scribe.yaml absorb.max_per_run for this run (0 = use config default)." name:"max-absorb" default:"0"`
 	Model        string `help:"Claude model to use." default:"sonnet"`
 	Sessions     bool   `help:"Mine Claude Code sessions."`
-	SessionsMax  int    `help:"Max sessions per run." name:"sessions-max" default:"3"`
+	SessionsMax  int    `help:"Max normal sessions per run; large sessions (>300 msgs) get an extra max(1,N/3) slot on top." name:"sessions-max" default:"3"`
 	SessionSort  string `help:"Session sort: score (highest first, default) or date (newest first)." name:"session-sort" default:"score" enum:"date,score"`
 	SkipLarge    bool   `help:"Skip large sessions (>300 messages)." name:"skip-large"`
 	Parallel     int    `help:"Max concurrent project extractions (1-5)." default:"3"`
