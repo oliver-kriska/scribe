@@ -1218,6 +1218,14 @@ func setFrontmatterScalar(content, key, value string) string {
 //     catch-all that is always a valid domain. Kills the domain class
 //     plus any residual placeholder/`{{DOMAIN}}` leak that survived
 //     loadPrompt's strip as an empty value.
+//  4. Missing `created`/`updated`/`confidence` — stamped with the same
+//     defaults `lint --fix` assigns (today / today / medium). The
+//     executor knows the write time better than the model does, and
+//     local models omit all three routinely: scriptorium's lint error
+//     count grew 8→25 over 2026-06-08..10 purely from envelope-written
+//     articles missing these fields. An *invalid* confidence value is
+//     left for lint to flag — silently rewriting a stated value would
+//     misrepresent the model's claim (same stance as lint --fix).
 //
 // Gated by ApplyOptions.SanitizeContent (set by all 8 envelope
 // consumers as of 0.2.24), so every caller inherits identical
@@ -1226,8 +1234,9 @@ func setFrontmatterScalar(content, key, value string) string {
 // schema change, matching sanitizeEnvelopeContent's precedent.
 func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 	domains := validDomainsForRoot(root)
+	today := time.Now().UTC().Format("2006-01-02")
 	kept := make([]WikiAction, 0, len(env.Actions))
-	var dropped, retyped, redomained int
+	var dropped, retyped, redomained, stamped int
 	for _, a := range env.Actions {
 		if !strings.HasPrefix(a.Content, "---") {
 			kept = append(kept, a) // section body / append fragment — not ours
@@ -1256,10 +1265,20 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 			a.Content = setFrontmatterScalar(a.Content, "domain", "general")
 			redomained++
 		}
+		for _, kv := range [...]struct{ key, val, have string }{
+			{"created", today, stringFromAny(fm.Created)},
+			{"updated", today, stringFromAny(fm.Updated)},
+			{"confidence", "medium", fm.Confidence},
+		} {
+			if kv.have == "" {
+				a.Content = setFrontmatterScalar(a.Content, kv.key, kv.val)
+				stamped++
+			}
+		}
 		kept = append(kept, a)
 	}
-	if dropped+retyped+redomained > 0 {
-		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped", dropped, retyped, redomained)
+	if dropped+retyped+redomained+stamped > 0 {
+		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped", dropped, retyped, redomained, stamped)
 	}
 	env.Actions = kept
 }
