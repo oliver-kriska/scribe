@@ -26,7 +26,13 @@ func TestMain(m *testing.M) {
 	// to set repo-local user.name. GIT_CONFIG_GLOBAL pins git to this
 	// file even when the developer exports their own, and NOSYSTEM
 	// blocks /etc/gitconfig surprises (core.hooksPath etc.).
-	gitconfig := "[user]\n\tname = Scribe Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n"
+	// maintenance/gc off: fetch in a fixture clone can spawn a DETACHED
+	// `gc --auto` that outlives the test and races t.TempDir() cleanup
+	// ("unlinkat .git/objects/pack: directory not empty" — flaked under
+	// full-suite load 2026-06-11). autoDetach=false is belt-and-braces
+	// in case some git path still triggers gc.
+	gitconfig := "[user]\n\tname = Scribe Test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n" +
+		"[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n\tautoDetach = false\n"
 	gitconfigPath := filepath.Join(scratch, ".gitconfig")
 	if err := os.WriteFile(gitconfigPath, []byte(gitconfig), 0o644); err != nil {
 		panic(err)
