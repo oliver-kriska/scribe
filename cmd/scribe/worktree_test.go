@@ -22,19 +22,11 @@ func gitRun(t *testing.T, dir string, args ...string) {
 // initRepoWithWorktree builds a real git repo with one commit and one
 // linked worktree, returning (mainRoot, worktreeRoot). Both paths have
 // symlinks resolved so they compare cleanly against git rev-parse output
-// (macOS TempDir lives under /var → /private/var). The repo is nested
-// two levels below TempDir because manifest.isIgnored rejects paths
-// shallower than 4 segments — Linux TempDir is /tmp/TestX/001, which
-// the depth floor would silently drop from discovery.
+// (macOS TempDir lives under /var → /private/var). initTestGitRepo
+// nests the repo above manifest.isIgnored's depth floor.
 func initRepoWithWorktree(t *testing.T) (string, string) {
 	t.Helper()
-	main := filepath.Join(t.TempDir(), "projects", "proj")
-	if err := os.MkdirAll(main, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	gitRun(t, main, "init", "-q")
-	gitRun(t, main, "config", "user.name", "Worktree Tester")
-	gitRun(t, main, "config", "user.email", "test@example.com")
+	main := initTestGitRepo(t, "Worktree Tester")
 	if err := os.WriteFile(filepath.Join(main, "README.md"), []byte("# proj\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

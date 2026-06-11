@@ -49,3 +49,49 @@ func releaseLock(f *os.File) {
 func lockPathFor(lockDir, name string) string {
 	return filepath.Join(lockDir, "scribe-"+name+".lock")
 }
+
+// errLockBusy reports that another process holds the requested lock.
+// Callers translate it into their own user-facing message (interactive
+// commands error out, cron commands log and exit clean).
+var errLockBusy = errors.New("lock busy")
+
+// withLock runs fn while holding the named advisory lock — the one
+// idiom every new read-mutate-save caller should reach for instead of
+// hand-rolling acquire/release. Busy lock → errLockBusy, fn not run.
+func withLock(lockDir, name string, fn func() error) error {
+	lf, ok, err := acquireLock(lockPathFor(lockDir, name))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errLockBusy
+	}
+	defer releaseLock(lf)
+	return fn()
+}
+
+// holdLocks acquires EVERY named lock and returns a release func, or
+// (nil, name-of-holder) when any is busy — already-acquired locks are
+// released before returning. For callers (commit) that must exclude
+// several processes at once; probe-then-proceed would be a TOCTOU.
+func holdLocks(lockDir string, names []string) (release func(), busy string, err error) {
+	var held []*os.File
+	releaseAll := func() {
+		for _, f := range held {
+			releaseLock(f)
+		}
+	}
+	for _, name := range names {
+		lf, ok, lerr := acquireLock(lockPathFor(lockDir, name))
+		if lerr != nil {
+			releaseAll()
+			return nil, "", lerr
+		}
+		if !ok {
+			releaseAll()
+			return nil, name, nil
+		}
+		held = append(held, lf)
+	}
+	return releaseAll, "", nil
+}

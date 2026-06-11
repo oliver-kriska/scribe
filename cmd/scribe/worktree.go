@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // worktreeMainRoot returns the main checkout's root when path is a
@@ -39,6 +40,26 @@ func worktreeMainRoot(path string) string {
 	return main
 }
 
+// evalSymlinksCache memoizes EvalSymlinks results ("" = unresolvable).
+// samePath runs per session × project × worktree in the mining
+// pre-filter, so uncached it costs thousands of syscalls per sync.
+// Process-lifetime caching is safe: scribe is a short-lived CLI and
+// the compared paths are project roots that exist before comparison.
+var evalSymlinksCache sync.Map
+
+func evalSymlinksCached(p string) string {
+	if v, ok := evalSymlinksCache.Load(p); ok {
+		s, _ := v.(string)
+		return s
+	}
+	r, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		r = ""
+	}
+	evalSymlinksCache.Store(p, r)
+	return r
+}
+
 // samePath reports whether two paths refer to the same directory,
 // tolerating symlink asymmetry: git emits physical paths while session
 // decodes are logical (macOS /var vs /private/var).
@@ -46,9 +67,8 @@ func samePath(a, b string) bool {
 	if a == b {
 		return true
 	}
-	ra, err1 := filepath.EvalSymlinks(a)
-	rb, err2 := filepath.EvalSymlinks(b)
-	return err1 == nil && err2 == nil && ra == rb
+	ra, rb := evalSymlinksCached(a), evalSymlinksCached(b)
+	return ra != "" && rb != "" && ra == rb
 }
 
 // recordWorktree folds a discovered worktree path into the main

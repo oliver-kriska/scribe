@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -22,28 +21,24 @@ func (c *CommitCmd) Run() error {
 
 	cfg := loadConfig(root)
 
-	// Skip if another scribe process holds a lock. Probe by trying to
-	// acquire and immediately release — if acquisition fails the other
-	// process still holds the lock.
-	for _, name := range lockNames {
-		path := lockPathFor(cfg.LockDir, name)
-		lf, ok, err := acquireLock(path)
-		if err != nil {
-			return fmt.Errorf("probe %s: %w", path, err)
-		}
-		if !ok {
-			logMsg("commit", "blocked by active %s process", name)
-			return nil
-		}
-		releaseLock(lf)
+	// Hold every process lock for the duration of the commit — not just
+	// probe them. The old probe-and-release left a TOCTOU window where a
+	// cron sync could start mid-commit and race the index (the exact
+	// scenario that makes the secret gate's unstage fail).
+	release, busy, err := holdLocks(cfg.LockDir, lockNames)
+	if err != nil {
+		return fmt.Errorf("acquire process locks: %w", err)
 	}
+	if busy != "" {
+		logMsg("commit", "blocked by active %s process", busy)
+		return nil
+	}
+	defer release()
 
 	// Check for changes (excluding output/). Raw output, not runCmd:
 	// porcelain's first column may be a space (` M`), and runCmd's
 	// TrimSpace would eat it on the first line, shifting the path slice.
-	statusCmd := exec.Command("git", "status", "--porcelain", "--", ".", ":!output/") //nolint:noctx // quick status probe
-	statusCmd.Dir = root
-	statusOut, _ := statusCmd.Output()
+	statusOut, _ := runCmdRaw(root, "git", "status", "--porcelain", "--", ".", ":!output/")
 	changes := string(statusOut)
 	if strings.TrimSpace(changes) == "" {
 		return nil

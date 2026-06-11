@@ -360,6 +360,18 @@ func runCmd(dir string, name string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// runCmdRaw runs a command and returns stdout byte-exact: no trimming,
+// no stderr merge. Reach for this whenever the output is column- or
+// byte-sensitive — runCmd's TrimSpace eats a leading status column on
+// the first porcelain line and would corrupt blob content.
+func runCmdRaw(dir string, name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...) //nolint:noctx // sync wrapper; see runCmd doc
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	return cmd.Output()
+}
+
 // runCmdErr runs a command and returns stdout + error.
 // See runCmd doc for why this is non-context.
 func runCmdErr(dir string, name string, args ...string) (string, error) {
