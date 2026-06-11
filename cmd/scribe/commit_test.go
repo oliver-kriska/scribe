@@ -83,6 +83,35 @@ func TestCommitHeldOnlyChangeDoesNotError(t *testing.T) {
 	}
 }
 
+// TestCommitRefusesOnUnparseableConfig pins the fail-closed contract:
+// a scribe.yaml that doesn't parse (duplicate key — one bad merge away
+// in a team KB) falls back to defaults with team=false, which used to
+// walk straight past the secret gate. E2E-proven leak: a credential was
+// committed AND pushed that way. With LoadErr set, holdSecretFiles must
+// refuse and the commit must not happen.
+func TestCommitRefusesOnUnparseableConfig(t *testing.T) {
+	root := commitTestKB(t)
+	before := headSubject(t, root)
+	// Duplicate key → yaml.Unmarshal error → defaults (team=false).
+	writeTestArticle(t, root, "scribe.yaml", "owner: t\nteam: true\nteam: true\n")
+	writeTestArticle(t, root, "wiki/leaky.md",
+		"---\ntitle: \"L\"\ntype: research\ndomain: general\ncreated: 2026-06-11\nupdated: 2026-06-11\nconfidence: low\ntags: []\nrelated: []\nsources: []\n---\n\ncred "+fakeAWSKey()+"\n")
+
+	if err := commitRun(root); err != nil {
+		t.Fatalf("commitRun must skip cleanly, got: %v", err)
+	}
+	if got := headSubject(t, root); got != before {
+		t.Errorf("HEAD moved to %q — broken config must fail CLOSED, not commit on defaults", got)
+	}
+	// The file may stay STAGED (the refusal happens before any commit;
+	// the next run re-gates the index) — but it must not be in HEAD.
+	cmd := exec.CommandContext(context.Background(), "git", "ls-tree", "-r", "--name-only", "HEAD")
+	cmd.Dir = root
+	if out, _ := cmd.Output(); strings.Contains(string(out), "leaky.md") {
+		t.Error("credential file reached a commit despite unparseable config")
+	}
+}
+
 // TestCommitCategoryCounts covers the raw/config buckets through the
 // staged-set counter.
 func TestCommitCategoryCounts(t *testing.T) {

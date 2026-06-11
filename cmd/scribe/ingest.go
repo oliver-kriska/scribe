@@ -356,6 +356,9 @@ func (c *IngestDrainCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	if err := loadConfig(root).requireParseable(); err != nil {
+		return err
+	}
 	return drainInbox(root, c.Limit, c.DryRun)
 }
 

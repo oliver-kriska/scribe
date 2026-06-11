@@ -62,6 +62,9 @@ func (a *AssessCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	if err := loadConfig(root).requireParseable(); err != nil {
+		return err
+	}
 
 	manifest, err := loadManifest(root)
 	if err != nil {

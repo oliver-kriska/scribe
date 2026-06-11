@@ -23,6 +23,9 @@ func (d *DreamCmd) Run() error {
 	}
 
 	cfg := loadConfig(root)
+	if err := cfg.requireParseable(); err != nil {
+		return err
+	}
 	today := time.Now().Format("2006-01-02")
 	preCount := countArticles(root)
 

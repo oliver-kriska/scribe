@@ -52,6 +52,9 @@ func (s *SyncCmd) Run() error {
 	}
 
 	cfg := loadConfig(root)
+	if err := cfg.requireParseable(); err != nil {
+		return err
+	}
 
 	manifest, err := loadManifest(root)
 	if err != nil {

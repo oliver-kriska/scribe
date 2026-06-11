@@ -41,6 +41,9 @@ func (c *AbsorbCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	if err := loadConfig(root).requireParseable(); err != nil {
+		return err
+	}
 
 	absPath, err := filepath.Abs(c.File)
 	if err != nil {
