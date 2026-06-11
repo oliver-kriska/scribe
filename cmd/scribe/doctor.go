@@ -670,9 +670,11 @@ func checkCron(root string) []check {
 	binary := resolveScribeBinary()
 	jobs := scribeJobs(root, binary)
 	domain := guiDomain()
+	own := make(map[string]bool, len(jobs))
 	for _, job := range jobs {
 		label := plistLabel(job.Name)
 		path := plistPath(job.Name)
+		own[path] = true
 		state := probeLaunchAgent(domain, label, path)
 		switch state {
 		case "loaded":
@@ -691,7 +693,51 @@ func checkCron(root string) []check {
 			})
 		}
 	}
+	agentsDir := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
+	if foreign := foreignScribeAgents(agentsDir, binary, root, own); len(foreign) > 0 {
+		out = append(out, check{
+			Section: "cron", Name: "foreign-agents", Status: statusWarn,
+			Detail: fmt.Sprintf("%d LaunchAgent(s) outside scribe's job set also reference this binary or KB: %s — duplicated jobs run twice per slot", len(foreign), strings.Join(foreign, ", ")),
+			Fix:    "review each; if it is a stale duplicate: launchctl bootout gui/$(id -u)/<label> and move the plist out of ~/Library/LaunchAgents",
+		})
+	}
 	return out
+}
+
+// foreignScribeAgents lists LaunchAgent plists that drive this scribe
+// install — they reference the scribe binary or the KB root — under a
+// label outside scribe's own job set. This is the double-run incident
+// class of 2026-06: a pre-rename agent set stayed loaded next to the
+// current labels and every cron job fired twice for weeks, visible only
+// as doubled run records and an occasional commit HEAD-lock race. The
+// process locks make duplicates mostly harmless, which is exactly why
+// they go unnoticed without a doctor check.
+func foreignScribeAgents(agentsDir, binary, root string, own map[string]bool) []string {
+	entries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		return nil // no LaunchAgents dir (non-macOS or fresh account)
+	}
+	var foreign []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".plist") {
+			continue
+		}
+		path := filepath.Join(agentsDir, e.Name())
+		if own[path] {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		text := string(data)
+		if (binary != "" && strings.Contains(text, binary)) ||
+			(root != "" && strings.Contains(text, root)) {
+			foreign = append(foreign, strings.TrimSuffix(e.Name(), ".plist"))
+		}
+	}
+	sort.Strings(foreign)
+	return foreign
 }
 
 // ---- State files ----
