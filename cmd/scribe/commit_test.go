@@ -11,11 +11,17 @@ import (
 
 // commitTestKB builds a team-mode KB fixture with a baseline commit so
 // commitRun has a HEAD to diff against and the secret gate is armed.
+//
+// lock_dir MUST be isolated: the default is /tmp, the same global
+// namespace a real scribe install uses — without this, a cron sync
+// running on the developer machine holds /tmp/scribe-sync.lock and
+// every commitRun here backs off with "blocked by active sync process"
+// (exactly how these tests first failed on 2026-06-11).
 func commitTestKB(t *testing.T) string {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := initTestGitRepo(t, "Commit Tester")
-	writeTestArticle(t, root, "scribe.yaml", "owner: t\nteam: true\n")
+	writeTestArticle(t, root, "scribe.yaml", "owner: t\nteam: true\nlock_dir: "+t.TempDir()+"\n")
 	for _, args := range [][]string{{"add", "."}, {"commit", "-q", "-m", "baseline", "--no-gpg-sign"}} {
 		cmd := exec.CommandContext(context.Background(), "git", args...)
 		cmd.Dir = root
@@ -109,6 +115,18 @@ func TestCommitRefusesOnUnparseableConfig(t *testing.T) {
 	cmd.Dir = root
 	if out, _ := cmd.Output(); strings.Contains(string(out), "leaky.md") {
 		t.Error("credential file reached a commit despite unparseable config")
+	}
+	// Assert the gate contract directly too: a broken config also loses
+	// its lock_dir override (defaults to /tmp), so on a dev machine with
+	// a live scribe cron the commitRun above may have been blocked by a
+	// process lock instead of the gate — a vacuous pass. This check is
+	// lock-independent.
+	cfg := loadConfig(root)
+	if cfg.LoadErr == nil {
+		t.Fatal("fixture scribe.yaml must fail to parse")
+	}
+	if holdSecretFiles(root, cfg) {
+		t.Error("holdSecretFiles must fail closed when the config is unparseable")
 	}
 }
 
