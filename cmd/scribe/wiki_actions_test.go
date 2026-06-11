@@ -860,7 +860,7 @@ func TestApplyWikiActions_ClampFrontmatter(t *testing.T) {
 
 	t.Run("valid frontmatter passes through untouched", func(t *testing.T) {
 		root := t.TempDir()
-		const good = "---\ntitle: Good\ntype: solution\ndomain: general\n---\nclean body\n"
+		const good = "---\ntitle: Good\ntype: solution\ndomain: general\ncreated: 2026-01-05\nupdated: 2026-02-01\nconfidence: high\n---\nclean body\n"
 		env := WikiActionEnvelope{Actions: []WikiAction{{
 			Op: "create", Path: "solutions/good.md", Content: good,
 		}}}
@@ -883,6 +883,69 @@ func TestApplyWikiActions_ClampFrontmatter(t *testing.T) {
 		}
 		if got := readBack(t, root, "decisions/x.md"); got != bad {
 			t.Errorf("opt-out must write verbatim; got:\n%s", got)
+		}
+	})
+
+	t.Run("missing created/updated/confidence are stamped with lint --fix defaults", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "solutions/stamped.md",
+			Content: "---\ntitle: S\ntype: solution\ndomain: general\n---\nbody\n",
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+			t.Fatal(err)
+		}
+		s := readBack(t, root, "solutions/stamped.md")
+		today := time.Now().UTC().Format("2006-01-02")
+		for _, want := range []string{
+			"\ncreated: " + today + "\n",
+			"\nupdated: " + today + "\n",
+			"\nconfidence: medium\n",
+		} {
+			if !strings.Contains(s, want) {
+				t.Errorf("missing stamp %q in:\n%s", strings.TrimSpace(want), s)
+			}
+		}
+		// The write must satisfy the validator's scalar requirements —
+		// the whole point is that envelope-born articles pass lint.
+		fm, err := parseFrontmatter([]byte(s))
+		if err != nil {
+			t.Fatalf("stamped frontmatter unparseable: %v", err)
+		}
+		if fm.Confidence != "medium" {
+			t.Errorf("Confidence = %q, want medium", fm.Confidence)
+		}
+	})
+
+	t.Run("existing dates and confidence are never overwritten", func(t *testing.T) {
+		root := t.TempDir()
+		const authored = "---\ntitle: A\ntype: solution\ndomain: general\ncreated: 2025-11-30\nupdated: 2025-12-15\nconfidence: low\n---\nbody\n"
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "solutions/authored.md", Content: authored,
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+			t.Fatal(err)
+		}
+		if got := readBack(t, root, "solutions/authored.md"); got != authored {
+			t.Errorf("model-provided scalars must survive; got:\n%s", got)
+		}
+	})
+
+	t.Run("invalid confidence is left for lint, not rewritten", func(t *testing.T) {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "solutions/odd.md",
+			Content: "---\ntitle: O\ntype: solution\ndomain: general\ncreated: 2026-01-01\nupdated: 2026-01-01\nconfidence: speculative\n---\nbody\n",
+		}}}
+		if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+			t.Fatal(err)
+		}
+		s := readBack(t, root, "solutions/odd.md")
+		if !strings.Contains(s, "confidence: speculative") {
+			t.Errorf("stated confidence must not be silently rewritten:\n%s", s)
+		}
+		if strings.Contains(s, "confidence: medium") {
+			t.Errorf("invalid confidence wrongly clamped to medium:\n%s", s)
 		}
 	})
 }
