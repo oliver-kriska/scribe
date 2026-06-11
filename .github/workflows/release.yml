@@ -28,6 +28,9 @@ on:
 
 permissions:
   contents: write
+  # Keyless cosign signing: the OIDC token proves this workflow (not a
+  # stolen key) produced the signature on checksums.txt.
+  id-token: write
 
 jobs:
   release:
@@ -43,6 +46,18 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
+
+      # goreleaser-cross bundles cosign but NOT syft. Install a pinned,
+      # checksum-verified syft on the runner and mount it into the
+      # container (static Go binary — runs fine in the debian image).
+      - name: Install syft v1.45.1 (SBOM generation)
+        run: |
+          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.45.1/syft_1.45.1_linux_amd64.tar.gz
+          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.45.1/syft_1.45.1_checksums.txt
+          grep ' syft_1.45.1_linux_amd64.tar.gz$' syft_1.45.1_checksums.txt | sha256sum -c -
+          tar -xzf syft_1.45.1_linux_amd64.tar.gz syft
+          sudo install syft /usr/local/bin/syft
+          rm -f syft syft_1.45.1_linux_amd64.tar.gz syft_1.45.1_checksums.txt
 
       - name: Run GoReleaser in cross-compile container
         # The image base is Go 1.26.2 (goreleaser-cross has no 1.26.3/1.26.4
@@ -61,10 +76,13 @@ jobs:
         run: |
           docker run --rm \
             -v "$PWD":/go/src/github.com/oliver-kriska/scribe \
+            -v /usr/local/bin/syft:/usr/local/bin/syft:ro \
             -w /go/src/github.com/oliver-kriska/scribe \
             -e GITHUB_TOKEN \
             -e HOMEBREW_TAP_GITHUB_TOKEN \
             -e GOTOOLCHAIN=auto \
+            -e ACTIONS_ID_TOKEN_REQUEST_URL \
+            -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
             ghcr.io/goreleaser/goreleaser-cross@sha256:bd51e63c1432305eb0309cdf3bff11e5ae6419cefb10839fea3e705f3e5d57da \
             release --clean
         env:

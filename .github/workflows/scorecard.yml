@@ -1,0 +1,45 @@
+# OSSF Scorecard — continuous supply-chain posture check.
+#
+# Scores the repo against the OpenSSF checks (token permissions, pinned
+# dependencies, branch protection, dangerous workflows, …) and uploads
+# the results to the GitHub code-scanning tab. publish_results: true
+# also feeds the public scorecard at
+# https://scorecard.dev/viewer/?uri=github.com/oliver-kriska/scribe
+# (requires the default branch — that's why this runs on push to main).
+
+name: scorecard
+
+on:
+  schedule:
+    - cron: "30 6 * * 1" # weekly, Monday 06:30 UTC
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      # Upload SARIF to the code-scanning dashboard.
+      security-events: write
+      # scorecard-action uses OIDC to authenticate publish_results.
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        with:
+          sarif_file: results.sarif
