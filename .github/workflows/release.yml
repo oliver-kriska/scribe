@@ -34,13 +34,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
@@ -51,6 +51,13 @@ jobs:
         # release binary is built against the patched stdlib regardless of
         # the image's base Go. Bump the image tag to a 1.26.4 base once one
         # ships and the download step goes away.
+        #
+        # Image pinned by DIGEST (= tag v1.26.2-3): this container runs
+        # with the Homebrew-tap PAT in its env, so a repointed tag would
+        # be a formula-compromise vector. To bump, resolve the new tag:
+        #   TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:goreleaser/goreleaser-cross:pull" | jq -r .token)
+        #   curl -sI -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.oci.image.index.v1+json" \
+        #     https://ghcr.io/v2/goreleaser/goreleaser-cross/manifests/<TAG> | grep -i docker-content-digest
         run: |
           docker run --rm \
             -v "$PWD":/go/src/github.com/oliver-kriska/scribe \
@@ -58,7 +65,7 @@ jobs:
             -e GITHUB_TOKEN \
             -e HOMEBREW_TAP_GITHUB_TOKEN \
             -e GOTOOLCHAIN=auto \
-            ghcr.io/goreleaser/goreleaser-cross:v1.26.2-3 \
+            ghcr.io/goreleaser/goreleaser-cross@sha256:bd51e63c1432305eb0309cdf3bff11e5ae6419cefb10839fea3e705f3e5d57da \
             release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
