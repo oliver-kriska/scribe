@@ -51,6 +51,7 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 	}
 
 	absorbed := 0
+	heldByStrictness := 0
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
@@ -109,7 +110,11 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 
 		// Strictness gate: high = explicit opt-in required.
 		if strictness == "high" && !rawArticleOptsIntoAbsorb(rawFile) {
-			logMsg("sync", "skipping %s (strictness=high, no absorb opt-in)", entry.Name())
+			// One summary line after the loop, not one line per file:
+			// a held backlog is steady-state under strictness=high and
+			// re-listing it (80+ identical lines on scriptorium) buried
+			// every real event in the sync log.
+			heldByStrictness++
 			continue
 		}
 		if refresh {
@@ -163,6 +168,9 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 		}
 	}
 
+	if heldByStrictness > 0 {
+		logMsg("sync", "held %d raw article(s) back (strictness=high, no absorb opt-in — set `absorb: true` or a named domain in their frontmatter to release)", heldByStrictness)
+	}
 	if absorbed > 0 {
 		logMsg("sync", "absorbed %d raw articles", absorbed)
 	}

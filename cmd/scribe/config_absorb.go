@@ -414,6 +414,9 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 		cfg.SinglePassProvider = d.FactsProvider // same anthropic default
 	}
 	cfg.SinglePassProvider, cfg.SinglePassModel = coerceProviderModel("absorb.single_pass", cfg.SinglePassProvider, cfg.SinglePassModel)
+	// Track whether the mode came from the user (yaml or env) — coercing
+	// the code default below is silent, overriding a user choice logs.
+	pass2ModeExplicit := cfg.Pass2Mode != ""
 	if cfg.Pass2Mode == "" {
 		cfg.Pass2Mode = d.Pass2Mode
 	}
@@ -426,6 +429,7 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 	if env := os.Getenv("SCRIBE_PASS2_MODE"); env != "" {
 		logMsg("config", "SCRIBE_PASS2_MODE=%q overriding absorb.pass2_mode=%q", env, cfg.Pass2Mode)
 		cfg.Pass2Mode = env
+		pass2ModeExplicit = true
 	}
 	if env := os.Getenv("SCRIBE_PASS2_PROVIDER"); env != "" {
 		logMsg("config", "SCRIBE_PASS2_PROVIDER=%q overriding absorb.pass2_provider=%q", env, cfg.Pass2Provider)
@@ -437,10 +441,12 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 	}
 	// Auto-flip mode to json whenever provider is not anthropic — the
 	// tools path requires `claude -p`, so a local-provider config with
-	// pass2_mode left at "tools" would silently no-op. Log so the user
-	// notices the override.
+	// pass2_mode left at "tools" would silently no-op. Log only when the
+	// user actually set the mode; coercing the code default is noise.
 	if !strings.EqualFold(cfg.Pass2Provider, "anthropic") && !strings.EqualFold(cfg.Pass2Mode, "json") {
-		logAutoFlipOnce("absorb.pass2:"+cfg.Pass2Provider, "config", "absorb.pass2_provider=%q forces pass2_mode=json (was %q)", cfg.Pass2Provider, cfg.Pass2Mode)
+		if pass2ModeExplicit {
+			logAutoFlipOnce("absorb.pass2:"+cfg.Pass2Provider, "config", "absorb.pass2_provider=%q forces pass2_mode=json (was %q)", cfg.Pass2Provider, cfg.Pass2Mode)
+		}
 		cfg.Pass2Mode = "json"
 	}
 	// Provider/model coherence: ollama + Claude alias swap, same as facts.

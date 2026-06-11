@@ -570,6 +570,11 @@ func loadConfig(root string) *ScribeConfig {
 		Absorb:            absorbDefaults(),
 		Ingest:            ingestDefaults(),
 	}
+	// Pass2Mode must NOT be pre-seeded: applyAbsorbDefaultsWithLLM needs
+	// "" to mean "unset in yaml" so the non-anthropic auto-flip coerces
+	// the code default silently and only logs when overriding a value
+	// the user wrote. The fill back to "tools" happens there.
+	cfg.Absorb.Pass2Mode = ""
 
 	cfgPath := filepath.Join(root, "scribe.yaml")
 	data, err := os.ReadFile(cfgPath)
