@@ -155,3 +155,27 @@ func TestLoadConfigParseFailureIsRecorded(t *testing.T) {
 		t.Errorf("valid config flagged unparseable: %v", cfg.LoadErr)
 	}
 }
+
+// TestForceNonAnthropicMode pins the coercion contract: an unset mode
+// coerces SILENTLY (warning about overriding a code default printed 6
+// noise lines per command on ollama-routed KBs), an explicit mode still
+// coerces, and anthropic providers are never touched.
+func TestForceNonAnthropicMode(t *testing.T) {
+	mode := ""
+	forceNonAnthropicMode("op", "ollama", &mode, "envelope")
+	if mode != "envelope" {
+		t.Errorf("unset mode must still coerce, got %q", mode)
+	}
+
+	mode = "tools"
+	forceNonAnthropicMode("op", "ollama", &mode, "envelope")
+	if mode != "envelope" {
+		t.Errorf("explicit mode must coerce, got %q", mode)
+	}
+
+	mode = "tools"
+	forceNonAnthropicMode("op", "anthropic", &mode, "envelope")
+	if mode != "tools" {
+		t.Errorf("anthropic provider must keep mode, got %q", mode)
+	}
+}

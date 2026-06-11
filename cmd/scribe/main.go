@@ -24,7 +24,8 @@ var globalRoot string
 var runStats map[string]any
 
 type CLI struct {
-	Root string `help:"Override KB root directory." type:"path" short:"C"`
+	Root        string           `help:"Override KB root directory." type:"path" short:"C"`
+	VersionFlag kong.VersionFlag `name:"version" short:"V" help:"Show version and exit."`
 
 	Sync           SyncCmd           `cmd:"" help:"Discover, extract, mine sessions, absorb, reindex, commit."`
 	Lint           LintCmd           `cmd:"" help:"Run structural KB health checks."`
@@ -84,6 +85,7 @@ func main() {
 		kong.Name("scribe"),
 		kong.Description("scribe — personal knowledge-base pipeline"),
 		kong.UsageOnError(),
+		kong.Vars{"version": "scribe " + version},
 	)
 
 	globalRoot = cli.Root

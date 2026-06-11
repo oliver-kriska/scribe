@@ -324,11 +324,20 @@ func inheritNumCtx(numCtx *int, llm LLMConfig, floor int) {
 // forceNonAnthropicMode auto-flips an op's mode when its provider can't
 // run the `claude -p` tools path (anything non-anthropic), logging once
 // so the user notices the override.
+//
+// Callers must run this BEFORE filling the backward-compat mode default,
+// so an empty mode here means "unset in scribe.yaml". Unset coerces
+// silently: warning about overriding a code default nobody wrote printed
+// 6 config lines at the top of every command on ollama-routed KBs. Only
+// a value the user actually set is worth a log line.
 func forceNonAnthropicMode(label, provider string, mode *string, forced string) {
-	if !strings.EqualFold(provider, "anthropic") && !strings.EqualFold(*mode, forced) {
-		logAutoFlipOnce(label+":"+provider, "config", "%s.provider=%q forces mode=%s (was %q)", label, provider, forced, *mode)
-		*mode = forced
+	if strings.EqualFold(provider, "anthropic") || strings.EqualFold(*mode, forced) {
+		return
 	}
+	if *mode != "" {
+		logAutoFlipOnce(label+":"+provider, "config", "%s.provider=%q forces mode=%s (was %q)", label, provider, forced, *mode)
+	}
+	*mode = forced
 }
 
 // applyRelationsDefaults fills RelationsConfig from LLMConfig + sane
@@ -345,6 +354,7 @@ func applyRelationsDefaults(cfg *RelationsConfig, llm LLMConfig) {
 // `claude -p`.
 func applyDreamDefaults(cfg *DreamConfig, llm LLMConfig) {
 	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
+	forceNonAnthropicMode("dream", cfg.Provider, &cfg.Mode, "orchestrator")
 	if cfg.Mode == "" {
 		cfg.Mode = "monolithic"
 	}
@@ -355,7 +365,6 @@ func applyDreamDefaults(cfg *DreamConfig, llm LLMConfig) {
 	// contradictions). 16384 keeps the conclusion of the inventory from
 	// being truncated.
 	inheritNumCtx(&cfg.NumCtx, llm, 16384)
-	forceNonAnthropicMode("dream", cfg.Provider, &cfg.Mode, "orchestrator")
 	cfg.Provider, cfg.Model = coerceProviderModel("dream", cfg.Provider, cfg.Model)
 }
 
@@ -364,6 +373,7 @@ func applyDreamDefaults(cfg *DreamConfig, llm LLMConfig) {
 // provider auto-flips to envelope mode.
 func applyAssessDefaults(cfg *AssessConfig, llm LLMConfig) {
 	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
+	forceNonAnthropicMode("assess", cfg.Provider, &cfg.Mode, "envelope")
 	if cfg.Mode == "" {
 		cfg.Mode = "tools"
 	}
@@ -371,12 +381,12 @@ func applyAssessDefaults(cfg *AssessConfig, llm LLMConfig) {
 	// entries), and recent git log. Even with truncation this routinely
 	// lands at 6-8K tokens.
 	inheritNumCtx(&cfg.NumCtx, llm, 32768)
-	forceNonAnthropicMode("assess", cfg.Provider, &cfg.Mode, "envelope")
 	cfg.Provider, cfg.Model = coerceProviderModel("assess", cfg.Provider, cfg.Model)
 }
 
 func applyDeepIngestDefaults(cfg *DeepIngestConfig, llm LLMConfig) {
 	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
+	forceNonAnthropicMode("deep_ingest", cfg.Provider, &cfg.Mode, "envelope")
 	if cfg.Mode == "" {
 		cfg.Mode = "tools"
 	}
@@ -384,7 +394,6 @@ func applyDeepIngestDefaults(cfg *DeepIngestConfig, llm LLMConfig) {
 	// (~6K tokens) — pair with 16384 to leave headroom for the prompt
 	// and the envelope output.
 	inheritNumCtx(&cfg.NumCtx, llm, 16384)
-	forceNonAnthropicMode("deep_ingest", cfg.Provider, &cfg.Mode, "envelope")
 	cfg.Provider, cfg.Model = coerceProviderModel("deep_ingest", cfg.Provider, cfg.Model)
 }
 
@@ -393,6 +402,7 @@ func applyDeepIngestDefaults(cfg *DeepIngestConfig, llm LLMConfig) {
 // a non-anthropic provider auto-flips to envelope.
 func applyExtractDefaults(cfg *ExtractConfig, llm LLMConfig) {
 	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
+	forceNonAnthropicMode("extract", cfg.Provider, &cfg.Mode, "envelope")
 	if cfg.Mode == "" {
 		cfg.Mode = "tools"
 	}
@@ -406,7 +416,6 @@ func applyExtractDefaults(cfg *ExtractConfig, llm LLMConfig) {
 		cfg.TimeoutMin = 10
 	}
 	inheritNumCtx(&cfg.NumCtx, llm, 16384)
-	forceNonAnthropicMode("extract", cfg.Provider, &cfg.Mode, "envelope")
 	cfg.Provider, cfg.Model = coerceProviderModel("extract", cfg.Provider, cfg.Model)
 }
 
@@ -416,6 +425,8 @@ func applyExtractDefaults(cfg *ExtractConfig, llm LLMConfig) {
 // the legacy path relies on.
 func applySessionMineDefaults(cfg *SessionMineConfig, llm LLMConfig) {
 	inheritLLMOpBase(&cfg.Provider, &cfg.Model, &cfg.OllamaURL, llm)
+	// Non-anthropic provider has no MCP support → force envelope mode.
+	forceNonAnthropicMode("session_mine", cfg.Provider, &cfg.Mode, "envelope")
 	if cfg.Mode == "" {
 		cfg.Mode = "tools"
 	}
@@ -430,8 +441,6 @@ func applySessionMineDefaults(cfg *SessionMineConfig, llm LLMConfig) {
 	// TranscriptMaxChars without raising NumCtx silently truncates the
 	// conclusion of the transcript on Ollama.
 	inheritNumCtx(&cfg.NumCtx, llm, 16384)
-	// Non-anthropic provider has no MCP support → force envelope mode.
-	forceNonAnthropicMode("session_mine", cfg.Provider, &cfg.Mode, "envelope")
 	cfg.Provider, cfg.Model = coerceProviderModel("session_mine", cfg.Provider, cfg.Model)
 }
 
