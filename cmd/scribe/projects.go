@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -82,16 +83,11 @@ type ProjectsApproveCmd struct {
 // or a sync's collected research vanishes). Sync probe-acquires the
 // same lock and skips its run when busy, so holding it here is safe.
 func withSyncLock(root string, fn func() error) error {
-	cfg := loadConfig(root)
-	lf, ok, err := acquireLock(lockPathFor(cfg.LockDir, "sync"))
-	if err != nil {
-		return err
-	}
-	if !ok {
+	err := withLock(loadConfig(root).LockDir, "sync", fn)
+	if errors.Is(err, errLockBusy) {
 		return fmt.Errorf("a sync is running (lock busy) — retry in a moment")
 	}
-	defer releaseLock(lf)
-	return fn()
+	return err
 }
 
 func (c *ProjectsApproveCmd) Run() error {

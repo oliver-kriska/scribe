@@ -51,6 +51,13 @@ func gitChangedFiles(repoPath, oldSHA string, patterns []string) []string {
 	return files
 }
 
+// gitShowBytes reads a blob by revision spec (`:path` = index,
+// `:2:path`/`:3:path` = merge stages, `<sha>:path` = a commit),
+// byte-exact.
+func gitShowBytes(repoPath, spec string) ([]byte, error) {
+	return runCmdRaw(repoPath, "git", "show", spec)
+}
+
 // gitIsDirty returns true if the working tree has changes.
 func gitIsDirty(repoPath string) bool {
 	out := runCmd(repoPath, "git", "status", "--porcelain")

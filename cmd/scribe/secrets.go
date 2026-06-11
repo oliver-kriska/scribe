@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -358,7 +357,7 @@ func holdSecretFiles(root string, cfg *ScribeConfig) bool {
 		// Scan the INDEX blob, not the worktree file: they differ after
 		// a post-add edit, and a staged-then-deleted file has no
 		// worktree copy at all — reading the worktree would fail open.
-		data, err := stagedBlob(root, rel)
+		data, err := gitShowBytes(root, ":"+rel)
 		if err != nil {
 			// Fail closed: a blob that can't be read can't be proven
 			// clean. Hold it; the next run rescans.
@@ -391,15 +390,6 @@ func unstageHeld(root, rel string) bool {
 		return false
 	}
 	return true
-}
-
-// stagedBlob reads the staged (index) content of rel. Plain Output()
-// rather than runCmd: the content must arrive byte-exact, untrimmed,
-// and never merged with stderr.
-func stagedBlob(root, rel string) ([]byte, error) {
-	cmd := exec.Command("git", "show", ":"+rel) //nolint:noctx // git show subprocess
-	cmd.Dir = root
-	return cmd.Output()
 }
 
 // stagedMarkdown lists every staged .md file (added/copied/modified),
@@ -435,18 +425,40 @@ func secretScanPathExempt(cfg *ScribeConfig, rel string) bool {
 	return false
 }
 
-// findSecretsInKB scans all KB articles (wiki dirs + all of raw/) for
-// doctor — committed leaks AND held-back files both live on disk. The
-// raw/ walk matches the gate's repo-wide scope: a file the gate holds
-// must keep showing up here until a human resolves it.
+// findSecretsInKB scans markdown for doctor — committed leaks AND
+// held-back files both live on disk. The primary scope is `git
+// ls-files` over every tracked or untracked-unignored .md, matching
+// the gate's repo-wide reach: a file the gate held OUTSIDE the content
+// dirs (notes/, scripts/, log.md) must show up here, not nag from the
+// gate while doctor stays green. Non-git KBs fall back to walking the
+// wiki dirs + raw/.
 func findSecretsInKB(root string, includeGeneric bool) []string {
 	var findings []string
+	seen := map[string]bool{}
 	record := func(path string, content []byte) error {
 		rel := relPath(root, path)
+		if seen[rel] {
+			return nil
+		}
+		seen[rel] = true
 		for _, h := range scanContentForSecrets(content, includeGeneric) {
 			findings = append(findings, rel+":"+strconv.Itoa(h.Line)+" ["+h.Label+"]")
 		}
 		return nil
+	}
+	if hasGit(root) {
+		if out, err := runCmdRaw(root, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.md"); err == nil {
+			for rel := range strings.SplitSeq(string(out), "\x00") {
+				if rel == "" {
+					continue
+				}
+				content, rerr := os.ReadFile(filepath.Join(root, rel)) //nolint:gosec // user-supplied KB root, deliberate scan
+				if rerr != nil {
+					continue
+				}
+				_ = record(filepath.Join(root, rel), content)
+			}
+		}
 	}
 	_ = walkAllMarkdown(root, record)
 	rawDir := filepath.Join(root, "raw")

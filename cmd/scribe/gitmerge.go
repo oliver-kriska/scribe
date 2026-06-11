@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -57,13 +56,6 @@ func semanticResolve(repoPath, rel string) bool {
 	}
 	_, err := runCmdErr(repoPath, "git", "add", "--", rel)
 	return err == nil
-}
-
-// gitShowBytes reads a blob by revision spec, byte-exact.
-func gitShowBytes(repoPath, spec string) ([]byte, error) {
-	cmd := exec.Command("git", "show", spec) //nolint:noctx // git show subprocess
-	cmd.Dir = repoPath
-	return cmd.Output()
 }
 
 // mergeLedgerContent unions the extraction-ledger maps, keeping the

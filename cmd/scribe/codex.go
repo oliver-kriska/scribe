@@ -310,6 +310,11 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 
 		pname := projectName(cwd)
 		if existing, exists := manifest.Projects[pname]; exists {
+			// Basename collision — see the matching guard in discover().
+			if existing != nil && !samePath(existing.Path, cwd) {
+				logMsg("sync", " name collision: %s (at %s) is shadowed by existing project %q at %s — rename one directory or `scribe projects ignore` the other", pname, cwd, pname, existing.Path)
+				return
+			}
 			// Already in manifest — promote DiscoveredFrom if Claude
 			// surfaced it first, otherwise leave alone.
 			if existing.DiscoveredSource() != "codex" && existing.DiscoveredSource() != "both" {

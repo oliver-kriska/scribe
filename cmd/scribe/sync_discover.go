@@ -63,6 +63,14 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 
 		pname := projectName(decoded)
 		if existing, exists := manifest.Projects[pname]; exists {
+			// Manifest keys are basename-derived, so a DIFFERENT repo can
+			// land on an existing key (~/src/api vs ~/work/api). The
+			// shadowed repo can never enroll under this name — say so
+			// instead of silently treating it as "already known".
+			if existing != nil && !samePath(existing.Path, decoded) {
+				logMsg("sync", " name collision: %s (at %s) is shadowed by existing project %q at %s — rename one directory or `scribe projects ignore` the other", pname, decoded, pname, existing.Path)
+				continue
+			}
 			// Project already known. If it was previously surfaced via
 			// Codex only, record that Claude has now seen it too (so
 			// `discovered_from` promotes to "both") and persist.

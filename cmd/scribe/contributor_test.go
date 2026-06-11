@@ -12,9 +12,18 @@ import (
 // initTestGitRepo creates a git repo in a temp dir with a local
 // user.name so resolveContributor has an identity without touching the
 // developer's global config.
+//
+// The repo is nested two levels below TempDir: manifest.isIgnored
+// rejects paths shallower than 4 segments, and Linux TempDir is
+// /tmp/TestX/001 — a fixture repo at TempDir itself silently falls
+// below discovery's depth floor (the Linux-only CI failure class of
+// 2026-06-10). Nesting HERE kills that class for every caller.
 func initTestGitRepo(t *testing.T, name string) string {
 	t.Helper()
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "projects", "proj")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{
 		{"init", "-q"},
 		{"config", "user.name", name},

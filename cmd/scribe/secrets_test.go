@@ -312,6 +312,36 @@ func TestHoldCoversAllStagedMarkdown(t *testing.T) {
 	}
 }
 
+// TestFindSecretsMatchesGateScope: doctor must see everything the gate
+// can hold — markdown outside wiki/+raw/ (notes/, scripts/, log.md)
+// included — while gitignored files stay out, and files in both the
+// git listing and the walk are reported once.
+func TestFindSecretsMatchesGateScope(t *testing.T) {
+	repo := initTestGitRepo(t, "Doctor Tester")
+	writeKBFile(t, repo, "notes/scratch.md", "key: "+fakeAWSKey()+"\n")
+	writeKBFile(t, repo, "wiki/leaky.md", "key: "+fakeAWSKey()+"\n")
+	writeKBFile(t, repo, ".gitignore", "output/\n")
+	writeKBFile(t, repo, "output/ignored.md", "key: "+fakeAWSKey()+"\n")
+
+	findings := findSecretsInKB(repo, false)
+	joined := strings.Join(findings, "\n")
+	if !strings.Contains(joined, "notes/scratch.md:1") {
+		t.Errorf("markdown outside wiki/raw not scanned: %s", joined)
+	}
+	if strings.Contains(joined, "output/ignored.md") {
+		t.Errorf("gitignored file scanned: %s", joined)
+	}
+	leakyCount := 0
+	for _, f := range findings {
+		if strings.HasPrefix(f, "wiki/leaky.md:") {
+			leakyCount++
+		}
+	}
+	if leakyCount != 1 {
+		t.Errorf("wiki/leaky.md reported %d times, want 1 (git listing + walk must dedupe)", leakyCount)
+	}
+}
+
 // TestScanTruncatesLongLines: over-long lines are scanned up to the
 // rule's cap instead of skipped — minified absorbs pack whole pages
 // into one line.
