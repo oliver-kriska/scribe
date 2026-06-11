@@ -1,0 +1,16 @@
+# Keeps the SHA-pinned actions and the Go module graph fresh without
+# manual digest archaeology: Dependabot rewrites the pinned SHAs in
+# workflow files (preserving the `# vN` comments) and bumps go.mod.
+# The goreleaser-cross image digest in release.yml is NOT covered
+# (it lives in a `run:` script) — bump instructions are inline there.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
