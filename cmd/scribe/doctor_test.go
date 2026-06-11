@@ -421,3 +421,37 @@ func mustMkdir(t *testing.T, path string) {
 }
 
 // mustWrite lives in link_test.go — reused here.
+
+// TestForeignScribeAgents pins the duplicate-LaunchAgent detector: a
+// plist outside scribe's own job set that references the same binary or
+// KB root is the 2026-06 double-run incident (a pre-rename agent set
+// stayed loaded and every job fired twice for weeks).
+func TestForeignScribeAgents(t *testing.T) {
+	agents := t.TempDir()
+	binary := "/Users/u/.local/bin/scribe"
+	root := "/Users/u/Projects/kb"
+	plist := func(name, body string) string {
+		path := filepath.Join(agents, name)
+		if err := os.WriteFile(path, []byte("<plist>"+body+"</plist>\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	ownPath := plist("com.scribe.sync-projects.plist", "<string>cd "+root+" && "+binary+" sync</string>")
+	plist("com.legacy.sync-projects.plist", "<string>cd "+root+" && "+binary+" sync</string>")
+	plist("com.other.kb-watcher.plist", "<string>watchthing "+root+"</string>")
+	plist("com.apple.unrelated.plist", "<string>/usr/bin/true</string>")
+	plist("not-a-plist.txt", "<string>"+binary+"</string>")
+
+	got := foreignScribeAgents(agents, binary, root, map[string]bool{ownPath: true})
+	want := []string{"com.legacy.sync-projects", "com.other.kb-watcher"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("foreignScribeAgents = %v, want %v", got, want)
+	}
+
+	// Missing dir (non-macOS, fresh account) must be silent, not an error.
+	if got := foreignScribeAgents(filepath.Join(agents, "nope"), binary, root, nil); got != nil {
+		t.Errorf("missing dir should yield nil, got %v", got)
+	}
+}
