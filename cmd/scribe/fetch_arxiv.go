@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -114,7 +115,7 @@ func fetchArxivMetadata(ctx context.Context, id string) (arxivMeta, error) {
 		case <-time.After(retryAfter):
 		}
 	}
-	return arxivMeta{}, fmt.Errorf("arxiv api: rate-limited after retry")
+	return arxivMeta{}, errors.New("arxiv api: rate-limited after retry")
 }
 
 // arxivMetadataAttempt returns the parsed metadata, a non-zero retryAfter
@@ -140,7 +141,7 @@ func arxivMetadataAttempt(ctx context.Context, id string) (arxivMeta, time.Durat
 				wait = secs
 			}
 		}
-		return arxivMeta{}, wait, fmt.Errorf("arxiv api status 429")
+		return arxivMeta{}, wait, errors.New("arxiv api status 429")
 	}
 	if resp.StatusCode != 200 {
 		return arxivMeta{}, 0, fmt.Errorf("arxiv api status %d", resp.StatusCode)
@@ -323,7 +324,9 @@ func assembleArxivResult(originalURL, id string, meta arxivMeta, body, via strin
 	}
 
 	var preamble strings.Builder
-	preamble.WriteString("# " + title + "\n\n")
+	preamble.WriteString("# ")
+	preamble.WriteString(title)
+	preamble.WriteString("\n\n")
 	if len(meta.Authors) > 0 {
 		fmt.Fprintf(&preamble, "**Authors:** %s\n\n", strings.Join(meta.Authors, ", "))
 	}

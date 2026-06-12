@@ -215,7 +215,7 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 		// Build fzf input: "session_id\tscore\tproject\tmsgs\tdate\tsummary"
 		// fzf displays columns 2.., preview runs `ccrider show {1}` against col 1.
 		if _, err := exec.LookPath("fzf"); err != nil {
-			return fmt.Errorf("fzf not installed — install via `brew install fzf`")
+			return errors.New("fzf not installed — install via `brew install fzf`")
 		}
 		var buf strings.Builder
 		for _, r := range results {

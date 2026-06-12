@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -187,7 +188,7 @@ func fxTweetToResult(data fxTweetResp) (fetchResult, error) {
 
 func fetchTrafilatura(ctx context.Context, rawURL string) (fetchResult, error) {
 	if _, err := exec.LookPath("trafilatura"); err != nil {
-		return fetchResult{}, fmt.Errorf("trafilatura not installed")
+		return fetchResult{}, errors.New("trafilatura not installed")
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -226,7 +227,7 @@ func fetchTrafilatura(ctx context.Context, rawURL string) (fetchResult, error) {
 		body = strings.TrimSpace(meta.Raw)
 	}
 	if body == "" {
-		return fetchResult{}, fmt.Errorf("trafilatura: empty body")
+		return fetchResult{}, errors.New("trafilatura: empty body")
 	}
 
 	title := strings.TrimSpace(meta.Title)
@@ -295,7 +296,7 @@ func fetchJina(ctx context.Context, rawURL string) (fetchResult, error) {
 	}
 	body := strings.TrimSpace(string(raw))
 	if body == "" {
-		return fetchResult{}, fmt.Errorf("jina: empty body")
+		return fetchResult{}, errors.New("jina: empty body")
 	}
 
 	// Jina's markdown header includes "Title: ..." and "URL Source: ..." lines

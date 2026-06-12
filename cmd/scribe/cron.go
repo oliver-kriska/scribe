@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -328,13 +329,13 @@ func renderCrontab(job cronJob) []string {
 		hr := "*"
 		wd := "*"
 		if ct.Minute >= 0 {
-			minute = fmt.Sprintf("%d", ct.Minute)
+			minute = strconv.Itoa(ct.Minute)
 		}
 		if ct.Hour >= 0 {
-			hr = fmt.Sprintf("%d", ct.Hour)
+			hr = strconv.Itoa(ct.Hour)
 		}
 		if ct.Weekday >= 0 {
-			wd = fmt.Sprintf("%d", ct.Weekday)
+			wd = strconv.Itoa(ct.Weekday)
 		}
 		lines = append(lines, fmt.Sprintf("%s %s * * %s %s", minute, hr, wd, job.Command))
 	}

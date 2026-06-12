@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,11 +99,11 @@ type Frontmatter struct {
 func parseFrontmatter(content []byte) (*Frontmatter, error) {
 	s := string(content)
 	if !strings.HasPrefix(s, "---") {
-		return nil, fmt.Errorf("no frontmatter delimiter")
+		return nil, errors.New("no frontmatter delimiter")
 	}
 	end := strings.Index(s[3:], "\n---")
 	if end < 0 {
-		return nil, fmt.Errorf("no closing frontmatter delimiter")
+		return nil, errors.New("no closing frontmatter delimiter")
 	}
 	yamlBytes := []byte(s[3 : end+3])
 	var fm Frontmatter
@@ -122,11 +123,11 @@ func parseFrontmatter(content []byte) (*Frontmatter, error) {
 func parseFrontmatterRaw(content []byte) (map[string]any, error) {
 	s := string(content)
 	if !strings.HasPrefix(s, "---") {
-		return nil, fmt.Errorf("no frontmatter delimiter")
+		return nil, errors.New("no frontmatter delimiter")
 	}
 	end := strings.Index(s[3:], "\n---")
 	if end < 0 {
-		return nil, fmt.Errorf("no closing frontmatter delimiter")
+		return nil, errors.New("no closing frontmatter delimiter")
 	}
 	yamlBytes := []byte(s[3 : end+3])
 	var raw map[string]any

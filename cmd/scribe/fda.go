@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -337,5 +338,5 @@ func runFDAFlow(s fdaState) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("full disk access still missing after 2 minutes — re-run `scribe fda` when you've completed the steps above")
+	return errors.New("full disk access still missing after 2 minutes — re-run `scribe fda` when you've completed the steps above")
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -333,7 +334,7 @@ func (l *SectionsListCmd) Run() error {
 		}
 		sections := extractSections(articleBody(content))
 		if len(sections) == 0 {
-			return fmt.Errorf("no sections (article has no H1-H3 headings, no sidecar)")
+			return errors.New("no sections (article has no H1-H3 headings, no sidecar)")
 		}
 		rel, _ := filepath.Rel(root, path)
 		sidecar = &SectionsSidecar{

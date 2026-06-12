@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -845,7 +846,7 @@ func kbDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "", fmt.Errorf("cannot find scribe KB root; run `scribe init` inside your KB checkout, use -C <path>, or set SCRIBE_KB")
+	return "", errors.New("cannot find scribe KB root; run `scribe init` inside your KB checkout, use -C <path>, or set SCRIBE_KB")
 }
 
 // announceDefaultKBOnce dedups the default-KB notice across repeated

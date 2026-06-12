@@ -85,7 +85,7 @@ type ProjectsApproveCmd struct {
 func withSyncLock(root string, fn func() error) error {
 	err := withLock(loadConfig(root).LockDir, "sync", fn)
 	if errors.Is(err, errLockBusy) {
-		return fmt.Errorf("a sync is running (lock busy) — retry in a moment")
+		return errors.New("a sync is running (lock busy) — retry in a moment")
 	}
 	return err
 }
@@ -109,7 +109,7 @@ func (c *ProjectsApproveCmd) run(root string) error {
 		names = manifest.pendingProjects()
 	}
 	if len(names) == 0 {
-		return fmt.Errorf("nothing to approve — pass project name(s) or --all (see `scribe projects list --pending`)")
+		return errors.New("nothing to approve — pass project name(s) or --all (see `scribe projects list --pending`)")
 	}
 
 	for _, name := range names {

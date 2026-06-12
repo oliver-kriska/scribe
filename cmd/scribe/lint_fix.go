@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -63,7 +64,7 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 	closeFenceRE := regexp.MustCompile(`\n---[ \t]*(?:\r?\n|$)`)
 	loc := closeFenceRE.FindStringIndex(s[4:])
 	if loc == nil {
-		return nil, nil, fmt.Errorf("malformed frontmatter (no closing ---)")
+		return nil, nil, errors.New("malformed frontmatter (no closing ---)")
 	}
 	fmStart := 4
 	fmEnd := 4 + loc[0]      // start of the "\n" preceding the fence

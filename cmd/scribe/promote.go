@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ func (c *PromoteCmd) Run() error {
 		return fmt.Errorf("%s is not a scribe KB (no scribe.yaml) — promote needs an initialized target", target)
 	}
 	if filepath.Clean(target) == filepath.Clean(root) {
-		return fmt.Errorf("target KB is the current KB — nothing to promote")
+		return errors.New("target KB is the current KB — nothing to promote")
 	}
 
 	rel := filepath.Clean(c.Article)

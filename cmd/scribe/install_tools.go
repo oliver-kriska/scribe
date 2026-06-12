@@ -242,7 +242,7 @@ func extractUVFromTarball(tarball []byte, dst string) error {
 		}
 		return os.Rename(tmp, dst)
 	}
-	return fmt.Errorf("uv binary not found in tarball")
+	return errors.New("uv binary not found in tarball")
 }
 
 // installMarkerViaUV runs `uv tool install marker-pdf`. uv prints
@@ -353,7 +353,7 @@ func readInstallState() *installState {
 // SCRIBE_AUTO_INSTALL_TOOLS=1").
 func lazyBootstrapMarker() error {
 	if os.Getenv("SCRIBE_AUTO_INSTALL_TOOLS") != "1" {
-		return fmt.Errorf("marker not installed; set SCRIBE_AUTO_INSTALL_TOOLS=1 or run `scribe install-tools` to bootstrap")
+		return errors.New("marker not installed; set SCRIBE_AUTO_INSTALL_TOOLS=1 or run `scribe install-tools` to bootstrap")
 	}
 	cmd := &InstallToolsCmd{}
 	return cmd.Run()

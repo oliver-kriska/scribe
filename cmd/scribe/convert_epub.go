@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -37,7 +38,7 @@ func convertEPUBTier0(data []byte) (string, error) {
 
 	containerFile, ok := files["META-INF/container.xml"]
 	if !ok {
-		return "", fmt.Errorf("epub missing META-INF/container.xml (not a valid EPUB?)")
+		return "", errors.New("epub missing META-INF/container.xml (not a valid EPUB?)")
 	}
 	opfPath, err := readOPFPath(containerFile)
 	if err != nil {
@@ -82,7 +83,7 @@ func convertEPUBTier0(data []byte) (string, error) {
 
 	out := strings.TrimSpace(sb.String())
 	if out == "" {
-		return "", fmt.Errorf("no extractable text in epub (image-only book?)")
+		return "", errors.New("no extractable text in epub (image-only book?)")
 	}
 	return out, nil
 }
@@ -113,7 +114,7 @@ func readOPFPath(f *zip.File) (string, error) {
 		return "", fmt.Errorf("parse container.xml: %w", err)
 	}
 	if len(c.Rootfiles.Rootfile) == 0 || c.Rootfiles.Rootfile[0].FullPath == "" {
-		return "", fmt.Errorf("container.xml has no rootfile")
+		return "", errors.New("container.xml has no rootfile")
 	}
 	return c.Rootfiles.Rootfile[0].FullPath, nil
 }

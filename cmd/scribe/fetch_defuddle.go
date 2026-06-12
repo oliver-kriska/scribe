@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -26,7 +27,7 @@ import (
 
 func fetchDefuddle(ctx context.Context, rawURL string) (fetchResult, error) {
 	if _, err := exec.LookPath("defuddle"); err != nil {
-		return fetchResult{}, fmt.Errorf("defuddle not installed")
+		return fetchResult{}, errors.New("defuddle not installed")
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -68,7 +69,7 @@ func fetchDefuddle(ctx context.Context, rawURL string) (fetchResult, error) {
 		body = strings.TrimSpace(meta.Text)
 	}
 	if body == "" {
-		return fetchResult{}, fmt.Errorf("defuddle: empty body")
+		return fetchResult{}, errors.New("defuddle: empty body")
 	}
 
 	title := strings.TrimSpace(meta.Title)

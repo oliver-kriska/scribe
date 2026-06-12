@@ -292,7 +292,7 @@ func contextualizeOne(root, rawPath, model string) error {
 	}
 	text = sanitizeContextParagraph(text)
 	if text == "" {
-		return fmt.Errorf("empty context paragraph")
+		return errors.New("empty context paragraph")
 	}
 	// Reject degenerate output rather than splice it. Small models on
 	// table/image-dense articles fall back to echoing the first line (the
@@ -344,7 +344,7 @@ func insertRetrievalContext(content, paragraph string) (string, error) {
 
 	end := strings.Index(content[3:], "\n---")
 	if end < 0 {
-		return "", fmt.Errorf("malformed frontmatter (no closing ---)")
+		return "", errors.New("malformed frontmatter (no closing ---)")
 	}
 	// Absolute offset of the byte after the closing "---".
 	absClosing := 3 + end + len("\n---")

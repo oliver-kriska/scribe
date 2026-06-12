@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -254,7 +255,7 @@ func writeHotMDQuiet(root string) {
 func installHotHooks(root string) error {
 	home := os.Getenv("HOME")
 	if home == "" {
-		return fmt.Errorf("HOME not set")
+		return errors.New("HOME not set")
 	}
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 	hotPath := filepath.Join(root, "wiki", "_hot.md")

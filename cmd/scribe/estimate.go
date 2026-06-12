@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -20,7 +21,7 @@ type tokenEstimate struct {
 // humanTokens formats a token count like "1.2K" or "34K" for readability.
 func humanTokens(n int) string {
 	if n < 1000 {
-		return fmt.Sprintf("%d", n)
+		return strconv.Itoa(n)
 	}
 	if n < 1_000_000 {
 		return fmt.Sprintf("%.1fK", float64(n)/1000)
