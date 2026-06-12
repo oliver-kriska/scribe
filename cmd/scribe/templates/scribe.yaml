@@ -232,9 +232,11 @@ absorb:
   #   phi4-mini:3.8b — reasoning-heavy
   contextualize:
     enabled: true                 # default: true
-    provider: anthropic           # default: anthropic (alt: ollama)
+{{if eq .LLMProvider "ollama"}}    provider: ollama              # follows the --provider ollama bootstrap choice
+    model: gemma3:4b              # scribe-vetted local default for this pass
+{{else}}    provider: anthropic           # default: anthropic (alt: ollama)
     model: haiku                  # default: haiku (ollama: e.g. gemma3:4b)
-    ollama_url: http://localhost:11434
+{{end}}    ollama_url: http://localhost:11434
     max_per_run: 20               # default: 20
     timeout_sec: 90               # default: 90
 
