@@ -12,6 +12,7 @@ import (
 	"strings"
 	gosync "sync"
 	"time"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -1119,6 +1120,15 @@ func normalizeRelatedFrontmatter(content string) string {
 	clean := make([]string, 0, len(names))
 	for _, n := range names {
 		n = strings.TrimSpace(strings.Trim(strings.TrimSpace(n), `"'[]`))
+		// A recovered name is about to be embedded in a double-quoted
+		// YAML scalar; bytes that can't live there — invalid UTF-8,
+		// control characters, embedded double quotes (backslashes were
+		// stripped region-wide above) — would make the "canonical" line
+		// itself unparseable, the exact failure this function exists to
+		// prevent (found by FuzzNormalizeRelatedFrontmatter). Dropping
+		// them degrades to an orphan wikilink at worst — soft, the
+		// linker tolerates it — never to broken frontmatter.
+		n = sanitizeRelatedName(n)
 		if n == "" {
 			continue
 		}
@@ -1143,6 +1153,21 @@ func normalizeRelatedFrontmatter(content string) string {
 	out = append(out, newLine)
 	out = append(out, lines[end:]...)
 	return strings.Join(out, "\n")
+}
+
+// sanitizeRelatedName makes a recovered related: name safe to embed in
+// a double-quoted YAML scalar: drops invalid UTF-8, control characters,
+// and double quotes, then re-trims. See the call site in
+// normalizeRelatedFrontmatter for the reasoning.
+func sanitizeRelatedName(s string) string {
+	s = strings.ToValidUTF8(s, "")
+	s = strings.Map(func(r rune) rune {
+		if r == '"' || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	return strings.TrimSpace(s)
 }
 
 // splitRelatedTokens splits a captured group on commas/newlines so a

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("---\nrelated: [[a\"b]], [[c\u0001d]]\n---\n")
