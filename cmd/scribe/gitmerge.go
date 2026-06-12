@@ -21,15 +21,11 @@ import (
 // other clone permanently failing its pulls (rebase aborts on the
 // same conflict forever while local commits pile up).
 
-// semanticMergers maps repo-relative paths to functions that produce
-// merged content from a conflict's two sides. `ours` is the upstream
-// (remote) side during a rebase, `theirs` the local commit being
-// replayed; either may be nil on a delete/modify conflict.
-var semanticMergers = map[string]func(ours, theirs []byte) []byte{
-	"scripts/extraction-ledger.json": mergeLedgerContent,
-	"scripts/dream-lease.json":       mergeLeaseContent,
-	"log.md":                         mergeUnionLines,
-}
+// semanticMergers (special_files.go) maps repo-relative paths to
+// functions that produce merged content from a conflict's two sides.
+// `ours` is the upstream (remote) side during a rebase, `theirs` the
+// local commit being replayed; either may be nil on a delete/modify
+// conflict.
 
 // semanticResolve merges one conflicted path during a rebase and stages
 // the result. Returns false when the blobs can't be read or written —

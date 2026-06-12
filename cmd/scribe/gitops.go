@@ -106,16 +106,6 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 	return true, beforeSHA != "" && afterSHA != "" && beforeSHA != afterSHA, nil
 }
 
-// derivedRegenerable lists KB files whose content scribe fully rebuilds
-// (wiki index, backlinks, team digest). A merge conflict on them
-// carries no information — both sides go stale the moment any machine
-// regenerates — so pull auto-resolves these instead of failing.
-var derivedRegenerable = map[string]bool{
-	"wiki/_index.md":       true,
-	"wiki/_backlinks.json": true,
-	"wiki/_digest.md":      true,
-}
-
 // rebaseInProgress reports whether repoPath has a rebase mid-flight.
 func rebaseInProgress(repoPath string) bool {
 	for _, sub := range []string{"rebase-merge", "rebase-apply"} {
@@ -288,7 +278,7 @@ func gitAddWiki(root string) bool {
 			args = append(args, d)
 		}
 	}
-	for _, f := range []string{"scripts/projects.json", "scripts/extraction-ledger.json", "log.md"} {
+	for _, f := range autoStagedSpecialFiles() {
 		if fileExists(filepath.Join(root, f)) {
 			args = append(args, f)
 		}
