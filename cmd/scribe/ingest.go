@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -44,7 +45,7 @@ func (c *IngestURLCmd) Run() error {
 		return fmt.Errorf("invalid URL: scheme %q not supported (need http/https)", u.Scheme)
 	}
 	if u.Host == "" {
-		return fmt.Errorf("invalid URL: missing host")
+		return errors.New("invalid URL: missing host")
 	}
 
 	root, err := kbDir()
@@ -415,7 +416,7 @@ func drainOne(root, queuePath string, dryRun bool) error {
 	}
 	entry := parseQueueEntry(string(data))
 	if entry["url"] == "" {
-		return fmt.Errorf("no url in queue entry")
+		return errors.New("no url in queue entry")
 	}
 
 	rawURL := entry["url"]

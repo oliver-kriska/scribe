@@ -198,7 +198,7 @@ func autoResolveDerivedConflicts(repoPath string) (bool, error) {
 	}
 	if rebaseInProgress(repoPath) {
 		_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
-		return false, fmt.Errorf("rebase did not converge while auto-resolving derived files (aborted)")
+		return false, errors.New("rebase did not converge while auto-resolving derived files (aborted)")
 	}
 	return true, nil
 }

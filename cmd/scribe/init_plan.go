@@ -27,7 +27,7 @@ func (c *InitCmd) buildInitPlan(abs string, vars templateVars, ucKBDir string, a
 	var plan []initAction
 
 	scaffold := initAction{
-		Title: fmt.Sprintf("write KB scaffold at %s", abs),
+		Title: "write KB scaffold at " + abs,
 		Explain: "Renders the embedded templates — scribe.yaml, CLAUDE.md, .gitignore, " +
 			"wiki/_index.md, wiki/_hot.md, log.md — creates the content directory tree " +
 			"(wiki/, projects/, raw/, scripts/, output/, …) and seeds empty state files " +
@@ -143,7 +143,7 @@ func (c *InitCmd) buildInitPlan(abs string, vars templateVars, ucKBDir string, a
 
 	if strings.EqualFold(vars.LLMProvider, "ollama") {
 		plan = append(plan, initAction{
-			Title: fmt.Sprintf("probe Ollama and pre-pull %s", vars.LLMModel),
+			Title: "probe Ollama and pre-pull " + vars.LLMModel,
 			Explain: "Checks that an Ollama server is reachable and pulls the recommended " +
 				"model now, so the first sync run doesn't stall on /api/pull. Non-fatal — " +
 				"if Ollama isn't running yet, init prints a hint instead.",

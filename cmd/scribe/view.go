@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -119,11 +120,11 @@ func validateFilterNode(n FilterNode) error {
 	hasContainer := len(n.And) > 0 || len(n.Or) > 0 || n.Not != nil
 	hasLeaf := n.Field != "" || n.Op != "" || n.Value != nil
 	if hasContainer && hasLeaf {
-		return fmt.Errorf("node mixes container (and/or/not) with leaf (field/op/value)")
+		return errors.New("node mixes container (and/or/not) with leaf (field/op/value)")
 	}
 	if hasLeaf {
 		if n.Field == "" || n.Op == "" {
-			return fmt.Errorf("leaf node missing field or op")
+			return errors.New("leaf node missing field or op")
 		}
 		switch n.Op {
 		case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpIn, OpHas, OpContain:
@@ -487,7 +488,7 @@ func (c *ViewCmd) Run() error {
 		return listViews(root)
 	}
 	if c.Name == "" {
-		return fmt.Errorf("usage: scribe view <name> | scribe view --list")
+		return errors.New("usage: scribe view <name> | scribe view --list")
 	}
 	path := resolveViewPath(root, c.Name)
 	vf, err := loadViewFile(path)

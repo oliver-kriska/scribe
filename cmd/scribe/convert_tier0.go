@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -54,7 +55,7 @@ func convertPDFTier0(data []byte) (string, error) {
 
 	out := strings.TrimSpace(sb.String())
 	if out == "" {
-		return "", fmt.Errorf("no extractable text (likely a scanned PDF — install marker-pdf for OCR)")
+		return "", errors.New("no extractable text (likely a scanned PDF — install marker-pdf for OCR)")
 	}
 	return out, nil
 }

@@ -155,7 +155,7 @@ func validateFile(root, path string) []string {
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		errs = append(errs, fmt.Sprintf("missing required fields: %s", strings.Join(missing, ", ")))
+		errs = append(errs, "missing required fields: "+strings.Join(missing, ", "))
 	}
 
 	// Validate type

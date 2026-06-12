@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -269,7 +270,7 @@ func resolveContradiction(root, id, note string) error {
 		return err
 	}
 	if len(entries) == 0 {
-		return fmt.Errorf("ledger empty (run `scribe contradictions build` first)")
+		return errors.New("ledger empty (run `scribe contradictions build` first)")
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	found := false

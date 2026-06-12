@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -432,7 +433,7 @@ func (c *SessionsFilterCmd) Run() error {
 
 	// Use the sync helper to run triage via the scribe binary itself.
 	syncCmd := &SyncCmd{SessionsMax: c.Top, SessionSort: "score"}
-	ids := syncCmd.triageSessionIDs(c.Top, "--message-limit", fmt.Sprintf("%d", c.MessageLimit))
+	ids := syncCmd.triageSessionIDs(c.Top, "--message-limit", strconv.Itoa(c.MessageLimit))
 	if len(ids) == 0 {
 		fmt.Println("Triage returned no sessions.")
 		return nil

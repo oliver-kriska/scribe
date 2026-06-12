@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	gosync "sync"
 	"time"
@@ -287,7 +288,7 @@ func (s *SyncCmd) triageSessionIDs(top int, extraArgs ...string) []string {
 		scribeExe = "scribe"
 	}
 	args := make([]string, 0, 6+len(extraArgs))
-	args = append(args, "triage", "--ids", "--top", fmt.Sprintf("%d", top), "--sort", s.SessionSort)
+	args = append(args, "triage", "--ids", "--top", strconv.Itoa(top), "--sort", s.SessionSort)
 	args = append(args, extraArgs...)
 	idsOutput, err := runCmdErr("", scribeExe, args...)
 	if err != nil {
@@ -565,7 +566,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 		if scribeExe == "" {
 			scribeExe = "scribe"
 		}
-		out, _ := runCmdErr("", scribeExe, "triage", "--top", fmt.Sprintf("%d", s.SessionsMax), "--sort", s.SessionSort)
+		out, _ := runCmdErr("", scribeExe, "triage", "--top", strconv.Itoa(s.SessionsMax), "--sort", s.SessionSort)
 		if out != "" {
 			fmt.Println(out)
 		}

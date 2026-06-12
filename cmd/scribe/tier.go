@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -201,7 +202,7 @@ func (l *TierListCmd) Run() error {
 		return err
 	}
 	if l.Tier != "" && !validIndexTiers[l.Tier] {
-		return fmt.Errorf("--tier must be one of: stub, brief, standard, deep, reference")
+		return errors.New("--tier must be one of: stub, brief, standard, deep, reference")
 	}
 	counts := map[string]int{}
 	err = walkArticles(root, func(path string, content []byte) error {
@@ -321,7 +322,7 @@ type TierWriteCmd struct {
 
 func (w *TierWriteCmd) Run() error {
 	if !w.All && !w.MissingOnly {
-		return fmt.Errorf("pick one: --all (rewrite every article) or --missing-only (only articles without a stored tier)")
+		return errors.New("pick one: --all (rewrite every article) or --missing-only (only articles without a stored tier)")
 	}
 	root, err := kbDir()
 	if err != nil {
@@ -390,11 +391,11 @@ func updateFrontmatterField(path, key, value string) error {
 	}
 	s := string(data)
 	if !strings.HasPrefix(s, "---") {
-		return fmt.Errorf("no frontmatter delimiter")
+		return errors.New("no frontmatter delimiter")
 	}
 	end := strings.Index(s[3:], "\n---")
 	if end < 0 {
-		return fmt.Errorf("no closing frontmatter delimiter")
+		return errors.New("no closing frontmatter delimiter")
 	}
 	fmBlock := s[3 : end+3]
 	rest := s[end+7:] // skip `\n---\n`

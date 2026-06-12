@@ -127,16 +127,15 @@ func minimalEPUB(t *testing.T, chapters map[string]string) []byte {
 <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
 </container>`)
 
-	manifestItems := ""
-	spineItems := ""
+	var manifestItems, spineItems strings.Builder
 	for id := range chapters {
-		manifestItems += `<item id="` + id + `" href="` + id + `.xhtml" media-type="application/xhtml+xml"/>`
-		spineItems += `<itemref idref="` + id + `"/>`
+		manifestItems.WriteString(`<item id="` + id + `" href="` + id + `.xhtml" media-type="application/xhtml+xml"/>`)
+		spineItems.WriteString(`<itemref idref="` + id + `"/>`)
 	}
 	must("OEBPS/content.opf", `<?xml version="1.0"?>
 <package xmlns="http://www.idpf.org/2007/opf">
-<manifest>`+manifestItems+`</manifest>
-<spine>`+spineItems+`</spine>
+<manifest>`+manifestItems.String()+`</manifest>
+<spine>`+spineItems.String()+`</spine>
 </package>`)
 
 	for id, body := range chapters {
