@@ -284,3 +284,51 @@ func TestInstallCodexMD_CheckModeNeverWrites(t *testing.T) {
 		t.Error("check mode must not create ~/.codex/AGENTS.md")
 	}
 }
+
+// TestRenderScribeYAML_ProviderThreadsIntoContextualize pins the
+// `--provider ollama` bootstrap promise: every uncommented per-op block
+// in the scaffolded scribe.yaml must follow the chosen provider. The
+// contextualize block used to hardcode `provider: anthropic`, which (as
+// an explicit per-op value) beat the llm-block inheritance and silently
+// sent every raw article to Anthropic on an all-local KB.
+func TestRenderScribeYAML_ProviderThreadsIntoContextualize(t *testing.T) {
+	cases := []struct {
+		name         string
+		provider     string
+		model        string
+		wantProvider string
+		wantModel    string
+	}{
+		{"ollama bootstrap", "ollama", "gemma3:4b", "ollama", "gemma3:4b"},
+		{"default anthropic", "", "", "anthropic", "haiku"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			vars := templateVars{
+				OwnerName:   "Test",
+				KBName:      "test-kb",
+				Domains:     []string{"general"},
+				LLMProvider: tc.provider,
+				LLMModel:    tc.model,
+			}
+			out, err := renderTemplate("templates/scribe.yaml", vars)
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "scribe.yaml"), []byte(out), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg := loadConfig(dir)
+			if cfg == nil {
+				t.Fatal("loadConfig returned nil for rendered scribe.yaml")
+			}
+			if got := cfg.Absorb.Contextualize.Provider; got != tc.wantProvider {
+				t.Errorf("contextualize provider = %q, want %q", got, tc.wantProvider)
+			}
+			if got := cfg.Absorb.Contextualize.Model; got != tc.wantModel {
+				t.Errorf("contextualize model = %q, want %q", got, tc.wantModel)
+			}
+		})
+	}
+}
