@@ -310,17 +310,27 @@ func qmdIndexSize() (string, error) {
 //     pre-filter ceiling so mechanical/short sessions don't inflate
 //     the backlog.
 //  3. Pending drop files staged inside other projects'
-//     `.claude/scriptorium/` directories — these get collected at
+//     `.claude/<kb-name>/` directories — these get collected at
 //     the start of `scribe sync` but show up here too so the user
 //     can spot accumulated drops without running a full sync.
+//
+// "Pending" means the next sync will actually process it. Work a
+// policy gate holds back forever — drop files without an absorb
+// opt-in under strictness=high, projects over sync.max_extract_files
+// — is reported separately as "held" so the backlog never promises
+// work sync won't do. The classification reuses the same rules sync
+// itself applies (strictnessHoldsFile, exceedsExtractFileCap), so
+// status and the sync-time hold summary can't drift apart.
 //
 // Each subsection is silenced if the underlying state file is
 // missing — a fresh KB shouldn't get a wall of "0 pending" lines.
 func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 	type backlog struct {
-		label string
-		done  int
-		todo  int
+		label    string
+		done     int
+		todo     int
+		held     int
+		heldNote string
 	}
 	var rows []backlog
 
@@ -328,29 +338,44 @@ func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 	if manifest, err := loadManifest(root); err == nil {
 		total := 0
 		needing := 0
+		capped := 0
 		for _, entry := range manifest.Projects {
 			if !dirExists(entry.Path) {
 				continue
 			}
 			total++
-			if entry.LastSHA == "" {
-				needing++
-				continue
-			}
-			if hasGit(entry.Path) {
+			needs := false
+			switch {
+			case entry.LastSHA == "":
+				needs = true
+			case hasGit(entry.Path):
 				cur := gitSHA(entry.Path)
-				if cur != "" && cur != entry.LastSHA {
-					needing++
-				}
+				needs = cur != "" && cur != entry.LastSHA
+			default:
+				// Non-git projects: stat-walk fallback, conservative.
+				needs = entry.LastExtracted == ""
+			}
+			if !needs {
 				continue
 			}
-			// Non-git projects: stat-walk fallback, conservative.
-			if entry.LastExtracted == "" {
+			// Same size gate sync applies: a project over
+			// sync.max_extract_files is skipped every run until the user
+			// runs `scribe deep`, so it's held, not pending.
+			if cfg.Sync.MaxExtractFiles > 0 &&
+				exceedsExtractFileCap(cfg, len(gitChangedFiles(entry.Path, entry.LastSHA, extractScanPatterns))) {
+				capped++
+			} else {
 				needing++
 			}
 		}
 		if total > 0 {
-			rows = append(rows, backlog{label: "projects (extract):", done: total - needing, todo: needing})
+			rows = append(rows, backlog{
+				label:    "projects (extract):",
+				done:     total - needing - capped,
+				todo:     needing,
+				held:     capped,
+				heldNote: ">max_extract_files — run `scribe deep`",
+			})
 		}
 	}
 
@@ -371,9 +396,23 @@ func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 		}
 	}
 
-	// Drop files staged in other projects.
-	if pending := countPendingDropFiles(root); pending > 0 {
-		rows = append(rows, backlog{label: "drop files:", done: 0, todo: pending})
+	// Drop files staged in other projects, split by the same strictness
+	// gate sync's absorb applies: under strictness=high a drop without
+	// an opt-in (`absorb: true` or a named domain) never drains, so
+	// it's held, not pending.
+	if drops := pendingDropFiles(root); len(drops) > 0 {
+		held := 0
+		for _, f := range drops {
+			if strictnessHoldsFile(cfg.Absorb.Strictness, f) {
+				held++
+			}
+		}
+		rows = append(rows, backlog{
+			label:    "drop files:",
+			todo:     len(drops) - held,
+			held:     held,
+			heldNote: "strictness=high — need opt-in",
+		})
 	}
 
 	if len(rows) == 0 {
@@ -382,11 +421,15 @@ func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  backlog (run `scribe sync` to process):")
 	for _, r := range rows {
-		if r.done == 0 {
-			fmt.Fprintf(w, "    %-22s %d pending\n", r.label, r.todo)
-		} else {
-			fmt.Fprintf(w, "    %-22s %d done, %d pending\n", r.label, r.done, r.todo)
+		parts := make([]string, 0, 3)
+		if r.done > 0 {
+			parts = append(parts, fmt.Sprintf("%d done", r.done))
 		}
+		if r.held > 0 {
+			parts = append(parts, fmt.Sprintf("%d held (%s)", r.held, r.heldNote))
+		}
+		parts = append(parts, fmt.Sprintf("%d pending", r.todo))
+		fmt.Fprintf(w, "    %-22s %s\n", r.label, strings.Join(parts, ", "))
 	}
 }
 
@@ -408,32 +451,25 @@ func countSessionsInDB(dbPath string) (int, bool) {
 	return n, true
 }
 
-// countPendingDropFiles walks the manifest's project paths and
-// counts unprocessed `.claude/scriptorium/*.md` drop files. A drop
-// file is "pending" if it exists; the sync sweep moves processed
-// files to `.claude/scriptorium/.processed/` so anything still at
-// the top level is awaiting absorption.
-func countPendingDropFiles(root string) int {
+// pendingDropFiles lists the unprocessed drop files staged inside
+// other projects' `.claude/<kb-name>/` directories — the exact set the
+// next sync's collect phase would pick up (same enumeration via
+// unprocessedDropFiles: approved projects only, main checkout plus
+// worktrees, newer than last_drop_processed). Returns paths, not a
+// count, so the caller can classify each file against the strictness
+// gate.
+func pendingDropFiles(root string) []string {
 	manifest, err := loadManifest(root)
 	if err != nil {
-		return 0
+		return nil
 	}
-	total := 0
+	kb := kbName(root)
+	var files []string
 	for _, entry := range manifest.Projects {
-		dropDir := filepath.Join(entry.Path, ".claude", "scriptorium")
-		if !dirExists(dropDir) {
+		if !entry.IsApproved() {
 			continue
 		}
-		files, err := os.ReadDir(dropDir)
-		if err != nil {
-			continue
-		}
-		for _, f := range files {
-			if f.IsDir() || !strings.HasSuffix(f.Name(), ".md") {
-				continue
-			}
-			total++
-		}
+		files = append(files, unprocessedDropFiles(kb, entry)...)
 	}
-	return total
+	return files
 }
