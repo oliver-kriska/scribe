@@ -61,11 +61,11 @@ type InitCmd struct {
 	Domains      []string `help:"Domains this KB uses (comma-separated). 'personal' and 'general' are always added."`
 	KBName       string   `help:"Display name for the KB (defaults to the directory basename)."`
 	Check        bool     `help:"Only check status; never prompt or write files." short:"c"`
-	Yes          bool     `help:"Assume yes to prompts (non-interactive)." short:"y"`
+	Yes          bool     `help:"Assume yes to prompts (non-interactive). Never retargets global state away from another KB — that needs --bind or --force." short:"y"`
 	NoGit        bool     `help:"Skip git init in the new KB." name:"no-git"`
 	NoCron       bool     `help:"Skip cron setup instructions." name:"no-cron"`
 	Force        bool     `help:"Overwrite existing KB files during bootstrap."`
-	Bind         bool     `help:"Repoint ~/.claude/CLAUDE.md and ~/.config/scribe/config.yaml at the new KB. Implicit on normal paths; required for /tmp/ and other temp paths to avoid foot-gunning smoke tests."`
+	Bind         bool     `help:"Repoint ~/.claude/CLAUDE.md and ~/.config/scribe/config.yaml at the new KB. Required to move them away from another KB, and for /tmp/ and other temp paths."`
 	NoClaudeMD   bool     `help:"Never refresh the scribe block in ~/.claude/CLAUDE.md, regardless of --bind/--yes/--force." name:"no-claude-md"`
 	NoCodexMD    bool     `help:"Never refresh the scribe block in ~/.codex/AGENTS.md, regardless of --bind/--yes/--force." name:"no-codex-md"`
 	// Phase 5: top-level LLM provider for the new KB. When set to
@@ -86,6 +86,29 @@ type InitCmd struct {
 	// state, and the next-steps output prints the remote + member-clone
 	// recipe from the README. Combine with --allow to scope sources.
 	Team bool `help:"Scaffold a shared team KB (gitignores the per-machine manifest, prints the team setup steps)."`
+}
+
+// allowGlobalStateWrites decides whether bootstrap may touch the
+// machine-global files (~/.config/scribe/config.yaml kb_dir and the
+// CLAUDE.md/AGENTS.md handshake blocks).
+//
+// --yes means "skip the prompts", not "retarget my globals": when this
+// machine already points at a DIFFERENT KB, only an explicit --bind or
+// --force may move it (issue #13 — `init -p <path> --yes` while
+// creating a *secondary* KB silently re-bound every future agent
+// session and cron run to the new, empty KB). Fresh machines (no
+// kb_dir yet) and idempotent re-runs on the same path keep working
+// with --yes alone. Throwaway paths refuse everything (the 2026-05-13
+// /tmp/freshkb incident).
+func allowGlobalStateWrites(force, yes, bind, throwaway bool, existingKBDir, abs string) bool {
+	if throwaway {
+		return false
+	}
+	if force || bind {
+		return true
+	}
+	retarget := existingKBDir != "" && !samePath(existingKBDir, abs)
+	return yes && !retarget
 }
 
 // templateVars is what every embedded template receives. One struct is easier
@@ -176,8 +199,8 @@ func (c *InitCmd) runBootstrap() error {
 	// overnight. `--bind` is the explicit opt-in for the rare case where
 	// a /tmp/ KB really is meant to be primary.
 	throwaway := isThrowawayPath(abs) && !c.Bind
-	allowUserWrites := (c.Force || c.Yes || c.Bind) && !throwaway
 	uc := loadUserConfig()
+	allowUserWrites := allowGlobalStateWrites(c.Force, c.Yes, c.Bind, throwaway, uc.KBDir, abs)
 
 	// Phase 2 — plan + consent: print every action (including the
 	// global-state writes and the ones being skipped) and get one
@@ -270,8 +293,14 @@ func (c *InitCmd) runBootstrap() error {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Review the generated scribe.yaml and tweak domains/triage keywords.")
-	fmt.Println("  2. Install cron: scribe cron install")
-	fmt.Println("     (On Linux, `scribe cron install` prints crontab entries you paste manually.)")
+	if other := otherKBServedByAgents(abs); other != "" {
+		fmt.Printf("  2. Cron: this machine's scribe LaunchAgents already serve %s —\n", other)
+		fmt.Println("     one agent set per machine for now (issue #26). Run this KB manually,")
+		fmt.Printf("     e.g. SCRIBE_KB=%s scribe sync\n", abs)
+	} else {
+		fmt.Println("  2. Install cron: scribe cron install")
+		fmt.Println("     (On Linux, `scribe cron install` prints crontab entries you paste manually.)")
+	}
 	fmt.Println("  3. Run `scribe doctor` to verify dependencies + freshness checks.")
 	if strings.EqualFold(vars.LLMProvider, "ollama") {
 		fmt.Println("  4. Ollama mode: `ollama serve` must be running when sync fires; `scribe doctor` probes it.")

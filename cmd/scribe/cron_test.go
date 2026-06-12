@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -99,5 +101,48 @@ func TestScribeJobsIncludesLintDuplicates(t *testing.T) {
 	}
 	if !found {
 		t.Error("scribeJobs is missing the lint-duplicates weekly job")
+	}
+}
+
+// TestPlistKBRoot pins the `cd "<root>" && ` extraction that the
+// cross-KB install guard depends on. If renderPlist's command shape or
+// xmlEscape's quote handling changes, this catches it.
+func TestPlistKBRoot(t *testing.T) {
+	jobs := scribeJobs("/Users/u/Projects/my-kb", "/usr/local/bin/scribe")
+	plist := renderPlist(jobs[0])
+	if got := plistKBRoot(plist); got != "/Users/u/Projects/my-kb" {
+		t.Errorf("plistKBRoot(rendered) = %q, want /Users/u/Projects/my-kb", got)
+	}
+	if got := plistKBRoot("<plist>no cd prefix here</plist>"); got != "" {
+		t.Errorf("plistKBRoot(no marker) = %q, want empty", got)
+	}
+}
+
+// TestOtherKBServedByAgents covers the cron-install clobber guard:
+// existing com.scribe.* plists pointing at a different KB root must be
+// detected; same-root plists and absent plists must not trip it.
+func TestOtherKBServedByAgents(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	agents := filepath.Join(fakeHome, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := otherKBServedByAgents("/Users/u/Projects/kb-a"); got != "" {
+		t.Errorf("no plists on disk: got %q, want empty", got)
+	}
+
+	// Install a real rendered plist for kb-a.
+	jobs := scribeJobs("/Users/u/Projects/kb-a", "/usr/local/bin/scribe")
+	if err := os.WriteFile(plistPath(jobs[0].Name), []byte(renderPlist(jobs[0])), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := otherKBServedByAgents("/Users/u/Projects/kb-a"); got != "" {
+		t.Errorf("same root: got %q, want empty", got)
+	}
+	if got := otherKBServedByAgents("/Users/u/Projects/kb-b"); got != "/Users/u/Projects/kb-a" {
+		t.Errorf("different root: got %q, want /Users/u/Projects/kb-a", got)
 	}
 }

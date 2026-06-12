@@ -262,7 +262,15 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 	case err != nil:
 		out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md", Status: statusWarn, Detail: "not found", Fix: "scribe init"})
 	case strings.Contains(string(data), claudeMDMarkerBegin) && strings.Contains(string(data), claudeMDMarkerEnd):
-		out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusOK, Detail: "installed"})
+		if blockReferencesKB(string(data), root) {
+			out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusOK, Detail: "installed"})
+		} else {
+			out = append(out, check{
+				Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusWarn,
+				Detail: "installed but references another KB — agent sessions query that one, not this",
+				Fix:    "scribe init --bind  (repoints the block at this KB)",
+			})
+		}
 	default:
 		out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusWarn, Detail: "scribe block not found", Fix: "scribe init"})
 	}
@@ -279,12 +287,33 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 	case cerr != nil:
 		out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md", Status: statusWarn, Detail: "not found (Codex CLI not set up?)", Fix: "scribe init"})
 	case strings.Contains(string(cdata), claudeMDMarkerBegin) && strings.Contains(string(cdata), claudeMDMarkerEnd):
-		out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusOK, Detail: "installed"})
+		if blockReferencesKB(string(cdata), root) {
+			out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusOK, Detail: "installed"})
+		} else {
+			out = append(out, check{
+				Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusWarn,
+				Detail: "installed but references another KB — Codex sessions query that one, not this",
+				Fix:    "scribe init --bind  (repoints the block at this KB)",
+			})
+		}
 	default:
 		out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusWarn, Detail: "scribe block not found", Fix: "scribe init"})
 	}
 
 	return out
+}
+
+// blockReferencesKB reports whether the scribe handshake block mentions
+// this KB's root path. The block embeds {{.KBDir}} when written, so a
+// present-but-foreign block on a multi-KB machine means agent sessions
+// query a different KB than the one doctor is auditing (#27).
+func blockReferencesKB(data, root string) bool {
+	begin := strings.Index(data, claudeMDMarkerBegin)
+	end := strings.Index(data, claudeMDMarkerEnd)
+	if begin < 0 || end < begin {
+		return false
+	}
+	return strings.Contains(data[begin:end], root)
 }
 
 // checkCodexSessions probes the Codex CLI sessions root. Three states:

@@ -455,3 +455,24 @@ func TestForeignScribeAgents(t *testing.T) {
 		t.Errorf("missing dir should yield nil, got %v", got)
 	}
 }
+
+// TestBlockReferencesKB pins the multi-KB handshake check (#27): a
+// present scribe block only counts as installed FOR THIS KB when the
+// block body mentions this KB's root.
+func TestBlockReferencesKB(t *testing.T) {
+	block := claudeMDMarkerBegin + "\nKB lives at `/Users/u/Projects/kb-a` — query it first.\n" + claudeMDMarkerEnd
+	if !blockReferencesKB(block, "/Users/u/Projects/kb-a") {
+		t.Error("block referencing kb-a must pass for kb-a")
+	}
+	if blockReferencesKB(block, "/Users/u/Projects/kb-b") {
+		t.Error("block referencing kb-a must fail for kb-b")
+	}
+	if blockReferencesKB("no markers at all /Users/u/Projects/kb-a", "/Users/u/Projects/kb-a") {
+		t.Error("content without markers must fail")
+	}
+	// Root mentioned only OUTSIDE the scribe block doesn't count.
+	outside := "/Users/u/Projects/kb-b is mentioned here\n" + claudeMDMarkerBegin + "\npoints at kb-a\n" + claudeMDMarkerEnd
+	if blockReferencesKB(outside, "/Users/u/Projects/kb-b") {
+		t.Error("root outside the block must not count")
+	}
+}

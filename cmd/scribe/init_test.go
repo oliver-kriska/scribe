@@ -285,6 +285,40 @@ func TestInstallCodexMD_CheckModeNeverWrites(t *testing.T) {
 	}
 }
 
+// TestAllowGlobalStateWrites pins issue #13: --yes answers prompts but
+// must never retarget global state away from another KB — only an
+// explicit --bind/--force may. Fresh machines and idempotent re-runs
+// keep working with --yes alone.
+func TestAllowGlobalStateWrites(t *testing.T) {
+	const abs = "/Users/u/Projects/new-kb"
+	cases := []struct {
+		name             string
+		force, yes, bind bool
+		throwaway        bool
+		existingKBDir    string
+		want             bool
+	}{
+		{"fresh machine + yes", false, true, false, false, "", true},
+		{"idempotent re-run + yes", false, true, false, false, abs, true},
+		{"other KB + yes refuses (issue 13)", false, true, false, false, "/Users/u/Projects/primary-kb", false},
+		{"other KB + bind", false, false, true, false, "/Users/u/Projects/primary-kb", true},
+		{"other KB + force", true, false, false, false, "/Users/u/Projects/primary-kb", true},
+		{"other KB + yes + bind", false, true, true, false, "/Users/u/Projects/primary-kb", true},
+		{"no flags at all", false, false, false, false, "", false},
+		{"throwaway beats force", true, false, false, true, "", false},
+		{"throwaway beats yes", false, true, false, true, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := allowGlobalStateWrites(tc.force, tc.yes, tc.bind, tc.throwaway, tc.existingKBDir, abs)
+			if got != tc.want {
+				t.Errorf("allowGlobalStateWrites(force=%v yes=%v bind=%v throwaway=%v existing=%q) = %v, want %v",
+					tc.force, tc.yes, tc.bind, tc.throwaway, tc.existingKBDir, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestRenderScribeYAML_ProviderThreadsIntoContextualize pins the
 // `--provider ollama` bootstrap promise: every uncommented per-op block
 // in the scaffolded scribe.yaml must follow the chosen provider. The

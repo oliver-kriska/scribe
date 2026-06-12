@@ -785,6 +785,7 @@ func kbDir() (string, error) {
 	// 4. User-level config (~/.config/scribe/config.yaml)
 	if uc := loadUserConfig(); uc.KBDir != "" {
 		if isKBRoot(uc.KBDir) {
+			announceDefaultKB(uc.KBDir)
 			return uc.KBDir, nil
 		}
 	}
@@ -792,6 +793,24 @@ func kbDir() (string, error) {
 		return "", err
 	}
 	return "", fmt.Errorf("cannot find scribe KB root; run `scribe init` inside your KB checkout, use -C <path>, or set SCRIBE_KB")
+}
+
+// announceDefaultKBOnce dedups the default-KB notice across repeated
+// kbDir calls within one process.
+var announceDefaultKBOnce gosync.Once
+
+// announceDefaultKB prints a one-line stderr notice when KB resolution
+// fell through to the machine-wide default. Reaching that fallback
+// means cwd is NOT inside any KB — with several KBs on one machine this
+// is the mis-target case (#27): the user may believe location implies
+// the KB. Interactive shells only — hooks, cron and pipes stay clean,
+// and explicit -C/SCRIBE_KB/cwd resolutions never get here.
+func announceDefaultKB(root string) {
+	announceDefaultKBOnce.Do(func() {
+		if fi, err := os.Stderr.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+			fmt.Fprintf(os.Stderr, "scribe: KB %s (global default — use -C, SCRIBE_KB, or cd into a KB to target another)\n", root)
+		}
+	})
 }
 
 // isKBRoot reports whether dir is a scribe KB root. Two markers:
