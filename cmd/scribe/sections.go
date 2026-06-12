@@ -143,7 +143,7 @@ func byteOffsetToLine(body []byte, offset int) int {
 		offset = 0
 	}
 	line := 1
-	for i := 0; i < offset; i++ {
+	for i := range offset {
 		if body[i] == '\n' {
 			line++
 		}

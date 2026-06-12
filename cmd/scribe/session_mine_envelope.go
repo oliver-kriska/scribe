@@ -278,7 +278,7 @@ func (s *SyncCmd) mineSessionBatchesEnvelope(root string, sessionIDs []string, p
 	ctx := context.Background()
 
 	promptBase := promptBaseForSessionLabel(label)
-	for w := 0; w < parallel; w++ {
+	for range parallel {
 		go func() {
 			for j := range in {
 				rateLimited, err := mineSessionEnvelope(ctx, root, dbPath, j.sid, provider, cfg.SessionMine, label, promptBase)
@@ -299,7 +299,7 @@ func (s *SyncCmd) mineSessionBatchesEnvelope(root string, sessionIDs []string, p
 	rateLimited := false
 	since := 0
 	var batchIDs []string
-	for i := 0; i < len(sessionIDs); i++ {
+	for range sessionIDs {
 		r := <-out
 		if r.rateLimited {
 			logMsg("sync", "%s envelope: rate limited on %s — will resume next run", label, r.sid)

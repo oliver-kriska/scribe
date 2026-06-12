@@ -11,7 +11,7 @@ import (
 // TOCSidecar is the schema we write to raw/articles/<slug>.toc.json
 // when a long PDF gets ingested through marker. Its job is to give
 // the absorb chunker (Phase 3A.5) deterministic semantic boundaries:
-// "split this 73-page paper here, here, and here." qmd indexes the
+// "split this 73-page paper at exactly these points." qmd indexes the
 // full markdown; the wiki absorb pass produces summaries; this
 // sidecar tells those steps where the chapter boundaries are.
 //

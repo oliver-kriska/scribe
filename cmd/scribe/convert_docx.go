@@ -272,7 +272,7 @@ func renderTable(rows [][]string) string {
 	}
 	pad(header)
 	sb.WriteString("|")
-	for i := 0; i < cols; i++ {
+	for range cols {
 		sb.WriteString(" --- |")
 	}
 	sb.WriteString("\n")

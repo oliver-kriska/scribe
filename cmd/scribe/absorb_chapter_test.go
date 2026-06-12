@@ -366,7 +366,7 @@ func TestSlugifyForChunk(t *testing.T) {
 		{"Chapter One", "chapter-one"},
 		{"3.1 Event-Level Binding", "3-1-event-level-binding"},
 		{"!!!", "chunk"}, // empty after slug → fallback
-		{"a very very very very very very very very very long heading", "a-very-very-very-very-very-very-very-ver"},
+		{"a very very very very very very very very very long heading", "a-very-very-very-very-very-very-very-ver"}, //nolint:dupword // the repetition IS the fixture — exercises slug truncation
 	}
 	for _, c := range cases {
 		got := slugifyForChunk(c.in)

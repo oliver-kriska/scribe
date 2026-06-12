@@ -42,7 +42,7 @@ func TestAppendCostEntry_WritesJSONLine(t *testing.T) {
 
 func TestAppendCostEntry_AppendsMultiple(t *testing.T) {
 	tmp := t.TempDir()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		appendCostEntry(tmp, CostEntry{Model: "haiku", OK: true})
 	}
 	day := time.Now().UTC().Format("2006-01-02")
@@ -87,7 +87,7 @@ func TestSummarizeCosts_SortsByEstimatedCost(t *testing.T) {
 	tmp := t.TempDir()
 	// haiku is cheap; opus is expensive. With same prompt size, opus
 	// should sort first.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		appendCostEntry(tmp, CostEntry{Model: "haiku", PromptChars: 100000, OK: true})
 	}
 	appendCostEntry(tmp, CostEntry{Model: "opus", PromptChars: 100000, OK: true})
@@ -305,7 +305,7 @@ func TestSummarizeCosts_PrefersActualUSDWhenPresent(t *testing.T) {
 
 func TestSummarizeCosts_AllLegacyRowsKeepEstimates(t *testing.T) {
 	tmp := t.TempDir()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		appendCostEntry(tmp, CostEntry{Model: "haiku", PromptChars: 8000, OK: true, DurationMS: 1000})
 	}
 	rows, err := summarizeCosts(tmp, 0)
