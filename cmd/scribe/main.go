@@ -27,50 +27,75 @@ type CLI struct {
 	Root        string           `help:"Override KB root directory." type:"path" short:"C"`
 	VersionFlag kong.VersionFlag `name:"version" short:"V" help:"Show version and exit."`
 
-	Sync           SyncCmd           `cmd:"" help:"Discover, extract, mine sessions, absorb, reindex, commit."`
-	Lint           LintCmd           `cmd:"" help:"Run structural KB health checks."`
-	Validate       ValidateCmd       `cmd:"" help:"Validate YAML frontmatter in markdown files."`
-	Backlinks      BacklinksCmd      `cmd:"" help:"Rebuild _backlinks.json from wikilinks."`
-	Index          IndexCmd          `cmd:"" help:"Rebuild _index.md from disk."`
-	Orphans        OrphansCmd        `cmd:"" help:"Detect orphan articles and missing wikilinks."`
-	Triage         TriageCmd         `cmd:"" help:"Score sessions by knowledge density (FTS5)."`
-	Projects       ProjectsCmd       `cmd:"" help:"List, approve, ignore, or review discovered projects."`
-	Config         ConfigCmd         `cmd:"" help:"Review/approve shared-KB config trust (sensitive scribe.yaml keys)."`
-	Scan           ScanCmd           `cmd:"" help:"Pre-scan a project for extraction."`
-	Deep           DeepCmd           `cmd:"" help:"Deep-extract a project batch-by-directory."`
-	Capture        CaptureCmd        `cmd:"" help:"Capture iMessage self-chat URLs/notes into raw/articles/."`
-	Commit         CommitCmd         `cmd:"" help:"Auto-commit and push pending KB changes."`
-	Dream          DreamCmd          `cmd:"" help:"Run structured memory consolidation (4-phase dream cycle)."`
-	Link           LinkCmd           `cmd:"" help:"Link orphan articles to contextual hosts via See Also sections."`
-	Cron           CronCmd           `cmd:"" help:"Manage macOS LaunchAgents for scheduled KB jobs."`
-	Each           EachCmd           `cmd:"" help:"Run a scribe subcommand in every registered KB (KB-agnostic scheduler)."`
-	Kb             KbCmd             `cmd:"" help:"Manage the machine's KB registry (kbs: in user config)."`
-	Sessions       SessionsCmd       `cmd:"" help:"Debug and repair _sessions_log.json and the session pre-filter."`
-	Debug          DebugCmd          `cmd:"" help:"Low-level diagnostics (wikilinks, backlinks, frontmatter)."`
-	Ingest         IngestCmd         `cmd:"" help:"Ingest a URL into raw/articles/ (queue or synchronous)."`
-	Absorb         AbsorbCmd         `cmd:"" help:"Absorb a local file (md/txt/html) into the KB end-to-end: ingest → contextualize → absorb."`
-	Contextualize  ContextualizeCmd  `cmd:"" help:"Insert LLM-generated retrieval-context paragraph into raw articles for better qmd search."`
-	Status         StatusCmd         `cmd:"" help:"One-shot KB scoreboard: raw by density, absorb/contextualize progress, last sync, Ollama health."`
-	Init           InitCmd           `cmd:"" help:"Check dependencies, verify config, and prep a KB checkout."`
-	Hook           HookCmd           `cmd:"" help:"Claude Code lifecycle hooks (install via ~/.claude/settings.json)."`
-	Hot            HotCmd            `cmd:"" help:"Regenerate wiki/_hot.md context cache (deterministic, no LLM)."`
-	Write          WriteCmd          `cmd:"" help:"Create an article or append to rolling memory (CLI write surface for skills)."`
-	Watch          WatchCmd          `cmd:"" help:"Watch ccrider DB for new sessions (long-running, launchd-friendly)."`
-	Assess         AssessCmd         `cmd:"" help:"One-shot parallel deep assessment of a project (5 tracks + consolidation)."`
-	Doctor         DoctorCmd         `cmd:"" help:"Health check (deps, config, cron, state, run freshness). Read-only."`
-	Digest         DigestCmd         `cmd:"" help:"Regenerate wiki/_digest.md — deterministic team dashboard (activity, findings, owners)."`
-	Promote        PromoteCmd        `cmd:"" help:"Copy an article into another scribe KB with provenance (personal → team promotion)."`
-	InstallTools   InstallToolsCmd   `cmd:"" name:"install-tools" help:"Bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion."`
-	Fda            FDACmd            `cmd:"" name:"fda" help:"Probe macOS Full Disk Access for chat.db and guide the user through granting it."`
-	Cost           CostCmd           `cmd:"" help:"Summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger."`
-	Sections       SectionsCmd       `cmd:"" help:"Build/list/get section sidecars for wiki articles (Phase 5A)."`
-	Tier           TierCmd           `cmd:"" help:"Compute, set, or backfill index_tier for ranking (Phase 5B)."`
-	Skill          SkillCmd          `cmd:"" help:"Install or list the embedded scribe-kb agent skill bundle (Phase 7A)."`
-	Relations      RelationsCmd      `cmd:"" help:"Get/set/check typed relations between articles (Phase 6A)."`
-	Contradictions ContradictionsCmd `cmd:"" help:"Build/list/show/resolve the contradiction ledger (Phase 6B)."`
-	Stale          StaleCmd          `cmd:"" help:"Build/list/show the staleness ledger (Phase 6C)."`
-	View           ViewCmd           `cmd:"" help:"Run declarative views over wiki frontmatter (Phase 7B)."`
-	Version        VersionCmd        `cmd:"" help:"Show version."`
+	// Core — the pipeline and its health.
+	Sync   SyncCmd   `cmd:"" group:"core" help:"Discover, extract, mine sessions, absorb, reindex, commit."`
+	Status StatusCmd `cmd:"" group:"core" help:"One-shot KB scoreboard: raw by density, absorb/contextualize progress, last sync, Ollama health."`
+	Doctor DoctorCmd `cmd:"" group:"core" help:"Health check (deps, config, cron, state, run freshness). Read-only."`
+	Commit CommitCmd `cmd:"" group:"core" help:"Auto-commit and push pending KB changes."`
+	Watch  WatchCmd  `cmd:"" group:"core" help:"Watch ccrider DB for new sessions (long-running, launchd-friendly)."`
+
+	// Content — getting knowledge into the KB.
+	Write         WriteCmd         `cmd:"" group:"content" help:"Create an article or append to rolling memory (CLI write surface for skills)."`
+	Ingest        IngestCmd        `cmd:"" group:"content" help:"Ingest a URL into raw/articles/ (queue or synchronous)."`
+	Absorb        AbsorbCmd        `cmd:"" group:"content" help:"Absorb a local file (md/txt/html) into the KB end-to-end: ingest → contextualize → absorb."`
+	Capture       CaptureCmd       `cmd:"" group:"content" help:"Capture iMessage self-chat URLs/notes into raw/articles/."`
+	Contextualize ContextualizeCmd `cmd:"" group:"content" help:"Insert LLM-generated retrieval-context paragraph into raw articles for better qmd search."`
+	Projects      ProjectsCmd      `cmd:"" group:"content" help:"List, approve, ignore, or review discovered projects."`
+	Scan          ScanCmd          `cmd:"" group:"content" help:"Pre-scan a project for extraction."`
+	Deep          DeepCmd          `cmd:"" group:"content" help:"Deep-extract a project batch-by-directory."`
+	Assess        AssessCmd        `cmd:"" group:"content" help:"One-shot parallel deep assessment of a project (5 tracks + consolidation)."`
+
+	// Quality — KB hygiene, structure, ranking, consolidation.
+	Lint           LintCmd           `cmd:"" group:"quality" help:"Run structural KB health checks."`
+	Validate       ValidateCmd       `cmd:"" group:"quality" help:"Validate YAML frontmatter in markdown files."`
+	Link           LinkCmd           `cmd:"" group:"quality" help:"Link orphan articles to contextual hosts via See Also sections."`
+	Orphans        OrphansCmd        `cmd:"" group:"quality" help:"Detect orphan articles and missing wikilinks."`
+	Backlinks      BacklinksCmd      `cmd:"" group:"quality" help:"Rebuild _backlinks.json from wikilinks."`
+	Index          IndexCmd          `cmd:"" group:"quality" help:"Rebuild _index.md from disk."`
+	Hot            HotCmd            `cmd:"" group:"quality" help:"Regenerate wiki/_hot.md context cache (deterministic, no LLM)."`
+	Tier           TierCmd           `cmd:"" group:"quality" help:"Compute, set, or backfill index_tier for ranking (Phase 5B)."`
+	Sections       SectionsCmd       `cmd:"" group:"quality" help:"Build/list/get section sidecars for wiki articles (Phase 5A)."`
+	Relations      RelationsCmd      `cmd:"" group:"quality" help:"Get/set/check typed relations between articles (Phase 6A)."`
+	Stale          StaleCmd          `cmd:"" group:"quality" help:"Build/list/show the staleness ledger (Phase 6C)."`
+	Contradictions ContradictionsCmd `cmd:"" group:"quality" help:"Build/list/show/resolve the contradiction ledger (Phase 6B)."`
+	Dream          DreamCmd          `cmd:"" group:"quality" help:"Run structured memory consolidation (4-phase dream cycle)."`
+
+	// Team — shared-KB workflows.
+	Promote PromoteCmd `cmd:"" group:"team" help:"Copy an article into another scribe KB with provenance (personal → team promotion)."`
+	Config  ConfigCmd  `cmd:"" group:"team" help:"Review/approve shared-KB config trust (sensitive scribe.yaml keys)."`
+	Digest  DigestCmd  `cmd:"" group:"team" help:"Regenerate wiki/_digest.md — deterministic team dashboard (activity, findings, owners)."`
+
+	// System — installation and host integration.
+	Init         InitCmd         `cmd:"" group:"system" help:"Check dependencies, verify config, and prep a KB checkout."`
+	Cron         CronCmd         `cmd:"" group:"system" help:"Manage macOS LaunchAgents for scheduled KB jobs."`
+	Each         EachCmd         `cmd:"" group:"system" help:"Run a scribe subcommand in every registered KB (KB-agnostic scheduler)."`
+	Kb           KbCmd           `cmd:"" group:"system" help:"Manage the machine's KB registry (kbs: in user config)."`
+	Hook         HookCmd         `cmd:"" group:"system" help:"Claude Code lifecycle hooks (install via ~/.claude/settings.json)."`
+	Fda          FDACmd          `cmd:"" name:"fda" group:"system" help:"Probe macOS Full Disk Access for chat.db and guide the user through granting it."`
+	Skill        SkillCmd        `cmd:"" group:"system" help:"Install or list the embedded scribe-kb agent skill bundle (Phase 7A)."`
+	InstallTools InstallToolsCmd `cmd:"" name:"install-tools" group:"system" help:"Bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion."`
+	Version      VersionCmd      `cmd:"" group:"system" help:"Show version."`
+
+	// Debug — diagnostics and introspection.
+	Debug    DebugCmd    `cmd:"" group:"debug" help:"Low-level diagnostics (wikilinks, backlinks, frontmatter)."`
+	Sessions SessionsCmd `cmd:"" group:"debug" help:"Debug and repair _sessions_log.json and the session pre-filter."`
+	Triage   TriageCmd   `cmd:"" group:"debug" help:"Score sessions by knowledge density (FTS5)."`
+	Cost     CostCmd     `cmd:"" group:"debug" help:"Summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger."`
+	View     ViewCmd     `cmd:"" group:"debug" help:"Run declarative views over wiki frontmatter (Phase 7B)."`
+}
+
+// commandGroups maps the `group` struct tags on CLI fields to the section
+// titles rendered in --help. Every command field on CLI must carry one of
+// these keys — TestRootCommandsAreGrouped enforces that, so a new command
+// can't land ungrouped. Subcommands inherit their parent's group, so only
+// root fields need tagging.
+var commandGroups = kong.Groups{
+	"core":    "Core commands:",
+	"content": "Content commands:",
+	"quality": "Quality commands:",
+	"team":    "Team commands:",
+	"system":  "System commands:",
+	"debug":   "Debug commands:",
 }
 
 type VersionCmd struct{}
@@ -80,15 +105,22 @@ func (v *VersionCmd) Run() error {
 	return nil
 }
 
-func main() {
-	setupLogger()
-	cli := CLI{}
-	ctx := kong.Parse(&cli,
+// kongOptions returns the Kong configuration shared by main() and the
+// help-rendering tests, so what the tests assert is what users see.
+func kongOptions() []kong.Option {
+	return []kong.Option{
 		kong.Name("scribe"),
 		kong.Description("scribe — personal knowledge-base pipeline"),
 		kong.UsageOnError(),
 		kong.Vars{"version": "scribe " + version},
-	)
+		commandGroups,
+	}
+}
+
+func main() {
+	setupLogger()
+	cli := CLI{}
+	ctx := kong.Parse(&cli, kongOptions()...)
 
 	globalRoot = cli.Root
 
