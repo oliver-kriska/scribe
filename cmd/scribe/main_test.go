@@ -46,6 +46,19 @@ func TestMain(m *testing.M) {
 	for _, v := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"} {
 		os.Unsetenv(v)
 	}
+	// Git exports repo-locating vars to its hooks (GIT_DIR is absolute
+	// when pushing from a linked worktree), and lefthook's pre-push
+	// test-race inherits them — pointing every fixture's git subprocess
+	// at THIS repo instead of the fixture's temp repo (observed:
+	// a fixture `git commit` reporting "On branch <this branch>", and
+	// codex discovery folding a temp project into the real repo).
+	// Scrub them so the suite is hermetic under hook/CI environments too.
+	for _, v := range []string{
+		"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+		"GIT_OBJECT_DIRECTORY", "GIT_PREFIX", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	} {
+		os.Unsetenv(v)
+	}
 	// A developer's shell exports (SCRIBE_KB, SCRIBE_SELF_CHAT_ID, ...)
 	// must not steer test behavior either.
 	for _, kv := range os.Environ() {
