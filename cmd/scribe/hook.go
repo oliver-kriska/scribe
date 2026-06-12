@@ -358,6 +358,11 @@ func pendingContainsID(path, sessionID string) bool {
 			return true
 		}
 	}
+	if err := sc.Err(); err != nil {
+		// Truncated read can't confirm presence — log it and report
+		// absent; the drain-side dedupe folds a duplicate enqueue away.
+		logMsg("hook", "scan pending queue: %v", err)
+	}
 	return false
 }
 
@@ -386,6 +391,10 @@ func peekPendingSessions() []string {
 			seen[id] = true
 			ids = append(ids, id)
 		}
+	}
+	if err := sc.Err(); err != nil {
+		logMsg("sync", "peek pending queue: %v", err)
+		return nil
 	}
 	return ids
 }
@@ -428,7 +437,14 @@ func readAndClearPendingSessions() ([]string, error) {
 			ids = append(ids, id)
 		}
 	}
+	scanErr := sc.Err()
 	f.Close()
+	if scanErr != nil {
+		// Do NOT remove the claim file: a truncated read followed by
+		// the unlink would silently destroy queued sessions. A leftover
+		// .reading file is recovered by the next drain.
+		return nil, fmt.Errorf("read pending file: %w", scanErr)
+	}
 
 	if err := os.Remove(claim); err != nil && !os.IsNotExist(err) {
 		return ids, fmt.Errorf("clear pending file: %w", err)
