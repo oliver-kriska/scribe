@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,7 +21,7 @@ var promptFS embed.FS
 
 // runClaude invokes `claude -p` with the given prompt and returns the output.
 // ErrRateLimit is returned when claude -p hits Anthropic rate limits.
-var ErrRateLimit = fmt.Errorf("rate limit hit")
+var ErrRateLimit = errors.New("rate limit hit")
 
 // runClaude is a package variable (pointing at realRunClaude) purely so
 // driver tests can swap in a scripted stub (see llm_stub_test.go) without
