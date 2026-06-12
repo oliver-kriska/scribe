@@ -187,6 +187,11 @@ func queryRelatedSessions(dbPath, sessionID string, daysWindow, limit int) []rel
 			out = append(out, rs)
 		}
 	}
+	if rows.Err() != nil {
+		// Best-effort contract: a truncated iteration means the related
+		// list can't be trusted — drop it rather than hint from partials.
+		return nil
+	}
 	return out
 }
 
