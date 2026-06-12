@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -127,6 +129,102 @@ func TestCommitRefusesOnUnparseableConfig(t *testing.T) {
 	}
 	if holdSecretFiles(root, cfg) {
 		t.Error("holdSecretFiles must fail closed when the config is unparseable")
+	}
+}
+
+// logRecorder is a slog.Handler that keeps every message in memory so
+// tests can assert on operator-facing log lines (logMsg routes through
+// slog.Default). Attrs/groups are irrelevant for these assertions.
+type logRecorder struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (r *logRecorder) Enabled(context.Context, slog.Level) bool { return true }
+func (r *logRecorder) Handle(_ context.Context, rec slog.Record) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lines = append(r.lines, rec.Message)
+	return nil
+}
+func (r *logRecorder) WithAttrs([]slog.Attr) slog.Handler { return r }
+func (r *logRecorder) WithGroup(string) slog.Handler      { return r }
+func (r *logRecorder) joined() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return strings.Join(r.lines, "\n")
+}
+
+// recordLogs swaps the default slog logger for an in-memory recorder
+// for the duration of the test. Safe without t.Parallel(): serial tests
+// never overlap, and the recorder itself is mutex-guarded.
+func recordLogs(t *testing.T) func() string {
+	t.Helper()
+	rec := &logRecorder{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(rec))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return rec.joined
+}
+
+// TestCommitSecretGateHoldThenAllowMarker automates PR #1's manual
+// verification #1 end-to-end on the commit path: a team-mode KB with a
+// runtime-assembled AWS-shaped token in an article must log SECRET HELD
+// and keep the file out of the commit; after a human marks the line
+// with `scribe:allow`, the very same file commits.
+func TestCommitSecretGateHoldThenAllowMarker(t *testing.T) {
+	root := commitTestKB(t)
+	logs := recordLogs(t)
+	before := headSubject(t, root)
+
+	article := func(body string) string {
+		return "---\ntitle: \"Leaky\"\ntype: research\ndomain: general\ncreated: 2026-06-12\nupdated: 2026-06-12\nconfidence: low\ntags: []\nrelated: []\nsources: []\n---\n\n" + body + "\n"
+	}
+	leakyLine := "the deploy used " + fakeAWSKey() + " for staging"
+	writeTestArticle(t, root, "wiki/leaky.md", article(leakyLine))
+
+	// Run 1: the gate holds the file, loudly, and commits nothing.
+	if err := commitRun(root); err != nil {
+		t.Fatalf("commitRun with held file must not error: %v", err)
+	}
+	got := logs()
+	if !strings.Contains(got, "SECRET HELD: wiki/leaky.md:") {
+		t.Errorf("no SECRET HELD line for wiki/leaky.md; logs:\n%s", got)
+	}
+	if !strings.Contains(got, "[AWS Access Key ID]") {
+		t.Errorf("SECRET HELD line missing the rule label; logs:\n%s", got)
+	}
+	if strings.Contains(got, fakeAWSKey()) {
+		t.Fatalf("log output leaked the credential value:\n%s", got)
+	}
+	if subj := headSubject(t, root); subj != before {
+		t.Errorf("HEAD moved to %q — held-only change must not commit", subj)
+	}
+	lsFiles := exec.CommandContext(context.Background(), "git", "ls-files", "wiki/leaky.md")
+	lsFiles.Dir = root
+	if out, _ := lsFiles.Output(); strings.TrimSpace(string(out)) != "" {
+		t.Error("held file reached the index/commit")
+	}
+	if _, err := os.Stat(filepath.Join(root, "wiki", "leaky.md")); err != nil {
+		t.Fatal("held file must stay in the worktree for the human to resolve")
+	}
+
+	// Run 2: the human reviews and marks the line as a placeholder.
+	writeTestArticle(t, root, "wiki/leaky.md", article(leakyLine+" <!-- scribe:allow -->"))
+	if err := commitRun(root); err != nil {
+		t.Fatalf("commitRun after scribe:allow: %v", err)
+	}
+	if subj := headSubject(t, root); !strings.Contains(subj, "(1 wiki)") {
+		t.Errorf("allow-marked file did not commit; HEAD subject = %q", subj)
+	}
+	show := exec.CommandContext(context.Background(), "git", "show", "HEAD:wiki/leaky.md")
+	show.Dir = root
+	out, err := show.Output()
+	if err != nil {
+		t.Fatalf("allow-marked file missing from HEAD: %v", err)
+	}
+	if !strings.Contains(string(out), "scribe:allow") {
+		t.Error("committed blob lost the scribe:allow marker")
 	}
 }
 

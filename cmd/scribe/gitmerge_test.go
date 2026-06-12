@@ -79,6 +79,40 @@ func TestPullRebaseAutoResolvesDerivedConflict(t *testing.T) {
 	}
 }
 
+// TestPullRebaseAutoResolvesAllDerivedFiles automates PR #1's manual
+// verification #4 across the FULL derived set: two machines touching
+// _index.md, _backlinks.json, and _digest.md concurrently must pull
+// clean — every derived file resolves without manual intervention in a
+// single rebase, not just the index.
+func TestPullRebaseAutoResolvesAllDerivedFiles(t *testing.T) {
+	derived := []string{"wiki/_index.md", "wiki/_backlinks.json", "wiki/_digest.md"}
+	clone := setupCloneWithConflict(t, derived...)
+
+	ok, pulled, err := pullRebase(clone)
+	if err != nil {
+		t.Fatalf("pullRebase must auto-resolve all derived files, got: %v", err)
+	}
+	if !ok || !pulled {
+		t.Errorf("pullRebase = (ok=%v, pulled=%v), want (true, true)", ok, pulled)
+	}
+	if rebaseInProgress(clone) {
+		t.Error("rebase left in progress")
+	}
+	if got := conflictedFiles(clone); len(got) != 0 {
+		t.Errorf("unmerged files remain: %v", got)
+	}
+	for _, rel := range derived {
+		data, err := os.ReadFile(filepath.Join(clone, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Errorf("%s missing after auto-resolve: %v", rel, err)
+			continue
+		}
+		if firstConflictMarkerLine(data) != 0 {
+			t.Errorf("conflict markers left in %s:\n%s", rel, data)
+		}
+	}
+}
+
 func TestPullRebaseAbortsOnArticleConflict(t *testing.T) {
 	clone := setupCloneWithConflict(t, "wiki/real-article.md")
 
