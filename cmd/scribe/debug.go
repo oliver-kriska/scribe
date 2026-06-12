@@ -82,7 +82,10 @@ func (c *DebugWikilinksCmd) Run() error {
 			"raw_count":       len(rawTargets),
 			"naive_count":     len(naiveTargets),
 		}
-		data, _ := json.MarshalIndent(out, "", "  ")
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
 		fmt.Println(string(data))
 		return nil
 	}
@@ -157,7 +160,10 @@ func (c *DebugBacklinksCmd) Run() error {
 			"sources": sources,
 			"fresh":   c.Fresh,
 		}
-		data, _ := json.MarshalIndent(out, "", "  ")
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
 		fmt.Println(string(data))
 		return nil
 	}
