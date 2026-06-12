@@ -1051,6 +1051,11 @@ func loadRunRecords(root string) (map[string]time.Time, error) {
 				}
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			// Partial data only skews this one file's freshness reading;
+			// keep auditing the rest, but say so on stderr.
+			logMsg("doctor", "read %s truncated: %v", e.Name(), err)
+		}
 		_ = f.Close()
 	}
 	return result, nil
@@ -1124,6 +1129,9 @@ func loadRunErrors(root string, since time.Time) (map[string]runError, error) {
 			if prev, ok := result[r.Command]; !ok || ts.After(prev.When) {
 				result[r.Command] = runError{When: ts, Msg: r.Error, Args: r.Args}
 			}
+		}
+		if err := scanner.Err(); err != nil {
+			logMsg("doctor", "read %s truncated: %v", e.Name(), err)
 		}
 		_ = f.Close()
 	}
