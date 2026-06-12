@@ -428,7 +428,7 @@ func (s *SyncCmd) collectOneResearchFile(f researchFile, destDir, domain, pname 
 
 	// Add frontmatter if missing.
 	if !strings.HasPrefix(strings.TrimSpace(content), "---") {
-		fm := fmt.Sprintf("---\ntitle: \"%s\"\nsource_path: \"%s\"\ningested_at: \"%s\"\nformat: markdown\ndomain: %s\nproject: %s\n---\n\n",
+		fm := fmt.Sprintf("---\ntitle: %q\nsource_path: %q\ningested_at: %q\nformat: markdown\ndomain: %s\nproject: %s\n---\n\n",
 			deriveResearchTitle(flatName), f.path, time.Now().UTC().Format(time.RFC3339), domain, pname)
 		content = fm + content
 	}

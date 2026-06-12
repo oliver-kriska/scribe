@@ -102,11 +102,12 @@ article_count: %%d
 
 	if i.DryRun {
 		existing, err := os.ReadFile(outPath)
-		if err != nil {
+		switch {
+		case err != nil:
 			fmt.Printf("would create _index.md with %d articles\n", totalArticles)
-		} else if string(existing) != result {
+		case string(existing) != result:
 			fmt.Printf("_index.md would change (%d articles)\n", totalArticles)
-		} else {
+		default:
 			fmt.Println("_index.md is up to date")
 		}
 		return nil

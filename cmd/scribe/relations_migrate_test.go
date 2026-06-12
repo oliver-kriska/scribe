@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,7 +177,7 @@ func TestRelationsMigrate_DryRunMakesNoChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(filepath.Join(dir, "decisions", "a.md"))
-	if string(before) != string(after) {
+	if !bytes.Equal(before, after) {
 		t.Errorf("dry-run must not modify file")
 	}
 	matches, _ := filepath.Glob(filepath.Join(dir, "wiki", "_relations_migration_*.jsonl"))

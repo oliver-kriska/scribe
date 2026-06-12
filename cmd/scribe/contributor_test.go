@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -104,7 +105,7 @@ func TestStampContributor(t *testing.T) {
 	}
 
 	// Stamped frontmatter must stay parseable.
-	raw, _ := os.ReadFile(filepath.Join(root, "wiki/new-article.md"))
+	raw, _ := os.ReadFile(filepath.Join(root, "wiki", "new-article.md"))
 	fm, err := parseFrontmatter(raw)
 	if err != nil {
 		t.Fatalf("stamped frontmatter unparseable: %v", err)
@@ -123,10 +124,10 @@ func TestStampContributorIdempotent(t *testing.T) {
 	writeTestArticle(t, root, "wiki/a.md", "---\ntitle: A\ntype: research\n---\nBody.\n")
 
 	stampContributor(root)
-	first, _ := os.ReadFile(filepath.Join(root, "wiki/a.md"))
+	first, _ := os.ReadFile(filepath.Join(root, "wiki", "a.md"))
 	stampContributor(root)
-	second, _ := os.ReadFile(filepath.Join(root, "wiki/a.md"))
-	if string(first) != string(second) {
+	second, _ := os.ReadFile(filepath.Join(root, "wiki", "a.md"))
+	if !bytes.Equal(first, second) {
 		t.Errorf("second stamp changed the file:\n--- first ---\n%s\n--- second ---\n%s", first, second)
 	}
 	if n := strings.Count(string(second), "contributor:"); n != 1 {
