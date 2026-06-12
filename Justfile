@@ -52,8 +52,15 @@ capture *args:
 test-legacy:
   bats scripts/legacy/tests/
 
+# Both build/install delegate to the Makefile so the build flags can't drift.
+
+# compile to ./bin/scribe (repo-local) — does NOT deploy
 build:
-  CGO_ENABLED=1 go build -tags "sqlite_fts5" -ldflags "-X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" -o ~/.local/bin/scribe ./cmd/scribe
+  make build
+
+# build + deploy ./bin/scribe to ~/.local/bin (the binary cron runs)
+install:
+  make install
 
 # === Compound ===
 full-cycle: sync dream lint
