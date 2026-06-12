@@ -123,7 +123,7 @@ func fetchFxTwitter(ctx context.Context, rawURL string) (fetchResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return fetchResult{}, err
 	}
@@ -134,7 +134,7 @@ func fetchFxTwitter(ctx context.Context, rawURL string) (fetchResult, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return fetchResult{}, fmt.Errorf("fxtwitter status %d", resp.StatusCode)
 	}
 
@@ -272,7 +272,7 @@ func fetchJina(ctx context.Context, rawURL string) (fetchResult, error) {
 	jinaURL := "https://r.jina.ai/" + rawURL
 	var raw []byte
 	if err := WithRetry(ctx, defaultRetryConfig(), func() error {
-		req, err := http.NewRequestWithContext(ctx, "GET", jinaURL, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, jinaURL, nil)
 		if err != nil {
 			return err
 		}
@@ -283,7 +283,7 @@ func fetchJina(ctx context.Context, rawURL string) (fetchResult, error) {
 			return fmt.Errorf("jina request: %w", err)
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("jina status %d", resp.StatusCode)
 		}
 		raw, err = io.ReadAll(resp.Body)

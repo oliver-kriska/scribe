@@ -34,7 +34,7 @@ func TestOllamaProviderGenerate(t *testing.T) {
 	var gotRequest ollamaRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/generate" {
-			http.Error(w, "wrong path", 404)
+			http.Error(w, "wrong path", http.StatusNotFound)
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
@@ -67,7 +67,7 @@ func TestOllamaProviderGenerate(t *testing.T) {
 
 func TestOllamaProviderErrorBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(500)
+		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":"model not found"}`))
 	}))
 	defer srv.Close()
@@ -105,7 +105,7 @@ func TestOllamaEnsureReadyPullsMissingModel(t *testing.T) {
 			genHits++
 			_ = json.NewEncoder(w).Encode(ollamaResponse{Response: "ok", Done: true})
 		default:
-			http.Error(w, "unknown path", 404)
+			http.Error(w, "unknown path", http.StatusNotFound)
 		}
 	}))
 	defer srv.Close()

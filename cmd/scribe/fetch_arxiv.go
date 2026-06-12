@@ -124,7 +124,7 @@ func arxivMetadataAttempt(ctx context.Context, id string) (arxivMeta, time.Durat
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", arxivAPIQueryURL+id, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, arxivAPIQueryURL+id, nil)
 	if err != nil {
 		return arxivMeta{}, 0, err
 	}
@@ -143,7 +143,7 @@ func arxivMetadataAttempt(ctx context.Context, id string) (arxivMeta, time.Durat
 		}
 		return arxivMeta{}, wait, errors.New("arxiv api status 429")
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return arxivMeta{}, 0, fmt.Errorf("arxiv api status %d", resp.StatusCode)
 	}
 
@@ -263,7 +263,7 @@ func fetchArxivPDF(ctx context.Context, id string) (string, error) {
 
 	dlCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(dlCtx, "GET", pdfURL, nil)
+	req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, pdfURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -273,7 +273,7 @@ func fetchArxivPDF(ctx context.Context, id string) (string, error) {
 		return "", fmt.Errorf("download pdf: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("pdf download status %d", resp.StatusCode)
 	}
 
