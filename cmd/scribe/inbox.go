@@ -131,7 +131,7 @@ func drainFileInbox(root string) (int, error) {
 // on success so callers can record it in the idempotency state file.
 // Errors propagate so quarantine can run.
 func ingestInboxFile(root, full, processedDir string) (string, error) {
-	data, err := os.ReadFile(full) //nolint:gosec // user-supplied source path; reading is the point
+	data, err := os.ReadFile(full)
 	if err != nil {
 		return "", fmt.Errorf("read: %w", err)
 	}
@@ -320,7 +320,7 @@ func (s *inboxState) persist(inboxDir string) error {
 // PDFs. Returns "" + nil-error semantics by reading; callers tolerate
 // any read error by treating the file as un-deduplicated.
 func sha256File(full string) (string, error) {
-	f, err := os.Open(full) //nolint:gosec // user-supplied source path; reading is the point
+	f, err := os.Open(full)
 	if err != nil {
 		return "", err
 	}

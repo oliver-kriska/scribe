@@ -138,7 +138,7 @@ func assessSourceTree(projectPath string, maxEntries int) string {
 	var entries []string
 	walkErr := filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unreadable entry: skip it, keep sampling the rest of the tree
 		}
 		if info.IsDir() {
 			if excludedDirNames[info.Name()] {

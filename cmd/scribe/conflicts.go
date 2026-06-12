@@ -50,7 +50,7 @@ func findConflictMarkers(root string) []conflictHit {
 		if !strings.HasSuffix(path, ".md") || strings.HasPrefix(info.Name(), ".") {
 			return nil
 		}
-		content, err := os.ReadFile(path) //nolint:gosec // user-supplied KB root, deliberate walk
+		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil //nolint:nilerr // skip unreadable, continue walk
 		}

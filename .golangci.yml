@@ -48,6 +48,7 @@ linters:
     - intrange # for i := 0; i < n → for i := range n
     - usetesting # t.Chdir/t.TempDir/t.Setenv over raw os equivalents in tests
     - dupword # duplicated words in comments/strings
+    - nolintlint # every nolint must name its linter and carry a reason
 
   settings:
     errcheck:
@@ -73,6 +74,11 @@ linters:
         - stringXbytes
     misspell:
       locale: US
+    # Codifies the repo convention that every nolint is specific and
+    # justified inline ("//nolint:<linter> // reason").
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     gosec:
       excludes:
         - G104 # handled by errcheck

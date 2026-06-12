@@ -182,7 +182,7 @@ func downloadUV() (string, error) {
 // fine — the uv tarball is ~30 MB.
 func httpGetVerified(url, expectedSHA string) ([]byte, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Get(url) //nolint:noctx,gosec // URL pinned by version constant; download is intentional
+	resp, err := client.Get(url) //nolint:noctx // URL pinned by version constant; download is intentional
 	if err != nil {
 		return nil, fmt.Errorf("http get %s: %w", url, err)
 	}
@@ -229,7 +229,7 @@ func extractUVFromTarball(tarball []byte, dst string) error {
 			continue
 		}
 		tmp := dst + ".tmp"
-		f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec // path computed from scribeHome, not user input
+		f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 		if err != nil {
 			return fmt.Errorf("open tmp: %w", err)
 		}
