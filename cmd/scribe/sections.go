@@ -78,7 +78,7 @@ func extractSections(body []byte) []Section {
 	}
 
 	out := make([]Section, 0, len(matches))
-	idCounts := make(map[string]int)
+	usedIDs := make(map[string]bool, len(matches))
 	for i, m := range matches {
 		startByte := m[0]
 		endByte := len(body)
@@ -88,11 +88,17 @@ func extractSections(body []byte) []Section {
 		level := m[3] - m[2]
 		title := strings.TrimSpace(string(body[m[4]:m[5]]))
 
+		// Probe for the first unused -N suffix instead of counting base
+		// slugs: counting alone lets a generated suffix collide with a
+		// LATER heading whose natural slug already looks suffixed —
+		// "0", "0", "0 2" produced "0", "0-2", "0-2" (found by
+		// FuzzExtractSections). Uniqueness is the sidecar's contract;
+		// `sections get` resolves by first match.
 		id := sectionAnchorSlug(title)
-		idCounts[id]++
-		if n := idCounts[id]; n > 1 {
-			id = fmt.Sprintf("%s-%d", id, n)
+		for n := 2; usedIDs[id]; n++ {
+			id = fmt.Sprintf("%s-%d", sectionAnchorSlug(title), n)
 		}
+		usedIDs[id] = true
 
 		out = append(out, Section{
 			ID:     id,
