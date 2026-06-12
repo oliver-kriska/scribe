@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -285,7 +286,7 @@ func (o *ollamaProvider) ensureReady(ctx context.Context) error {
 // present a friendly install hint.
 func (o *ollamaProvider) listedModels(ctx context.Context) ([]string, error) {
 	url := strings.TrimRight(o.baseURL, "/") + "/api/tags"
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -348,12 +349,15 @@ func splitModelTag(s string) (string, string) {
 // server emits {"status":"success"}.
 func (o *ollamaProvider) pull(ctx context.Context) error {
 	url := strings.TrimRight(o.baseURL, "/") + "/api/pull"
-	body, _ := json.Marshal(map[string]any{"model": o.model, "stream": true})
+	body, err := json.Marshal(map[string]any{"model": o.model, "stream": true})
+	if err != nil {
+		return fmt.Errorf("encode pull request: %w", err)
+	}
 	// Generous timeout — pulling a 3B model on a slow connection can take
 	// several minutes.
 	pullCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
-	req, err := http.NewRequestWithContext(pullCtx, "POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(pullCtx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -400,7 +404,7 @@ func (o *ollamaProvider) pull(ctx context.Context) error {
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read pull stream: %w", err)
 	}
-	return fmt.Errorf("ollama pull ended without success marker")
+	return errors.New("ollama pull ended without success marker")
 }
 
 // ollamaReadyCache remembers which (baseURL|model) pairs have already been
@@ -479,7 +483,7 @@ func (o *ollamaProvider) generate(ctx context.Context, prompt string, jsonMode b
 		appendCostEntry(o.root, entry)
 	}()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		entry.OK = false
 		entry.ErrKind = "other"
