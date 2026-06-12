@@ -133,8 +133,10 @@ Requires Go ≥ 1.26 and a C toolchain (for `go-sqlite3` with FTS5 support):
 ```sh
 git clone https://github.com/oliver-kriska/scribe.git
 cd scribe
-make install    # builds with -tags sqlite_fts5 and drops binary in ~/.local/bin
+make install    # builds with -tags sqlite_fts5 to ./bin/scribe, then deploys to ~/.local/bin
 ```
+
+`make build` alone compiles to the repo-local `./bin/scribe` and never touches `~/.local/bin` — only `make install` replaces the binary cron executes. On macOS, re-run `scribe fda` after `make install`: replacing the deployed binary invalidates its Full Disk Access grant.
 
 ---
 
