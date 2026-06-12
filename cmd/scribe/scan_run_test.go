@@ -18,7 +18,7 @@ import (
 
 // captureStdout runs fn while capturing everything written to
 // os.Stdout, returning the captured text and fn's error.
-func captureStdout(t *testing.T, fn func() error) (string, error) {
+func captureStdoutErr(t *testing.T, fn func() error) (string, error) {
 	t.Helper()
 	old := os.Stdout
 	r, w, err := os.Pipe()
@@ -72,7 +72,7 @@ func TestScanRun_ReportSectionsForGoProject(t *testing.T) {
 	stubHarnessKB(t, "kb_name: stubkb\n")
 	proj := scanProject(t, "scanfix")
 
-	out, err := captureStdout(t, (&ScanCmd{Path: proj}).Run)
+	out, err := captureStdoutErr(t, (&ScanCmd{Path: proj}).Run)
 	if err != nil {
 		t.Fatalf("ScanCmd.Run: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestScanRun_KBLinkAndDropFiles(t *testing.T) {
 		t.Fatalf("write drop file: %v", err)
 	}
 
-	out, err := captureStdout(t, (&ScanCmd{Path: proj}).Run)
+	out, err := captureStdoutErr(t, (&ScanCmd{Path: proj}).Run)
 	if err != nil {
 		t.Fatalf("ScanCmd.Run: %v", err)
 	}
@@ -180,7 +180,7 @@ end
 		t.Fatalf("write mix.exs: %v", err)
 	}
 
-	out, err := captureStdout(t, (&ScanCmd{Path: proj}).Run)
+	out, err := captureStdoutErr(t, (&ScanCmd{Path: proj}).Run)
 	if err != nil {
 		t.Fatalf("ScanCmd.Run: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestScanRun_MissingPathErrors(t *testing.T) {
 	stubHarnessKB(t, "kb_name: stubkb\n")
 	missing := filepath.Join(t.TempDir(), "definitely-not-here")
 
-	_, err := captureStdout(t, (&ScanCmd{Path: missing}).Run)
+	_, err := captureStdoutErr(t, (&ScanCmd{Path: missing}).Run)
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("err = %v, want does-not-exist error", err)
 	}
