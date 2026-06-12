@@ -156,6 +156,7 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 	var result []string
 	ledger := loadLedger(root)
 	manifestDirty := false
+	unchanged := 0
 
 	for pname, entry := range manifest.Projects {
 		// If --extract specified, only consider that project.
@@ -232,7 +233,15 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 			}
 		}
 
-		logMsg("sync", " [%s] unchanged, skipping", pname)
+		// One summary line after the loop, not one line per project: an
+		// enrolled-but-idle project is steady-state, and re-listing all
+		// of them (~20 identical lines per run on a populated KB) buried
+		// every real event in the sync log.
+		unchanged++
+	}
+
+	if unchanged > 0 {
+		logMsg("sync", "%d project(s) unchanged", unchanged)
 	}
 
 	if manifestDirty && !s.DryRun {
