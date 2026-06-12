@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("# Setup\n# Setup\n# Setup 2\n# Setup\n")

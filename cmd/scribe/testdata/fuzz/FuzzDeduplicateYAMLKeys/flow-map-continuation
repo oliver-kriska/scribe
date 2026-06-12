@@ -1,0 +1,2 @@
+go test fuzz v1
+string("a: {x: 1,\ny: 2}\ny: 9")
