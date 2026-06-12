@@ -258,7 +258,7 @@ func walkMarkdown(root string, skipUnderscored bool, fn func(path string, conten
 			if skipUnderscored && strings.HasPrefix(info.Name(), "_") {
 				return nil
 			}
-			content, err := os.ReadFile(path) //nolint:gosec // user-supplied KB root, deliberate walk
+			content, err := os.ReadFile(path)
 			if err != nil {
 				return nil //nolint:nilerr // skip unreadable, continue walk
 			}

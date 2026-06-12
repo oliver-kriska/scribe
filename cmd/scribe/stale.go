@@ -147,7 +147,7 @@ func buildStalenessLedger(root string, opts BuildStaleOpts, now time.Time) (Stal
 	err := walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unparseable article: skip it, keep walking
 		}
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)

@@ -169,7 +169,7 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 		ctes, homeProjects, scoreExpr, selectCols, anyHitExpr,
 		excludeClause, kbExcludeClause, projectClause, t.messageLimitClause(), t.orderClause(), t.Top)
 
-	rows, err := db.Query(query) //nolint:noctx,gosec // G701: scribe-owned SQL; CLI top-level
+	rows, err := db.Query(query) //nolint:noctx // CLI top-level, no ctx in scope
 	if err != nil {
 		return fmt.Errorf("scoring query: %w", err)
 	}

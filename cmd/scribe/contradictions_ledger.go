@@ -94,7 +94,7 @@ func buildContradictionLedger(root string) (int, int, error) {
 	err := walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil || fm.Title == "" {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unparseable frontmatter: skip the article, keep building the edge map
 		}
 		titleToPath[fm.Title] = path
 		for _, e := range edgesFromFrontmatter(fm) {
@@ -216,7 +216,7 @@ func readContradictionLedger(root string) ([]ContradictionEntry, error) {
 		}
 		var e ContradictionEntry
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			continue //nolint:nilerr // skip unparseable rows; build pass overwrites
+			continue
 		}
 		if e.Version == contradictionsLedgerVersion {
 			out = append(out, e)

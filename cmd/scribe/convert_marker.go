@@ -122,7 +122,7 @@ func convertWithMarker(inputPath, _ string) (string, *MarkerStats, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	data, err := os.ReadFile(mdPath) //nolint:gosec // path is from a tmp dir we just created
+	data, err := os.ReadFile(mdPath)
 	if err != nil {
 		return "", nil, fmt.Errorf("read marker output: %w", err)
 	}
@@ -206,7 +206,7 @@ func runMarkerOnce(absInput, tmpDir string, timeout time.Duration, mpsFallback b
 	// 'auto' lets torch decide; 'cpu' on the retry path uses the env
 	// var rather than the flag because older marker releases didn't
 	// expose --device. TORCH_DEVICE is the universal lever.
-	cmd := exec.CommandContext(ctx, "marker_single", args...) //nolint:gosec // marker_single resolved from PATH; args are scribe-controlled
+	cmd := exec.CommandContext(ctx, "marker_single", args...)
 	cmd.Env = markerEnvWithDevice(os.Environ(), mpsFallback, device)
 
 	var tail bytes.Buffer
@@ -242,7 +242,7 @@ func (b *boundedWriter) Write(p []byte) (int, error) {
 	n := len(p)
 	if n >= b.max {
 		b.w.Reset()
-		b.w.Write(p[n-b.max:]) //nolint:errcheck // bytes.Buffer.Write never errors
+		b.w.Write(p[n-b.max:])
 		return n, nil
 	}
 	if b.w.Len()+n > b.max {
@@ -251,7 +251,7 @@ func (b *boundedWriter) Write(p []byte) (int, error) {
 		dropped := make([]byte, excess)
 		_, _ = b.w.Read(dropped) // discard oldest bytes; bytes.Buffer.Read never errors on a non-empty buffer
 	}
-	b.w.Write(p) //nolint:errcheck // bytes.Buffer.Write never errors
+	b.w.Write(p)
 	return n, nil
 }
 
@@ -296,7 +296,7 @@ func isMPSCrash(stderr string) bool {
 func readMarkerStats(mdPath string) *MarkerStats {
 	stem := strings.TrimSuffix(filepath.Base(mdPath), ".md")
 	metaPath := filepath.Join(filepath.Dir(mdPath), stem+"_meta.json")
-	data, err := os.ReadFile(metaPath) //nolint:gosec // metaPath is in the same tmp dir we just created
+	data, err := os.ReadFile(metaPath)
 	if err != nil {
 		return nil
 	}
@@ -431,12 +431,12 @@ func extractImageRefs(md string) []string {
 // copyFile is a minimal tee from src to dst with 0o644 permissions.
 // Used by image sidecar; we don't need anything fancier.
 func copyFile(src, dst string) error {
-	in, err := os.Open(src) //nolint:gosec // src is inside our marker tmp dir
+	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644) //nolint:gosec // dst is inside our resolved KB
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}

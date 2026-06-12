@@ -461,7 +461,7 @@ func findSecretsInKB(root string, includeGeneric bool) []string {
 				if rel == "" {
 					continue
 				}
-				content, rerr := os.ReadFile(filepath.Join(root, rel)) //nolint:gosec // user-supplied KB root, deliberate scan
+				content, rerr := os.ReadFile(filepath.Join(root, rel))
 				if rerr != nil {
 					continue
 				}
@@ -475,7 +475,7 @@ func findSecretsInKB(root string, includeGeneric bool) []string {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
 			return nil //nolint:nilerr // skip unreadable, continue walk
 		}
-		content, rerr := os.ReadFile(path) //nolint:gosec // user-supplied KB root, deliberate walk
+		content, rerr := os.ReadFile(path)
 		if rerr != nil {
 			return nil //nolint:nilerr // skip unreadable, continue walk
 		}

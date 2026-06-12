@@ -420,7 +420,7 @@ func (c *RelationsCheckCmd) Run() error {
 	err = walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil || fm.Title == "" {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unparseable article: skip it, keep walking
 		}
 		titleToPath[fm.Title] = path
 		for _, e := range edgesFromFrontmatter(fm) {
