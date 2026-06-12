@@ -42,6 +42,8 @@ linters:
     - predeclared # shadowing of Go predeclared identifiers
     - recvcheck # mixed pointer/value receivers on one type
     - wastedassign # assignments whose value is never used
+    - rowserrcheck # sql.Rows iterations must check rows.Err (silent truncation)
+    - sqlclosecheck # sql.Rows/Stmt closed via defer
 
   settings:
     errcheck:

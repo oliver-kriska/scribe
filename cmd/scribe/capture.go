@@ -394,8 +394,7 @@ func readSelfChatMessages(selfChatIDs []string, since string) ([]chatMessage, er
 	var handleIDs []int64
 	var missing []string
 	for _, id := range selfChatIDs {
-		//nolint:noctx // CLI top-level, no context propagation yet
-		rows, qerr := db.Query("SELECT ROWID FROM handle WHERE id = ?", id)
+		ids, qerr := handleRowIDs(db, id)
 		if qerr != nil {
 			msg := qerr.Error()
 			if strings.Contains(msg, "operation not permitted") || strings.Contains(msg, "unable to open") {
@@ -403,22 +402,8 @@ func readSelfChatMessages(selfChatIDs []string, since string) ([]chatMessage, er
 			}
 			return nil, fmt.Errorf("query handle %s: %w", id, qerr)
 		}
-		var matched int
-		for rows.Next() {
-			var rowid int64
-			if scanErr := rows.Scan(&rowid); scanErr != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scan handle %s: %w", id, scanErr)
-			}
-			handleIDs = append(handleIDs, rowid)
-			matched++
-		}
-		if rerr := rows.Err(); rerr != nil {
-			rows.Close()
-			return nil, fmt.Errorf("iterate handle %s: %w", id, rerr)
-		}
-		rows.Close()
-		if matched == 0 {
+		handleIDs = append(handleIDs, ids...)
+		if len(ids) == 0 {
 			missing = append(missing, id)
 		}
 	}
@@ -499,6 +484,30 @@ func readSelfChatMessages(selfChatIDs []string, since string) ([]chatMessage, er
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return out, nil
+}
+
+// handleRowIDs returns every handle ROWID for one handle id. Split out of
+// readSelfChatMessages so rows.Close can be deferred per query — the caller
+// loops over handles, where a bare defer would pile up until function exit.
+func handleRowIDs(db *sql.DB, id string) ([]int64, error) {
+	//nolint:noctx // CLI top-level, no context propagation yet
+	rows, err := db.Query("SELECT ROWID FROM handle WHERE id = ?", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var rowid int64
+		if err := rows.Scan(&rowid); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		out = append(out, rowid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate: %w", err)
 	}
 	return out, nil
 }

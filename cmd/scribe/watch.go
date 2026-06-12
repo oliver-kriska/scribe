@@ -190,6 +190,10 @@ func (w *WatchCmd) scan(root, dbPath string) {
 		}
 		candidates = append(candidates, c)
 	}
+	if err := rows.Err(); err != nil {
+		logMsg("watch", "iterate sessions: %v", err)
+		return
+	}
 	rows.Close()
 
 	if len(candidates) == 0 {
