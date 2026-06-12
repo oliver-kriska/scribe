@@ -254,7 +254,7 @@ func TestConfigUpdateCmdEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	again, _ := os.ReadFile(path)
-	if string(again) != string(data) {
+	if !bytes.Equal(again, data) {
 		t.Error("second run changed the file — not idempotent")
 	}
 }

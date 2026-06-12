@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,7 +83,7 @@ func TestLoadConfigIsPure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(before) != string(after) {
+	if !bytes.Equal(before, after) {
 		t.Errorf("loadConfig mutated scribe.yaml\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
@@ -109,7 +110,7 @@ func TestMaybeBackfillAbsorbBlock(t *testing.T) {
 		t.Setenv("SCRIBE_NO_CONFIG_BACKFILL", "1")
 		maybeBackfillAbsorbBlock(dir)
 		after, _ := os.ReadFile(cfgPath)
-		if string(before) != string(after) {
+		if !bytes.Equal(before, after) {
 			t.Error("SCRIBE_NO_CONFIG_BACKFILL=1 must leave scribe.yaml byte-identical")
 		}
 	})

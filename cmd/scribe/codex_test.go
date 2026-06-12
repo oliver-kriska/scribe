@@ -41,7 +41,9 @@ func writeCodexRollout(t *testing.T, root, year, month, day, id, cwd string) str
 	if err != nil {
 		t.Fatalf("marshal envelope: %v", err)
 	}
-	body := append(first, '\n')
+	body := make([]byte, 0, len(first)+128)
+	body = append(body, first...)
+	body = append(body, '\n')
 	body = append(body, []byte(`{"type":"message","payload":{"role":"user","content":"hi"}}`+"\n")...)
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatalf("write rollout: %v", err)
@@ -323,7 +325,7 @@ func TestDiscoverCodex_PromotesClaudeOnlyToBoth(t *testing.T) {
 	// Pre-seed manifest as if Claude had already surfaced this project.
 	pname := projectName(cwd)
 	manifestPath := filepath.Join(kbRoot, "scripts", "projects.json")
-	seed := fmt.Sprintf(`{"projects":{"%s":{"path":"%s","domain":"general","discovered_from":"claude"}},"domain_aliases":{},"ignored_paths":[]}`, pname, cwd)
+	seed := fmt.Sprintf(`{"projects":{%q:{"path":%q,"domain":"general","discovered_from":"claude"}},"domain_aliases":{},"ignored_paths":[]}`, pname, cwd)
 	if err := os.WriteFile(manifestPath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("seed manifest: %v", err)
 	}

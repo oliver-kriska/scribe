@@ -916,7 +916,7 @@ func TestApplyWikiActions_ClampFrontmatter(t *testing.T) {
 		if len(res.Applied) != 0 {
 			t.Errorf("unparseable action must not be applied, got: %v", res.Applied)
 		}
-		if _, statErr := os.Stat(filepath.Join(root, "decisions/broken.md")); statErr == nil {
+		if _, statErr := os.Stat(filepath.Join(root, "decisions", "broken.md")); statErr == nil {
 			t.Error("broken frontmatter was written to disk; clamp must drop it")
 		}
 	})
@@ -1065,7 +1065,7 @@ func TestApplyWikiActions_SanitizeContentEnablesRemap(t *testing.T) {
 	if len(res.Errors) != 0 {
 		t.Fatalf("invented top dir must be remapped, not rejected: %v", res.Errors)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "wiki/debugging/plugin-activation-caveat.md")); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(root, "wiki", "debugging", "plugin-activation-caveat.md")); statErr != nil {
 		t.Errorf("entity not re-homed under wiki/: %v", statErr)
 	}
 }

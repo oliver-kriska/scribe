@@ -329,7 +329,7 @@ func TestChunkByTOC_HappyPath(t *testing.T) {
 	if !strings.Contains(got[0].Body, "body one") {
 		t.Errorf("chunk 1 body missing content: %q", got[0].Body)
 	}
-	if got[0].SourcePages == nil || got[0].SourcePages[0] != 0 {
+	if len(got[0].SourcePages) == 0 || got[0].SourcePages[0] != 0 {
 		t.Errorf("chunk 1 source pages = %v", got[0].SourcePages)
 	}
 }

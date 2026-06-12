@@ -562,15 +562,14 @@ func checkConvert() []check {
 
 	// Marker presence + version. Frames every other row's verdict.
 	if markerTierAvailable() {
+		// The second element surfaces the device pin + retry policy so
+		// users can tell at a glance whether the unattended drain has
+		// the MPS-crash safety net in play. Only matters when marker is
+		// installed — no point reporting a knob that's never read.
 		out = append(out, check{
 			Section: "convert", Name: "marker (tier 1)", Status: statusOK,
 			Detail: markerVersionLine(),
-		})
-		// Surface the device pin + retry policy so users can tell at
-		// a glance whether the unattended drain has the MPS-crash
-		// safety net in play. Only matters when marker is installed —
-		// no point reporting a knob that's never read.
-		out = append(out, markerDeviceCheck())
+		}, markerDeviceCheck())
 	} else {
 		out = append(out, check{
 			Section: "convert", Name: "marker (tier 1)", Status: statusWarn,
