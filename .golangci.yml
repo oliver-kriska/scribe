@@ -49,6 +49,12 @@ linters:
     - usetesting # t.Chdir/t.TempDir/t.Setenv over raw os equivalents in tests
     - dupword # duplicated words in comments/strings
     - nolintlint # every nolint must name its linter and carry a reason
+    # Follow-up (2026-06): three analyzers are fixed tree-wide but NOT yet
+    # enabled because their last hits sit in files frozen for a parallel
+    # work stream — enable each after fixing:
+    #   errchkjson    — 1 hit: llm.go:339
+    #   usestdlibvars — 3 hits: llm.go:276/344/470
+    #   perfsprint    — 6 hits: claude.go:23, llm.go:391, sync_absorb.go:235-238
 
   settings:
     errcheck:
