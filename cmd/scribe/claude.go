@@ -22,7 +22,12 @@ var promptFS embed.FS
 // ErrRateLimit is returned when claude -p hits Anthropic rate limits.
 var ErrRateLimit = fmt.Errorf("rate limit hit")
 
-func runClaude(ctx context.Context, root, prompt, model string, tools []string, timeout time.Duration) (string, error) {
+// runClaude is a package variable (pointing at realRunClaude) purely so
+// driver tests can swap in a scripted stub (see llm_stub_test.go) without
+// shelling out to a real `claude` binary; production code never reassigns it.
+var runClaude = realRunClaude
+
+func realRunClaude(ctx context.Context, root, prompt, model string, tools []string, timeout time.Duration) (string, error) {
 	// Daily anthropic output-token ceiling: read once per call so a
 	// long-running absorb that crosses the ceiling mid-run aborts at
 	// the next claude -p invocation rather than barreling through.

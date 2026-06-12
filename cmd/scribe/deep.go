@@ -29,7 +29,7 @@ var excludedDirNames = map[string]bool{
 	"evals":        true,
 }
 
-//nolint:gocognit // LLM-driving path with 0% test coverage — decompose only once a stub-provider harness exists, a blind refactor risks silent behavior drift
+//nolint:gocognit // LLM-driving batch loop — behavior now pinned by the stub-harness tests in deep_run_test.go (issue #9); decompose in a dedicated change with those tests green
 func (d *DeepCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
