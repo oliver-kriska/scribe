@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -144,5 +145,28 @@ func TestOtherKBServedByAgents(t *testing.T) {
 	}
 	if got := otherKBServedByAgents("/Users/u/Projects/kb-b"); got != "/Users/u/Projects/kb-a" {
 		t.Errorf("different root: got %q, want /Users/u/Projects/kb-a", got)
+	}
+}
+
+// TestCronInstallRefusesThrowawayKB: installing LaunchAgents from a
+// temp-path KB would point this machine's whole schedule at a directory
+// that vanishes on reboot — the writeGlobalState chokepoint must refuse
+// before any plist lands or launchctl runs.
+func TestCronInstallRefusesThrowawayKB(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("LaunchAgent install is darwin-only")
+	}
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("SCRIBE_KB", t.TempDir()) // under os.TempDir() → throwaway
+
+	c := &CronInstallCmd{}
+	err := c.Run()
+	if err == nil || !strings.Contains(err.Error(), "throwaway") {
+		t.Fatalf("cron install from throwaway KB: want refusal, got %v", err)
+	}
+	entries, _ := os.ReadDir(filepath.Join(fakeHome, "Library", "LaunchAgents"))
+	if len(entries) != 0 {
+		t.Errorf("refusal still wrote %d plist(s)", len(entries))
 	}
 }

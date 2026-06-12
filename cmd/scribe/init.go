@@ -111,6 +111,33 @@ func allowGlobalStateWrites(force, yes, bind, throwaway bool, existingKBDir, abs
 	return yes && !retarget
 }
 
+// writeGlobalState is the single chokepoint for writing machine-global
+// files — anything outside the KB root that binds this machine to a KB:
+// ~/.config/scribe/config.yaml, the ~/.claude/CLAUDE.md and
+// ~/.codex/AGENTS.md handshake blocks, and the ~/Library/LaunchAgents
+// plists. Every such write MUST route through here so the shared safety
+// logic lives in one place instead of being re-derived per command.
+//
+// Command-specific consent (init's allowGlobalStateWrites, cron
+// install's otherKBServedByAgents guard) stays at the call sites; this
+// is the backstop they all inherit: a throwaway KB root (/tmp, /var/
+// folders, $TMPDIR — the 2026-05-13 incident class) may never own
+// machine-global state unless the caller carries an explicit bind
+// consent (init's --bind). servesRoot is the KB the file will point
+// at; empty means the write is not KB-binding.
+func writeGlobalState(servesRoot string, bound bool, path string, data []byte, perm os.FileMode) error {
+	if !bound && servesRoot != "" && isThrowawayPath(servesRoot) {
+		return fmt.Errorf("refusing to write %s: it would bind this machine's global state to throwaway KB %s (temp paths are smoke tests — `scribe init --bind` is the explicit opt-in when a temp-path KB really is meant to be primary)", path, servesRoot)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, data, perm); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
 // templateVars is what every embedded template receives. One struct is easier
 // to reason about than threading a map through every template call site, and
 // Go's text/template rejects unknown fields at parse time — so a typo fails
@@ -237,14 +264,14 @@ func (c *InitCmd) runBootstrap() error {
 	switch {
 	case uc.KBDir == abs:
 		// Idempotent re-install on the same path — always safe.
-		if err := installUserConfig(abs, c.Check, true); err != nil {
+		if err := installUserConfig(abs, c.Check, true, c.Bind); err != nil {
 			fmt.Printf("  warning: %s\n", err)
 		}
 	case allowUserWrites:
 		if uc.KBDir != "" && uc.KBDir != abs {
 			fmt.Printf("\n~/.config/scribe/config.yaml currently points at %s — switching to %s.\n", uc.KBDir, abs)
 		}
-		if err := installUserConfig(abs, c.Check, true); err != nil {
+		if err := installUserConfig(abs, c.Check, true, c.Bind); err != nil {
 			fmt.Printf("  warning: %s\n", err)
 		}
 	case uc.KBDir != "" && uc.KBDir != abs:
@@ -257,7 +284,7 @@ func (c *InitCmd) runBootstrap() error {
 	case c.NoClaudeMD:
 		fmt.Println("  (--no-claude-md: skipping ~/.claude/CLAUDE.md block)")
 	case allowUserWrites:
-		if err := installClaudeMD(abs, vars, c.Check, true); err != nil {
+		if err := installClaudeMD(abs, vars, c.Check, true, c.Bind); err != nil {
 			fmt.Printf("  warning: %s\n", err)
 		}
 	default:
@@ -267,7 +294,7 @@ func (c *InitCmd) runBootstrap() error {
 	case c.NoCodexMD:
 		fmt.Println("  (--no-codex-md: skipping ~/.codex/AGENTS.md block)")
 	case allowUserWrites:
-		if err := installCodexMD(vars, c.Check, true); err != nil {
+		if err := installCodexMD(vars, c.Check, true, c.Bind); err != nil {
 			fmt.Printf("  warning: %s\n", err)
 		}
 	default:
@@ -599,7 +626,7 @@ func (c *InitCmd) runStatus(root string) error {
 	}
 
 	fmt.Println("\nUser config (~/.config/scribe/config.yaml):")
-	if err := installUserConfig(root, c.Check, c.Yes); err != nil {
+	if err := installUserConfig(root, c.Check, c.Yes, c.Bind); err != nil {
 		fmt.Printf("  warning: %s\n", err)
 	}
 
@@ -624,14 +651,14 @@ func (c *InitCmd) runStatus(root string) error {
 	fmt.Println("\nUser CLAUDE.md (~/.claude/CLAUDE.md):")
 	if c.NoClaudeMD {
 		fmt.Println("  (--no-claude-md: skipping)")
-	} else if err := installClaudeMD(root, agentVars, c.Check, c.Yes); err != nil {
+	} else if err := installClaudeMD(root, agentVars, c.Check, c.Yes, c.Bind); err != nil {
 		fmt.Printf("  warning: %s\n", err)
 	}
 
 	fmt.Println("\nCodex AGENTS.md (~/.codex/AGENTS.md):")
 	if c.NoCodexMD {
 		fmt.Println("  (--no-codex-md: skipping)")
-	} else if err := installCodexMD(agentVars, c.Check, c.Yes); err != nil {
+	} else if err := installCodexMD(agentVars, c.Check, c.Yes, c.Bind); err != nil {
 		fmt.Printf("  warning: %s\n", err)
 	}
 
@@ -767,22 +794,23 @@ func buildAgentMDBlock(tmpl string, vars templateVars) (string, error) {
 }
 
 // installClaudeMD syncs the scribe block in ~/.claude/CLAUDE.md.
-func installClaudeMD(_ string, vars templateVars, check, yes bool) error {
-	return installAgentMD(claudeMDPath(), "templates/claude-md-kb.md", vars, check, yes)
+func installClaudeMD(_ string, vars templateVars, check, yes, bound bool) error {
+	return installAgentMD(claudeMDPath(), "templates/claude-md-kb.md", vars, check, yes, bound)
 }
 
 // installCodexMD syncs the scribe block in ~/.codex/AGENTS.md so Codex
 // CLI sessions get the same KB handshake (query before decisions, write
 // drop files) Claude Code sessions get from ~/.claude/CLAUDE.md.
-func installCodexMD(vars templateVars, check, yes bool) error {
-	return installAgentMD(codexAgentsMDPath(), "templates/codex-agents-md.md", vars, check, yes)
+func installCodexMD(vars templateVars, check, yes, bound bool) error {
+	return installAgentMD(codexAgentsMDPath(), "templates/codex-agents-md.md", vars, check, yes, bound)
 }
 
 // installAgentMD syncs the scribe block in an agent's global
 // instructions file. Four cases: missing, present-without-markers,
 // present-in-sync, present-drifted. User content outside the markers
-// is never touched.
-func installAgentMD(path, tmpl string, vars templateVars, check, yes bool) error {
+// is never touched. `bound` carries the caller's explicit --bind
+// consent through to the writeGlobalState chokepoint.
+func installAgentMD(path, tmpl string, vars templateVars, check, yes, bound bool) error {
 	block, err := buildAgentMDBlock(tmpl, vars)
 	if err != nil {
 		return err
@@ -802,11 +830,8 @@ func installAgentMD(path, tmpl string, vars templateVars, check, yes bool) error
 		if !yes && !promptYesNo("  create with scribe block?", true) {
 			return nil
 		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return fmt.Errorf("mkdir: %w", err)
-		}
-		if err := os.WriteFile(path, []byte(block+"\n"), 0o644); err != nil {
-			return fmt.Errorf("write: %w", err)
+		if err := writeGlobalState(vars.KBDir, bound, path, []byte(block+"\n"), 0o644); err != nil {
+			return err
 		}
 		fmt.Printf("  wrote %s\n", path)
 		return nil
@@ -830,8 +855,8 @@ func installAgentMD(path, tmpl string, vars templateVars, check, yes bool) error
 		case strings.HasSuffix(content, "\n"):
 			sep = "\n"
 		}
-		if err := os.WriteFile(path, []byte(content+sep+block+"\n"), 0o644); err != nil {
-			return fmt.Errorf("write: %w", err)
+		if err := writeGlobalState(vars.KBDir, bound, path, []byte(content+sep+block+"\n"), 0o644); err != nil {
+			return err
 		}
 		fmt.Printf("  appended scribe block to %s\n", path)
 		return nil
@@ -859,8 +884,8 @@ func installAgentMD(path, tmpl string, vars templateVars, check, yes bool) error
 		return nil
 	}
 	updated := content[:beginIdx] + block + content[endIdx:]
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
-		return fmt.Errorf("write: %w", err)
+	if err := writeGlobalState(vars.KBDir, bound, path, []byte(updated), 0o644); err != nil {
+		return err
 	}
 	fmt.Printf("  refreshed scribe block in %s\n", path)
 	return nil
@@ -868,7 +893,7 @@ func installAgentMD(path, tmpl string, vars templateVars, check, yes bool) error
 
 // installUserConfig writes ~/.config/scribe/config.yaml with kb_dir set to
 // the current KB root. Lets scribe work from any directory without env vars.
-func installUserConfig(root string, check, yes bool) error {
+func installUserConfig(root string, check, yes, bound bool) error {
 	path := userConfigPath()
 	uc := loadUserConfig()
 
@@ -891,12 +916,9 @@ func installUserConfig(root string, check, yes bool) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("mkdir: %w", err)
-	}
 	content := fmt.Sprintf("# scribe user config — written by `scribe init`\nkb_dir: %s\n", root)
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write: %w", err)
+	if err := writeGlobalState(root, bound, path, []byte(content), 0o644); err != nil {
+		return err
 	}
 	fmt.Printf("  wrote %s\n", path)
 	return nil

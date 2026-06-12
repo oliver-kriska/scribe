@@ -529,11 +529,14 @@ func (c *CronInstallCmd) Run() error {
 			continue
 		}
 
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return fmt.Errorf("mkdir LaunchAgents: %w", err)
-		}
-		if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", path, err)
+		// LaunchAgent plists are machine-global state binding this
+		// machine's schedule to a KB root — route the write through the
+		// shared chokepoint (init.go) so it inherits the throwaway-path
+		// refusal. cron install has no bind override on purpose: a /tmp
+		// KB must never own the schedule (it vanishes on reboot and the
+		// jobs would burn tokens against a dead path).
+		if err := writeGlobalState(root, false, path, []byte(plist), 0o644); err != nil {
+			return err
 		}
 		fmt.Printf("wrote %s\n", path)
 
