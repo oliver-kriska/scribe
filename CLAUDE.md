@@ -43,11 +43,13 @@ One Go package under `cmd/scribe/`. No internal/ split yet — keep it that way 
 ## Build
 
 ```sh
-make build        # CGO_ENABLED=1, -tags sqlite_fts5
-make install      # builds + drops binary in $HOME/.local/bin
+make build        # CGO_ENABLED=1, -tags sqlite_fts5 → ./bin/scribe (repo-local, gitignored)
+make install      # build + deploy ./bin/scribe to $HOME/.local/bin — the binary cron runs
 make test         # go test ./... -tags sqlite_fts5
 make check        # test + vet
 ```
+
+**Build never deploys.** `make build` writes only to `./bin/scribe`; the live binary at `~/.local/bin/scribe` (executed by cron) changes only on `make install`. On macOS, replacing the deployed binary invalidates the chat.db Full Disk Access grant — re-run `scribe fda` after every `make install`.
 
 **FTS5 is mandatory.** ccrider's `messages_fts` virtual table uses it, and `scribe triage` runs BM25 queries against it. `go-sqlite3` ships without FTS5 — the `sqlite_fts5` build tag is what flips it on. Never drop that tag from the Makefile.
 

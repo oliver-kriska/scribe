@@ -468,12 +468,12 @@ func probeLaunchAgent(domain, label, plistPath string) string {
 
 // resolveScribeBinary finds the installed scribe binary.
 //
-// Prefer ~/.local/bin/scribe (the canonical install target from the Justfile)
+// Prefer ~/.local/bin/scribe (the canonical deploy target of `make install`)
 // over a PATH lookup. Relying on exec.LookPath means whichever directory comes
 // first in PATH wins — and a stray old build in ~/bin/scribe would silently
-// shadow the fresh one from `just build`, baking the wrong path into the
+// shadow the fresh one from `make install`, baking the wrong path into the
 // installed LaunchAgent plists. If the canonical binary isn't on disk yet
-// (e.g. first install from a freshly cloned repo before `just build`), fall
+// (e.g. first install from a freshly cloned repo before `make install`), fall
 // back to PATH so install still works.
 func resolveScribeBinary() string {
 	canonical := filepath.Join(os.Getenv("HOME"), ".local", "bin", "scribe")
