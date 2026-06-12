@@ -430,7 +430,16 @@ func (s *SyncCmd) commitAndPush(root, message string) (bool, error) {
 // callers (dream uses os/exec directly; assess + deep use this helper
 // so a fresh envelope-mode run leaves _index.md and _backlinks.json
 // in sync). Best-effort: any error is logged and discarded.
+//
+// Skipped when SCRIBE_SKIP_REINDEX=1, which tests set to avoid
+// re-executing the compiled test binary (os.Executable() returns the
+// test binary in tests, and running it with "backlinks" as argv
+// re-enters the test suite instead of the production CLI). Same guard
+// as WriteCmd.reindex.
 func rebuildIndexAndBacklinks(root string) {
+	if os.Getenv("SCRIBE_SKIP_REINDEX") == "1" {
+		return
+	}
 	scribeExe, _ := os.Executable()
 	if scribeExe == "" {
 		scribeExe = "scribe"

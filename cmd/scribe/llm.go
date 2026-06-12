@@ -47,15 +47,21 @@ func generateMaybeJSON(ctx context.Context, p llmProviderGenerator, prompt strin
 	return p.Generate(ctx, prompt)
 }
 
-// newLLMProvider picks the provider backend based on scribe.yaml. Unknown
-// provider names fall back to anthropic with a log line so misconfiguration
-// never silently no-ops.
+// newLLMProvider picks the provider backend based on scribe.yaml. It is a
+// package variable (pointing at realNewLLMProvider) purely so driver tests
+// can swap in a scripted stub provider (see llm_stub_test.go) without a
+// network or a real LLM; production code never reassigns it.
+var newLLMProvider = realNewLLMProvider
+
+// realNewLLMProvider is the production implementation behind the
+// newLLMProvider seam. Unknown provider names fall back to anthropic with
+// a log line so misconfiguration never silently no-ops.
 //
 // kbRoot is forwarded to the anthropic provider so its claude calls can
 // land in output/costs/<day>.jsonl alongside calls from runClaude. Empty
 // kbRoot is tolerated — appendCostEntry no-ops on empty root, so callers
 // without a KB context (e.g. unit tests) keep working.
-func newLLMProvider(provider, model, ollamaURL, kbRoot string) llmProviderGenerator {
+func realNewLLMProvider(provider, model, ollamaURL, kbRoot string) llmProviderGenerator {
 	switch strings.ToLower(provider) {
 	case "ollama":
 		return &ollamaProvider{baseURL: ollamaURL, model: model, root: kbRoot}
