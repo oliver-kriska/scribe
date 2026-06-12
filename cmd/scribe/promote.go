@@ -52,6 +52,18 @@ func (c *PromoteCmd) Run() error {
 	if !slices.Contains(wikiDirs, topDir) {
 		return fmt.Errorf("%s is not under a wiki content dir (%s)", rel, strings.Join(wikiDirs, ", "))
 	}
+	// Scribe-managed files are never promotion sources: with --force a
+	// `scribe promote wiki/_index.md` would overwrite the target KB's
+	// own derived artifacts with a foreign stale copy. The registry
+	// (special_files.go) catches the known derived/coordination files;
+	// the underscore convention catches the rest of the derived wiki
+	// surface (_hot.md, _sessions_log.json, _duplicates.md, ...).
+	if spec, ok := specialKBFiles[filepath.ToSlash(rel)]; ok {
+		return fmt.Errorf("%s is a scribe-managed %s file, not an article — the target KB maintains its own copy; promote articles only", rel, spec.Class)
+	}
+	if strings.HasPrefix(filepath.Base(rel), "_") {
+		return fmt.Errorf("%s is a derived file (underscore-prefixed) — these regenerate per KB and must not be promoted; promote articles only", rel)
+	}
 
 	srcAbs := filepath.Join(root, rel)
 	raw, err := os.ReadFile(srcAbs)

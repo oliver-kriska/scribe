@@ -125,6 +125,47 @@ func TestPromoteValidation(t *testing.T) {
 	}
 }
 
+// TestPromoteRefusesDerivedFiles covers the guard against promoting
+// scribe-managed/derived files: the topDir check alone accepts
+// wiki/_index.md, and --force would then overwrite the target KB's own
+// derived artifacts with a foreign stale copy.
+func TestPromoteRefusesDerivedFiles(t *testing.T) {
+	src, target := setupPromoteKBs(t)
+
+	// Registry-known derived artifacts (special_files.go).
+	for _, rel := range []string{"wiki/_index.md", "wiki/_backlinks.json", "wiki/_digest.md"} {
+		writeKBFile(t, src, rel, "stale derived content\n")
+		c := &PromoteCmd{Article: rel, To: target, Force: true, NoGit: true}
+		if err := c.Run(); err == nil || !strings.Contains(err.Error(), "scribe-managed") {
+			t.Errorf("%s: expected scribe-managed refusal, got %v", rel, err)
+		}
+	}
+
+	// Underscore convention beyond the registry.
+	for _, rel := range []string{"wiki/_hot.md", "wiki/_sessions_log.json", "patterns/_scratch.md"} {
+		writeKBFile(t, src, rel, "derived\n")
+		c := &PromoteCmd{Article: rel, To: target, Force: true, NoGit: true}
+		if err := c.Run(); err == nil || !strings.Contains(err.Error(), "must not be promoted") {
+			t.Errorf("%s: expected underscore refusal, got %v", rel, err)
+		}
+	}
+
+	// Nothing landed in the target.
+	for _, rel := range []string{"wiki/_index.md", "wiki/_hot.md"} {
+		if fileExists(filepath.Join(target, rel)) {
+			t.Errorf("%s was written to the target despite the refusal", rel)
+		}
+	}
+
+	// Underscore-prefixed DIRECTORIES are fine — only the filename counts.
+	writeKBFile(t, src, "patterns/sub/real-article.md",
+		"---\ntitle: \"Real Article\"\ntype: pattern\ndomain: backend\n---\n\nbody\n")
+	c := &PromoteCmd{Article: "patterns/sub/real-article.md", To: target, NoGit: true}
+	if err := c.Run(); err != nil {
+		t.Errorf("regular nested article refused: %v", err)
+	}
+}
+
 func TestMissingWikilinksIn(t *testing.T) {
 	target := t.TempDir()
 	writeKBFile(t, target, "wiki/known.md", "---\ntitle: \"Known Thing\"\naliases:\n  - \"KT\"\n---\n\nbody\n")
