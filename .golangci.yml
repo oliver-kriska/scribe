@@ -30,6 +30,18 @@ linters:
     - revive
     - dupl
     - gocognit
+    # 2026-06 ratchet expansion — bug-class analyzers that were clean at
+    # enablement time; they exist to stay clean.
+    - asasalint # []any passed as any to variadic ...any
+    - bidichk # trojan-source bidi control characters
+    - exptostd # x/exp calls with std equivalents
+    - gocheckcompilerdirectives # malformed //go: directives (silently ignored by the compiler)
+    - mirror # wrong bytes/strings counterpart funcs (extra conversions)
+    - nilnesserr # err != nil checked but a different nil err returned
+    - nosprintfhostport # Sprintf-built host:port URLs (breaks on IPv6)
+    - predeclared # shadowing of Go predeclared identifiers
+    - recvcheck # mixed pointer/value receivers on one type
+    - wastedassign # assignments whose value is never used
 
   settings:
     errcheck:
