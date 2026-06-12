@@ -106,7 +106,10 @@ func (o *OrphansCmd) Run() error {
 		if showMissing {
 			report.Missing = missing
 		}
-		data, _ := json.MarshalIndent(report, "", "  ")
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
 		fmt.Println(string(data))
 		return nil
 	}

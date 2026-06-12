@@ -175,7 +175,10 @@ func TestReadSidecar_VersionMismatchIsCacheMiss(t *testing.T) {
 		t.Fatal(err)
 	}
 	bogus := SectionsSidecar{Version: 999, Article: "x", Sections: []Section{{ID: "x"}}}
-	data, _ := json.Marshal(bogus)
+	data, err := json.Marshal(bogus)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(out, data, 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -154,7 +154,10 @@ func TestReadTOCSidecar_VersionMismatchReturnsNil(t *testing.T) {
 	rawPath := filepath.Join(tmp, "article.md")
 	_ = os.WriteFile(rawPath, []byte("body"), 0o644)
 	bad := TOCSidecar{Version: 99, Chapters: []ChapterEntry{{Title: "x"}}}
-	data, _ := json.Marshal(bad)
+	data, err := json.Marshal(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(tocSidecarPath(rawPath), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
