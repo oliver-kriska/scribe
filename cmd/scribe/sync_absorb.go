@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	gosync "sync"
 	"time"
@@ -232,10 +233,10 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 	prompt, err := loadPrompt(promptName, map[string]string{
 		"KB_DIR":         root,
 		"RAW_FILE":       rawFile,
-		"BRIEF_WORDS":    fmt.Sprintf("%d", cfg.Absorb.BriefThresholdWords),
-		"BRIEF_HEADINGS": fmt.Sprintf("%d", cfg.Absorb.BriefThresholdHeadings),
-		"DENSE_WORDS":    fmt.Sprintf("%d", cfg.Absorb.DenseThresholdWords),
-		"DENSE_HEADINGS": fmt.Sprintf("%d", cfg.Absorb.DenseThresholdHeadings),
+		"BRIEF_WORDS":    strconv.Itoa(cfg.Absorb.BriefThresholdWords),
+		"BRIEF_HEADINGS": strconv.Itoa(cfg.Absorb.BriefThresholdHeadings),
+		"DENSE_WORDS":    strconv.Itoa(cfg.Absorb.DenseThresholdWords),
+		"DENSE_HEADINGS": strconv.Itoa(cfg.Absorb.DenseThresholdHeadings),
 		"RAW_BODY":       string(rawBody),
 		"TODAY":          time.Now().UTC().Format("2006-01-02"),
 	})
