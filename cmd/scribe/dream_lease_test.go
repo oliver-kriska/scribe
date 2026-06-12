@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -121,6 +122,97 @@ func TestAcquireDreamLease(t *testing.T) {
 	}
 	if got := readDreamLease(root); got == nil || got.Host != hostnameShort() {
 		t.Errorf("steal did not rewrite the lease: %+v", got)
+	}
+}
+
+// setupLeaseTeam simulates PR #1's two-machine setup: a bare origin and
+// two clones with distinct git identities. Both tests run on one host,
+// so the clones share hostnameShort() — exactly the "every fresh Mac is
+// MacBook-Pro" collision the lease's By field exists to disambiguate;
+// the contributor (repo-local user.name) is what tells them apart.
+func setupLeaseTeam(t *testing.T) (cloneA, cloneB, origin string) {
+	t.Helper()
+	origin = filepath.Join(t.TempDir(), "origin.git")
+	gitRun(t, t.TempDir(), "init", "-q", "--bare", origin)
+
+	seed := initTestGitRepo(t, "Seeder")
+	writeKBFile(t, seed, "scribe.yaml", "owner_name: t\nteam: true\n")
+	gitRun(t, seed, "add", ".")
+	gitRun(t, seed, "commit", "-q", "-m", "base")
+	gitRun(t, seed, "remote", "add", "origin", origin)
+	gitRun(t, seed, "push", "-q", "-u", "origin", "HEAD:main")
+
+	cloneA = filepath.Join(t.TempDir(), "machine-a")
+	gitRun(t, t.TempDir(), "clone", "-q", origin, cloneA)
+	gitRun(t, cloneA, "config", "user.name", "Alice")
+	gitRun(t, cloneA, "config", "user.email", "a@example.com")
+
+	cloneB = filepath.Join(t.TempDir(), "machine-b")
+	gitRun(t, t.TempDir(), "clone", "-q", origin, cloneB)
+	gitRun(t, cloneB, "config", "user.name", "Bob")
+	gitRun(t, cloneB, "config", "user.email", "b@example.com")
+	return cloneA, cloneB, origin
+}
+
+// TestDreamLeaseTwoMachineCoordination automates PR #1's manual
+// verification #3: machine A acquires the weekly dream lease and the
+// claim propagates through origin; machine B's run pulls, sees the
+// active lease, reports the holder, and skips without writing a claim;
+// once the lease window expires, B steals it — and A then backs off.
+func TestDreamLeaseTwoMachineCoordination(t *testing.T) {
+	cloneA, cloneB, origin := setupLeaseTeam(t)
+	now := time.Now()
+
+	// Machine A claims the cycle; the claim is committed and pushed.
+	acquired, holder := acquireDreamLease(cloneA, now)
+	if !acquired || holder != "" {
+		t.Fatalf("machine A acquire = (%v, %q), want (true, \"\")", acquired, holder)
+	}
+	originLease := runCmd(origin, "git", "show", "HEAD:scripts/dream-lease.json")
+	if !strings.Contains(originLease, `"by": "Alice"`) {
+		t.Fatalf("machine A's claim did not reach origin:\n%s", originLease)
+	}
+
+	// Machine B pulls, sees A's active lease, reports the holder, skips.
+	acquired, holder = acquireDreamLease(cloneB, now.Add(time.Minute))
+	if acquired {
+		t.Fatal("machine B must skip while machine A holds the lease")
+	}
+	lease := readDreamLease(cloneB)
+	if lease == nil || lease.By != "Alice" {
+		t.Fatalf("machine B did not pull A's lease: %+v", lease)
+	}
+	if holder != lease.Host {
+		t.Errorf("reported holder %q does not name the lease holder %q", holder, lease.Host)
+	}
+	// B must not have overwritten the claim on origin.
+	if cur := runCmd(origin, "git", "show", "HEAD:scripts/dream-lease.json"); !strings.Contains(cur, `"by": "Alice"`) {
+		t.Errorf("machine B's skip altered the origin lease:\n%s", cur)
+	}
+
+	// Expired lease is stealable: B retries after the lease window.
+	later := now.Add((dreamLeaseHours + 1) * time.Hour)
+	acquired, _ = acquireDreamLease(cloneB, later)
+	if !acquired {
+		t.Fatal("machine B must steal an expired lease")
+	}
+	if cur := runCmd(origin, "git", "show", "HEAD:scripts/dream-lease.json"); !strings.Contains(cur, `"by": "Bob"`) {
+		t.Errorf("machine B's steal did not reach origin:\n%s", cur)
+	}
+
+	// The steal is visible back on machine A: its next run backs off.
+	acquired, holder = acquireDreamLease(cloneA, later.Add(time.Minute))
+	if acquired {
+		t.Error("machine A must back off after B's steal")
+	}
+	if got := readDreamLease(cloneA); got == nil || got.By != "Bob" {
+		t.Errorf("machine A did not pull B's lease: %+v", got)
+	}
+	if holder == "" {
+		t.Error("skip must report which machine holds the lease")
+	}
+	if rebaseInProgress(cloneA) || rebaseInProgress(cloneB) {
+		t.Error("lease coordination left a repo mid-rebase")
 	}
 }
 
