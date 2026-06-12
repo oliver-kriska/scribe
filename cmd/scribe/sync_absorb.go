@@ -164,7 +164,7 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 			if scribeExe == "" {
 				scribeExe = "scribe"
 			}
-			_, _ = runCmdErr(root, scribeExe, "lint", "--changed")
+			_, _ = runCmdErr(root, scribeExe, "lint", "--changed", "--quiet")
 		}
 	}
 

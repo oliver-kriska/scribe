@@ -11,6 +11,8 @@ import (
 type LintCmd struct {
 	Files   []string `arg:"" optional:"" help:"Files to lint. If empty, lints all wiki articles."`
 	Changed bool     `help:"Lint only uncommitted git changes." short:"c"`
+	Verbose bool     `help:"Print every warning per-file instead of the grouped-by-class summary." short:"v" xor:"output"`
+	Quiet   bool     `help:"Errors and final summary only — suppress phase headers and warnings. Used by sync mid-extract." short:"q" xor:"output"`
 
 	Contradictions bool    `help:"Run LLM-based contradiction check instead of structural lints. Writes wiki/_contradictions.md."`
 	Duplicates     bool    `help:"Structural (no-LLM) content-duplicate scan: exact-body hashes + token overlap. Writes wiki/_duplicates.md. Report-only — never deletes."`
@@ -63,40 +65,47 @@ func (l *LintCmd) Run() error {
 		return nil
 	}
 
-	errors, warnings := 0, 0
-	count := func(e, w int) { errors += e; warnings += w }
+	rep := newLintReport(os.Stdout, l.Verbose, l.Quiet)
+	phase := func(name string) {
+		if !l.Quiet {
+			fmt.Println(name)
+		}
+	}
 
-	fmt.Println("Phase 1: Frontmatter validation")
-	count(lintFrontmatter(root, files), 0)
-	fmt.Println("Phase 2: Size checks")
-	count(0, lintSizes(root, files))
+	phase("Phase 1: Frontmatter validation")
+	lintFrontmatter(rep, root, files)
+	phase("Phase 2: Size checks")
+	lintSizes(rep, root, files)
 
 	// Phases 3-6 are cross-KB structural checks — they only make sense
 	// on a full scan, not a --changed subset.
 	if !l.Changed {
-		fmt.Println("Phase 3: Orphan detection")
-		count(0, lintOrphans(root))
-		fmt.Println("Phase 4: Index consistency")
-		count(0, lintIndexConsistency(root))
-		fmt.Println("Phase 5: Self-ingestion artifacts")
-		count(lintSelfIngestion(root))
-		fmt.Println("Phase 6: Conflict markers")
-		count(lintConflictMarkers(root), 0)
+		phase("Phase 3: Orphan detection")
+		lintOrphans(rep, root)
+		phase("Phase 4: Index consistency")
+		lintIndexConsistency(rep, root)
+		phase("Phase 5: Self-ingestion artifacts")
+		lintSelfIngestion(rep, root)
+		phase("Phase 6: Conflict markers")
+		lintConflictMarkers(rep, root)
 	}
 
 	runStats = map[string]any{
 		"files_checked": len(files),
-		"errors":        errors,
-		"warnings":      warnings,
+		"errors":        rep.errors,
+		"warnings":      rep.warnings,
 	}
 
-	// Summary
-	fmt.Println()
-	if errors > 0 {
-		return fmt.Errorf("FAILED: %d errors, %d warnings", errors, warnings)
+	// Grouped warning summary (default mode only), then verdict.
+	rep.flush()
+	if !l.Quiet {
+		fmt.Println()
 	}
-	if warnings > 0 {
-		fmt.Printf("PASSED with %d warnings\n", warnings)
+	if rep.errors > 0 {
+		return fmt.Errorf("FAILED: %d errors, %d warnings", rep.errors, rep.warnings)
+	}
+	if rep.warnings > 0 {
+		fmt.Printf("PASSED with %d warnings\n", rep.warnings)
 	} else {
 		fmt.Println("PASSED: all checks clean")
 	}
@@ -121,25 +130,25 @@ func (l *LintCmd) targetFiles(root string) ([]string, error) {
 	}
 }
 
-// lintFrontmatter (Phase 1) validates each file's frontmatter. Returns
-// the number of files with at least one error (a file with three
-// problems counts once, matching the historical summary).
-func lintFrontmatter(root string, files []string) (errors int) {
+// lintFrontmatter (Phase 1) validates each file's frontmatter. Counts
+// files with at least one error (a file with three problems counts
+// once, matching the historical summary) while still printing every
+// finding per-file.
+func lintFrontmatter(rep *lintReport, root string, files []string) {
 	for _, path := range files {
 		errs := validateFile(root, path)
 		if len(errs) > 0 {
-			errors++
+			rep.errors++
 			for _, e := range errs {
-				fmt.Printf("  ERROR %s: %s\n", relPath(root, path), e)
+				rep.errorLinef("%s: %s", relPath(root, path), e)
 			}
 		}
 	}
-	return errors
 }
 
 // lintSizes (Phase 2) warns on thin/bloated articles, overgrown rolling
 // files, and missing index_tier frontmatter.
-func lintSizes(root string, files []string) (warnings int) {
+func lintSizes(rep *lintReport, root string, files []string) {
 	for _, path := range files {
 		content, err := os.ReadFile(path)
 		if err != nil {
@@ -158,38 +167,35 @@ func lintSizes(root string, files []string) (warnings int) {
 			base := filepath.Base(rel)
 			isArchive := strings.Contains(base, "-archive-")
 			if !isArchive && lines > 200 {
-				fmt.Printf("  WARN %s: rolling file is %d lines (should archive at 150)\n", rel, lines)
-				warnings++
+				rep.warnf(lintClassRollingOvergrown, "%s: rolling file is %d lines (should archive at 150)", rel, lines)
 			}
 			continue
 		}
 
 		if lines < 15 {
-			fmt.Printf("  WARN %s: thin article (%d lines, minimum 15)\n", rel, lines)
-			warnings++
+			rep.warnf(lintClassThinArticle, "%s: thin article (%d lines, minimum 15)", rel, lines)
 		}
 		if lines > 150 {
-			fmt.Printf("  WARN %s: bloated article (%d lines, should split at 150)\n", rel, lines)
-			warnings++
+			rep.warnf(lintClassBloatedArticle, "%s: bloated article (%d lines, should split at 150)", rel, lines)
 		}
 
 		// Phase 5B: index_tier presence. Warn (not error) when the
 		// computed tier hasn't been written into frontmatter yet, so
 		// the field can roll out without a flag-day migration. Lint
 		// remains green; a follow-up `scribe tier write --missing-only`
-		// resolves the warning. Skip for rolling files (they don't
-		// participate in retrieval ranking the same way).
+		// (hinted via lintHints) resolves the warning. Skip for rolling
+		// files (they don't participate in retrieval ranking the same way).
 		if fm != nil && !fm.Rolling && strings.TrimSpace(fm.IndexTier) == "" {
-			fmt.Printf("  WARN %s: index_tier missing (run `scribe tier write --missing-only`)\n", rel)
-			warnings++
+			rep.warnf(lintClassIndexTierMissing, "%s: index_tier missing", rel)
 		}
 	}
-	return warnings
 }
 
 // lintOrphans (Phase 3) counts articles with no inbound wikilinks and
-// wikilink targets that don't exist.
-func lintOrphans(root string) (warnings int) {
+// wikilink targets that don't exist. Both findings are KB-wide
+// aggregates — already one line per class — so they print inline via
+// warnAggregatef instead of joining the grouped per-file summary.
+func lintOrphans(rep *lintReport, root string) {
 	allTitles := make(map[string]bool)
 	allTargets := make(map[string]bool)
 	inboundCount := make(map[string]int)
@@ -233,8 +239,7 @@ func lintOrphans(root string) (warnings int) {
 		}
 	}
 	if orphanCount > 0 {
-		fmt.Printf("  %d orphan articles (no inbound wikilinks)\n", orphanCount)
-		warnings++
+		rep.warnAggregatef("%d orphan articles (no inbound wikilinks)", orphanCount)
 	}
 
 	missingCount := 0
@@ -244,19 +249,17 @@ func lintOrphans(root string) (warnings int) {
 		}
 	}
 	if missingCount > 0 {
-		fmt.Printf("  %d missing pages (linked but don't exist)\n", missingCount)
-		warnings++
+		rep.warnAggregatef("%d missing pages (linked but don't exist)", missingCount)
 	}
-	return warnings
 }
 
 // lintIndexConsistency (Phase 4) compares wiki/_index.md entry count to
 // the article count on disk; small drift is normal between reindexes.
-func lintIndexConsistency(root string) (warnings int) {
+func lintIndexConsistency(rep *lintReport, root string) {
 	indexPath := filepath.Join(root, "wiki", "_index.md")
 	content, err := os.ReadFile(indexPath)
 	if err != nil {
-		return 0
+		return
 	}
 	// Count lines that *start* with "- [[", not every "- [[" occurrence.
 	// Some one-line summaries contain a second "[[X]]" after a dash
@@ -276,12 +279,10 @@ func lintIndexConsistency(root string) (warnings int) {
 	})
 	diff := diskCount - indexCount
 	if diff > 3 || diff < -3 {
-		fmt.Printf("  WARN index has %d entries but disk has %d articles (diff: %d)\n", indexCount, diskCount, diff)
-		warnings++
+		rep.warnAggregatef("WARN index has %d entries but disk has %d articles (diff: %d)", indexCount, diskCount, diff)
 	} else {
-		fmt.Printf("  index: %d entries, disk: %d articles\n", indexCount, diskCount)
+		rep.infof("index: %d entries, disk: %d articles", indexCount, diskCount)
 	}
-	return warnings
 }
 
 // lintSelfIngestion (Phase 5) flags the artifacts of the
@@ -289,14 +290,12 @@ func lintIndexConsistency(root string) (warnings int) {
 // ".md.md" extensions are always malformed (ERROR); slugified
 // "<x>_md.md" files that shadow an existing "<x>.md" are likely
 // duplicates (WARN). Both are remediated by `scribe lint --fix`.
-func lintSelfIngestion(root string) (errors, warnings int) {
+func lintSelfIngestion(rep *lintReport, root string) {
 	for _, d := range findSelfIngestionDuplicates(root) {
 		if d.Shape == "doubled-ext" {
-			errors++
-			fmt.Printf("  ERROR %s: doubled .md extension — malformed page (run `scribe lint --fix`)\n", d.Rel)
+			rep.errorf("%s: doubled .md extension — malformed page (run `scribe lint --fix`)", d.Rel)
 		} else {
-			warnings++
-			fmt.Printf("  WARN %s: looks like a filename-as-title duplicate of %s (run `scribe lint --fix`)\n", d.Rel, d.CanonicalRel)
+			rep.warnf(lintClassFilenameAsTitle, "%s: looks like a filename-as-title duplicate of %s", d.Rel, d.CanonicalRel)
 		}
 	}
 	// Directories named after the KB itself — the KB filed pages under
@@ -304,22 +303,18 @@ func lintSelfIngestion(root string) (errors, warnings int) {
 	// Contents may hold unique fragments, so this is a review pointer,
 	// not an auto-fix.
 	for _, dir := range findSelfNamedDirs(root) {
-		warnings++
-		fmt.Printf("  WARN %s/: directory named after the KB itself — likely self-ingested pages; review and merge into canonical articles\n", dir)
+		rep.warnf(lintClassSelfNamedDir, "%s/: directory named after the KB itself — likely self-ingested pages; review and merge into canonical articles", dir)
 	}
-	return errors, warnings
 }
 
 // lintConflictMarkers (Phase 6) hard-errors on unresolved merge
 // markers. Team KBs auto-pull, so a botched merge can leave
 // "<<<<<<< HEAD" blocks inside articles where they poison search and
 // LLM context until a human resolves them.
-func lintConflictMarkers(root string) (errors int) {
+func lintConflictMarkers(rep *lintReport, root string) {
 	for _, h := range findConflictMarkers(root) {
-		errors++
-		fmt.Printf("  ERROR %s:%d: unresolved git conflict marker — resolve the merge and recommit\n", h.Rel, h.Line)
+		rep.errorf("%s:%d: unresolved git conflict marker — resolve the merge and recommit", h.Rel, h.Line)
 	}
-	return errors
 }
 
 // runFix collects the file set (--changed, explicit args, or all wiki
