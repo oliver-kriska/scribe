@@ -353,8 +353,12 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 		}
 	}
 
-	// Post-extraction lint on changed files.
-	lintOut, _ := runCmdErr(root, scribeExe, "lint", "--changed")
+	// Post-extraction lint on changed files. --quiet keeps the
+	// mid-extract relay to per-file ERROR lines plus the one-line
+	// summary ("PASSED with N warnings") — a single noisy project was
+	// observed re-printing 300+ WARN lines into the sync log. The full
+	// grouped warning report belongs to a standalone `scribe lint` run.
+	lintOut, _ := runCmdErr(root, scribeExe, "lint", "--changed", "--quiet")
 	if lintOut != "" {
 		for line := range strings.SplitSeq(lintOut, "\n") {
 			if line != "" {
