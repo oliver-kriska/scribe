@@ -216,7 +216,7 @@ func FuzzNormalizeRelatedFrontmatter(f *testing.F) {
 		if want := relIdx + 1 + (len(lines) - end); len(outLines) != want {
 			t.Fatalf("unexpected output shape: got %d lines, want %d\nin:  %q\nout: %q", len(outLines), want, content, out)
 		}
-		for i := 0; i < relIdx; i++ {
+		for i := range relIdx {
 			if outLines[i] != lines[i] {
 				t.Fatalf("prefix line %d mutated: %q -> %q", i, lines[i], outLines[i])
 			}

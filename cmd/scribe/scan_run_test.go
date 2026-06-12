@@ -1,5 +1,5 @@
 // scan_run_test.go — driver tests for ScanCmd.Run. Scan is the one
-// nolint:gocognit driver with no LLM call of its own (it renders the
+// gocognit-exempt driver with no LLM call of its own (it renders the
 // context packet other LLM passes consume), so the tests pin the
 // report's section contract against fixture projects: stack detection,
 // knowledge-tree filtering, root-doc inlining, KB linkage, and drop-file
