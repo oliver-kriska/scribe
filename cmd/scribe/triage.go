@@ -118,6 +118,9 @@ func (t *TriageCmd) runStats(db *sql.DB, excludeIDs []string) error {
 		}
 		fmt.Printf("%-25s %8d %10d %8.1f\n", bucket, sessions, totalMsgs, avgHits)
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate stats rows: %w", err)
+	}
 	return nil
 }
 
@@ -203,6 +206,9 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 		r.Hours = hours.Float64
 		r.Summary = summary.String
 		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate scoring rows: %w", err)
 	}
 
 	if t.Interactive {
