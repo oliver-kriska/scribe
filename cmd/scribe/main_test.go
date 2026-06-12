@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/alecthomas/kong"
 )
 
 // TestMain points HOME and XDG_CONFIG_HOME at a scratch directory so no
@@ -52,4 +56,71 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	os.RemoveAll(scratch)
 	os.Exit(code)
+}
+
+// TestRootCommandsAreGrouped locks the --help grouping: every command field
+// on the root CLI struct must carry a `group` tag whose key is registered in
+// commandGroups. Without this, a new command silently lands in an untitled
+// "Commands:" section at the top of --help.
+func TestRootCommandsAreGrouped(t *testing.T) {
+	tp := reflect.TypeOf(CLI{})
+	for i := 0; i < tp.NumField(); i++ {
+		f := tp.Field(i)
+		if _, isCmd := f.Tag.Lookup("cmd"); !isCmd {
+			continue
+		}
+		key, ok := f.Tag.Lookup("group")
+		if !ok || key == "" {
+			t.Errorf("CLI.%s has no group tag — add group:%q (or another key from commandGroups) so --help stays sectioned", f.Name, "core")
+			continue
+		}
+		if _, known := commandGroups[key]; !known {
+			t.Errorf("CLI.%s uses unknown group %q — register it in commandGroups or use an existing key", f.Name, key)
+		}
+	}
+}
+
+// TestHelpRendersGroupSections renders the real --help output through the
+// same kong options main() uses and asserts the group section titles show
+// up — i.e. the grouping is actually visible, not just present as tags.
+func TestHelpRendersGroupSections(t *testing.T) {
+	var out bytes.Buffer
+	exited := false
+	opts := append(kongOptions(),
+		kong.Writers(&out, &out),
+		kong.Exit(func(int) {
+			exited = true
+			panic(true) // fake exit; recovered below (upstream kong test pattern)
+		}),
+	)
+	parser, err := kong.New(&CLI{}, opts...)
+	if err != nil {
+		t.Fatalf("kong.New: %v", err)
+	}
+
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected --help to exit")
+			}
+		}()
+		_, _ = parser.Parse([]string{"--help"})
+	}()
+	if !exited {
+		t.Fatal("kong.Exit was not invoked for --help")
+	}
+
+	help := out.String()
+	// Every group registered in commandGroups must render as a titled
+	// section — each currently has at least one command tagged with it.
+	for _, title := range commandGroups {
+		if !strings.Contains(help, title) {
+			t.Errorf("--help output missing group section %q", title)
+		}
+	}
+	// Kong puts ungrouped commands under a bare "Commands:" header before
+	// any grouped section — its presence means something escaped grouping.
+	if strings.Contains(help, "\nCommands:\n") {
+		t.Error("--help contains an ungrouped \"Commands:\" section — every root command must carry a group tag")
+	}
 }
