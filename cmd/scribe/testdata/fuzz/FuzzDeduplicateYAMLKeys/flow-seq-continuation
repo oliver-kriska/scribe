@@ -1,0 +1,2 @@
+go test fuzz v1
+string("a: [1,\nb: 2]\nb: 9")

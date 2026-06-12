@@ -142,6 +142,19 @@ func parseFrontmatterRaw(content []byte) (map[string]any, error) {
 
 // deduplicateYAMLKeys removes duplicate top-level keys, keeping the last occurrence.
 func deduplicateYAMLKeys(yamlStr string) string {
+	// YAML that already parses needs no repair — and the line surgery
+	// below can only damage it. A flow collection or quoted scalar that
+	// spans lines puts value text at column 0, which the line scanner
+	// misreads as a top-level key: on "a: {x: 1,\ny: 2}\ny: 9" it would
+	// blank the continuation line as a "duplicate" of the real y: key
+	// and corrupt the flow map (found by FuzzDeduplicateYAMLKeys). Both
+	// callers only invoke dedup after a parse failure, so this guard is
+	// normally a no-op; it exists to keep the function's contract honest
+	// standalone — output is parseable whenever the input was.
+	var probe map[string]any
+	if yaml.Unmarshal([]byte(yamlStr), &probe) == nil {
+		return yamlStr
+	}
 	lines := strings.Split(yamlStr, "\n")
 	seen := make(map[string]int) // key -> last line index
 	for i, line := range lines {
