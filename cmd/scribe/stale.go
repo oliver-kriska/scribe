@@ -444,7 +444,10 @@ func (c *StaleShowCmd) Run() error {
 	target := filepath.ToSlash(c.Target)
 	for _, e := range entries {
 		if e.ID == c.Target || e.Path == target {
-			data, _ := json.MarshalIndent(e, "", "  ")
+			data, err := json.MarshalIndent(e, "", "  ")
+			if err != nil {
+				return err
+			}
 			fmt.Println(string(data))
 			return nil
 		}

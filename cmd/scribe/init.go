@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -541,13 +540,12 @@ func createKBSkeleton(root string) error {
 // seedProjectsJSON produces an empty, well-formed manifest so the scan/sync
 // pipeline can run immediately without a special "file missing" branch.
 func seedProjectsJSON() string {
-	empty := map[string]any{
-		"projects":       map[string]any{},
-		"ignored_paths":  []string{},
-		"domain_aliases": map[string]string{},
-	}
-	b, _ := json.MarshalIndent(empty, "", "  ")
-	return string(b) + "\n"
+	return `{
+  "domain_aliases": {},
+  "ignored_paths": [],
+  "projects": {}
+}
+`
 }
 
 func initGit(root string) error {

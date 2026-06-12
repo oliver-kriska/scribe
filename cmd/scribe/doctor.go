@@ -1356,7 +1356,9 @@ func printChecksJSON(all []check, root string) {
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(payload)
+	if err := enc.Encode(payload); err != nil {
+		logMsg("doctor", "encode json output: %v", err)
+	}
 }
 
 // checkVaultScaffolding flags directories from other vault tools that have

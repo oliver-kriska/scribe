@@ -262,7 +262,10 @@ func TestMergedFacts_LoadMergedFacts_RoundTrip(t *testing.T) {
 			{ID: "c00-f1", Type: "claim", Claim: "x", Anchor: "y"},
 		},
 	}
-	data, _ := json.Marshal(mf)
+	data, err := json.Marshal(mf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(factsDir, "doc.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}

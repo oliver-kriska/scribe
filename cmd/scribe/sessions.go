@@ -131,7 +131,10 @@ func (c *SessionsStatsCmd) Run() error {
 			"last_extract":  lastExtract,
 			"last_scan":     lastScan,
 		}
-		data, _ := json.MarshalIndent(out, "", "  ")
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
 		fmt.Println(string(data))
 		return nil
 	}
@@ -255,7 +258,10 @@ func (c *SessionsInspectCmd) Run() error {
 			"total_chars":    stats.TotalChars,
 			"filter_verdict": verdict,
 		}
-		data, _ := json.MarshalIndent(out, "", "  ")
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
 		fmt.Println(string(data))
 		return nil
 	}

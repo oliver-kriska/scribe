@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -312,8 +313,14 @@ func sensitiveDiff(trusted, current sensitiveConfig) []string {
 	}
 	var out []string
 	for _, p := range pairs {
-		oldJSON, _ := json.Marshal(p.old)
-		newJSON, _ := json.Marshal(p.new)
+		oldJSON, oldErr := json.Marshal(p.old)
+		newJSON, newErr := json.Marshal(p.new)
+		if oldErr != nil || newErr != nil {
+			// Config structs are plain scalars/slices, so this can't
+			// happen — but a silent nil here would hide real drift.
+			out = append(out, fmt.Sprintf("%s: (unrenderable: %v)", p.key, errors.Join(oldErr, newErr)))
+			continue
+		}
 		if !bytes.Equal(oldJSON, newJSON) {
 			out = append(out, fmt.Sprintf("%s: %s -> %s", p.key, oldJSON, newJSON))
 		}

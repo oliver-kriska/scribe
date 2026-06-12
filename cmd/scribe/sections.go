@@ -344,7 +344,10 @@ func (l *SectionsListCmd) Run() error {
 		}
 	}
 	if l.JSON {
-		out, _ := json.MarshalIndent(sidecar, "", "  ")
+		out, err := json.MarshalIndent(sidecar, "", "  ")
+		if err != nil {
+			return err
+		}
 		fmt.Println(string(out))
 		return nil
 	}

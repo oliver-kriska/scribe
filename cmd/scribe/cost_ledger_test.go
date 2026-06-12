@@ -123,13 +123,19 @@ func TestSummarizeCosts_DayWindowFiltersOldFiles(t *testing.T) {
 	}
 	// Old file: 30 days ago.
 	old := time.Now().UTC().AddDate(0, 0, -30).Format("2006-01-02")
-	oldEntry, _ := json.Marshal(CostEntry{Model: "haiku", DurationMS: 1000, OK: true})
+	oldEntry, err := json.Marshal(CostEntry{Model: "haiku", DurationMS: 1000, OK: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(costsDir, old+".jsonl"), append(oldEntry, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// Today's file.
 	today := time.Now().UTC().Format("2006-01-02")
-	newEntry, _ := json.Marshal(CostEntry{Model: "sonnet", DurationMS: 2000, OK: true})
+	newEntry, err := json.Marshal(CostEntry{Model: "sonnet", DurationMS: 2000, OK: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(costsDir, today+".jsonl"), append(newEntry, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -383,7 +383,10 @@ func (s *ContradictionsShowCmd) Run() error {
 	}
 	for _, e := range entries {
 		if e.ID == s.ID {
-			data, _ := json.MarshalIndent(e, "", "  ")
+			data, err := json.MarshalIndent(e, "", "  ")
+			if err != nil {
+				return err
+			}
 			fmt.Println(string(data))
 			return nil
 		}
