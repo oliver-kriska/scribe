@@ -291,7 +291,7 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 // variant labels). If throughput becomes a problem, guard concurrent writes
 // with a per-wiki-path lock and parallelize.
 //
-//nolint:gocognit // concurrent LLM pipeline with stop-the-world rate-limit semantics and 0% test coverage — decompose only once a stub-provider harness exists
+//nolint:gocognit // concurrent LLM pipeline with stop-the-world rate-limit semantics — behavior now pinned by the stub-harness tests in sync_absorb_dense_test.go (issue #9); decompose in a dedicated change with those tests green
 func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	cfg := loadConfig(root)
 	plansDir := filepath.Join(root, "output", "absorb-plans")

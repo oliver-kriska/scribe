@@ -152,8 +152,17 @@ type ContextualizeConfig struct {
 
 // absorbDefaults returns the canonical defaults for AbsorbConfig. Used by
 // loadConfig to fill missing fields after yaml.Unmarshal.
+//
+// Every *bool default gets its OWN variable. loadConfig prefills the
+// config with this struct before yaml.Unmarshal, and yaml.v3 writes
+// through existing non-nil pointers instead of allocating fresh ones —
+// so two fields sharing one default bool alias each other, and a user
+// setting `contextualize.enabled: false` silently flipped
+// `chapter_aware` off too (caught by the issue-#9 stub-harness tests;
+// regression-pinned in TestAbsorbDefaults_NoBoolPointerAliasing).
 func absorbDefaults() AbsorbConfig {
-	trueV := true
+	chapterAware := true
+	contextualizeEnabled := true
 	return AbsorbConfig{
 		Strictness:             "medium",
 		MaxPerRun:              5,
@@ -171,7 +180,7 @@ func absorbDefaults() AbsorbConfig {
 		Pass2TimeoutMin:      5,
 		Pass2Parallel:        3,
 		SinglePassTimeoutMin: 5,
-		ChapterAware:         &trueV,
+		ChapterAware:         &chapterAware,
 		ChapterThreshold:     3,
 		ChapterParallel:      2,
 		// AtomicFacts off by default. Users opt in by setting
@@ -186,7 +195,7 @@ func absorbDefaults() AbsorbConfig {
 		Pass1Provider:      "anthropic",
 		SinglePassProvider: "anthropic",
 		Contextualize: ContextualizeConfig{
-			Enabled:    &trueV,
+			Enabled:    &contextualizeEnabled,
 			Provider:   "anthropic",
 			Model:      "haiku",
 			OllamaURL:  defaultOllamaURL,

@@ -252,18 +252,23 @@ type IngestSmartRoutingConfig struct {
 	MaxPDFPages int   `yaml:"max_pdf_pages"`
 }
 
+// ingestDefaults returns the canonical IngestConfig defaults. Each *bool
+// gets its own variable — yaml.Unmarshal writes through prefilled non-nil
+// pointers, so a shared default bool would alias the two knobs (see the
+// absorbDefaults doc comment for the full story).
 func ingestDefaults() IngestConfig {
-	trueV := true
+	mpsFallback := true
+	smartRouting := true
 	return IngestConfig{
 		InboxPath: "raw/inbox",
 		Marker: IngestMarkerConfig{
 			TimeoutSeconds: 300,
-			MPSFallback:    &trueV,
+			MPSFallback:    &mpsFallback,
 			Device:         "auto",
 		},
 		Converters: map[string]string{},
 		SmartRouting: IngestSmartRoutingConfig{
-			Enabled:     &trueV,
+			Enabled:     &smartRouting,
 			MaxPDFBytes: 500 * 1024, // 500 KB
 			MaxPDFPages: 5,
 		},
