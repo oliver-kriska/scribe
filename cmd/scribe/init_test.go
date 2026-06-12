@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -244,7 +245,7 @@ func TestInstallCodexMD_Lifecycle(t *testing.T) {
 		t.Fatalf("in-sync: %v", err)
 	}
 	after, _ := os.ReadFile(path)
-	if string(before) != string(after) {
+	if !bytes.Equal(before, after) {
 		t.Errorf("in-sync run rewrote the file:\nbefore=%q\nafter=%q", before, after)
 	}
 

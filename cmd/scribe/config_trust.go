@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -313,7 +314,7 @@ func sensitiveDiff(trusted, current sensitiveConfig) []string {
 	for _, p := range pairs {
 		oldJSON, _ := json.Marshal(p.old)
 		newJSON, _ := json.Marshal(p.new)
-		if string(oldJSON) != string(newJSON) {
+		if !bytes.Equal(oldJSON, newJSON) {
 			out = append(out, fmt.Sprintf("%s: %s -> %s", p.key, oldJSON, newJSON))
 		}
 	}

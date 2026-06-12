@@ -385,11 +385,12 @@ func decodeClaudePath(dirname string) string {
 			withSlash := path + "/" + seg
 			withDash := path + "-" + seg
 
-			if dirExists(withSlash) {
+			switch {
+			case dirExists(withSlash):
 				path = withSlash
-			} else if dirExists(withDash) {
+			case dirExists(withDash):
 				path = withDash
-			} else {
+			default:
 				// Lookahead: check if dash leads somewhere
 				foundWithDash := false
 				lookahead := withDash

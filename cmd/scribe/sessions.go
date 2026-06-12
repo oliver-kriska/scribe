@@ -285,9 +285,10 @@ func (c *SessionsInspectCmd) Run() error {
 
 	fmt.Println()
 	fmt.Println("Sessions log:")
-	if !inLog {
+	switch {
+	case !inLog:
 		fmt.Println("  (not in log — unprocessed)")
-	} else if entryIsSkipped(logEntry) {
+	case entryIsSkipped(logEntry):
 		fmt.Println("  ⚠ marked skipped")
 		if m, ok := logEntry.(map[string]any); ok {
 			if r, _ := m["reason"].(string); r != "" {
@@ -297,7 +298,7 @@ func (c *SessionsInspectCmd) Run() error {
 				fmt.Printf("  skipped_at     : %s\n", t)
 			}
 		}
-	} else {
+	default:
 		fmt.Println("  ✓ extracted")
 		if m, ok := logEntry.(map[string]any); ok {
 			if p, _ := m["project"].(string); p != "" {

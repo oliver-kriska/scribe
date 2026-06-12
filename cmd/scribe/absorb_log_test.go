@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -249,7 +250,7 @@ func TestLoadAbsorbLog_SalvagesAndEagerHeals(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(path)
-	if string(before) != string(after) {
+	if !bytes.Equal(before, after) {
 		t.Error("re-loading a clean file rewrote it (should be a no-op fast path)")
 	}
 }
@@ -275,7 +276,7 @@ func TestLoadAbsorbLog_TotalGarbageFailsOpenAndLeavesFileIntact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(after) != string(garbage) {
+	if !bytes.Equal(after, garbage) {
 		t.Errorf("total-garbage file was overwritten (should be left intact for inspection); got %q", string(after))
 	}
 }

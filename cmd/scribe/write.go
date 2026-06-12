@@ -90,11 +90,12 @@ func (w *WriteCmd) runCreate(root, body string) error {
 	// Build target path. Projects live at projects/{slug}/overview.md,
 	// everything else at {dir}/{slug}.md.
 	var rel string
-	if w.Path != "" {
+	switch {
+	case w.Path != "":
 		rel = w.Path
-	} else if w.Type == "project" {
+	case w.Type == "project":
 		rel = filepath.Join(dir, slugify(w.Title), "overview.md")
-	} else {
+	default:
 		rel = filepath.Join(dir, slugify(w.Title)+".md")
 	}
 	target := filepath.Join(root, rel)

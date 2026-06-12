@@ -44,6 +44,7 @@ linters:
     - wastedassign # assignments whose value is never used
     - rowserrcheck # sql.Rows iterations must check rows.Err (silent truncation)
     - sqlclosecheck # sql.Rows/Stmt closed via defer
+    - gocritic # diagnostics + two cheap performance checks (see settings)
 
   settings:
     errcheck:
@@ -56,6 +57,17 @@ linters:
     # decompose at write time instead.
     gocognit:
       min-complexity: 60
+    # Diagnostic tag = the bug-finders (weakCond, appendAssign, badCond, …).
+    # The performance tag as a whole is deliberately NOT enabled: it is
+    # dominated by hugeParam/rangeValCopy micro-copy churn that doesn't pay
+    # its diff cost in a CLI. The two cherry-picks below are the cheap,
+    # always-correct subset.
+    gocritic:
+      enabled-tags:
+        - diagnostic
+      enabled-checks:
+        - appendCombine
+        - stringXbytes
     misspell:
       locale: US
     gosec:
@@ -85,6 +97,13 @@ linters:
           - forcetypeassert
           - gosec
         path: _test\.go
+
+issues:
+  # No caps on repeated/identical findings — the defaults (50 per linter,
+  # 3 per identical message) silently hid hits during the 2026-06 ratchet
+  # expansion. A ratchet that hides hits isn't one.
+  max-issues-per-linter: 0
+  max-same-issues: 0
 
 formatters:
   enable:

@@ -569,13 +569,14 @@ func addTypedEdgeToFrontmatter(path string, kind RelationKind, target string) er
 	_, val, _ := splitFrontmatterLine(headerLine)
 	val = strings.TrimSpace(val)
 
-	if strings.HasPrefix(val, "[") && strings.HasSuffix(val, "]") {
+	switch {
+	case strings.HasPrefix(val, "[") && strings.HasSuffix(val, "]"):
 		// Inline list; rewrite cleanly.
 		inner := strings.TrimSuffix(strings.TrimPrefix(val, "["), "]")
 		existing := splitInlineList(inner)
 		existing = append(existing, `"`+wikilink+`"`)
 		lines[keyIdx] = keyStr + " [" + strings.Join(existing, ", ") + "]"
-	} else if val == "" {
+	case val == "":
 		// Empty header followed by indented bullet lines, or empty header.
 		// Rewrite the header to inline form for compactness.
 		lines[keyIdx] = keyStr + ` ["` + wikilink + `"]`
@@ -602,7 +603,7 @@ func addTypedEdgeToFrontmatter(path string, kind RelationKind, target string) er
 			lines[keyIdx] = keyStr + " [" + strings.Join(existingBullets, ", ") + "]"
 		}
 		lines = append(lines[:keyIdx+1], lines[j:]...)
-	} else {
+	default:
 		// Non-list scalar (rare); promote to inline list with old + new.
 		lines[keyIdx] = keyStr + ` ["` + val + `", "` + wikilink + `"]`
 	}

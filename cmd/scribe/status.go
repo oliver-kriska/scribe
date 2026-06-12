@@ -252,7 +252,7 @@ func formatRunLine(line string) string {
 }
 
 func extractJSONField(line, key string) string {
-	needle := fmt.Sprintf(`"%s":`, key)
+	needle := fmt.Sprintf("%q:", key)
 	_, after, ok := strings.Cut(line, needle)
 	if !ok {
 		return ""

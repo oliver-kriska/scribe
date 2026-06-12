@@ -213,12 +213,10 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 				result = append(result, pname)
 				continue
 			}
-		} else {
-			// No git: check if any .md files are newer than last extraction.
-			if s.hasNewerFiles(entry) {
-				result = append(result, pname)
-				continue
-			}
+		} else if s.hasNewerFiles(entry) {
+			// No git: any .md file newer than the last extraction counts as changed.
+			result = append(result, pname)
+			continue
 		}
 
 		logMsg("sync", " [%s] unchanged, skipping", pname)

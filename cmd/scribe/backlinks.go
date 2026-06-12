@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -97,11 +98,12 @@ func (b *BacklinksCmd) Run() error {
 
 	if b.DryRun {
 		existing, err := os.ReadFile(outPath)
-		if err != nil {
+		switch {
+		case err != nil:
 			fmt.Println("would create _backlinks.json")
-		} else if string(existing) != string(data) {
+		case !bytes.Equal(existing, data):
 			fmt.Println("_backlinks.json would change")
-		} else {
+		default:
 			fmt.Println("_backlinks.json is up to date")
 		}
 		return nil
