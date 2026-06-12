@@ -192,6 +192,39 @@ func plistPath(name string) string {
 	return filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", plistLabel(name)+".plist")
 }
 
+// plistKBRoot extracts the KB root from a rendered scribe plist: every
+// job command starts with `cd "<root>" && `, and xmlEscape leaves
+// double quotes intact, so the root is recoverable verbatim.
+func plistKBRoot(plist string) string {
+	_, after, ok := strings.Cut(plist, `cd "`)
+	if !ok {
+		return ""
+	}
+	root, _, ok := strings.Cut(after, `"`)
+	if !ok {
+		return ""
+	}
+	return root
+}
+
+// otherKBServedByAgents returns the KB root that this machine's existing
+// com.scribe.* LaunchAgents serve when it differs from root ("" when no
+// agents exist or they already serve root). Labels carry no KB
+// discriminator, so one machine has exactly one scribe agent set — the
+// per-KB scheduler is issue #26.
+func otherKBServedByAgents(root string) string {
+	for _, job := range scribeJobs(root, "scribe") {
+		data, err := os.ReadFile(plistPath(job.Name))
+		if err != nil {
+			continue
+		}
+		if other := plistKBRoot(string(data)); other != "" && !samePath(other, root) {
+			return other
+		}
+	}
+	return ""
+}
+
 // renderPlist generates launchd plist XML for a cron job.
 func renderPlist(job cronJob) string {
 	var sb strings.Builder
@@ -475,6 +508,14 @@ func (c *CronInstallCmd) Run() error {
 			fmt.Println(renderPlist(job))
 		}
 		return nil
+	}
+
+	// One machine = one scribe agent set: labels carry no KB
+	// discriminator, so installing from a second KB would silently
+	// repoint every job away from the KB it serves. Refuse — even with
+	// --force — until the per-KB scheduler exists (issue #26).
+	if other := otherKBServedByAgents(root); other != "" {
+		return fmt.Errorf("this machine's scribe LaunchAgents already serve %s — refusing to repoint them at %s.\nRun `scribe cron uninstall` from that KB first if you really want to move the schedule; until then run this KB manually or with SCRIBE_KB=%s in your own scheduler (multi-KB cron: issue #26)", other, root, root)
 	}
 
 	domain := guiDomain()
