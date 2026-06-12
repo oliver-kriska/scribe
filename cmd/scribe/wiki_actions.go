@@ -949,8 +949,23 @@ func updateFrontmatter(path string, updates map[string]any) error {
 
 // marshalFrontmatter renders a frontmatter map back to YAML. Centralized
 // so the test suite can swap encoders without chasing call sites.
+//
+// The map is converted to an explicit yaml.Node tree first so every
+// string containing a line break — keys and values alike — is forced
+// into double-quoted style. yaml.v3's emitter renders leading-newline
+// strings as literal blocks that silently DROP the leading blank lines
+// on re-parse, and inside sequences it can emit output that does not
+// re-parse at all ("k:\n    - |4-\n      x\n"). updateFrontmatter
+// writes this encoding straight back to disk, so a mis-emitted value
+// corrupts the article for every later reader. Double-quoting escapes
+// line breaks exactly and reaches a byte-stable fixed point. Found by
+// FuzzParseFrontmatter.
 func marshalFrontmatter(m map[string]any) (string, error) {
-	out, err := yaml.Marshal(m)
+	node, err := yamlSafeNode(m)
+	if err != nil {
+		return "", err
+	}
+	out, err := yaml.Marshal(node)
 	if err != nil {
 		return "", err
 	}
@@ -961,6 +976,62 @@ func marshalFrontmatter(m map[string]any) (string, error) {
 		s += "\n"
 	}
 	return s, nil
+}
+
+// yamlSafeNode converts a decoded YAML/JSON value into an explicit
+// yaml.Node tree, forcing double-quoted style on any string scalar
+// that contains a line break (see marshalFrontmatter for why). Map
+// keys are emitted in sorted order so the encoding stays deterministic
+// — yaml.Marshal does the same for plain maps.
+func yamlSafeNode(v any) (*yaml.Node, error) {
+	switch t := v.(type) {
+	case nil:
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}, nil
+	case string:
+		n := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: t}
+		if strings.ContainsAny(t, "\n\r") {
+			n.Style = yaml.DoubleQuotedStyle
+		}
+		return n, nil
+	case map[string]any:
+		n := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			kn, err := yamlSafeNode(k)
+			if err != nil {
+				return nil, err
+			}
+			vn, err := yamlSafeNode(t[k])
+			if err != nil {
+				return nil, err
+			}
+			n.Content = append(n.Content, kn, vn)
+		}
+		return n, nil
+	case []any:
+		n := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, item := range t {
+			in, err := yamlSafeNode(item)
+			if err != nil {
+				return nil, err
+			}
+			n.Content = append(n.Content, in)
+		}
+		return n, nil
+	default:
+		// Scalars the YAML/JSON decoders produce beyond the cases above:
+		// bool, int/uint64, float64, time.Time, []byte. Encode handles
+		// them all with the emitter's default (stable) styles.
+		n := &yaml.Node{}
+		if err := n.Encode(v); err != nil {
+			return nil, err
+		}
+		return n, nil
+	}
 }
 
 // relatedWikiRE matches a [[Wikilink]] token; inner text captured.
