@@ -53,8 +53,8 @@ type Frontmatter struct {
 	// Authority marks how load-bearing an article's claims are when two
 	// sources contradict. Used by `scribe lint --resolve` to pick a winner.
 	//   canonical — intentional decisions/policies; wins over everything
-	//   contextual — curated solutions/patterns; wins over opinion
 	//   opinion — raw captures, tweets, excerpts; loses by default
+	//   contextual — curated solutions/patterns; wins over opinion
 	// Absent = "contextual" for wiki pages, "opinion" for raw articles.
 	Authority string `yaml:"authority,omitempty"`
 	// IndexTier (Phase 5B) controls qmd ranking weight. Computed by

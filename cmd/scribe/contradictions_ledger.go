@@ -237,7 +237,7 @@ func shortHash(s string) string {
 	const fnvOffset = 1469598103934665603
 	const fnvPrime = 1099511628211
 	h := uint64(fnvOffset)
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		h ^= uint64(s[i])
 		h *= fnvPrime
 	}

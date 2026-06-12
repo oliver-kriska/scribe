@@ -207,7 +207,7 @@ func TestStagedMarkdownPathRobustness(t *testing.T) {
 	// threshold, so without --no-renames the file vanishes from
 	// --diff-filter=ACM output entirely.
 	var big strings.Builder
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		big.WriteString("filler line to keep rename similarity high\n")
 	}
 	writeKBFile(t, repo, "wiki/original.md", big.String())

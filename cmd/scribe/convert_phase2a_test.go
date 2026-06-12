@@ -187,9 +187,7 @@ func TestShouldRouteSmallPDFToTier0_NoKBContextReturnsFalse(t *testing.T) {
 	t.Setenv("SCRIBE_KB_ROOT", "")
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp) // ensure no scribe.yaml is auto-discovered
-	prev, _ := os.Getwd()
-	defer os.Chdir(prev)
-	_ = os.Chdir(tmp)
+	t.Chdir(tmp)
 	if shouldRouteSmallPDFToTier0(".pdf", []byte("anything")) {
 		t.Error("smart routing must be off when no KB is resolvable")
 	}

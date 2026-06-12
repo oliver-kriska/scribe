@@ -162,11 +162,11 @@ func setupByteIdenticalKB(t *testing.T) string {
 	root := t.TempDir()
 	wiki := filepath.Join(root, "wiki")
 	mustMkdir(t, filepath.Join(wiki, "scriptorium"))
-	identical := "---\ntitle: Cache\n---\n\n# Cache\n\nbody body body\n"
+	identical := "---\ntitle: Cache\n---\n\n# Cache\n\nshared cache body\n"
 	mustWrite(t, filepath.Join(wiki, "cache.md"), identical)
 	mustWrite(t, filepath.Join(wiki, "scriptorium", "cache.md"), identical)
 	// Same normalized body, different frontmatter → must NOT be byte-identical.
-	mustWrite(t, filepath.Join(wiki, "cache-copy.md"), "---\ntitle: Other\n---\n\n# Cache\n\nbody body body\n")
+	mustWrite(t, filepath.Join(wiki, "cache-copy.md"), "---\ntitle: Other\n---\n\n# Cache\n\nshared cache body\n")
 	mustWrite(t, filepath.Join(wiki, "unrelated.md"), "---\ntitle: U\n---\n\n# U\n\nentirely different\n")
 	return root
 }
