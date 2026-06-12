@@ -109,7 +109,7 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 		}
 
 		// Strictness gate: high = explicit opt-in required.
-		if strictness == "high" && !rawArticleOptsIntoAbsorb(rawFile) {
+		if strictnessHoldsFile(strictness, rawFile) {
 			// One summary line after the loop, not one line per file:
 			// a held backlog is steady-state under strictness=high and
 			// re-listing it (80+ identical lines on scriptorium) buried
@@ -633,6 +633,15 @@ func (e *absorbEntity) UnmarshalJSON(data []byte) error {
 	}
 	*e = absorbEntity(a)
 	return nil
+}
+
+// strictnessHoldsFile reports whether the absorb policy holds a file back
+// instead of processing it: strictness=high with no explicit opt-in in the
+// file's frontmatter. Single source of truth for the hold rule — sync's
+// absorb loop and `scribe status` both call this, so the sync-time "held N
+// back" summary and the status held count can't drift apart.
+func strictnessHoldsFile(strictness, path string) bool {
+	return strictness == "high" && !rawArticleOptsIntoAbsorb(path)
 }
 
 // rawArticleOptsIntoAbsorb returns true if a raw article's frontmatter
