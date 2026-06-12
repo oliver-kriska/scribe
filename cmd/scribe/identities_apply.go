@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func runApplyIdentities(proposalsPath string, applyLow, dryRun bool) error {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("no identity proposals — run `scribe lint --identities` first")
+		return errors.New("no identity proposals — run `scribe lint --identities` first")
 	}
 	blocks := parseIdentityBlocks(string(data))
 	if len(blocks) == 0 {
@@ -177,11 +178,11 @@ func appendAliasesToPeopleFile(path string, forms []string, dryRun bool) (int, e
 	}
 	content := string(data)
 	if !strings.HasPrefix(content, "---") {
-		return 0, fmt.Errorf("no frontmatter")
+		return 0, errors.New("no frontmatter")
 	}
 	end := strings.Index(content[3:], "\n---")
 	if end < 0 {
-		return 0, fmt.Errorf("no closing frontmatter delimiter")
+		return 0, errors.New("no closing frontmatter delimiter")
 	}
 	fmBlock := content[3 : end+3]
 	rest := content[end+3:]

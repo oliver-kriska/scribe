@@ -327,7 +327,7 @@ func entityWriterApplyOptions() ApplyOptions {
 func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (ApplyResult, error) {
 	res := ApplyResult{}
 	if root == "" {
-		return res, fmt.Errorf("apply wiki actions: empty root")
+		return res, errors.New("apply wiki actions: empty root")
 	}
 	// Content robustness seam — runs before the action loop so it sits
 	// at the same centralized boundary as the path guards
@@ -609,7 +609,7 @@ func metaActionLabel(m MetaAction) string {
 func applyMetaLogAppend(root string, m MetaAction, opts ApplyOptions) error {
 	line := strings.ReplaceAll(strings.TrimRight(m.Line, "\r\n"), "\n", " ")
 	if line == "" {
-		return fmt.Errorf("log_append: empty line")
+		return errors.New("log_append: empty line")
 	}
 	if opts.DryRun {
 		return nil
@@ -633,7 +633,7 @@ func applyMetaLogAppend(root string, m MetaAction, opts ApplyOptions) error {
 // goroutines stomping each other's JSON edits.
 func applyMetaSessionsLogAppend(root string, m MetaAction, opts ApplyOptions) error {
 	if m.SessionID == "" {
-		return fmt.Errorf("sessions_log_append: session_id required")
+		return errors.New("sessions_log_append: session_id required")
 	}
 	if opts.DryRun {
 		return nil
@@ -674,10 +674,10 @@ func applyMetaSessionsLogAppend(root string, m MetaAction, opts ApplyOptions) er
 // the lock.
 func applyMetaRollingAppend(root string, m MetaAction, opts ApplyOptions) error {
 	if m.Domain == "" {
-		return fmt.Errorf("rolling_memory_append: domain required")
+		return errors.New("rolling_memory_append: domain required")
 	}
 	if m.Target == "" {
-		return fmt.Errorf("rolling_memory_append: target required")
+		return errors.New("rolling_memory_append: target required")
 	}
 	allowedTargets := allowedRollingTargetsForRoot(root)
 	if !allowedTargets[m.Target] {
@@ -692,7 +692,7 @@ func applyMetaRollingAppend(root string, m MetaAction, opts ApplyOptions) error 
 	}
 	content := strings.TrimRight(m.Content, "\n")
 	if content == "" {
-		return fmt.Errorf("rolling_memory_append: empty content")
+		return errors.New("rolling_memory_append: empty content")
 	}
 	if opts.DryRun {
 		return nil
@@ -775,10 +775,10 @@ var (
 // the symlink in their KB and has accepted that trust boundary.
 func validateActionPath(root, rel string) (string, error) {
 	if rel == "" {
-		return "", fmt.Errorf("empty path")
+		return "", errors.New("empty path")
 	}
 	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("absolute paths refused (must be relative to KB root)")
+		return "", errors.New("absolute paths refused (must be relative to KB root)")
 	}
 	cleaned := filepath.Clean(rel)
 	// Reject explicit traversal. filepath.Clean turns "a/../b" into
@@ -1390,7 +1390,7 @@ func parseEnvelope(jsonText string) (WikiActionEnvelope, error) {
 		return env, fmt.Errorf("unmarshal envelope: %w", err)
 	}
 	if len(env.Actions) == 0 {
-		return env, fmt.Errorf("envelope has no actions")
+		return env, errors.New("envelope has no actions")
 	}
 	for i, a := range env.Actions {
 		if a.Op == "" {

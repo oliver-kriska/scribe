@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -169,6 +170,6 @@ func assessGitLog(projectPath string, n int) string {
 	if !hasGit(projectPath) {
 		return "(not a git repo)"
 	}
-	out := runCmd(projectPath, "git", "log", "--oneline", "-n", fmt.Sprintf("%d", n))
+	out := runCmd(projectPath, "git", "log", "--oneline", "-n", strconv.Itoa(n))
 	return out
 }

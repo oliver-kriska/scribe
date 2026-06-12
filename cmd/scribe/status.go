@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -294,7 +295,7 @@ func qmdIndexSize() (string, error) {
 			return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "Size:")), nil
 		}
 	}
-	return "", fmt.Errorf("size line not found")
+	return "", errors.New("size line not found")
 }
 
 // renderBacklog prints "what's not yet processed" so the user can

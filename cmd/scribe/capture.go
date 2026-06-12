@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -94,7 +95,7 @@ func (c *CaptureCmd) Run() error {
 
 	selfChatIDs := resolveSelfChatHandles(cfg.Capture)
 	if len(selfChatIDs) == 0 {
-		return fmt.Errorf("no self-chat handle configured\n\nSet one of:\n  scribe.yaml →\n    capture:\n      self_chat_handles:\n        - \"+1234567890\"\n        - \"you@icloud.com\"\n  or env:\n    SCRIBE_SELF_CHAT_ID=\"+1234567890,you@icloud.com\"\n\nList every iMessage address you use to message yourself — phone numbers and emails each map to a distinct chat in chat.db")
+		return errors.New("no self-chat handle configured\n\nSet one of:\n  scribe.yaml →\n    capture:\n      self_chat_handles:\n        - \"+1234567890\"\n        - \"you@icloud.com\"\n  or env:\n    SCRIBE_SELF_CHAT_ID=\"+1234567890,you@icloud.com\"\n\nList every iMessage address you use to message yourself — phone numbers and emails each map to a distinct chat in chat.db")
 	}
 
 	messages, err := readSelfChatMessages(selfChatIDs, since)
@@ -372,7 +373,7 @@ func resolveSelfChatHandles(c CaptureConfig) []string {
 // callers must pass every address they use to message themselves.
 func readSelfChatMessages(selfChatIDs []string, since string) ([]chatMessage, error) {
 	if len(selfChatIDs) == 0 {
-		return nil, fmt.Errorf("no self-chat handles supplied")
+		return nil, errors.New("no self-chat handles supplied")
 	}
 	dbPath := filepath.Join(os.Getenv("HOME"), "Library", "Messages", "chat.db")
 	if !fileExists(dbPath) {

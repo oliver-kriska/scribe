@@ -1156,7 +1156,7 @@ func checkRecentErrors(root string, now time.Time, window time.Duration) []check
 	if len(errs) == 0 {
 		return []check{{
 			Section: "errors", Name: "recent runs", Status: statusOK,
-			Detail: fmt.Sprintf("no errors in last %s", shortDuration(window)),
+			Detail: "no errors in last " + shortDuration(window),
 		}}
 	}
 	// Stable order: sort command keys.

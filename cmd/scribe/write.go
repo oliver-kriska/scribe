@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -53,7 +54,7 @@ func (w *WriteCmd) Run() error {
 	}
 
 	if w.Title == "" {
-		return fmt.Errorf("--title is required")
+		return errors.New("--title is required")
 	}
 
 	body, err := w.readBody()
@@ -74,14 +75,14 @@ func (w *WriteCmd) Run() error {
 // runCreate writes a brand-new article with full frontmatter.
 func (w *WriteCmd) runCreate(root, body string) error {
 	if w.Type == "" {
-		return fmt.Errorf("--type is required (or use --rolling for rolling memory)")
+		return errors.New("--type is required (or use --rolling for rolling memory)")
 	}
 	dir, ok := typeDirs[w.Type]
 	if !ok {
 		return fmt.Errorf("invalid --type %q (must be one of: decision, research, solution, tool, pattern, person, project)", w.Type)
 	}
 	if w.Domain == "" {
-		return fmt.Errorf("--domain is required")
+		return errors.New("--domain is required")
 	}
 	if !validDomainsForRoot(root)[w.Domain] {
 		return fmt.Errorf("invalid --domain %q", w.Domain)
@@ -138,7 +139,7 @@ func (w *WriteCmd) runCreate(root, body string) error {
 // tags list) that should be authored deliberately.
 func (w *WriteCmd) runRolling(root, body string) error {
 	if w.Project == "" {
-		return fmt.Errorf("--project is required for --rolling mode")
+		return errors.New("--project is required for --rolling mode")
 	}
 	var filename string
 	switch w.Rolling {
@@ -192,11 +193,11 @@ func (w *WriteCmd) runRolling(root, body string) error {
 // convention.
 func insertAfterFrontmatter(content, entry string) (string, error) {
 	if !strings.HasPrefix(content, "---\n") {
-		return "", fmt.Errorf("no frontmatter found")
+		return "", errors.New("no frontmatter found")
 	}
 	end := strings.Index(content[4:], "\n---\n")
 	if end < 0 {
-		return "", fmt.Errorf("no closing frontmatter delimiter")
+		return "", errors.New("no closing frontmatter delimiter")
 	}
 	splitAt := 4 + end + len("\n---\n")
 	head := content[:splitAt]

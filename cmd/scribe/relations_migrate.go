@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -578,7 +579,7 @@ func findArticleByTitle(root, title string) (string, bool) {
 		}
 		if fm.Title == title {
 			found = path
-			return fmt.Errorf("__found__") // sentinel break
+			return errors.New("__found__") // sentinel break
 		}
 		return nil
 	})

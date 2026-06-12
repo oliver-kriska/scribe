@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -201,11 +202,11 @@ func rewriteRawArticleBody(path string, res fetchResult) error {
 	}
 	s := string(data)
 	if !strings.HasPrefix(s, "---") {
-		return fmt.Errorf("no frontmatter")
+		return errors.New("no frontmatter")
 	}
 	end := strings.Index(s[3:], "\n---")
 	if end < 0 {
-		return fmt.Errorf("no closing frontmatter")
+		return errors.New("no closing frontmatter")
 	}
 	fmBlock := s[3 : end+3]
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -277,7 +278,7 @@ func (s *RelationsSetCmd) Run() error {
 	target = strings.TrimPrefix(target, "[[")
 	target = strings.TrimSuffix(target, "]]")
 	if target == "" {
-		return fmt.Errorf("target must be non-empty")
+		return errors.New("target must be non-empty")
 	}
 
 	content, err := os.ReadFile(path)
@@ -511,11 +512,11 @@ func addTypedEdgeToFrontmatter(path string, kind RelationKind, target string) er
 	}
 	s := string(data)
 	if !strings.HasPrefix(s, "---") {
-		return fmt.Errorf("no frontmatter delimiter")
+		return errors.New("no frontmatter delimiter")
 	}
 	end := strings.Index(s[3:], "\n---")
 	if end < 0 {
-		return fmt.Errorf("no closing frontmatter delimiter")
+		return errors.New("no closing frontmatter delimiter")
 	}
 	fmBlock := s[3 : end+3]
 	rest := s[end+7:]
@@ -622,11 +623,11 @@ func removeTypedEdgeFromFrontmatter(path string, kind RelationKind, target strin
 	}
 	s := string(data)
 	if !strings.HasPrefix(s, "---") {
-		return fmt.Errorf("no frontmatter delimiter")
+		return errors.New("no frontmatter delimiter")
 	}
 	end := strings.Index(s[3:], "\n---")
 	if end < 0 {
-		return fmt.Errorf("no closing frontmatter delimiter")
+		return errors.New("no closing frontmatter delimiter")
 	}
 	fmBlock := s[3 : end+3]
 	rest := s[end+7:]

@@ -46,7 +46,7 @@ func convertDOCXTier0(data []byte) (string, error) {
 		}
 	}
 	if len(docXML) == 0 {
-		return "", fmt.Errorf("docx missing word/document.xml (not a Word doc?)")
+		return "", errors.New("docx missing word/document.xml (not a Word doc?)")
 	}
 
 	return renderDOCX(docXML)
@@ -201,7 +201,7 @@ func renderDOCX(docXML []byte) (string, error) {
 	// each emit their own \n boundaries which can stack up.
 	out = collapseBlankLines(out)
 	if out == "" {
-		return "", fmt.Errorf("no extractable text in docx")
+		return "", errors.New("no extractable text in docx")
 	}
 	return out, nil
 }
@@ -224,16 +224,18 @@ func renderRuns(runs []docxRun) string {
 		}
 		bold := r.RPr.Bold != nil
 		italic := r.RPr.Italic != nil
+		marker := ""
 		switch {
 		case bold && italic:
-			sb.WriteString("***" + text + "***")
+			marker = "***"
 		case bold:
-			sb.WriteString("**" + text + "**")
+			marker = "**"
 		case italic:
-			sb.WriteString("*" + text + "*")
-		default:
-			sb.WriteString(text)
+			marker = "*"
 		}
+		sb.WriteString(marker)
+		sb.WriteString(text)
+		sb.WriteString(marker)
 	}
 	return sb.String()
 }

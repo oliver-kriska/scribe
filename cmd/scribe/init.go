@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -555,7 +556,7 @@ func initGit(root string) error {
 		return nil
 	}
 	if _, err := exec.LookPath("git"); err != nil {
-		return fmt.Errorf("git not in PATH")
+		return errors.New("git not in PATH")
 	}
 	out, err := exec.Command("git", "-C", root, "init", "-b", "main").CombinedOutput() //nolint:noctx // one-shot init
 	if err != nil {

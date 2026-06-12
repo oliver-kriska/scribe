@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func runResolveContradictions(outputMD string, dryRun bool) error {
 	contraPath := filepath.Join(root, "wiki", "_contradictions.md")
 	data, err := os.ReadFile(contraPath)
 	if err != nil {
-		return fmt.Errorf("no _contradictions.md — run `scribe lint --contradictions` first")
+		return errors.New("no _contradictions.md — run `scribe lint --contradictions` first")
 	}
 
 	pairs := parseContradictionPairs(string(data))
