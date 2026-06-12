@@ -489,7 +489,7 @@ func titleList(chunks []Chunk) []string {
 
 func TestChunkByHeadings_CoalescesTinySections(t *testing.T) {
 	var b strings.Builder
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		b.WriteString("## Heading ")
 		b.WriteByte(byte('A' + i))
 		b.WriteString("\n\nA short paragraph that is nowhere near a chapter.\n\n")

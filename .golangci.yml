@@ -45,6 +45,9 @@ linters:
     - rowserrcheck # sql.Rows iterations must check rows.Err (silent truncation)
     - sqlclosecheck # sql.Rows/Stmt closed via defer
     - gocritic # diagnostics + two cheap performance checks (see settings)
+    - intrange # for i := 0; i < n → for i := range n
+    - usetesting # t.Chdir/t.TempDir/t.Setenv over raw os equivalents in tests
+    - dupword # duplicated words in comments/strings
 
   settings:
     errcheck:

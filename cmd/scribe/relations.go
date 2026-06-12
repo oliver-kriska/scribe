@@ -684,7 +684,7 @@ func splitInlineList(inner string) []string {
 	var out []string
 	cur := strings.Builder{}
 	inQuote := false
-	for i := 0; i < len(inner); i++ {
+	for i := range len(inner) {
 		c := inner[i]
 		switch {
 		case c == '"' && (i == 0 || inner[i-1] != '\\'):
