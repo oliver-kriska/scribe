@@ -94,7 +94,7 @@ func (c *CaptureCmd) Run() error {
 
 	selfChatIDs := resolveSelfChatHandles(cfg.Capture)
 	if len(selfChatIDs) == 0 {
-		return fmt.Errorf("no self-chat handle configured\n\nSet one of:\n  scribe.yaml →\n    capture:\n      self_chat_handles:\n        - \"+1234567890\"\n        - \"you@icloud.com\"\n  or env:\n    SCRIBE_SELF_CHAT_ID=\"+1234567890,you@icloud.com\"\n\nList every iMessage address you use to message yourself — phone numbers and emails each map to a distinct chat in chat.db") //nolint:revive // multi-line error serves as user help text
+		return fmt.Errorf("no self-chat handle configured\n\nSet one of:\n  scribe.yaml →\n    capture:\n      self_chat_handles:\n        - \"+1234567890\"\n        - \"you@icloud.com\"\n  or env:\n    SCRIBE_SELF_CHAT_ID=\"+1234567890,you@icloud.com\"\n\nList every iMessage address you use to message yourself — phone numbers and emails each map to a distinct chat in chat.db")
 	}
 
 	messages, err := readSelfChatMessages(selfChatIDs, since)
@@ -398,7 +398,7 @@ func readSelfChatMessages(selfChatIDs []string, since string) ([]chatMessage, er
 		if qerr != nil {
 			msg := qerr.Error()
 			if strings.Contains(msg, "operation not permitted") || strings.Contains(msg, "unable to open") {
-				return nil, fmt.Errorf("query handle: %w\n\nfull disk access required. macOS blocks reads of ~/Library/Messages/chat.db without it.\nGrant it to the scribe binary:\n  System Settings → Privacy & Security → Full Disk Access → add %s\nFor LaunchAgent-driven captures, the binary itself needs the grant (inheriting from Terminal is not enough)", qerr, os.Args[0]) //nolint:revive // multi-line error serves as user help text
+				return nil, fmt.Errorf("query handle: %w\n\nfull disk access required. macOS blocks reads of ~/Library/Messages/chat.db without it.\nGrant it to the scribe binary:\n  System Settings → Privacy & Security → Full Disk Access → add %s\nFor LaunchAgent-driven captures, the binary itself needs the grant (inheriting from Terminal is not enough)", qerr, os.Args[0])
 			}
 			return nil, fmt.Errorf("query handle %s: %w", id, qerr)
 		}

@@ -133,7 +133,7 @@ func dreamSampleInventory(root string, maxEntries int) string {
 	_ = walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil || fm == nil {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unparseable frontmatter: skip the article, keep sampling
 		}
 		rel, _ := filepath.Rel(root, path)
 		samples = append(samples, dreamArticleSample{
@@ -174,7 +174,7 @@ func dreamStaleCandidates(root string, days int) string {
 	_ = walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil || fm == nil {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unparseable article: skip it, keep walking
 		}
 		updated := stringFromAny(fm.Updated)
 		if updated == "" {
@@ -182,7 +182,7 @@ func dreamStaleCandidates(root string, days int) string {
 		}
 		t, err := time.Parse("2006-01-02", updated)
 		if err != nil {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unparseable article: skip it, keep walking
 		}
 		if t.Before(cutoff) {
 			rel, _ := filepath.Rel(root, path)
@@ -211,7 +211,7 @@ func dreamContradictionCandidates(root string) string {
 	_ = walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil || fm == nil {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unparseable article: skip it, keep walking
 		}
 		rel, _ := filepath.Rel(root, path)
 		a := article{Path: filepath.ToSlash(rel), Title: fm.Title, Conf: fm.Confidence}

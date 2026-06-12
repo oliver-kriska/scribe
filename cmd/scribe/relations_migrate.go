@@ -574,7 +574,7 @@ func findArticleByTitle(root, title string) (string, bool) {
 	_ = walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil {
-			return nil //nolint:nilerr
+			return nil //nolint:nilerr // unparseable article: skip it, keep walking
 		}
 		if fm.Title == title {
 			found = path

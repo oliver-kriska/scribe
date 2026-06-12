@@ -550,7 +550,7 @@ func (c *IngestFileCmd) Run() error {
 		return err
 	}
 
-	data, err := os.ReadFile(absPath) //nolint:gosec // user-supplied source path; reading is the point
+	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return fmt.Errorf("read file: %w", err)
 	}
