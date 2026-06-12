@@ -257,6 +257,29 @@ func ensureRepoYAML(root, projectPath, pname, domain string) {
 	logMsg("sync", "   created %s", repoYAML)
 }
 
+// unprocessedDropFiles returns the drop files in a project's checkout(s)
+// that the next sync would collect: top-level *.md under .claude/<kb>/
+// in the main checkout plus recorded worktrees (drop files written in a
+// worktree can be branch-specific and never appear in the main checkout),
+// filtered to those newer than last_drop_processed. Shared by
+// collectDropFiles and `scribe status` so the status backlog counts
+// exactly the set sync will pick up.
+func unprocessedDropFiles(kb string, entry *ProjectEntry) []string {
+	var unprocessed []string
+	for _, base := range entry.collectionPaths() {
+		dropDir := filepath.Join(base, ".claude", kb)
+		if !dirExists(dropDir) {
+			continue
+		}
+		drops, err := filepath.Glob(filepath.Join(dropDir, "*.md"))
+		if err != nil || len(drops) == 0 {
+			continue
+		}
+		unprocessed = append(unprocessed, filterNewerThan(drops, entry.LastDropProcessed)...)
+	}
+	return unprocessed
+}
+
 // collectDropFiles gathers unprocessed drop files from each project's
 // .claude/<kb-name>/ dir (e.g. .claude/scribe/, or a renamed KB's own
 // folder). Returns total count of collected drops.
@@ -268,23 +291,7 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 		if !entry.IsApproved() {
 			continue
 		}
-		// Scan the main checkout plus recorded worktrees — drop files
-		// written in a worktree can be branch-specific and never appear
-		// in the main checkout.
-		var unprocessed []string
-		for _, base := range entry.collectionPaths() {
-			dropDir := filepath.Join(base, ".claude", kb)
-			if !dirExists(dropDir) {
-				continue
-			}
-			drops, err := filepath.Glob(filepath.Join(dropDir, "*.md"))
-			if err != nil || len(drops) == 0 {
-				continue
-			}
-			// Filter to unprocessed drops (newer than last_drop_processed).
-			unprocessed = append(unprocessed, filterNewerThan(drops, entry.LastDropProcessed)...)
-		}
-
+		unprocessed := unprocessedDropFiles(kb, entry)
 		if len(unprocessed) == 0 {
 			continue
 		}

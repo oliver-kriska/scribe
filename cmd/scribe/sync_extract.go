@@ -17,6 +17,19 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// extractScanPatterns is the glob set sync scans for changed files when
+// sizing an extraction. `scribe status` reuses it so its held-by-cap
+// classification counts exactly the files sync will.
+var extractScanPatterns = []string{"*.md", "*.txt", "*.exs", "*.ex"}
+
+// exceedsExtractFileCap reports whether a changed-file count trips the
+// sync.max_extract_files size gate — the rule that makes sync skip a
+// project and point at `scribe deep`. Shared by sync (skip + log) and
+// `scribe status` (held classification) so the two surfaces can't drift.
+func exceedsExtractFileCap(cfg *ScribeConfig, changedCount int) bool {
+	return cfg.Sync.MaxExtractFiles > 0 && changedCount > cfg.Sync.MaxExtractFiles
+}
+
 // extract processes projects that need extraction.
 // Projects run concurrently up to s.Parallel (default 3, capped at 5 to
 // avoid Anthropic rate limits). A rate-limit error cancels pending work
@@ -51,8 +64,7 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 	if s.DryRun {
 		for _, pname := range toExtract {
 			entry := manifest.Projects[pname]
-			patterns := []string{"*.md", "*.txt", "*.exs", "*.ex"}
-			changed := gitChangedFiles(entry.Path, entry.LastSHA, patterns)
+			changed := gitChangedFiles(entry.Path, entry.LastSHA, extractScanPatterns)
 			logMsg("sync", " [%s] DRY RUN -- changed files (%d):", pname, len(changed))
 			limit := min(len(changed), 20)
 			for _, f := range changed[:limit] {
@@ -80,8 +92,7 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 				return err
 			}
 
-			patterns := []string{"*.md", "*.txt", "*.exs", "*.ex"}
-			changed := gitChangedFiles(entry.Path, entry.LastSHA, patterns)
+			changed := gitChangedFiles(entry.Path, entry.LastSHA, extractScanPatterns)
 
 			// Size gate: one `claude -p` pass reliably blows the 10-min
 			// timeout above ~100 changed files. Rather than eat the
@@ -89,7 +100,7 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 			// sync (where it will just fail again), skip the project in
 			// normal sync and point the user at `scribe deep <name>`,
 			// which batches-by-directory and fits in the timeout.
-			if cfg.Sync.MaxExtractFiles > 0 && len(changed) > cfg.Sync.MaxExtractFiles {
+			if exceedsExtractFileCap(cfg, len(changed)) {
 				logMsg("sync", " [%s] SKIP: %d files > sync.max_extract_files (%d). Run: scribe deep %s",
 					pname, len(changed), cfg.Sync.MaxExtractFiles, pname)
 				return nil
