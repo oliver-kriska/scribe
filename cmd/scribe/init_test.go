@@ -214,11 +214,14 @@ func minimalVars(kbDir string) templateVars {
 func TestInstallCodexMD_Lifecycle(t *testing.T) {
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
+	// The temp-dir KB root is a throwaway path, so these writes carry
+	// the explicit bind consent (bound=true) the chokepoint requires —
+	// the lifecycle under test is installAgentMD's, not the guard's.
 	vars := minimalVars(t.TempDir())
 	path := filepath.Join(fakeHome, ".codex", "AGENTS.md")
 
 	// 1. Missing file → created with the block + markers.
-	if err := installCodexMD(vars, false, true); err != nil {
+	if err := installCodexMD(vars, false, true, true); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -237,7 +240,7 @@ func TestInstallCodexMD_Lifecycle(t *testing.T) {
 
 	// 2. In-sync → byte-identical, no-op.
 	before, _ := os.ReadFile(path)
-	if err := installCodexMD(vars, false, true); err != nil {
+	if err := installCodexMD(vars, false, true, true); err != nil {
 		t.Fatalf("in-sync: %v", err)
 	}
 	after, _ := os.ReadFile(path)
@@ -256,7 +259,7 @@ func TestInstallCodexMD_Lifecycle(t *testing.T) {
 	// Drift the block by changing a rendered var, then refresh.
 	vars2 := vars
 	vars2.OwnerName = "Someone Else"
-	if err := installCodexMD(vars2, false, true); err != nil {
+	if err := installCodexMD(vars2, false, true, true); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
 	out, _ := os.ReadFile(path)
@@ -277,7 +280,7 @@ func TestInstallCodexMD_CheckModeNeverWrites(t *testing.T) {
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
 	vars := minimalVars(t.TempDir())
-	if err := installCodexMD(vars, true, true); err != nil {
+	if err := installCodexMD(vars, true, true, false); err != nil {
 		t.Fatalf("check mode: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(fakeHome, ".codex", "AGENTS.md")); err == nil {
@@ -364,5 +367,43 @@ func TestRenderScribeYAML_ProviderThreadsIntoContextualize(t *testing.T) {
 				t.Errorf("contextualize model = %q, want %q", got, tc.wantModel)
 			}
 		})
+	}
+}
+
+// TestWriteGlobalStateThrowawayGuard pins the chokepoint every
+// machine-global write (user config, agent handshake blocks, cron
+// plists) routes through: a throwaway KB root may never own global
+// state without explicit bind consent.
+func TestWriteGlobalStateThrowawayGuard(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "global", "state.txt")
+	throwawayKB := t.TempDir() // under os.TempDir() → throwaway
+
+	err := writeGlobalState(throwawayKB, false, dest, []byte("x"), 0o644)
+	if err == nil || !strings.Contains(err.Error(), "throwaway") {
+		t.Fatalf("throwaway root without bind: want refusal, got %v", err)
+	}
+	if fileExists(dest) {
+		t.Fatal("refused write still created the file")
+	}
+
+	// Explicit bind consent (init --bind) overrides the refusal.
+	if err := writeGlobalState(throwawayKB, true, dest, []byte("bound"), 0o644); err != nil {
+		t.Fatalf("bound write: %v", err)
+	}
+	data, _ := os.ReadFile(dest)
+	if string(data) != "bound" {
+		t.Errorf("bound write content = %q, want %q", data, "bound")
+	}
+
+	// A permanent KB root needs no bind.
+	dest2 := filepath.Join(t.TempDir(), "state2.txt")
+	if err := writeGlobalState("/Users/u/Projects/kb", false, dest2, []byte("y"), 0o644); err != nil {
+		t.Fatalf("permanent root: %v", err)
+	}
+
+	// Empty servesRoot = the write is not KB-binding.
+	dest3 := filepath.Join(t.TempDir(), "state3.txt")
+	if err := writeGlobalState("", false, dest3, []byte("z"), 0o644); err != nil {
+		t.Fatalf("non-binding write: %v", err)
 	}
 }
