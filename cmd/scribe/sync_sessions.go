@@ -59,6 +59,61 @@ func querySessionStats(db *sql.DB, sid string) sessionFilterStats {
 	return st
 }
 
+// projectScopeAllowed reports whether a session whose ccrider project_path
+// is projectPath belongs in THIS KB. It enforces the same two gates the
+// project-discovery lane already applies — the ignore list and the sources
+// filter — so a project the user excluded from `sources` or `scribe
+// projects ignore`d can't leak in through the parallel session-mining path.
+//
+// Deliberately permissive on the unknown cases: an undiscovered-but-allowed
+// project passes (knowledge can be captured before formal enrollment — only
+// ignored and source-excluded projects are dropped), and an empty
+// projectPath (no provenance recorded) passes rather than over-filtering.
+// isIgnored also folds in the shallow-path / within-a-KB / TCC guards, which
+// is why this is safe to use on the large lane that skips sessionInKB.
+func projectScopeAllowed(cfg *ScribeConfig, manifest *Manifest, projectPath string) bool {
+	if projectPath == "" {
+		return true
+	}
+	if manifest != nil && manifest.isIgnored(projectPath) {
+		return false
+	}
+	return sourceAllowed(cfg, projectPath)
+}
+
+// filterSessionsByScope drops sessions whose project is ignored or
+// source-excluded for this KB. It is the scope half of preFilterSessions,
+// pulled out for the large-session lane (which skips the mechanical/thin
+// gate but must still honor sources/ignore). Fails open on DB-open error,
+// matching preFilterSessions.
+func filterSessionsByScope(root, dbPath string, sessionIDs []string) []string {
+	if len(sessionIDs) == 0 {
+		return sessionIDs
+	}
+	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	if err != nil {
+		return sessionIDs
+	}
+	defer db.Close()
+
+	manifest, _ := loadManifest(root)
+	cfg := loadConfig(root)
+	kept := sessionIDs[:0]
+	dropped := 0
+	for _, sid := range sessionIDs {
+		stats := querySessionStats(db, sid)
+		if stats.Found && !projectScopeAllowed(cfg, manifest, stats.ProjectPath) {
+			dropped++
+			continue
+		}
+		kept = append(kept, sid)
+	}
+	if dropped > 0 {
+		logMsg("sync", "pre-filter: dropped %d large session(s) from out-of-scope projects (ignored or excluded by sources)", dropped)
+	}
+	return kept
+}
+
 // preFilterSessions removes sessions that are too mechanical to be worth
 // extracting, and — independently — sessions that were spent inside the KB
 // itself (mining those re-emits the wiki's own content). Queries ccrider DB
@@ -87,8 +142,10 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 	// failure fails open (no approval filtering), matching the DB-open
 	// behavior above.
 	manifest, _ := loadManifest(root)
+	cfg := loadConfig(root)
 
 	kbSkipped := 0
+	scopeSkipped := 0
 	pendingSkipped := 0
 	for _, sid := range sessionIDs {
 		stats := querySessionStats(db, sid)
@@ -102,6 +159,14 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 			// wrong reason. KB sessions can't resurface anyway — triage
 			// now excludes them and the hook no longer queues them.
 			kbSkipped++
+			continue
+		}
+		if !projectScopeAllowed(cfg, manifest, stats.ProjectPath) {
+			// Out-of-scope for this KB (ignored or excluded by sources).
+			// Drop silently like KB sessions: marking them processed would
+			// lie, and they must stay re-mineable if the KB's scope later
+			// widens to include the project.
+			scopeSkipped++
 			continue
 		}
 		if manifest != nil && stats.ProjectPath != "" {
@@ -123,6 +188,9 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 	}
 	if kbSkipped > 0 {
 		logMsg("sync", "pre-filter: dropped %d session(s) run inside the KB (never mine the KB into itself)", kbSkipped)
+	}
+	if scopeSkipped > 0 {
+		logMsg("sync", "pre-filter: dropped %d session(s) from out-of-scope projects (ignored or excluded by sources)", scopeSkipped)
 	}
 	if pendingSkipped > 0 {
 		logMsg("sync", "pre-filter: deferred %d session(s) from pending project(s) — approve via `scribe projects review`", pendingSkipped)
@@ -617,6 +685,10 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 	// Pass 2: Large sessions (>300 messages) — one at a time, 20min timeout.
 	if largeMax := s.largeSessionBudget(); largeMax > 0 {
 		largeIDs := s.triageSessionIDs(largeMax, "--min-messages", "301")
+		// The large lane bypasses preFilterSessions (large sessions are
+		// exempt from the mechanical/thin gate), so the scope guard must be
+		// re-applied here or ignored/source-excluded projects leak in.
+		largeIDs = filterSessionsByScope(root, cfg.CcriderDB, largeIDs)
 		if len(largeIDs) > 0 {
 			logMsg("sync", "triage found %d large sessions (>300 msgs)", len(largeIDs))
 			mined, _ := s.mineSessionBatches(root, largeIDs, 1, 20*time.Minute, "session-extract-large.md", "large-session")
