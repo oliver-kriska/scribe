@@ -31,7 +31,11 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 			continue
 		}
 
-		decoded := decodeClaudePath(entry.Name())
+		// Prefer the verbatim cwd from the session JSONL; fall back to the
+		// lossy name-decode. Without this, project paths containing '_' or
+		// '.' (which Claude encodes as '-') never resolve and are silently
+		// skipped — even though the session file records the exact path.
+		decoded := resolveClaudeProjectPath(filepath.Join(claudeDir, entry.Name()), entry.Name())
 		if decoded == "" || !dirExists(decoded) {
 			continue
 		}

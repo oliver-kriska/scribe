@@ -352,3 +352,110 @@ func TestDecodeClaudePath_NonExistent(t *testing.T) {
 		t.Errorf("got %q, want empty string", got)
 	}
 }
+
+// dashEncode mirrors the lossless part of Claude's project-dir encoding:
+// the absolute path with every "/" turned into "-" and a leading "-".
+// Underscores/dots are NOT collapsed here, so decodeClaudePath can still
+// round-trip — used to construct the decode-fallback fixtures.
+func dashEncode(absPath string) string {
+	return "-" + strings.ReplaceAll(strings.TrimPrefix(absPath, "/"), "/", "-")
+}
+
+// TestResolveClaudeProjectPath_PrefersSessionCwd is the andrej_skolenia
+// regression: a project whose path contains "_" can never be rebuilt by
+// decodeClaudePath (Claude collapses "_" → "-"), but its session JSONL
+// records the verbatim cwd. resolveClaudeProjectPath must return that.
+func TestResolveClaudeProjectPath_PrefersSessionCwd(t *testing.T) {
+	tmp := t.TempDir()
+
+	projectPath := filepath.Join(tmp, "Projects", "andrej_skolenia")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Claude's real encoding would collapse the "_" to "-", so the
+	// directory name is undecodable. The exact name is irrelevant — the
+	// resolver should never consult it once the cwd is found.
+	encodedName := strings.ReplaceAll(dashEncode(projectPath), "_", "-")
+	sessionDir := filepath.Join(tmp, "claude-projects", encodedName)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	jsonl := `{"type":"user","cwd":"` + projectPath + `","message":{"role":"user"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, "sess.jsonl"), []byte(jsonl), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: the name-decode genuinely fails for this fixture, so the
+	// test would catch a regression that silently relies on it.
+	if d := decodeClaudePath(encodedName); d == projectPath {
+		t.Fatalf("fixture invalid: decodeClaudePath unexpectedly recovered %q", projectPath)
+	}
+
+	if got := resolveClaudeProjectPath(sessionDir, encodedName); got != projectPath {
+		t.Errorf("got %q, want verbatim cwd %q", got, projectPath)
+	}
+}
+
+// TestResolveClaudeProjectPath_FallsBackToDecode: with no readable cwd in
+// the session dir, the resolver must defer to decodeClaudePath.
+func TestResolveClaudeProjectPath_FallsBackToDecode(t *testing.T) {
+	tmp := t.TempDir()
+
+	projectPath := filepath.Join(tmp, "user", "my-project")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	encodedName := dashEncode(projectPath)
+
+	// Session dir exists but holds no .jsonl → no cwd → decode fallback.
+	sessionDir := filepath.Join(tmp, "claude-projects", encodedName)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := resolveClaudeProjectPath(sessionDir, encodedName)
+	if want := decodeClaudePath(encodedName); got != want || got != projectPath {
+		t.Errorf("got %q, want fallback to %q (decode=%q)", got, projectPath, want)
+	}
+}
+
+// TestResolveClaudeProjectPath_IgnoresStaleCwd: a cwd pointing at a
+// directory that no longer exists is rejected, and the resolver falls
+// back to the name-decode (which here still resolves).
+func TestResolveClaudeProjectPath_IgnoresStaleCwd(t *testing.T) {
+	tmp := t.TempDir()
+
+	projectPath := filepath.Join(tmp, "user", "real-project")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	encodedName := dashEncode(projectPath)
+	sessionDir := filepath.Join(tmp, "claude-projects", encodedName)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := `{"cwd":"` + filepath.Join(tmp, "moved-away") + `"}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, "sess.jsonl"), []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveClaudeProjectPath(sessionDir, encodedName); got != projectPath {
+		t.Errorf("stale cwd should be ignored; got %q, want decode result %q", got, projectPath)
+	}
+}
+
+// TestReadClaudeCwd_SkipsCwdlessLeadingLine: resumed sessions can begin
+// with a summary event that carries no cwd; the reader must scan past it.
+func TestReadClaudeCwd_SkipsCwdlessLeadingLine(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "s.jsonl")
+	content := `{"type":"summary","summary":"resumed thread"}` + "\n" +
+		`{"type":"user","cwd":"/Users/x/Projects/p","message":{}}` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readClaudeCwd(path); got != "/Users/x/Projects/p" {
+		t.Errorf("got %q, want cwd from the second line", got)
+	}
+}

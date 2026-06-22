@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -416,6 +418,97 @@ func decodeClaudePath(dirname string) string {
 	}
 	if dirExists(path) {
 		return path
+	}
+	return ""
+}
+
+const (
+	// claudeMaxLineBytes caps the per-line scanner buffer when reading a
+	// Claude session JSONL for its cwd. Large events (tool results,
+	// pasted files) can exceed bufio.Scanner's 64 KB default, so we lift
+	// the ceiling to 1 MB — matching codexMaxFirstLineBytes. A cwd that
+	// only appears past a line larger than this is treated as absent, and
+	// discovery falls back to decodeClaudePath.
+	claudeMaxLineBytes = 1 << 20
+
+	// claudeCwdScanLines bounds how many leading lines we scan for a cwd.
+	// Resumed sessions can lead with a cwd-less summary event, so we look
+	// past the first line; every normal event carries cwd, so a handful
+	// of lines is plenty.
+	claudeCwdScanLines = 50
+)
+
+// cwdKey is the JSON-key prefilter: skip lines that can't contain a cwd
+// before paying for a full json.Unmarshal.
+var cwdKey = []byte(`"cwd"`)
+
+// resolveClaudeProjectPath returns the real filesystem path for a Claude
+// Code project session directory. It prefers the verbatim `cwd` recorded
+// inside the session JSONL — decode-free, the same ground truth Codex's
+// session_meta provides — and falls back to the lossy directory-name
+// decode (decodeClaudePath) only when no session file yields a cwd.
+//
+// This is what lets discovery enroll projects whose paths contain '_' or
+// '.', which Claude's directory-name encoding collapses to '-'
+// indistinguishably from a real hyphen, so decodeClaudePath can never
+// rebuild them. Returns "" when neither route resolves to an existing dir.
+//
+// sessionDir is the full path to the encoded session directory;
+// encodedName is its basename, used only for the decode fallback.
+func resolveClaudeProjectPath(sessionDir, encodedName string) string {
+	if cwd := claudeSessionCwd(sessionDir); cwd != "" && dirExists(cwd) {
+		return cwd
+	}
+	return decodeClaudePath(encodedName)
+}
+
+// claudeSessionCwd returns the first verbatim `cwd` found in any session
+// JSONL inside sessionDir, or "" if none is readable. Claude records the
+// absolute cwd on nearly every event, so the first session file carrying
+// a cwd is authoritative — all sessions in a dir share one cwd (the dir
+// is keyed by it).
+func claudeSessionCwd(sessionDir string) string {
+	matches, err := filepath.Glob(filepath.Join(sessionDir, "*.jsonl"))
+	if err != nil {
+		return ""
+	}
+	sort.Strings(matches)
+	for _, path := range matches {
+		if cwd := readClaudeCwd(path); cwd != "" {
+			return cwd
+		}
+	}
+	return ""
+}
+
+// readClaudeCwd scans up to claudeCwdScanLines leading lines of a Claude
+// session JSONL for a `cwd` field, returning the first non-empty value.
+// Returns "" on any open/read/parse failure — discovery degrades to the
+// name-decode rather than erroring on a malformed session file.
+func readClaudeCwd(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), claudeMaxLineBytes)
+
+	for i := 0; i < claudeCwdScanLines && scanner.Scan(); i++ {
+		line := scanner.Bytes()
+		if !bytes.Contains(line, cwdKey) { // cheap prefilter before json.Unmarshal
+			continue
+		}
+		var rec struct {
+			Cwd string `json:"cwd"`
+		}
+		if err := json.Unmarshal(line, &rec); err != nil {
+			continue
+		}
+		if rec.Cwd != "" {
+			return rec.Cwd
+		}
 	}
 	return ""
 }
