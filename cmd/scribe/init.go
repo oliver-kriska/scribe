@@ -562,7 +562,47 @@ func initGit(root string) error {
 		return fmt.Errorf("git init: %w\n%s", err, out)
 	}
 	fmt.Println("  git init done")
+
+	// Make the first commit so the documented team flow works immediately:
+	// `git remote add origin … && git push -u origin main` needs a ref to
+	// push, and members can only `git clone` a KB that has at least one
+	// commit. Only reached on a fresh init (the .git-exists branch above
+	// returns early), so this never sweeps an existing repo's history.
+	// Non-fatal — a failure just leaves the user to commit by hand.
+	if err := initialScaffoldCommit(root); err != nil {
+		fmt.Printf("  initial commit skipped: %v (commit + push manually)\n", err)
+	}
 	return nil
+}
+
+// initialScaffoldCommit stages the freshly scaffolded KB and records the
+// first commit. It injects a neutral committer identity ONLY when the
+// machine has none configured, so a bare box can still bootstrap a
+// pushable team KB; a real git identity is always preferred. .gitignore
+// (written by the skeleton before this runs) keeps per-machine state like
+// scripts/projects.json out of the commit.
+func initialScaffoldCommit(root string) error {
+	if out, err := exec.Command("git", "-C", root, "add", "-A").CombinedOutput(); err != nil { //nolint:noctx // one-shot
+		return fmt.Errorf("git add: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	args := []string{"-C", root}
+	if !gitIdentityConfigured(root) {
+		args = append(args, "-c", "user.name=scribe", "-c", "user.email=scribe@localhost")
+	}
+	args = append(args, "commit", "-q", "-m", "chore: initial KB scaffold (scribe init)")
+	if out, err := exec.Command("git", args...).CombinedOutput(); err != nil { //nolint:noctx // one-shot
+		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	fmt.Println("  initial commit created")
+	return nil
+}
+
+// gitIdentityConfigured reports whether git can resolve a committer identity
+// (local, global, or system) for root — decides whether the scaffold commit
+// needs the fallback identity.
+func gitIdentityConfigured(root string) bool {
+	out, err := exec.Command("git", "-C", root, "config", "user.email").Output() //nolint:noctx // one-shot
+	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
 // --- status mode ---

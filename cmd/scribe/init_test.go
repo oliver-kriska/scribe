@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -405,5 +406,91 @@ func TestWriteGlobalStateThrowawayGuard(t *testing.T) {
 	dest3 := filepath.Join(t.TempDir(), "state3.txt")
 	if err := writeGlobalState("", false, dest3, []byte("z"), 0o644); err != nil {
 		t.Fatalf("non-binding write: %v", err)
+	}
+}
+
+// TestInitGit_CreatesInitialCommit pins the team-onboarding fix: a fresh
+// `scribe init` must leave a commit so the documented
+// `git remote add origin … && git push -u origin main` works and members
+// can clone. .gitignore (written by the skeleton before initGit) must keep
+// the per-machine manifest out of that commit.
+func TestInitGit_CreatesInitialCommit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "scribe.yaml"), "kb_name: t\n")
+	writeFile(t, filepath.Join(root, ".gitignore"), "scripts/projects.json\n")
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "scripts", "projects.json"), "{}\n")
+
+	if err := initGit(root); err != nil {
+		t.Fatalf("initGit: %v", err)
+	}
+
+	if _, err := runGit(root, "rev-parse", "HEAD"); err != nil {
+		t.Fatalf("expected an initial commit after initGit; rev-parse HEAD failed: %v", err)
+	}
+
+	tracked, err := runGit(root, "ls-files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(tracked, "scribe.yaml") {
+		t.Errorf("scribe.yaml not committed; ls-files=%q", tracked)
+	}
+	if strings.Contains(tracked, "projects.json") {
+		t.Errorf(".gitignore not honored — per-machine manifest committed; ls-files=%q", tracked)
+	}
+}
+
+// TestInitGit_SkipsExistingRepo is the safety guard: when .git already
+// exists, initGit must NOT add a commit or sweep untracked files into the
+// existing history.
+func TestInitGit_SkipsExistingRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	seed := func(args ...string) {
+		full := append([]string{"-c", "user.name=seed", "-c", "user.email=seed@x"}, args...)
+		if out, err := runGit(root, full...); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	seed("init", "-b", "main")
+	writeFile(t, filepath.Join(root, "existing.txt"), "x")
+	seed("add", "-A")
+	seed("commit", "-q", "-m", "seed")
+	before, _ := runGit(root, "rev-parse", "HEAD")
+
+	writeFile(t, filepath.Join(root, "untracked.txt"), "y")
+	if err := initGit(root); err != nil {
+		t.Fatalf("initGit: %v", err)
+	}
+
+	after, _ := runGit(root, "rev-parse", "HEAD")
+	if before != after {
+		t.Errorf("initGit moved HEAD in an existing repo: before=%s after=%s", before, after)
+	}
+	st, _ := runGit(root, "status", "--porcelain")
+	if !strings.Contains(st, "untracked.txt") {
+		t.Errorf("expected untracked.txt to stay uncommitted; status=%q", st)
+	}
+}
+
+// runGit runs a one-shot git command rooted at root and returns combined output.
+func runGit(root string, args ...string) (string, error) {
+	full := append([]string{"-C", root}, args...)
+	out, err := exec.Command("git", full...).CombinedOutput() //nolint:noctx // one-shot test git
+	return string(out), err
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
