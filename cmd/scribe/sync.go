@@ -453,7 +453,16 @@ func rebuildIndexAndBacklinks(root string) {
 }
 
 // rebuildAndReindex runs backlinks, index, and qmd reindex.
+//
+// Honors SCRIBE_SKIP_REINDEX=1 for the same reason rebuildIndexAndBacklinks
+// and WriteCmd.reindex do: under test os.Executable() is the test binary, so
+// shelling out to it for backlinks/index/sections re-enters the suite (and
+// the qmd step would hit a real index). This path is reachable from a test
+// via the post-pull reindex in pullPhase, so the guard belongs here too.
 func (s *SyncCmd) rebuildAndReindex(root string) error {
+	if os.Getenv("SCRIBE_SKIP_REINDEX") == "1" {
+		return nil
+	}
 	scribeExe, _ := os.Executable()
 	if scribeExe == "" {
 		scribeExe = "scribe"
