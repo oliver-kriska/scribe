@@ -48,28 +48,35 @@ type calTime struct {
 // scribeJobs returns the default KB cron schedule. Consumers (install,
 // status, uninstall, doctor) all share this definition so there is one
 // source of truth for what scribe runs on cron.
-func scribeJobs(root, binary string) []cronJob {
-	cd := fmt.Sprintf("cd %q && ", root)
+// scribeJobs returns the machine's cron schedule. Commands are KB-agnostic
+// (issue #26): each scheduled job runs `scribe each -- <sub>`, which
+// iterates the KB registry (kbs: in the user config) and runs <sub> in each
+// registered KB with per-KB failure isolation. One agent set therefore
+// serves every KB — installing from a second KB no longer clobbers the
+// first. `watch` is the exception: it's long-running, so it stays a single
+// agent resolving the default KB (multi-KB watch is a #26 follow-up).
+func scribeJobs(binary string) []cronJob {
 	logDir := "/tmp"
+	each := func(sub string) string { return binary + " each -- " + sub }
 	return []cronJob{
 		{
 			Name:     "auto-commit",
 			Desc:     "Hourly KB auto-commit",
-			Command:  cd + binary + " commit",
+			Command:  each("commit"),
 			LogFile:  filepath.Join(logDir, "scribe-autocommit.log"),
 			Schedule: schedSpec{Calendar: hourlyAt(7)},
 		},
 		{
 			Name:     "sync-projects",
 			Desc:     "Project extraction every 2h",
-			Command:  cd + binary + " sync --max 2",
+			Command:  each("sync --max 2"),
 			LogFile:  filepath.Join(logDir, "scribe-sync.log"),
 			Schedule: schedSpec{Calendar: everyNHoursAt(2, 23)},
 		},
 		{
 			Name:    "sync-sessions",
 			Desc:    "Session mining at 3:00, 12:00, 18:00",
-			Command: cd + binary + " sync --sessions --sessions-max 3 --skip-large",
+			Command: each("sync --sessions --sessions-max 3 --skip-large"),
 			LogFile: filepath.Join(logDir, "scribe-sync.log"),
 			Schedule: schedSpec{Calendar: []calTime{
 				{Hour: 3, Minute: 0, Weekday: -1},
@@ -80,77 +87,77 @@ func scribeJobs(root, binary string) []cronJob {
 		{
 			Name:     "lint",
 			Desc:     "Daily structural lint at 12:30pm",
-			Command:  cd + binary + " lint",
+			Command:  each("lint"),
 			LogFile:  filepath.Join(logDir, "scribe-lint.log"),
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 12, Minute: 30, Weekday: -1}}},
 		},
 		{
 			Name:     "dream",
 			Desc:     "Weekly Dream cycle (Sun 2am)",
-			Command:  cd + binary + " dream",
+			Command:  each("dream"),
 			LogFile:  filepath.Join(logDir, "scribe-dream.log"),
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 2, Minute: 0, Weekday: 0}}},
 		},
 		{
 			Name:     "lint-fix",
 			Desc:     "Weekly frontmatter auto-repair (Sat 1am — before dream)",
-			Command:  cd + binary + " lint --fix",
+			Command:  each("lint --fix"),
 			LogFile:  filepath.Join(logDir, "scribe-lint-fix.log"),
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 1, Minute: 0, Weekday: 6}}},
 		},
 		{
 			Name:     "lint-duplicates",
 			Desc:     "Weekly content-duplicate scan → wiki/_duplicates.md (Sat 1:15am — after lint-fix)",
-			Command:  cd + binary + " lint --duplicates",
+			Command:  each("lint --duplicates"),
 			LogFile:  filepath.Join(logDir, "scribe-lint-duplicates.log"),
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 1, Minute: 15, Weekday: 6}}},
 		},
 		{
 			Name:     "capture-imessage",
 			Desc:     "iMessage capture every 4h",
-			Command:  cd + binary + " capture --fetch",
+			Command:  each("capture --fetch"),
 			LogFile:  filepath.Join(logDir, "scribe-imessage.log"),
 			Schedule: schedSpec{Calendar: everyNHoursAt(4, 43)},
 		},
 		{
 			Name:     "ingest-drain",
 			Desc:     "Drain queued URLs into raw/articles/ every 30min",
-			Command:  cd + binary + " ingest drain",
+			Command:  each("ingest drain"),
 			LogFile:  filepath.Join(logDir, "scribe-ingest.log"),
 			Schedule: schedSpec{Calendar: everyNMinutes(30)},
 		},
 		{
 			Name:     "capture-refetch",
 			Desc:     "Retry stub links daily at 06:30 (parks failures in _unfetched-links.md)",
-			Command:  cd + binary + " capture --refetch",
+			Command:  each("capture --refetch"),
 			LogFile:  filepath.Join(logDir, "scribe-capture-refetch.log"),
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 6, Minute: 30, Weekday: -1}}},
 		},
 		{
 			Name:     "lint-resolve",
 			Desc:     "Weekly conflict-resolution pass (Sat 1:30am — after lint-fix, before dream)",
-			Command:  cd + binary + " lint --resolve",
+			Command:  each("lint --resolve"),
 			LogFile:  filepath.Join(logDir, "scribe-lint-resolve.log"),
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 1, Minute: 30, Weekday: 6}}},
 		},
 		{
 			Name:     "lint-identities",
 			Desc:     "Weekly identity-clustering pass (Sat 1:45am)",
-			Command:  cd + binary + " lint --identities",
+			Command:  each("lint --identities"),
 			LogFile:  filepath.Join(logDir, "scribe-lint-identities.log"),
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 1, Minute: 45, Weekday: 6}}},
 		},
 		{
 			Name:     "apply-identities",
 			Desc:     "Auto-apply high-confidence identity aliases (Sat 1:55am — after lint-identities)",
-			Command:  cd + binary + " lint --apply-identities",
+			Command:  each("lint --apply-identities"),
 			LogFile:  filepath.Join(logDir, "scribe-apply-identities.log"),
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 1, Minute: 55, Weekday: 6}}},
 		},
 		{
 			Name:      "watch",
 			Desc:      "fsnotify watcher for ccrider DB (Codex + Claude near-real-time)",
-			Command:   cd + binary + " watch",
+			Command:   binary + " watch",
 			LogFile:   filepath.Join(logDir, "scribe-watch.log"),
 			KeepAlive: true,
 		},
@@ -209,11 +216,11 @@ func plistKBRoot(plist string) string {
 
 // otherKBServedByAgents returns the KB root that this machine's existing
 // com.scribe.* LaunchAgents serve when it differs from root ("" when no
-// agents exist or they already serve root). Labels carry no KB
-// discriminator, so one machine has exactly one scribe agent set — the
-// per-KB scheduler is issue #26.
+// agents exist, they already serve root, or they're the KB-agnostic
+// registry agents with no embedded cd). Only legacy single-KB plists embed
+// a `cd "<root>"`, so this now reports a pre-#26 install awaiting migration.
 func otherKBServedByAgents(root string) string {
-	for _, job := range scribeJobs(root, "scribe") {
+	for _, job := range scribeJobs("scribe") {
 		data, err := os.ReadFile(plistPath(job.Name))
 		if err != nil {
 			continue
@@ -492,7 +499,7 @@ func (c *CronInstallCmd) Run() error {
 		return err
 	}
 	binary := resolveScribeBinary()
-	jobs := scribeJobs(root, binary)
+	jobs := scribeJobs(binary)
 
 	// On non-macOS systems, print crontab lines the user can paste. launchd
 	// plists would be meaningless and systemd user-timers are involved enough
@@ -510,12 +517,27 @@ func (c *CronInstallCmd) Run() error {
 		return nil
 	}
 
-	// One machine = one scribe agent set: labels carry no KB
-	// discriminator, so installing from a second KB would silently
-	// repoint every job away from the KB it serves. Refuse — even with
-	// --force — until the per-KB scheduler exists (issue #26).
-	if other := otherKBServedByAgents(root); other != "" {
-		return fmt.Errorf("this machine's scribe LaunchAgents already serve %s — refusing to repoint them at %s.\nRun `scribe cron uninstall` from that KB first if you really want to move the schedule; until then run this KB manually or with SCRIBE_KB=%s in your own scheduler (multi-KB cron: issue #26)", other, root, root)
+	// Agents are KB-agnostic now (issue #26): they run `scribe each`,
+	// which iterates the registry. So installing just means "register this
+	// KB and ensure the machine-level agents exist" — no clobber is
+	// possible. (Throwaway temp KBs are skipped here; the writeGlobalState
+	// chokepoint below refuses to bind the machine to them.)
+	if !isThrowawayPath(root) {
+		if added, err := registerKB(root); err != nil {
+			return err
+		} else if added {
+			fmt.Printf("registered %s in the KB registry (%s)\n", root, userConfigPath())
+		}
+		// Legacy single-KB plists (pre-#26) embed `cd "<otherKB>"` and serve
+		// only that KB. Re-installing the KB-agnostic agents overwrites them
+		// — but first register that KB too, so migration doesn't silently
+		// drop it from the schedule.
+		if other := otherKBServedByAgents(root); other != "" {
+			if added, err := registerKB(other); err == nil && added {
+				fmt.Printf("migrating legacy agents: also registered %s\n", other)
+			}
+			fmt.Printf("replacing legacy single-KB agents (served %s) with KB-agnostic ones\n", other)
+		}
 	}
 
 	domain := guiDomain()
@@ -563,11 +585,19 @@ func (c *CronInstallCmd) Run() error {
 type CronStatusCmd struct{}
 
 func (c *CronStatusCmd) Run() error {
-	root, err := kbDir()
-	if err != nil {
-		return err
+	// KB-agnostic: agents serve the whole registry, so status no longer
+	// needs a KB context. Show the registry first, then per-agent state.
+	if kbs := registeredKBs(); len(kbs) > 0 {
+		fmt.Println("Registered KBs (scribe each iterates these):")
+		for _, kb := range kbs {
+			fmt.Printf("  - %s\n", kb)
+		}
+		fmt.Println()
+	} else {
+		fmt.Printf("No registered KBs — add one with `scribe kb add <path>` (or set kb_dir in %s)\n\n", userConfigPath())
 	}
-	jobs := scribeJobs(root, resolveScribeBinary())
+
+	jobs := scribeJobs(resolveScribeBinary())
 	domain := guiDomain()
 
 	fmt.Printf("%-28s %-10s %s\n", "LABEL", "STATE", "PLIST")
@@ -588,11 +618,8 @@ type CronUninstallCmd struct {
 }
 
 func (c *CronUninstallCmd) Run() error {
-	root, err := kbDir()
-	if err != nil {
-		return err
-	}
-	jobs := scribeJobs(root, resolveScribeBinary())
+	// KB-agnostic: removing the machine-level agents needs no KB context.
+	jobs := scribeJobs(resolveScribeBinary())
 	domain := guiDomain()
 
 	for _, job := range jobs {

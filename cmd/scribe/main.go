@@ -43,6 +43,8 @@ type CLI struct {
 	Dream          DreamCmd          `cmd:"" help:"Run structured memory consolidation (4-phase dream cycle)."`
 	Link           LinkCmd           `cmd:"" help:"Link orphan articles to contextual hosts via See Also sections."`
 	Cron           CronCmd           `cmd:"" help:"Manage macOS LaunchAgents for scheduled KB jobs."`
+	Each           EachCmd           `cmd:"" help:"Run a scribe subcommand in every registered KB (KB-agnostic scheduler)."`
+	Kb             KbCmd             `cmd:"" help:"Manage the machine's KB registry (kbs: in user config)."`
 	Sessions       SessionsCmd       `cmd:"" help:"Debug and repair _sessions_log.json and the session pre-filter."`
 	Debug          DebugCmd          `cmd:"" help:"Low-level diagnostics (wikilinks, backlinks, frontmatter)."`
 	Ingest         IngestCmd         `cmd:"" help:"Ingest a URL into raw/articles/ (queue or synchronous)."`

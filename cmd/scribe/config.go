@@ -727,6 +727,13 @@ func userConfigPath() string {
 // userConfig holds settings from the user-level config file (~/.config/scribe/config.yaml).
 type userConfig struct {
 	KBDir string `yaml:"kb_dir"`
+	// KBs is the machine's KB registry (issue #26): every KB the
+	// scheduler iterates and that cwd resolution can route to. Empty
+	// means "single-KB install" — registeredKBs() falls back to
+	// [KBDir], so existing setups migrate with zero changes. There is no
+	// privileged "main" KB; KBDir degrades to an optional default for
+	// bare commands run outside any project.
+	KBs []string `yaml:"kbs"`
 	// Contributor overrides the identity stamped into the
 	// `contributor:` frontmatter of newly created articles. Lives in
 	// the per-person config (not the KB's scribe.yaml) so members of a
@@ -744,6 +751,9 @@ func loadUserConfig() userConfig {
 	}
 	_ = yaml.Unmarshal(data, &uc)
 	uc.KBDir = expandHome(uc.KBDir)
+	for i := range uc.KBs {
+		uc.KBs[i] = expandHome(uc.KBs[i])
+	}
 	return uc
 }
 

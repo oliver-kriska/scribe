@@ -697,7 +697,7 @@ func routeDocOrEpub(hasMarker bool) string {
 func checkCron(root string) []check {
 	var out []check
 	binary := resolveScribeBinary()
-	jobs := scribeJobs(root, binary)
+	jobs := scribeJobs(binary)
 	domain := guiDomain()
 	own := make(map[string]bool, len(jobs))
 	for _, job := range jobs {

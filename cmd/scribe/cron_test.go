@@ -92,11 +92,14 @@ func TestRenderCrontab(t *testing.T) {
 // content-duplicate scan being part of the installed schedule.
 func TestScribeJobsIncludesLintDuplicates(t *testing.T) {
 	var found bool
-	for _, j := range scribeJobs("/kb", "scribe") {
+	for _, j := range scribeJobs("scribe") {
 		if j.Name == "lint-duplicates" {
 			found = true
 			if !strings.Contains(j.Command, "lint --duplicates") {
 				t.Errorf("lint-duplicates command = %q, want it to run `lint --duplicates`", j.Command)
+			}
+			if !strings.Contains(j.Command, "each --") {
+				t.Errorf("job command should be KB-agnostic (each --): %q", j.Command)
 			}
 		}
 	}
@@ -105,14 +108,17 @@ func TestScribeJobsIncludesLintDuplicates(t *testing.T) {
 	}
 }
 
-// TestPlistKBRoot pins the `cd "<root>" && ` extraction that the
-// cross-KB install guard depends on. If renderPlist's command shape or
-// xmlEscape's quote handling changes, this catches it.
+// TestPlistKBRoot pins the `cd "<root>" && ` extraction used to detect
+// LEGACY single-KB plists (pre-#26) during migration. KB-agnostic plists
+// have no cd, so they must yield "".
 func TestPlistKBRoot(t *testing.T) {
-	jobs := scribeJobs("/Users/u/Projects/my-kb", "/usr/local/bin/scribe")
-	plist := renderPlist(jobs[0])
-	if got := plistKBRoot(plist); got != "/Users/u/Projects/my-kb" {
-		t.Errorf("plistKBRoot(rendered) = %q, want /Users/u/Projects/my-kb", got)
+	legacy := renderPlist(cronJob{Name: "auto-commit", Command: `cd "/Users/u/Projects/my-kb" && /usr/local/bin/scribe commit`})
+	if got := plistKBRoot(legacy); got != "/Users/u/Projects/my-kb" {
+		t.Errorf("plistKBRoot(legacy) = %q, want /Users/u/Projects/my-kb", got)
+	}
+	agnostic := renderPlist(scribeJobs("/usr/local/bin/scribe")[0])
+	if got := plistKBRoot(agnostic); got != "" {
+		t.Errorf("plistKBRoot(KB-agnostic) = %q, want empty (no cd)", got)
 	}
 	if got := plistKBRoot("<plist>no cd prefix here</plist>"); got != "" {
 		t.Errorf("plistKBRoot(no marker) = %q, want empty", got)
@@ -134,17 +140,26 @@ func TestOtherKBServedByAgents(t *testing.T) {
 		t.Errorf("no plists on disk: got %q, want empty", got)
 	}
 
-	// Install a real rendered plist for kb-a.
-	jobs := scribeJobs("/Users/u/Projects/kb-a", "/usr/local/bin/scribe")
-	if err := os.WriteFile(plistPath(jobs[0].Name), []byte(renderPlist(jobs[0])), 0o644); err != nil {
+	// A LEGACY single-KB plist (embeds `cd "<root>"`) serving kb-a.
+	name := scribeJobs("/usr/local/bin/scribe")[0].Name
+	legacy := renderPlist(cronJob{Name: name, Command: `cd "/Users/u/Projects/kb-a" && /usr/local/bin/scribe commit`})
+	if err := os.WriteFile(plistPath(name), []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
 	if got := otherKBServedByAgents("/Users/u/Projects/kb-a"); got != "" {
 		t.Errorf("same root: got %q, want empty", got)
 	}
 	if got := otherKBServedByAgents("/Users/u/Projects/kb-b"); got != "/Users/u/Projects/kb-a" {
-		t.Errorf("different root: got %q, want /Users/u/Projects/kb-a", got)
+		t.Errorf("legacy plist for kb-a: got %q, want /Users/u/Projects/kb-a", got)
+	}
+
+	// A KB-agnostic plist (no cd) must NOT be flagged as serving another KB.
+	agnostic := renderPlist(scribeJobs("/usr/local/bin/scribe")[0])
+	if err := os.WriteFile(plistPath(name), []byte(agnostic), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := otherKBServedByAgents("/Users/u/Projects/kb-b"); got != "" {
+		t.Errorf("KB-agnostic plist must not be detected as foreign: got %q, want empty", got)
 	}
 }
 
