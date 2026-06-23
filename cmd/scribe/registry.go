@@ -15,15 +15,19 @@ import (
 // optional default for bare commands run outside any project.
 
 // registeredKBs returns the deduped, currently-valid KB roots from the
-// registry. An empty `kbs:` falls back to [kb_dir] so single-KB installs
-// migrate with zero changes. Non-existent / non-KB entries are skipped so
-// one stale path can never break a cron tick.
+// registry. kb_dir is ALWAYS a member (it leads the list), unioned with the
+// explicit `kbs:` entries — this matches kbRegistered, which already counts
+// kb_dir as registered. Crucially it means adding a second KB never silently
+// drops the kb_dir default from the cron rotation (the failure mode where
+// registering enaia would stop syncing scriptorium). Non-existent / non-KB
+// entries are skipped so one stale path can never break a cron tick.
 func registeredKBs() []string {
 	uc := loadUserConfig()
-	cands := uc.KBs
-	if len(cands) == 0 && uc.KBDir != "" {
-		cands = []string{uc.KBDir}
+	var cands []string
+	if uc.KBDir != "" {
+		cands = append(cands, uc.KBDir)
 	}
+	cands = append(cands, uc.KBs...)
 	seen := map[string]bool{}
 	var out []string
 	for _, p := range cands {
