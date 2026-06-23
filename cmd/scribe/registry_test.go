@@ -67,6 +67,31 @@ func TestRegisteredKBs_DedupAndFilter(t *testing.T) {
 	}
 }
 
+// TestRegisteredKBs_KBDirUnionedWithKBs is the regression for the bug where
+// adding a second KB to `kbs:` silently dropped kb_dir from the rotation:
+// kb_dir (not listed in kbs:) plus one explicit entry must BOTH be returned,
+// so registering enaia never stops cron from syncing the scriptorium default.
+func TestRegisteredKBs_KBDirUnionedWithKBs(t *testing.T) {
+	isolateUserConfig(t)
+	primary := makeKBRoot(t, "scriptorium")
+	extra := makeKBRoot(t, "enaia")
+	writeUserCfg(t, "kb_dir: "+primary+"\nkbs:\n  - "+extra+"\n")
+	got := registeredKBs()
+	if len(got) != 2 {
+		t.Fatalf("kb_dir must be unioned with kbs:, want 2 got %v", got)
+	}
+	if got[0] != primary {
+		t.Errorf("kb_dir should lead the rotation; got %v", got)
+	}
+	saw := map[string]bool{}
+	for _, g := range got {
+		saw[g] = true
+	}
+	if !saw[primary] || !saw[extra] {
+		t.Errorf("both kb_dir and the explicit entry must appear; got %v", got)
+	}
+}
+
 func TestRegisterKB_IdempotentPreservesConfig(t *testing.T) {
 	isolateUserConfig(t)
 	a := makeKBRoot(t, "a")
