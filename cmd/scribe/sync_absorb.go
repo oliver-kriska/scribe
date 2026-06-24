@@ -606,6 +606,35 @@ type absorbEntity struct {
 	SourceChapter *int `json:"source_chapter,omitempty"`
 }
 
+// UnmarshalJSON accepts either the full object form or a bare string.
+// Local models (ollama) sometimes emit an entities array as bare names
+// ("Charlie McCollum") instead of objects. Standard decoding rejects the
+// whole plan on the first such element ("cannot unmarshal string into
+// ... absorbEntity"), so an otherwise-good chapter is dropped wholesale
+// and its entities are lost. Coerce a bare string into a label-only
+// entity instead — the label is real (it's the entity the chapter is
+// about), and downstream facts injection + pass-2 can still enrich it.
+// Anthropic's tool-use schema enforces the object shape for free, so this
+// only ever fires on the non-anthropic absorb path.
+func (e *absorbEntity) UnmarshalJSON(data []byte) error {
+	if strings.HasPrefix(strings.TrimSpace(string(data)), "\"") {
+		var name string
+		if err := json.Unmarshal(data, &name); err != nil {
+			return err
+		}
+		e.Label = strings.TrimSpace(name)
+		return nil
+	}
+	// alias breaks the method set so this doesn't recurse.
+	type alias absorbEntity
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*e = absorbEntity(a)
+	return nil
+}
+
 // rawArticleOptsIntoAbsorb returns true if a raw article's frontmatter
 // signals that it should be absorbed under high strictness. Opt-in rules:
 //   - `absorb: true` (explicit flag)
