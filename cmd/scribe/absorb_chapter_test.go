@@ -198,6 +198,65 @@ func TestMergeChapterPlans_SkipsMissingAndUnparseable(t *testing.T) {
 	}
 }
 
+// TestMergeChapterPlans_SalvagesBareStringEntities is the regression for
+// the ollama chapter-plan loss: qwen3:30b emitted `entities` as an array
+// of bare name strings, which made json.Unmarshal reject the entire
+// chapter plan ("cannot unmarshal string into ... absorbEntity") and drop
+// every entity in it. absorbEntity.UnmarshalJSON now coerces a bare string
+// into a label-only entity, so the chapter survives — mixed object/string
+// arrays included.
+func TestMergeChapterPlans_SalvagesBareStringEntities(t *testing.T) {
+	tmp := t.TempDir()
+	// The exact shape qwen3:30b produced in the live cron: names as strings.
+	// The "  " element exercises the blank-label drop downstream.
+	bareStrings := []byte(`{
+		"source_title": "Pool Saturation Brief",
+		"domain": "research",
+		"entities": ["Charlie McCollum", "Bill Sheehy", "  ", "Render"]
+	}`)
+	// A chapter that mixes the object form with a stray bare string —
+	// every element must still survive.
+	mixed := []byte(`{
+		"chapter": "C2",
+		"entities": [
+			{"label": "AppSignal CLI", "type": "tool", "one_line": "obj form", "key_claims": ["c1"]},
+			"Knock HTTP API"
+		]
+	}`)
+	runs := []chapterRun{
+		{index: 0, planJSON: writeBytes(t, tmp, "00.json", bareStrings)},
+		{index: 1, planJSON: writeBytes(t, tmp, "01.json", mixed)},
+	}
+	merged, err := mergeChapterPlans("raw", runs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, e := range merged.Entities {
+		got[e.Label] = true
+	}
+	for _, want := range []string{"Charlie McCollum", "Bill Sheehy", "Render", "AppSignal CLI", "Knock HTTP API"} {
+		if !got[want] {
+			t.Errorf("entity %q should have survived; got %v", want, labels(merged.Entities))
+		}
+	}
+	// The blank-label string is dropped by the existing label guard.
+	if got[""] || got["  "] {
+		t.Errorf("blank-label entity should have been dropped; got %v", labels(merged.Entities))
+	}
+	// The object-form entity kept its fields.
+	for _, e := range merged.Entities {
+		if e.Label == "AppSignal CLI" {
+			if e.Type != "tool" || e.OneLine != "obj form" || len(e.KeyClaims) != 1 {
+				t.Errorf("object-form entity lost fields on decode: %+v", e)
+			}
+		}
+	}
+	if merged.Domain != "research" {
+		t.Errorf("domain = %q, want research", merged.Domain)
+	}
+}
+
 func TestMergeChapterPlans_DefaultsDomainToGeneral(t *testing.T) {
 	tmp := t.TempDir()
 	plan := chapterPlan{Entities: []absorbEntity{{Label: "X", Type: "pattern"}}}
