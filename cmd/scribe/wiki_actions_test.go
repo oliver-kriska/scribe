@@ -291,6 +291,88 @@ func TestApplyWikiActions_CreateAllowOverwrite(t *testing.T) {
 	}
 }
 
+// TestApplyWikiActions_CreateRefusesEmptyBody is the regression for the
+// frontmatter-only / blank pages that accumulated in the KB: a `create`
+// whose content has no body after the frontmatter must be refused (recorded
+// as an error) and must NOT touch disk — even with AllowOverwrite (pass-2).
+func TestApplyWikiActions_CreateRefusesEmptyBody(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{"frontmatter_only", "---\ntitle: \"Stub\"\ntags: []\n---\n"},
+		{"frontmatter_only_no_trailing_nl", "---\ntitle: \"Stub\"\n---"},
+		{"completely_empty", ""},
+		{"whitespace_only", "   \n\n\t\n"},
+		{"frontmatter_then_whitespace", "---\ntitle: \"Stub\"\n---\n   \n\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			env := WikiActionEnvelope{Actions: []WikiAction{{
+				Op: "create", Path: "wiki/stub.md", Content: tc.content,
+			}}}
+			// AllowOverwrite:true mirrors the pass-2 entity writer — the
+			// guard must fire before the write regardless.
+			res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Applied) != 0 {
+				t.Errorf("empty page should not be applied; applied=%v", res.Applied)
+			}
+			if len(res.Errors) == 0 {
+				t.Error("expected an error recorded for the empty page")
+			}
+			if _, statErr := os.Stat(filepath.Join(root, "wiki", "stub.md")); statErr == nil {
+				t.Error("empty page was written to disk; guard failed")
+			}
+		})
+	}
+}
+
+// TestApplyWikiActions_CreateAcceptsRealBody guards the opposite direction:
+// a page with an actual body (with or without frontmatter) still writes.
+func TestApplyWikiActions_CreateAcceptsRealBody(t *testing.T) {
+	for _, content := range []string{
+		"---\ntitle: \"Real\"\n---\n\nThis page has a body.\n",
+		"no frontmatter but a real body",
+	} {
+		root := t.TempDir()
+		env := WikiActionEnvelope{Actions: []WikiAction{{
+			Op: "create", Path: "wiki/real.md", Content: content,
+		}}}
+		res, err := applyWikiActions(root, env, ApplyOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Errors) != 0 || len(res.Applied) != 1 {
+			t.Errorf("real-body page should write cleanly; applied=%v errors=%v", res.Applied, res.Errors)
+		}
+	}
+}
+
+func TestBodyAfterFrontmatter(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"---\ntitle: x\n---\n\nbody here\n", "body here"},
+		{"---\ntitle: x\n---\n", ""},
+		{"---\ntitle: x\n---", ""},
+		{"---\ntitle: x\n---\n   \n", ""},
+		{"", ""},
+		{"   \n\t\n", ""},
+		{"no frontmatter body", "no frontmatter body"},
+		{"---\nunterminated frontmatter\nstill going", "---\nunterminated frontmatter\nstill going"},
+	}
+	for _, tc := range cases {
+		if got := bodyAfterFrontmatter(tc.in); got != tc.want {
+			t.Errorf("bodyAfterFrontmatter(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestApplyWikiActions_DryRunSkipsWrites(t *testing.T) {
 	root := t.TempDir()
 	env := WikiActionEnvelope{Actions: []WikiAction{

@@ -396,10 +396,38 @@ func resolveActionPath(root string, i int, a *WikiAction, opts ApplyOptions) (st
 	return abs, err
 }
 
+// bodyAfterFrontmatter returns the markdown body that follows a leading YAML
+// frontmatter block (trimmed), or the whole content trimmed when there is no
+// frontmatter. Mirrors parseFrontmatter's boundary detection. Used to spot
+// frontmatter-only / blank pages before they hit disk.
+func bodyAfterFrontmatter(content string) string {
+	s := content
+	if strings.HasPrefix(s, "---") {
+		if idx := strings.Index(s[3:], "\n---"); idx >= 0 {
+			after := s[3+idx+len("\n---"):] // past the closing fence's leading "\n---"
+			// Drop the remainder of the closing fence line; body follows.
+			if _, body, ok := strings.Cut(after, "\n"); ok {
+				return strings.TrimSpace(body)
+			}
+			return "" // closing fence with nothing after it
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
 // applyCreateAction writes a new page; an existing file is an error
 // unless the consumer opted into AllowOverwrite (only pass-2 absorb —
 // see entityWriterApplyOptions).
 func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts ApplyOptions) {
+	// Refuse to materialize an empty page. A `create` whose content is blank
+	// or frontmatter-only is never useful — it's the fingerprint of a model
+	// emitting a stub (the frontmatter-only wiki articles in the KB trace
+	// here). Record it so the bad action surfaces in res.Errors instead of
+	// littering the KB with body-less pages that qmd then indexes.
+	if bodyAfterFrontmatter(a.Content) == "" {
+		res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: refusing empty page (no body after frontmatter)", i, a.Path))
+		return
+	}
 	if !opts.AllowOverwrite {
 		if _, err := os.Stat(abs); err == nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: file exists and AllowOverwrite=false", i, a.Path))
