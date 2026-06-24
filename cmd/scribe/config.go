@@ -580,6 +580,19 @@ func loadConfig(root string) *ScribeConfig {
 	// the code default silently and only logs when overriding a value
 	// the user wrote. The fill back to "tools" happens there.
 	cfg.Absorb.Pass2Mode = ""
+	// Same rationale for the per-op absorb providers: absorbDefaults()
+	// pre-seeds them to "anthropic" (for the standalone, no-LLM
+	// applyAbsorbDefaults path), but here they must read "" = "unset in
+	// yaml" so applyAbsorbDefaultsWithLLM can cascade llm.provider into
+	// them. Without this reset they're never empty, the inheritance is
+	// dead code, and `llm.provider: ollama` silently fails to move the
+	// (token-heavy) absorb stage off Anthropic — contradicting the
+	// documented "flip one line to go fully local" behavior. The
+	// resolver falls back to anthropic only when llm.provider is empty.
+	cfg.Absorb.Pass1Provider = ""
+	cfg.Absorb.Pass2Provider = ""
+	cfg.Absorb.SinglePassProvider = ""
+	cfg.Absorb.FactsProvider = ""
 
 	cfgPath := filepath.Join(root, "scribe.yaml")
 	data, err := os.ReadFile(cfgPath)

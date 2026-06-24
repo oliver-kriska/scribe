@@ -203,6 +203,92 @@ func TestAnthropicDefaultsUnchanged(t *testing.T) {
 	}
 }
 
+// TestLLMProviderCascadesToAbsorbPasses is the regression for the bug where
+// top-level `llm.provider: ollama` silently failed to move the absorb pass
+// providers off Anthropic. absorbDefaults() pre-seeds pass1/pass2/single_pass
+// providers to "anthropic"; loadConfig must reset them to "" (like Pass2Mode)
+// so applyAbsorbDefaultsWithLLM can cascade llm.provider into them. Before the
+// fix they stayed "anthropic", so an ollama-configured KB still billed
+// Anthropic (and ran the tool-use path) on every absorb — the costliest stage.
+func TestLLMProviderCascadesToAbsorbPasses(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `owner_name: Test
+llm:
+  provider: ollama
+  model: gemma3:4b
+`
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(tmp)
+	for _, c := range []struct{ name, got string }{
+		{"Pass1Provider", cfg.Absorb.Pass1Provider},
+		{"Pass2Provider", cfg.Absorb.Pass2Provider},
+		{"SinglePassProvider", cfg.Absorb.SinglePassProvider},
+	} {
+		if c.got != "ollama" {
+			t.Errorf("%s = %q, want ollama (cascaded from llm.provider)", c.name, c.got)
+		}
+	}
+	// A non-anthropic provider must auto-flip the tools path to json, since
+	// local models can't drive `claude -p` tool use.
+	if cfg.Absorb.Pass2Mode != "json" {
+		t.Errorf("Pass2Mode = %q, want json (ollama can't use the tools path)", cfg.Absorb.Pass2Mode)
+	}
+	// Models cascade too: the haiku alias is coerced to the local default.
+	if cfg.Absorb.Pass2Model != "gemma3:4b" {
+		t.Errorf("Pass2Model = %q, want gemma3:4b", cfg.Absorb.Pass2Model)
+	}
+}
+
+// TestExplicitPerOpProviderWinsOverLLM confirms a per-op provider set in yaml
+// still beats the llm.provider cascade — the documented "keep pass-2 on
+// Anthropic" override must survive the reset.
+func TestExplicitPerOpProviderWinsOverLLM(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `owner_name: Test
+llm:
+  provider: ollama
+  model: gemma3:4b
+absorb:
+  pass2_provider: anthropic
+`
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(tmp)
+	if cfg.Absorb.Pass2Provider != "anthropic" {
+		t.Errorf("explicit pass2_provider: anthropic should win over llm.provider: ollama, got %q", cfg.Absorb.Pass2Provider)
+	}
+	// pass-1 (not overridden) still cascades to ollama.
+	if cfg.Absorb.Pass1Provider != "ollama" {
+		t.Errorf("Pass1Provider = %q, want ollama (cascaded)", cfg.Absorb.Pass1Provider)
+	}
+}
+
+// TestAbsorbPassesStayAnthropicByDefault guards the no-regression direction:
+// a KB with no llm block keeps the pass providers on anthropic (the reset
+// must fall back to the anthropic default, not leave them empty).
+func TestAbsorbPassesStayAnthropicByDefault(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte("owner_name: Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(tmp)
+	for _, c := range []struct{ name, got string }{
+		{"Pass1Provider", cfg.Absorb.Pass1Provider},
+		{"Pass2Provider", cfg.Absorb.Pass2Provider},
+		{"SinglePassProvider", cfg.Absorb.SinglePassProvider},
+	} {
+		if c.got != "anthropic" {
+			t.Errorf("%s = %q, want anthropic (default when no llm block)", c.name, c.got)
+		}
+	}
+	if cfg.Absorb.Pass2Mode != "tools" {
+		t.Errorf("Pass2Mode = %q, want tools (anthropic keeps the tools path)", cfg.Absorb.Pass2Mode)
+	}
+}
+
 func TestHasTopLevelKey(t *testing.T) {
 	cases := []struct {
 		yaml string
