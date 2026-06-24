@@ -344,6 +344,110 @@ type researchFile struct {
 
 // collectResearchFiles gathers unprocessed .claude/research/**/*.md files from tracked projects
 // and copies them into raw/articles/ with proper frontmatter for the absorb pipeline.
+// comparableResearchBody returns a collected research article's body with
+// its leading YAML frontmatter and any inserted retrieval-context block
+// stripped, so two copies can be compared for a genuine source change
+// regardless of contextualize enrichment or frontmatter timestamp churn.
+// Used to make collection idempotent: an mtime bump with identical bytes
+// must not clobber the enriched dest.
+func comparableResearchBody(content string) string {
+	body := content
+	// Drop leading frontmatter.
+	if strings.HasPrefix(body, "---") {
+		if end := strings.Index(body[3:], "\n---"); end >= 0 {
+			after := body[3+end+len("\n---"):]
+			if _, rest, ok := strings.Cut(after, "\n"); ok {
+				body = rest
+			} else {
+				body = ""
+			}
+		}
+	}
+	// Drop an inserted retrieval-context block (marker line + blockquote
+	// up to the following blank line).
+	if before, after, ok := strings.Cut(body, retrievalContextMarker); ok {
+		if _, tail, ok2 := strings.Cut(after, "\n\n"); ok2 {
+			body = before + tail
+		} else {
+			body = before
+		}
+	}
+	return strings.TrimSpace(body)
+}
+
+// collectOutcome is the per-file result tallied by collectResearchFiles.
+type collectOutcome int
+
+const (
+	collectFailed collectOutcome = iota
+	collectWrote
+	collectSkipped
+)
+
+// deriveResearchTitle turns a flattened research filename into a display
+// title: strip a trailing .md and any leading YYYY-MM-DD- date prefix, then
+// title-case the remaining hyphen-separated words.
+func deriveResearchTitle(flatName string) string {
+	title := strings.TrimSuffix(flatName, ".md")
+	// Strip date prefix if present (e.g. "2026-04-09-topic" → "topic").
+	parts := strings.SplitN(title, "-", 4)
+	if len(parts) >= 4 && len(parts[0]) == 4 && len(parts[1]) == 2 && len(parts[2]) == 2 {
+		title = parts[3]
+	}
+	title = strings.ReplaceAll(title, "-", " ")
+	words := strings.Fields(title)
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// collectOneResearchFile builds the dest article for one research file
+// (adding frontmatter when the source lacks it) and writes it unless an
+// unchanged copy already exists. The idempotency check skips a source whose
+// bytes are unchanged so a mere mtime bump (git checkout, rsync, touch) does
+// not clobber the contextualize enrichment and force a re-contextualize.
+func (s *SyncCmd) collectOneResearchFile(f researchFile, destDir, domain, pname string) collectOutcome {
+	data, err := os.ReadFile(f.path)
+	if err != nil {
+		return collectFailed
+	}
+
+	// Build a flat dest filename from the relative path within research/.
+	flatName := strings.ReplaceAll(f.rel, string(filepath.Separator), "-")
+	content := string(data)
+
+	// Add frontmatter if missing.
+	if !strings.HasPrefix(strings.TrimSpace(content), "---") {
+		fm := fmt.Sprintf("---\ntitle: \"%s\"\nsource_path: \"%s\"\ningested_at: \"%s\"\nformat: markdown\ndomain: %s\nproject: %s\n---\n\n",
+			deriveResearchTitle(flatName), f.path, time.Now().UTC().Format(time.RFC3339), domain, pname)
+		content = fm + content
+	}
+
+	destName := fmt.Sprintf("research-%s-%s", pname, flatName)
+	dest := filepath.Join(destDir, destName)
+
+	if existing, rerr := os.ReadFile(dest); rerr == nil &&
+		comparableResearchBody(string(existing)) == comparableResearchBody(content) {
+		return collectSkipped
+	}
+
+	if s.DryRun {
+		logMsg("sync", " [%s] would collect research: %s", pname, f.rel)
+		return collectWrote
+	}
+
+	if err := os.WriteFile(dest, []byte(content), 0o644); err != nil {
+		logMsg("sync", " [%s] failed to write %s: %v", pname, destName, err)
+		return collectFailed
+	}
+
+	logMsg("sync", " [%s] collected research: %s → %s", pname, f.rel, destName)
+	return collectWrote
+}
+
 func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 	total := 0
 
@@ -391,61 +495,26 @@ func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 		}
 
 		collected := 0
+		skipped := 0
 		for _, f := range unscanned {
-			data, err := os.ReadFile(f.path)
-			if err != nil {
-				continue
-			}
-
-			// Build a flat dest filename from the relative path within research/.
-			rel := f.rel
-			flatName := strings.ReplaceAll(rel, string(filepath.Separator), "-")
-			content := string(data)
-
-			// Add frontmatter if missing.
-			if !strings.HasPrefix(strings.TrimSpace(content), "---") {
-				title := strings.TrimSuffix(flatName, ".md")
-				// Strip date prefix if present (e.g. "2026-04-09-topic" → "topic").
-				parts := strings.SplitN(title, "-", 4)
-				if len(parts) >= 4 && len(parts[0]) == 4 && len(parts[1]) == 2 && len(parts[2]) == 2 {
-					title = parts[3]
-				}
-				title = strings.ReplaceAll(title, "-", " ")
-				words := strings.Fields(title)
-				for i, w := range words {
-					if len(w) > 0 {
-						words[i] = strings.ToUpper(w[:1]) + w[1:]
-					}
-				}
-				title = strings.Join(words, " ")
-
-				fm := fmt.Sprintf("---\ntitle: \"%s\"\nsource_path: \"%s\"\ningested_at: \"%s\"\nformat: markdown\ndomain: %s\nproject: %s\n---\n\n",
-					title, f.path, time.Now().UTC().Format(time.RFC3339), domain, pname)
-				content = fm + content
-			}
-
-			destName := fmt.Sprintf("research-%s-%s", pname, flatName)
-			dest := filepath.Join(destDir, destName)
-
-			if s.DryRun {
-				logMsg("sync", " [%s] would collect research: %s", pname, rel)
+			switch s.collectOneResearchFile(f, destDir, domain, pname) {
+			case collectWrote:
 				collected++
-				continue
+			case collectSkipped:
+				skipped++
 			}
-
-			if err := os.WriteFile(dest, []byte(content), 0o644); err != nil {
-				logMsg("sync", " [%s] failed to write %s: %v", pname, destName, err)
-				continue
-			}
-
-			logMsg("sync", " [%s] collected research: %s → %s", pname, rel, destName)
-			collected++
 		}
 
 		total += collected
 
-		// Update timestamp in manifest for this project.
-		if !s.DryRun && collected > 0 {
+		if skipped > 0 {
+			logMsg("sync", " [%s] %d research file(s) unchanged, skipped", pname, skipped)
+		}
+
+		// Update timestamp in manifest for this project. A skip is a
+		// successful no-op, so advance past it too — otherwise an unchanged
+		// file with a bumped mtime is re-walked (and re-compared) every sync.
+		if !s.DryRun && (collected > 0 || skipped > 0) {
 			manifestMu.Lock()
 			entry.LastResearchScanned = time.Now().UTC().Format(time.RFC3339)
 			if err := manifest.save(); err != nil {
