@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,11 +103,15 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 		path := filepath.Join(rawDir, e.Name())
 
 		if !force {
-			if _, ok := logMap[e.Name()]; ok {
-				continue
-			}
-			// Also skip if the file already has the marker — lets us retrofit
-			// hand-edited articles.
+			// The in-file marker is the source of truth: skip only if the
+			// article currently carries it. The filename log is NOT
+			// authoritative — a logged article whose content was later
+			// rewritten (a re-collect that clobbered enrichment, or a stub
+			// upgraded to its real fetched content) lost its marker, and
+			// gating on the stale log entry would suppress re-enrichment
+			// forever. contextualizeOne only logs after inserting the marker
+			// and never logs on failure, so "logged but no marker" always
+			// means the file was rewritten — never an intentional skip.
 			if fileHasMarker(path, retrievalContextMarker) {
 				logMap[e.Name()] = time.Now().UTC().Format(time.RFC3339)
 				continue
@@ -181,9 +186,7 @@ func contextualizeWikiArticles(root string, limit int, model string, dryRun, for
 		relKey := relPath(root, path)
 
 		if !force {
-			if _, ok := logMap[relKey]; ok {
-				continue
-			}
+			// Marker is the source of truth — see contextualizeRawArticles.
 			if fileHasMarker(path, retrievalContextMarker) {
 				logMap[relKey] = time.Now().UTC().Format(time.RFC3339)
 				continue
@@ -467,11 +470,26 @@ func degenerateContextReason(text, body string) string {
 	return ""
 }
 
-// fileHasMarker returns true if a file contains the given marker.
+// markerScanBytes bounds how much of a file fileHasMarker reads. The
+// retrieval-context marker is spliced immediately after the frontmatter
+// (insertRetrievalContext), so it always lives within the first few hundred
+// bytes; a 16 KiB ceiling keeps the check cheap now that contextualize scans
+// every article each pass (the in-file marker, not the log, is the authority).
+const markerScanBytes = 16 << 10
+
+// fileHasMarker reports whether the file at path contains marker. It scans
+// only the first markerScanBytes, which is sufficient because the marker is
+// always near the top (right after the frontmatter).
 func fileHasMarker(path, marker string) bool {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(data), marker)
+	defer f.Close()
+	buf := make([]byte, markerScanBytes)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return false
+	}
+	return strings.Contains(string(buf[:n]), marker)
 }
