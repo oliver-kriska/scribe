@@ -330,9 +330,10 @@ func TestFormatRowUSD_BranchSelection(t *testing.T) {
 		row    CostSummary
 		expect string
 	}{
-		{"real only", CostSummary{ActualUSD: 1.234}, "$1.2340"},
-		{"est only", CostSummary{EstUSDLow: 0.1, EstUSDHigh: 0.5}, "$0.1000-0.5000"},
-		{"mixed", CostSummary{ActualUSD: 1.0, EstUSDHigh: 0.5}, "$1.0000+~$0.50"},
+		{"real only", CostSummary{ActualUSD: 1.234}, "$1.23"},
+		{"est only", CostSummary{EstUSDLow: 0.1, EstUSDHigh: 0.5}, "$0.10-0.50"},
+		{"mixed", CostSummary{ActualUSD: 1.0, EstUSDHigh: 0.5}, "$1.00+~$0.50"},
+		{"sub-cent real floors to <$0.01", CostSummary{ActualUSD: 0.003}, "<$0.01"},
 		{"none", CostSummary{}, "—"},
 	}
 	for _, tc := range cases {

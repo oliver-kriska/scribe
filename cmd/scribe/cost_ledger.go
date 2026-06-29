@@ -514,12 +514,22 @@ func formatRowUSD(r CostSummary) string {
 	hasEst := r.EstUSDLow > 0 || r.EstUSDHigh > 0
 	switch {
 	case hasReal && !hasEst:
-		return fmt.Sprintf("$%6.4f", r.ActualUSD)
+		return usd2(r.ActualUSD)
 	case !hasReal && hasEst:
-		return fmt.Sprintf("$%6.4f-%.4f", r.EstUSDLow, r.EstUSDHigh)
+		return fmt.Sprintf("$%.2f-%.2f", r.EstUSDLow, r.EstUSDHigh)
 	case hasReal && hasEst:
-		return fmt.Sprintf("$%.4f+~$%.2f", r.ActualUSD, r.EstUSDHigh)
+		return fmt.Sprintf("%s+~$%.2f", usd2(r.ActualUSD), r.EstUSDHigh)
 	default:
 		return "—"
 	}
+}
+
+// usd2 formats a dollar amount at 2 decimals (cents), the granularity people
+// actually read a spend table at. A positive sub-cent value floors to
+// "<$0.01" so a real cost never misleadingly prints as "$0.00".
+func usd2(v float64) string {
+	if v > 0 && v < 0.005 {
+		return "<$0.01"
+	}
+	return fmt.Sprintf("$%.2f", v)
 }
