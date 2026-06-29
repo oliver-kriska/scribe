@@ -36,6 +36,37 @@ type LLMConfig struct {
 	// with larger windows; this knob mainly exists for users who
 	// want every call to run at, e.g., 16384 across the board.
 	NumCtx int `yaml:"num_ctx"`
+	// BaseURL overrides the OpenAI-compatible endpoint base for hosted
+	// providers (together/groq/fireworks/huggingface/openai-compat).
+	// Required for provider: openai-compat; optional for the named
+	// providers, which carry a built-in default. Must include the /v1
+	// path segment, e.g. https://api.together.xyz/v1. NEVER put an API
+	// key here — only the URL. Ignored for anthropic/ollama.
+	BaseURL string `yaml:"base_url"`
+	// APIKeyEnv names the environment variable the hosted-provider API
+	// key is read from. Defaults are per provider (TOGETHER_API_KEY,
+	// GROQ_API_KEY, FIREWORKS_API_KEY, HF_TOKEN). The key itself is
+	// NEVER read from scribe.yaml — only the env var *name* lives here,
+	// so a committed (or team-pushed) config can't leak a credential.
+	// SCRIBE_LLM_API_KEY is a generic fallback when this/the per-
+	// provider default env var is unset.
+	APIKeyEnv string `yaml:"api_key_env"`
+	// Pricing is an optional per-model rate table (USD per 1M tokens)
+	// so the cost ledger can report dollars for hosted providers, whose
+	// rates drift and vary by model. Keys match the `model` column in
+	// `scribe cost` (provider/model, e.g. "groq/qwen3-32b"); a bare
+	// model name also matches. Local (ollama) and built-in anthropic
+	// rates need no entry. See ModelPrice.
+	Pricing map[string]ModelPrice `yaml:"pricing"`
+}
+
+// ModelPrice is one row in the llm.pricing table — the USD-per-1M-token
+// rate scribe multiplies real token counts by when writing the cost
+// ledger. Both fields default to zero (no dollar estimate produced),
+// which is the right behavior for a model the user hasn't priced.
+type ModelPrice struct {
+	Input  float64 `yaml:"input"`  // USD per 1M input (prompt) tokens
+	Output float64 `yaml:"output"` // USD per 1M output (completion) tokens
 }
 
 // RelationsConfig is the per-op routing for `scribe relations migrate`.

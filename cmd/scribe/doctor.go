@@ -427,14 +427,14 @@ func checkLocalMode(cfg *ScribeConfig) []check {
 	)
 	pass2Ollama := strings.EqualFold(effPass2Provider, "ollama")
 	if !pass2Ollama {
-		// No local mode to validate. Only the anthropic-ceiling INFO
+		// No local mode to validate. Only the metered-ceiling INFO
 		// applies in that branch — emit it and return.
-		if cfg.Sync.DailyAnthropicOutputTokenCeiling == 0 {
+		if effectiveOutputTokenCeiling(cfg.Sync) == 0 {
 			out = append(out, check{
-				Section: "localmode", Name: "anthropic_ceiling",
+				Section: "localmode", Name: "output_token_ceiling",
 				Status: statusWarn,
-				Detail: "no daily_anthropic_output_token_ceiling configured",
-				Fix:    "add sync.daily_anthropic_output_token_ceiling: 2000000 to scribe.yaml (or larger). After the 2026-05-11 runaway this is the recommended backstop.",
+				Detail: "no daily_output_token_ceiling configured",
+				Fix:    "add sync.daily_output_token_ceiling: 2000000 to scribe.yaml (or larger). After the 2026-05-11 runaway this is the recommended backstop; it gates anthropic and hosted providers alike.",
 			})
 		}
 		return out
@@ -525,12 +525,12 @@ func checkLocalMode(cfg *ScribeConfig) []check {
 		})
 	}
 
-	if cfg.Sync.DailyAnthropicOutputTokenCeiling == 0 {
+	if effectiveOutputTokenCeiling(cfg.Sync) == 0 {
 		out = append(out, check{
-			Section: "localmode", Name: "anthropic_ceiling",
+			Section: "localmode", Name: "output_token_ceiling",
 			Status: statusWarn,
-			Detail: "no daily_anthropic_output_token_ceiling configured",
-			Fix:    "add sync.daily_anthropic_output_token_ceiling: 2000000 to scribe.yaml. After the 2026-05-11 runaway this is the recommended backstop.",
+			Detail: "no daily_output_token_ceiling configured",
+			Fix:    "add sync.daily_output_token_ceiling: 2000000 to scribe.yaml. After the 2026-05-11 runaway this is the recommended backstop; it gates anthropic and hosted providers alike.",
 		})
 	}
 

@@ -112,6 +112,42 @@ llm:
 #     ollama_url: http://localhost:11434
 # Then verify with `scribe doctor` — it'll probe the Ollama server.
 {{end}}
+# Hosted OpenAI-compatible providers (Together / Groq / Fireworks / HF /
+# any /v1/chat/completions endpoint). The middle ground between local
+# Ollama and Anthropic: run the SAME open models scribe defaults to
+# (qwen3-30b-a3b, gemma3-12b, …) on someone else's GPU for a few dollars
+# a month — no local 12B–30B hardware floor. Per-op pinning means you can
+# route ONLY the heavy absorb pass to the cloud and keep the rest local.
+#
+#   PRIVACY: a hosted provider sends your KB content (notes, decisions,
+#   source context) to a third party on every call. Local/anthropic stay
+#   the defaults — cloud routing is opt-in and explicit, per the block
+#   below. Expect ~$2–6/month for a busy KB (~89% of tokens are cheap
+#   input). The API key is read from an ENV VAR, never from this file.
+#
+#   llm:
+#     provider: groq                 # together | groq | fireworks | huggingface | openai-compat
+#     model: qwen3-32b               # a real hosted model id — NOT a Claude alias
+#     # base_url:  only for provider: openai-compat (named providers have built-in URLs)
+#     # api_key_env: GROQ_API_KEY    # default per provider; SCRIBE_LLM_API_KEY is a generic fallback
+#
+# The API key never goes in THIS file (it could be committed to a shared
+# KB). Put it in the per-machine user config instead — picked up by both
+# interactive runs and the cron LaunchAgent with no shell setup:
+#   ~/.config/scribe/config.yaml:  llm_api_key: tok-xxxx   (chmod 600)
+# …or export an env var for a one-off run (overrides the file):
+#   export GROQ_API_KEY=...          # TOGETHER_API_KEY / FIREWORKS_API_KEY / HF_TOKEN per provider
+#
+# Optional: per-model USD-per-1M-token rates so `scribe cost` reports
+# dollars (rates drift, so they live here, not in code). Keys match the
+# `model` column in `scribe cost` (provider/model); a bare model also works.
+#   llm:
+#     pricing:
+#       "groq/qwen3-32b": { input: 0.29, output: 0.59 }
+#       "together/qwen3-30b-a3b": { input: 0.10, output: 0.30 }
+#
+# IMPORTANT: set sync.daily_output_token_ceiling below before pointing at
+# a paid provider — it's the runaway-spend backstop (see that block).
 
 sync:
   max_extractions: 3
@@ -140,14 +176,19 @@ sync:
   # gapped / offline laptops.
   # always_pull_before_sync: true
 
-  # daily_anthropic_output_token_ceiling: hard backstop against runaway
-  # Anthropic spend. When today's anthropic output_tokens cross this
-  # number, further claude -p calls abort with ErrDailyBudgetExhausted;
-  # sync's outer loop logs and exits 0 so cron doesn't crashloop. Local-
-  # provider calls (ollama) are exempt. SCRIBE_BYPASS_BUDGET=1 in the
-  # environment bypasses for one-off manual runs. Zero (default) disables
-  # the ceiling. After the 2026-05-11 runaway (~7M output tokens in 35h)
-  # a sensible production value is ~2_000_000.
+  # daily_output_token_ceiling: hard backstop against runaway spend on
+  # ANY metered provider — anthropic AND hosted OpenAI-compatible
+  # providers (together/groq/fireworks/huggingface/openai-compat). When
+  # today's metered output_tokens cross this number, further metered
+  # calls abort with ErrDailyBudgetExhausted; sync's outer loop logs and
+  # exits 0 so cron doesn't crashloop. Local Ollama calls are exempt
+  # (free). SCRIBE_BYPASS_BUDGET=1 bypasses for one-off manual runs. Zero
+  # (default) disables the ceiling. After the 2026-05-11 runaway (~7M
+  # output tokens in 35h) a sensible production value is ~2_000_000.
+  # daily_output_token_ceiling: 0
+  #
+  # Legacy alias (anthropic-only name, still honored; prefer the
+  # generalized key above). When both are set, the generalized one wins.
   # daily_anthropic_output_token_ceiling: 0
 
 deep:

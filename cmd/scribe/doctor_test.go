@@ -33,8 +33,8 @@ func TestCheckLocalMode_NoCeiling(t *testing.T) {
 		Sync:   SyncConfig{DailyAnthropicOutputTokenCeiling: 0},
 	}
 	out := checkLocalMode(cfg)
-	if len(out) != 1 || out[0].Name != "anthropic_ceiling" || out[0].Status != statusWarn {
-		t.Errorf("want one warn 'anthropic_ceiling', got %+v", out)
+	if len(out) != 1 || out[0].Name != "output_token_ceiling" || out[0].Status != statusWarn {
+		t.Errorf("want one warn 'output_token_ceiling', got %+v", out)
 	}
 }
 

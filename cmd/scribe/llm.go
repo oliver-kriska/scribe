@@ -54,13 +54,16 @@ func generateMaybeJSON(ctx context.Context, p llmProviderGenerator, prompt strin
 var newLLMProvider = realNewLLMProvider
 
 // realNewLLMProvider is the production implementation behind the
-// newLLMProvider seam. Unknown provider names fall back to anthropic with
-// a log line so misconfiguration never silently no-ops.
+// newLLMProvider seam. Recognized hosted OpenAI-compatible providers
+// (together/groq/fireworks/huggingface/openai-compat) route to
+// openaiCompatProvider; any other unknown name falls back to anthropic
+// with a log line so misconfiguration never silently no-ops.
 //
-// kbRoot is forwarded to the anthropic provider so its claude calls can
-// land in output/costs/<day>.jsonl alongside calls from runClaude. Empty
-// kbRoot is tolerated — appendCostEntry no-ops on empty root, so callers
-// without a KB context (e.g. unit tests) keep working.
+// kbRoot is forwarded to every provider so its calls can land in
+// output/costs/<day>.jsonl and honor the daily output-token ceiling.
+// Empty kbRoot is tolerated — the budget check and appendCostEntry both
+// no-op on empty root, so callers without a KB context (e.g. unit tests)
+// keep working.
 func realNewLLMProvider(provider, model, ollamaURL, kbRoot string) llmProviderGenerator {
 	switch strings.ToLower(provider) {
 	case "ollama":
@@ -68,6 +71,9 @@ func realNewLLMProvider(provider, model, ollamaURL, kbRoot string) llmProviderGe
 	case "anthropic", "":
 		return &anthropicProvider{model: model, root: kbRoot}
 	default:
+		if isHostedProvider(provider) {
+			return newOpenAICompatProvider(provider, model, kbRoot)
+		}
 		logMsg("llm", "unknown provider %q — falling back to anthropic", provider)
 		return &anthropicProvider{model: model, root: kbRoot}
 	}
@@ -99,11 +105,11 @@ func (a *anthropicProvider) Name() string { return "anthropic/" + a.model }
 // runClaude), so callers tagging their context propagate the label
 // here too. Untagged calls record an empty op field — still tracked.
 func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string, error) {
-	// Daily anthropic output-token ceiling: same gate runClaude uses.
-	// Local-provider Generate paths (ollamaProvider) skip this — the
-	// ceiling tracks Anthropic quota only.
+	// Daily metered-output ceiling: same gate runClaude uses. Local
+	// Generate paths (ollamaProvider) skip this — the ceiling tracks
+	// metered (anthropic + hosted) spend only.
 	if cfg := loadConfig(a.root); cfg != nil {
-		if err := checkBudget(a.root, cfg.Sync.DailyAnthropicOutputTokenCeiling); err != nil {
+		if err := checkBudget(a.root, effectiveOutputTokenCeiling(cfg.Sync)); err != nil {
 			return "", err
 		}
 	}

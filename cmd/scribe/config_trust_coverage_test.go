@@ -50,10 +50,13 @@ var nonSensitiveAllowlist = map[string]bool{
 	"LockDir":      true,
 	"DefaultModel": true,
 
-	// Top-level LLM routing (URL is locked; the rest is tuning).
+	// Top-level LLM routing (URL + key-env are locked; the rest is
+	// tuning). Pricing is a local cost-display table only — it never
+	// affects what's ingested, where data goes, or any gate.
 	"LLM.Provider": true,
 	"LLM.Model":    true,
 	"LLM.NumCtx":   true,
+	"LLM.Pricing":  true,
 
 	// Sync pipeline caps + git cadence.
 	"Sync.MaxExtractions":                   true,
@@ -66,6 +69,7 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Sync.AutoApprove":                      true,
 	"Sync.AlwaysPullBeforeSync":             true,
 	"Sync.DailyAnthropicOutputTokenCeiling": true,
+	"Sync.DailyOutputTokenCeiling":          true,
 
 	"Deep.BatchMax": true,
 

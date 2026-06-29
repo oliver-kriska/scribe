@@ -181,14 +181,82 @@ func TestCheckBudget_OnlyTodaysFileCounts(t *testing.T) {
 	}
 }
 
-func TestReadDailyAnthropicOutputTokens_NilOutputTokensSkipped(t *testing.T) {
+func TestCheckBudget_HostedProviderRowsCount(t *testing.T) {
+	resetBudgetCacheForTest()
+	root := t.TempDir()
+	today := time.Now().UTC().Format("2006-01-02")
+	writeBudgetFixture(t, root, today, []CostEntry{
+		{Provider: "ollama", OutputTokens: ptrI64(9_000_000)}, // free — ignored
+		{Provider: "groq", OutputTokens: ptrI64(600_000)},     // metered
+		{Provider: "together", OutputTokens: ptrI64(500_000)}, // metered
+	})
+	// 1.1M metered (groq + together) > 1M limit; ollama's 9M doesn't count.
+	err := checkBudget(root, 1_000_000)
+	if !errors.Is(err, ErrDailyBudgetExhausted) {
+		t.Errorf("hosted-provider output should count toward the ceiling, got %v", err)
+	}
+}
+
+func TestCheckBudget_MixedProvidersUnderLimit(t *testing.T) {
+	resetBudgetCacheForTest()
+	root := t.TempDir()
+	today := time.Now().UTC().Format("2006-01-02")
+	writeBudgetFixture(t, root, today, []CostEntry{
+		{Provider: "anthropic", OutputTokens: ptrI64(300_000)},
+		{Provider: "fireworks", OutputTokens: ptrI64(300_000)},
+		{Provider: "ollama", OutputTokens: ptrI64(8_000_000)}, // exempt
+	})
+	if err := checkBudget(root, 1_000_000); err != nil {
+		t.Errorf("600k metered under 1M should pass, got %v", err)
+	}
+}
+
+func TestEffectiveOutputTokenCeiling(t *testing.T) {
+	cases := []struct {
+		name      string
+		generic   int64
+		anthropic int64
+		want      int64
+	}{
+		{"generic wins when set", 3_000_000, 2_000_000, 3_000_000},
+		{"falls back to legacy", 0, 2_000_000, 2_000_000},
+		{"both zero", 0, 0, 0},
+		{"only generic", 1_500_000, 0, 1_500_000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := SyncConfig{
+				DailyOutputTokenCeiling:          tc.generic,
+				DailyAnthropicOutputTokenCeiling: tc.anthropic,
+			}
+			if got := effectiveOutputTokenCeiling(s); got != tc.want {
+				t.Errorf("got %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsLocalProvider(t *testing.T) {
+	for _, p := range []string{"ollama", "Ollama", "llamacpp", "llama.cpp", " ollama "} {
+		if !isLocalProvider(p) {
+			t.Errorf("isLocalProvider(%q) = false, want true", p)
+		}
+	}
+	for _, p := range []string{"anthropic", "groq", "together", "fireworks", "huggingface", "", "openai-compat"} {
+		if isLocalProvider(p) {
+			t.Errorf("isLocalProvider(%q) = true, want false", p)
+		}
+	}
+}
+
+func TestReadDailyMeteredOutputTokens_NilOutputTokensSkipped(t *testing.T) {
 	root := t.TempDir()
 	today := time.Now().UTC().Format("2006-01-02")
 	writeBudgetFixture(t, root, today, []CostEntry{
 		{Provider: "anthropic", OutputTokens: nil},
 		{Provider: "anthropic", OutputTokens: ptrI64(123)},
 	})
-	got := readDailyAnthropicOutputTokens(root, today)
+	got := readDailyMeteredOutputTokens(root, today)
 	if got != 123 {
 		t.Errorf("got %d, want 123", got)
 	}
