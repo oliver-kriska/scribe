@@ -496,18 +496,24 @@ type SyncConfig struct {
 	// gapped laptops, offline laptops on cron).
 	AlwaysPullBeforeSync *bool `yaml:"always_pull_before_sync"`
 
-	// DailyAnthropicOutputTokenCeiling is a hard backstop against
-	// runaway Anthropic spend. When the sum of output_tokens in
-	// today's output/costs/<date>.jsonl (anthropic provider only)
-	// reaches this number, further runClaude / anthropicProvider
-	// calls abort with ErrDailyBudgetExhausted. Sync's outer loop
-	// catches that and exits cleanly so cron doesn't crashloop.
-	// Local-provider calls (ollama, llama.cpp) are exempt.
-	// Zero (default) disables the ceiling entirely. After the
-	// 2026-05-11 runaway (~7M output tokens in 35 hours), a sensible
-	// production value for daily background crons is ~2_000_000.
-	// SCRIBE_BYPASS_BUDGET=1 in the environment bypasses the check
-	// for one-off manual runs that knowingly need to exceed it.
+	// DailyOutputTokenCeiling is a hard backstop against runaway spend
+	// on ANY metered provider — anthropic AND hosted OpenAI-compatible
+	// providers (together/groq/fireworks/huggingface/openai-compat).
+	// When the sum of output_tokens in today's
+	// output/costs/<date>.jsonl across metered (non-local) rows reaches
+	// this number, further metered calls abort with
+	// ErrDailyBudgetExhausted; sync's outer loop catches that and exits
+	// cleanly so cron doesn't crashloop. Local Ollama calls are exempt
+	// (free). When set (>0) this takes precedence over the legacy
+	// anthropic-only field below. Zero (default) defers to that field.
+	// SCRIBE_BYPASS_BUDGET=1 bypasses the check for one-off manual runs.
+	DailyOutputTokenCeiling int64 `yaml:"daily_output_token_ceiling"`
+	// DailyAnthropicOutputTokenCeiling is the original, anthropic-only
+	// name for the ceiling, kept for backward compatibility. Prefer
+	// daily_output_token_ceiling above, which also covers hosted
+	// providers. When both are set, the generalized field wins. The
+	// budget sum itself now counts every metered provider regardless of
+	// which key names the limit — see effectiveOutputTokenCeiling.
 	DailyAnthropicOutputTokenCeiling int64 `yaml:"daily_anthropic_output_token_ceiling"`
 }
 
@@ -753,6 +759,19 @@ type userConfig struct {
 	// shared team KB each attribute their own extractions. Empty means
 	// fall back to `git config user.name` / user.email.
 	Contributor string `yaml:"contributor"`
+	// LLMAPIKey is the hosted-provider API key for OpenAI-compatible
+	// providers (together/groq/fireworks/huggingface/openai-compat).
+	// It lives HERE — in the per-machine user config — and never in a
+	// KB's scribe.yaml, so a key can't be committed to a shared KB. A
+	// single key covers the common single-provider setup; use
+	// LLMAPIKeys when you route different ops to different providers.
+	// Resolution order is env var first (so a one-off export still
+	// overrides), then this file — so cron works with no shell exports.
+	LLMAPIKey string `yaml:"llm_api_key"`
+	// LLMAPIKeys maps a provider name (together/groq/fireworks/…) to its
+	// API key, for setups that use more than one hosted provider at
+	// once. Checked before LLMAPIKey. Same never-in-the-KB rule.
+	LLMAPIKeys map[string]string `yaml:"llm_api_keys"`
 }
 
 // loadUserConfig reads the user-level config. Returns zero value if missing.

@@ -394,13 +394,103 @@ All are free and work with scribe's auto-pull. Pick with `model: <tag>` in scrib
 
 > **Note.** Local-mode covers every LLM-driven subcommand as of 0.2.14 — `dream`, `assess`, `deep`, `session-mine` (including Codex session mining, which inherits the `session_mine:` backend), `relations migrate`, and the four absorb passes. `contextualize` was first (pre-0.2.11); Phase 4A added `facts_provider: ollama`; Phase 4B added `pass2_mode: json` + `pass2_provider: ollama` (0.2.11); Phase 4C/4D/4E (0.2.14) ported the four remaining `claude -p` orchestrators onto bounded JSON-envelope subtasks, and a top-level `llm:` block now wires it together so flipping the whole pipeline is one line of yaml.
 
+### Hosted-mode — OpenAI-compatible providers (cheap, no local GPU)
+
+The middle ground between free/local Ollama and Anthropic. The local path
+assumes a machine that can hold a quantized 12B–30B model in memory; a typical
+laptop can't load `qwen3:30b-a3b` at all. A hosted provider removes that
+hardware floor while keeping scribe's "bring your own model" story — you still
+pin `qwen3-30b-a3b`, it just runs on someone else's GPU. Because the workload is
+~89% **input** tokens (absorb re-reads large article context), the bill is
+trivial: **~$2–6/month** for a busy KB, most likely ~$3–4 blended.
+
+Any provider that speaks OpenAI-compatible `/v1/chat/completions` works through
+one backend. Built-in provider names carry their endpoint + key env var:
+
+| `provider:`     | Endpoint (built-in)                  | API key env (default) |
+| --------------- | ------------------------------------ | --------------------- |
+| `together`      | `https://api.together.xyz/v1`        | `TOGETHER_API_KEY`    |
+| `groq`          | `https://api.groq.com/openai/v1`     | `GROQ_API_KEY`        |
+| `fireworks`     | `https://api.fireworks.ai/inference/v1` | `FIREWORKS_API_KEY` |
+| `huggingface`   | `https://router.huggingface.co/v1`   | `HF_TOKEN`            |
+| `openai-compat` | _set `llm.base_url` yourself_        | _set `llm.api_key_env`_ |
+
+**Move the whole pipeline to the cloud** (one top-level block — every op
+inherits it, exactly like `provider: ollama`). This idles the local GPU
+entirely:
+
+```yaml
+# scribe.yaml — top-level llm block routes ALL ops
+llm:
+  provider: together
+  model: Qwen/Qwen3-30B-A3B   # the provider's exact model slug, NOT a Claude alias
+  # base_url:                 # only for provider: openai-compat
+  # api_key_env: TOGETHER_API_KEY  # per-provider default; SCRIBE_LLM_API_KEY is a generic fallback
+  pricing:                    # optional — lets `scribe cost` report dollars
+    "together/Qwen/Qwen3-30B-A3B": { input: 0.10, output: 0.30 }
+
+sync:
+  daily_output_token_ceiling: 2000000   # REQUIRED backstop for any paid provider (see below)
+```
+
+Use the **exact model id from the provider's catalog** (e.g. Together lists
+`Qwen/Qwen3-30B-A3B`, `Qwen/Qwen3-32B`, `zai-org/GLM-5.2`, …) — the local
+ollama tag (`qwen3:30b-a3b`) won't resolve. Any chat model the provider hosts
+works; pick by price/quality.
+
+Provide the key once in the **user config** (`~/.config/scribe/config.yaml`,
+per-machine, never in the KB) so interactive runs *and* cron pick it up with no
+shell setup:
+
+```yaml
+# ~/.config/scribe/config.yaml
+llm_api_key: tok-xxxxxxxx
+```
+
+…or export an env var for a one-off run (`export TOGETHER_API_KEY=…`), which
+overrides the file. Then:
+
+```sh
+scribe doctor --section localmode   # warns if the ceiling is unset
+scribe sync
+```
+
+**Hybrid (keep cheap passes local, offload only the heavy ones):** leave
+`llm.provider: ollama` and set just the per-op blocks that pin the GPU —
+`absorb.pass2_provider`, `absorb.contextualize.provider` — to the hosted
+provider. Per-op `provider`/`model` always win over the top-level block.
+
+> **Privacy — opt-in by design.** A hosted provider sends your KB content
+> (notes, decisions, source context) to a third party on every call. Local and
+> Anthropic stay the defaults; nothing routes to a paid provider without the
+> explicit `provider:` above. The key lives in an env var or the per-machine
+> user config, never in a KB's `scribe.yaml` — and in **team KBs**
+> `llm.base_url` and `llm.api_key_env` are trust-locked, so a pushed config
+> can't silently redirect a teammate's KB to an attacker's endpoint.
+
+> **Runaway backstop.** A paid provider reintroduces real bill risk a free
+> local model doesn't — a single looping pass can emit millions of output
+> tokens. `sync.daily_output_token_ceiling` halts that across **every metered
+> provider** (anthropic + hosted); local Ollama is exempt. Set it before
+> pointing at a paid endpoint. `scribe cost` rolls up tokens (and dollars, when
+> `pricing` is set) per `provider/model`.
+
 ### `~/.config/scribe/config.yaml` (user)
 
-Written by `scribe init`. Points scribe at your KB so you can run commands from any directory:
+Written by `scribe init`. Points scribe at your KB so you can run commands from any directory, and is also where a hosted-provider **API key** lives — this file is per-machine and never part of a KB repo, so the key can't be committed to a shared KB:
 
 ```yaml
 kb_dir: /home/alice/my-kb
+
+# Hosted-provider key (alternative to exporting an env var — survives
+# reboots and is picked up by the cron LaunchAgent with no shell setup).
+llm_api_key: tok-xxxxxxxx          # single key, covers whichever provider llm.provider names
+# llm_api_keys:                    # OR per-provider, if you route ops to different providers
+#   together: tok-aaaa
+#   groq:     gsk_bbbb
 ```
+
+Resolution order is **env var → this file**: a one-off `export GROQ_API_KEY=…` still wins, but with the key in this file nothing needs exporting (this is what makes cron work without touching `~/.zshenv`). `chmod 600` it. The key never goes in a KB's `scribe.yaml`.
 
 ### Environment variables
 
@@ -413,8 +503,10 @@ kb_dir: /home/alice/my-kb
 | `SCRIBE_PASS2_MODE`        | Override `absorb.pass2_mode` (`tools` or `json`) for one run without editing scribe.yaml                                  |
 | `SCRIBE_PASS2_PROVIDER`    | Override `absorb.pass2_provider` (`anthropic` or `ollama`) for one run                                                    |
 | `SCRIBE_PASS2_MODEL`       | Override `absorb.pass2_model` for one run                                                                                  |
-| `SCRIBE_BYPASS_BUDGET`     | Bypass `sync.daily_anthropic_output_token_ceiling` for one invocation (cron-safe ceiling otherwise aborts and exits 0)    |
+| `SCRIBE_BYPASS_BUDGET`     | Bypass `sync.daily_output_token_ceiling` for one invocation (cron-safe ceiling otherwise aborts and exits 0)              |
 | `SCRIBE_DOCTOR_SKIP_OLLAMA`| Skip the Ollama `/api/tags` probe in `scribe doctor --section localmode` (offline CI)                                     |
+| `TOGETHER_API_KEY` etc.    | Hosted-provider API key, per provider (`TOGETHER_API_KEY`, `GROQ_API_KEY`, `FIREWORKS_API_KEY`, `HF_TOKEN`)               |
+| `SCRIBE_LLM_API_KEY`       | Generic hosted-provider key fallback when the per-provider env var (or `llm.api_key_env`) is unset                        |
 
 ---
 

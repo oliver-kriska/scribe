@@ -55,6 +55,14 @@ const localConfigName = "scribe.local.yaml"
 //     would leave seven bypass routes. Per-op `provider` flips stay
 //     unlocked: with every URL locked they can only redirect to an
 //     already-trusted endpoint, and providers are a routine local tune.
+//   - BaseURL (hosted OpenAI-compatible endpoint): the exact analog of
+//     OllamaURL for cloud providers — prompts with file contents are
+//     POSTed there. A pushed base_url would exfiltrate the whole KB to
+//     an attacker's endpoint, so it is locked too.
+//   - APIKeyEnv: names the env var the hosted bearer token is read from.
+//     A pushed change could misdirect an unrelated secret (whatever env
+//     var it names) into the Authorization header, so it is locked even
+//     though the key value itself never lives in the repo.
 //   - CodexMine: enables an additional transcript source.
 //   - SecretScan: the credential gate — a pushed disable/allow_paths
 //     change must not weaken what another member's machine commits.
@@ -66,6 +74,8 @@ type sensitiveConfig struct {
 	CcriderDB         string           `json:"ccrider_db"`
 	Capture           CaptureConfig    `json:"capture"`
 	OllamaURL         string           `json:"ollama_url"`
+	BaseURL           string           `json:"base_url"`
+	APIKeyEnv         string           `json:"api_key_env"`
 	CodexMine         bool             `json:"codex_mine"`
 	SecretScan        SecretScanConfig `json:"secret_scan"`
 
@@ -87,6 +97,8 @@ func sensitiveFrom(cfg *ScribeConfig) sensitiveConfig {
 		CcriderDB:         cfg.CcriderDB,
 		Capture:           cfg.Capture,
 		OllamaURL:         cfg.LLM.OllamaURL,
+		BaseURL:           cfg.LLM.BaseURL,
+		APIKeyEnv:         cfg.LLM.APIKeyEnv,
 		CodexMine:         cfg.Codex.Mine,
 		SecretScan:        cfg.SecretScan,
 
@@ -120,6 +132,8 @@ func (s sensitiveConfig) applyTo(cfg *ScribeConfig) {
 	cfg.CcriderDB = s.CcriderDB
 	cfg.Capture = s.Capture
 	cfg.LLM.OllamaURL = s.OllamaURL
+	cfg.LLM.BaseURL = s.BaseURL
+	cfg.LLM.APIKeyEnv = s.APIKeyEnv
 	cfg.Codex.Mine = s.CodexMine
 	cfg.SecretScan = s.SecretScan
 
@@ -299,6 +313,8 @@ func sensitiveDiff(trusted, current sensitiveConfig) []string {
 		{"ccrider_db", trusted.CcriderDB, current.CcriderDB},
 		{"capture", trusted.Capture, current.Capture},
 		{"llm.ollama_url", trusted.OllamaURL, current.OllamaURL},
+		{"llm.base_url", trusted.BaseURL, current.BaseURL},
+		{"llm.api_key_env", trusted.APIKeyEnv, current.APIKeyEnv},
 		{"codex.mine", trusted.CodexMine, current.CodexMine},
 		{"secret_scan", trusted.SecretScan, current.SecretScan},
 		{"extract.ollama_url", trusted.ExtractOllamaURL, current.ExtractOllamaURL},

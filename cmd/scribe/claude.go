@@ -28,13 +28,13 @@ var ErrRateLimit = fmt.Errorf("rate limit hit")
 var runClaude = realRunClaude
 
 func realRunClaude(ctx context.Context, root, prompt, model string, tools []string, timeout time.Duration) (string, error) {
-	// Daily anthropic output-token ceiling: read once per call so a
+	// Daily metered output-token ceiling: read once per call so a
 	// long-running absorb that crosses the ceiling mid-run aborts at
 	// the next claude -p invocation rather than barreling through.
 	// Falls open (no error) when the knob is zero or the env bypass
 	// is set — same shape as the rate-limit safety net below.
 	if cfg := loadConfig(root); cfg != nil {
-		if err := checkBudget(root, cfg.Sync.DailyAnthropicOutputTokenCeiling); err != nil {
+		if err := checkBudget(root, effectiveOutputTokenCeiling(cfg.Sync)); err != nil {
 			return "", err
 		}
 	}
