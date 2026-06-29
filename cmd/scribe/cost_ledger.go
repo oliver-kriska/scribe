@@ -445,16 +445,25 @@ func (c *CostCmd) Run() error {
 		window = fmt.Sprintf("last %d days", c.Days)
 	}
 	fmt.Printf("scribe cost — %s\n\n", window)
-	fmt.Printf("  %-10s  %6s  %6s  %6s  %6s  %6s  %10s  %12s  %12s  %12s\n",
-		"model", "calls", "ok", "cancl", "rate", "tmout", "wallclock", "in-tokens", "out-tokens", "usd")
+	// Pre-pass: format USD strings and size the model/usd columns to their
+	// widest content. Hosted-provider slugs (e.g.
+	// "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput") and the "$real+~$est"
+	// USD form both overflow a fixed width and ragged the whole table.
+	usds := make([]string, len(rows))
+	modelW := len("model") // also covers the "TOTAL" footer (5 chars)
+	usdW := len("usd")
 	var totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalUsage int
 	var totalSec float64
 	var totalIn, totalOut int64
 	var totalActual, totalLow, totalHigh float64
-	for _, r := range rows {
-		usd := formatRowUSD(r)
-		fmt.Printf("  %-10s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %12s\n",
-			r.Model, r.Calls, r.OK, r.Canceled, r.RateLimit, r.Timeout, r.WallclockSeconds, r.InputTokens, r.OutputTokens, usd)
+	for i, r := range rows {
+		usds[i] = formatRowUSD(r)
+		if len(r.Model) > modelW {
+			modelW = len(r.Model)
+		}
+		if len(usds[i]) > usdW {
+			usdW = len(usds[i])
+		}
 		totalCalls += r.Calls
 		totalOK += r.OK
 		totalCanceled += r.Canceled
@@ -475,8 +484,18 @@ func (c *CostCmd) Run() error {
 		Calls:          totalCalls,
 		CallsWithUsage: totalUsage,
 	}
-	fmt.Printf("  %-10s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %12s\n",
-		"TOTAL", totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalSec, totalIn, totalOut, formatRowUSD(totalRow))
+	totalUSD := formatRowUSD(totalRow)
+	if len(totalUSD) > usdW {
+		usdW = len(totalUSD)
+	}
+	fmt.Printf("  %-*s  %6s  %6s  %6s  %6s  %6s  %10s  %12s  %12s  %*s\n",
+		modelW, "model", "calls", "ok", "cancl", "rate", "tmout", "wallclock", "in-tokens", "out-tokens", usdW, "usd")
+	for i, r := range rows {
+		fmt.Printf("  %-*s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %*s\n",
+			modelW, r.Model, r.Calls, r.OK, r.Canceled, r.RateLimit, r.Timeout, r.WallclockSeconds, r.InputTokens, r.OutputTokens, usdW, usds[i])
+	}
+	fmt.Printf("  %-*s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %*s\n",
+		modelW, "TOTAL", totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalSec, totalIn, totalOut, usdW, totalUSD)
 	fmt.Println()
 	fmt.Printf("  Coverage: %d/%d calls reported real token usage (--output-format json).\n", totalUsage, totalCalls)
 	fmt.Println("  USD column: real total when usage is present; otherwise est range ~4 chars/token, out 0.25–1.00× in.")
