@@ -27,6 +27,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -274,11 +275,17 @@ func (p *openaiCompatProvider) generate(ctx context.Context, prompt string, json
 	out, resp, err := p.doRequest(ctx, prompt, jsonMode)
 	if err != nil {
 		entry.OK = false
-		switch ctx.Err() {
-		case context.DeadlineExceeded:
+		switch {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
 			entry.ErrKind = "timeout"
-		case context.Canceled:
+		case errors.Is(ctx.Err(), context.Canceled):
 			entry.ErrKind = "canceled"
+		case errors.Is(err, ErrRateLimit):
+			// A 429 maps to ErrRateLimit in doRequest but leaves ctx.Err()
+			// nil — without this it was mislabeled "other", hiding the one
+			// failure class a hosted-provider operator most needs to see in
+			// `scribe cost --errors` (anthropic already labels it; #43).
+			entry.ErrKind = "rate_limit"
 		default:
 			entry.ErrKind = "other"
 		}
