@@ -348,15 +348,28 @@ func enforceConfigTrust(root string, cfg *ScribeConfig) {
 // user-owned and gitignored, so everything in it is implicitly trusted —
 // including re-enabling capture in a team KB. Absent file is the normal
 // case; a parse error logs once and leaves cfg as-is.
+//
+// sources.include / sources.exclude are the one exception to plain overlay.
+// yaml.v3 unmarshal REPLACES a slice rather than appending, so a local
+// sources.include with one entry would otherwise silently narrow a team
+// member's scope to that single path (#41). Both source lists are unioned
+// with the committed values instead — a local entry ADDS to the team list,
+// never shrinks it. To drop a path locally, add it to sources.exclude
+// (exclude wins in sourceAllowed); the exclude list unions the same way.
 func applyLocalOverrides(root string, cfg *ScribeConfig) {
 	data, err := os.ReadFile(filepath.Join(root, localConfigName))
 	if err != nil {
 		return
 	}
+	committedInclude := append([]string(nil), cfg.Sources.Include...)
+	committedExclude := append([]string(nil), cfg.Sources.Exclude...)
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		logAutoFlipOnce("local-config-error:"+root, "config",
 			"%s has errors — ignoring local overrides: %v", localConfigName, err)
+		return
 	}
+	cfg.Sources.Include = unionPaths(committedInclude, cfg.Sources.Include)
+	cfg.Sources.Exclude = unionPaths(committedExclude, cfg.Sources.Exclude)
 }
 
 // repoSensitiveView parses ONLY the repo scribe.yaml (no defaults, no

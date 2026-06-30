@@ -19,6 +19,7 @@ import (
 // sources. `scribe projects` with no subcommand lists everything.
 type ProjectsCmd struct {
 	List    ProjectsListCmd    `cmd:"" default:"1" help:"List projects with status (default)."`
+	Add     ProjectsAddCmd     `cmd:"" help:"Enroll a project by path (widens sources.include, approves it)."`
 	Approve ProjectsApproveCmd `cmd:"" help:"Approve pending project(s) for the pipeline."`
 	Ignore  ProjectsIgnoreCmd  `cmd:"" help:"Remove project(s) from the manifest and block re-discovery."`
 	Review  ProjectsReviewCmd  `cmd:"" help:"Interactively approve/ignore each pending project."`

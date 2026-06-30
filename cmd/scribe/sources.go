@@ -36,6 +36,34 @@ type SourcesConfig struct {
 	AllowedRemotes []string `yaml:"allowed_remotes"`
 }
 
+// unionPaths returns base followed by the entries of extra that aren't
+// already present, de-duplicated on exact string. Used to merge a local
+// scribe.local.yaml sources.include/exclude into the committed list rather
+// than replacing it (#41) — yaml.v3 unmarshal REPLACES slices, so without
+// this a one-entry local include would silently narrow a team member's
+// whole source scope to that single path. Order is stable (committed first)
+// so the result reads predictably in `scribe config` output.
+func unionPaths(base, extra []string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	seen := make(map[string]bool, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, p := range base {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	for _, p := range extra {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // sourceAllowed reports whether discovery may enroll the project at
 // path under the configured source filters. Nil config = allow all.
 func sourceAllowed(cfg *ScribeConfig, path string) bool {
@@ -54,6 +82,32 @@ func sourceAllowed(cfg *ScribeConfig, path string) bool {
 		return true
 	}
 	for _, pattern := range cfg.Sources.Include {
+		if sourcePatternMatches(pattern, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// sourceExcluded reports whether path matches any sources.exclude pattern.
+// Split out from sourceAllowed so `scribe projects add` can test the exclude
+// gate independently of the include gate it is about to satisfy.
+func sourceExcluded(cfg *ScribeConfig, path string) bool {
+	if cfg == nil {
+		return false
+	}
+	for _, pattern := range cfg.Sources.Exclude {
+		if sourcePatternMatches(pattern, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// includeCovers reports whether path is already matched by one of the
+// include patterns — i.e. adding it again would be redundant.
+func includeCovers(include []string, path string) bool {
+	for _, pattern := range include {
 		if sourcePatternMatches(pattern, path) {
 			return true
 		}

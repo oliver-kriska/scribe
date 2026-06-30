@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -33,8 +34,51 @@ func TestLocalOverridesWin(t *testing.T) {
 	if cfg.DefaultModel != "haiku" {
 		t.Errorf("DefaultModel = %q, want local override haiku", cfg.DefaultModel)
 	}
-	if len(cfg.Sources.Include) != 1 || cfg.Sources.Include[0] != "/local/path" {
-		t.Errorf("Sources.Include = %v, want local override", cfg.Sources.Include)
+	// #41: source filters union rather than replace — a local include ADDS
+	// to the committed list instead of narrowing scope to its one entry.
+	// (Scalars like default_model still replace; only the source lists merge.)
+	want := []string{"/repo/path", "/local/path"}
+	if !slices.Equal(cfg.Sources.Include, want) {
+		t.Errorf("Sources.Include = %v, want union %v", cfg.Sources.Include, want)
+	}
+}
+
+// TestLocalSourcesUnionNotReplace pins the #41 fix end to end: a one-entry
+// local sources.include must not shrink a multi-entry committed list, and a
+// local sources.exclude unions the same way (the way to narrow locally).
+func TestLocalSourcesUnionNotReplace(t *testing.T) {
+	root := setupTrustKB(t,
+		"sources:\n  include:\n    - /a\n    - /b\n    - /c\n",
+		"sources:\n  include:\n    - /d\n  exclude:\n    - /b\n")
+	cfg := loadConfig(root)
+	wantInclude := []string{"/a", "/b", "/c", "/d"}
+	if !slices.Equal(cfg.Sources.Include, wantInclude) {
+		t.Errorf("Sources.Include = %v, want %v (local must not narrow)", cfg.Sources.Include, wantInclude)
+	}
+	if !slices.Equal(cfg.Sources.Exclude, []string{"/b"}) {
+		t.Errorf("Sources.Exclude = %v, want [/b]", cfg.Sources.Exclude)
+	}
+	// The net effect: /b is excluded (exclude wins), the rest stay in scope.
+	if sourceAllowed(cfg, "/b") {
+		t.Error("/b should be excluded by the local exclude")
+	}
+	for _, p := range []string{"/a", "/c", "/d"} {
+		if !sourceAllowed(cfg, p) {
+			t.Errorf("%s should be allowed", p)
+		}
+	}
+}
+
+// TestLocalOmittingSourcesKeepsCommitted: a local file that overrides other
+// keys but never mentions sources must leave the committed include intact
+// (the union of committed with an empty local list is the committed list).
+func TestLocalOmittingSourcesKeepsCommitted(t *testing.T) {
+	root := setupTrustKB(t,
+		"default_model: sonnet\nsources:\n  include:\n    - /a\n    - /b\n",
+		"default_model: haiku\n")
+	cfg := loadConfig(root)
+	if !slices.Equal(cfg.Sources.Include, []string{"/a", "/b"}) {
+		t.Errorf("Sources.Include = %v, want committed [/a /b] preserved", cfg.Sources.Include)
 	}
 }
 

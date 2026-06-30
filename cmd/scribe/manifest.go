@@ -91,6 +91,18 @@ func (m *Manifest) ignoreProject(name string) {
 	delete(m.Projects, name)
 }
 
+// unignorePath removes a path from IgnoredPaths so it can be enrolled
+// again. The inverse of the IgnoredPaths side of ignoreProject: an explicit
+// `scribe projects add` overrides a prior ignore. Idempotent.
+func (m *Manifest) unignorePath(path string) {
+	for i, p := range m.IgnoredPaths {
+		if p == path {
+			m.IgnoredPaths = append(m.IgnoredPaths[:i], m.IgnoredPaths[i+1:]...)
+			return
+		}
+	}
+}
+
 // DiscoveredSource normalises the back-compat default. Pre-existing
 // manifests have ProjectEntry.DiscoveredFrom == "" because the field
 // didn't exist when they were written; treat those as Claude entries.
