@@ -421,41 +421,222 @@ func summarizeCosts(root string, days int) ([]CostSummary, error) {
 
 // CostCmd is the `scribe cost` subcommand.
 type CostCmd struct {
-	Days int `help:"Look back this many days. 0 = all time." default:"7"`
+	Days int    `help:"Look back this many days. 0 = all time." default:"7"`
+	KB   string `help:"Scope to one KB by registered name or path. Default: aggregate every registered KB (matches per-API-key provider billing)."`
 }
 
-// Run prints the cost summary in a human-readable form. JSON output
-// can come later if the user asks for it; for now this is a
-// scoreboard, not a programmatic API.
+// Run prints the cost summary in a human-readable form. By default it
+// aggregates EVERY registered KB, because hosted providers bill per API key
+// and one key typically serves all of a machine's KBs — so a single-KB view
+// silently undercounts the real spend (the exact confusion that motivated
+// this: `scribe cost` in one KB never matching the provider dashboard).
+// Pointing scribe at a specific KB (--kb, -C, SCRIBE_KB, or running inside a
+// KB checkout) scopes the report back to that one KB.
 func (c *CostCmd) Run() error {
-	root, err := kbDir()
+	roots, err := c.resolveCostRoots()
 	if err != nil {
 		return err
 	}
-	rows, err := summarizeCosts(root, c.Days)
-	if err != nil {
-		return err
+
+	// Merge every KB's per-model rollup into one table, and keep a per-KB
+	// total so the aggregate stays decomposable.
+	type kbReport struct {
+		name  string
+		total CostSummary
 	}
+	var reports []kbReport
+	combined := map[string]*CostSummary{}
+	for _, root := range roots {
+		rows, err := summarizeCosts(root, c.Days)
+		if err != nil {
+			return err
+		}
+		mergeByModel(combined, rows)
+		reports = append(reports, kbReport{name: kbName(root), total: totalOfCosts(rows)})
+	}
+	rows := sortedByCost(combined)
 	if len(rows) == 0 {
 		fmt.Println("no claude calls recorded in that window")
 		return nil
 	}
+
 	window := "all time"
 	if c.Days > 0 {
 		window = fmt.Sprintf("last %d days", c.Days)
 	}
-	fmt.Printf("scribe cost — %s\n\n", window)
-	// Pre-pass: format USD strings and size the model/usd columns to their
-	// widest content. Hosted-provider slugs (e.g.
-	// "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput") and the "$real+~$est"
-	// USD form both overflow a fixed width and ragged the whole table.
+	scope := reports[0].name
+	if len(reports) > 1 {
+		names := make([]string, len(reports))
+		for i, r := range reports {
+			names[i] = r.name
+		}
+		scope = fmt.Sprintf("%d KBs (%s)", len(reports), strings.Join(names, ", "))
+	}
+	fmt.Printf("scribe cost — %s — %s\n\n", window, scope)
+
+	totalCalls, totalUsage := printCostTable(rows)
+
+	if len(reports) > 1 {
+		// Per-KB subtotals: which KB drove the spend, and proof the
+		// combined TOTAL above decomposes into them.
+		sort.Slice(reports, func(i, j int) bool {
+			return reports[i].total.ActualUSD+reports[i].total.EstUSDHigh >
+				reports[j].total.ActualUSD+reports[j].total.EstUSDHigh
+		})
+		nameW := 0
+		for _, r := range reports {
+			if len(r.name) > nameW {
+				nameW = len(r.name)
+			}
+		}
+		fmt.Println()
+		fmt.Println("  By KB:")
+		for _, r := range reports {
+			fmt.Printf("    %-*s  %6d calls  %s\n", nameW, r.name, r.total.Calls, formatRowUSD(r.total))
+		}
+	}
+
+	fmt.Println()
+	fmt.Printf("  Coverage: %d/%d calls reported real token usage (--output-format json).\n", totalUsage, totalCalls)
+	fmt.Println("  USD column: real total when usage is present; otherwise est range ~4 chars/token, out 0.25–1.00× in.")
+	fmt.Println("  cancl = sibling-canceled (rate-limit cascade).  rate = direct rate-limit response.")
+	fmt.Println("  tmout = ctx.DeadlineExceeded.")
+	if len(reports) == 1 {
+		if n := len(registeredKBs()); n > 1 {
+			fmt.Printf("  Scoped to %s — drop --kb/-C and run outside a KB to aggregate all %d registered KBs.\n", reports[0].name, n)
+		}
+	}
+	return nil
+}
+
+// resolveCostRoots decides which KB ledgers to read. Default: every
+// registered KB (provider billing is per API key, which usually spans all of
+// them). An explicit single-KB signal — --kb, -C, SCRIBE_KB, or running
+// inside a KB checkout — scopes to that one KB.
+func (c *CostCmd) resolveCostRoots() ([]string, error) {
+	if c.KB != "" {
+		root, err := resolveKBRef(c.KB)
+		if err != nil {
+			return nil, err
+		}
+		return []string{root}, nil
+	}
+	if kbScopeExplicit() {
+		root, err := kbDir()
+		if err != nil {
+			return nil, err
+		}
+		return []string{root}, nil
+	}
+	if kbs := registeredKBs(); len(kbs) > 0 {
+		return kbs, nil
+	}
+	// No registry — fall back to whatever single KB resolves (or error).
+	root, err := kbDir()
+	if err != nil {
+		return nil, err
+	}
+	return []string{root}, nil
+}
+
+// kbScopeExplicit reports whether the user pointed scribe at a specific KB
+// rather than falling through to the machine default. Mirrors kbDir's
+// explicit resolution sources: -C flag, SCRIBE_KB, or cwd inside a KB.
+func kbScopeExplicit() bool {
+	if globalRoot != "" || os.Getenv("SCRIBE_KB") != "" {
+		return true
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		for dir := cwd; dir != string(filepath.Separator) && dir != "."; dir = filepath.Dir(dir) {
+			if isKBRoot(dir) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// resolveKBRef maps a --kb value to a KB root: an existing KB path, or the
+// registered KB whose name (basename) matches.
+func resolveKBRef(ref string) (string, error) {
+	if isKBRoot(ref) {
+		return filepath.Abs(ref)
+	}
+	kbs := registeredKBs()
+	for _, kb := range kbs {
+		if kb == ref || kbName(kb) == ref {
+			return kb, nil
+		}
+	}
+	names := make([]string, len(kbs))
+	for i, kb := range kbs {
+		names[i] = kbName(kb)
+	}
+	return "", fmt.Errorf("--kb %q: not a KB path and no registered KB by that name (have: %s)", ref, strings.Join(names, ", "))
+}
+
+// mergeByModel folds one KB's per-model rows into the running combined map.
+func mergeByModel(dst map[string]*CostSummary, rows []CostSummary) {
+	for _, r := range rows {
+		d := dst[r.Model]
+		if d == nil {
+			d = &CostSummary{Model: r.Model}
+			dst[r.Model] = d
+		}
+		addCost(d, r)
+	}
+}
+
+// addCost accumulates src's metrics into dst. Model is the caller's to set.
+func addCost(dst *CostSummary, src CostSummary) {
+	dst.Calls += src.Calls
+	dst.OK += src.OK
+	dst.Canceled += src.Canceled
+	dst.Timeout += src.Timeout
+	dst.RateLimit += src.RateLimit
+	dst.WallclockSeconds += src.WallclockSeconds
+	dst.PromptChars += src.PromptChars
+	dst.EstUSDLow += src.EstUSDLow
+	dst.EstUSDHigh += src.EstUSDHigh
+	dst.CallsWithUsage += src.CallsWithUsage
+	dst.InputTokens += src.InputTokens
+	dst.OutputTokens += src.OutputTokens
+	dst.CacheReadTokens += src.CacheReadTokens
+	dst.ActualUSD += src.ActualUSD
+}
+
+// totalOfCosts sums a set of per-model rows into a single CostSummary.
+func totalOfCosts(rows []CostSummary) CostSummary {
+	var t CostSummary
+	for _, r := range rows {
+		addCost(&t, r)
+	}
+	return t
+}
+
+// sortedByCost flattens the combined map into a slice ordered by total spend
+// (real + estimated high) descending — biggest spender first.
+func sortedByCost(m map[string]*CostSummary) []CostSummary {
+	out := make([]CostSummary, 0, len(m))
+	for _, r := range m {
+		out = append(out, *r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ActualUSD+out[i].EstUSDHigh > out[j].ActualUSD+out[j].EstUSDHigh
+	})
+	return out
+}
+
+// printCostTable renders the per-model table with a TOTAL footer and returns
+// (totalCalls, callsWithUsage) for the coverage line. The model and usd
+// columns size to their widest content so long hosted-provider slugs (e.g.
+// "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput") and the "$real+~$est"
+// USD form stay aligned instead of raggedding the table.
+func printCostTable(rows []CostSummary) (totalCalls, totalUsage int) {
 	usds := make([]string, len(rows))
 	modelW := len("model") // also covers the "TOTAL" footer (5 chars)
 	usdW := len("usd")
-	var totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalUsage int
-	var totalSec float64
-	var totalIn, totalOut int64
-	var totalActual, totalLow, totalHigh float64
+	total := totalOfCosts(rows)
 	for i, r := range rows {
 		usds[i] = formatRowUSD(r)
 		if len(r.Model) > modelW {
@@ -464,27 +645,8 @@ func (c *CostCmd) Run() error {
 		if len(usds[i]) > usdW {
 			usdW = len(usds[i])
 		}
-		totalCalls += r.Calls
-		totalOK += r.OK
-		totalCanceled += r.Canceled
-		totalRL += r.RateLimit
-		totalTimeout += r.Timeout
-		totalUsage += r.CallsWithUsage
-		totalSec += r.WallclockSeconds
-		totalIn += r.InputTokens
-		totalOut += r.OutputTokens
-		totalActual += r.ActualUSD
-		totalLow += r.EstUSDLow
-		totalHigh += r.EstUSDHigh
 	}
-	totalRow := CostSummary{
-		ActualUSD:      totalActual,
-		EstUSDLow:      totalLow,
-		EstUSDHigh:     totalHigh,
-		Calls:          totalCalls,
-		CallsWithUsage: totalUsage,
-	}
-	totalUSD := formatRowUSD(totalRow)
+	totalUSD := formatRowUSD(total)
 	if len(totalUSD) > usdW {
 		usdW = len(totalUSD)
 	}
@@ -495,13 +657,8 @@ func (c *CostCmd) Run() error {
 			modelW, r.Model, r.Calls, r.OK, r.Canceled, r.RateLimit, r.Timeout, r.WallclockSeconds, r.InputTokens, r.OutputTokens, usdW, usds[i])
 	}
 	fmt.Printf("  %-*s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %*s\n",
-		modelW, "TOTAL", totalCalls, totalOK, totalCanceled, totalRL, totalTimeout, totalSec, totalIn, totalOut, usdW, totalUSD)
-	fmt.Println()
-	fmt.Printf("  Coverage: %d/%d calls reported real token usage (--output-format json).\n", totalUsage, totalCalls)
-	fmt.Println("  USD column: real total when usage is present; otherwise est range ~4 chars/token, out 0.25–1.00× in.")
-	fmt.Println("  cancl = sibling-canceled (rate-limit cascade).  rate = direct rate-limit response.")
-	fmt.Println("  tmout = ctx.DeadlineExceeded.")
-	return nil
+		modelW, "TOTAL", total.Calls, total.OK, total.Canceled, total.RateLimit, total.Timeout, total.WallclockSeconds, total.InputTokens, total.OutputTokens, usdW, totalUSD)
+	return total.Calls, total.CallsWithUsage
 }
 
 // formatRowUSD picks the most accurate dollar representation
