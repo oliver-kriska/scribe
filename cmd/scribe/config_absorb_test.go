@@ -225,6 +225,7 @@ llm:
 		{"Pass1Provider", cfg.Absorb.Pass1Provider},
 		{"Pass2Provider", cfg.Absorb.Pass2Provider},
 		{"SinglePassProvider", cfg.Absorb.SinglePassProvider},
+		{"Contextualize.Provider", cfg.Absorb.Contextualize.Provider},
 	} {
 		if c.got != "ollama" {
 			t.Errorf("%s = %q, want ollama (cascaded from llm.provider)", c.name, c.got)
@@ -286,6 +287,95 @@ func TestAbsorbPassesStayAnthropicByDefault(t *testing.T) {
 	}
 	if cfg.Absorb.Pass2Mode != "tools" {
 		t.Errorf("Pass2Mode = %q, want tools (anthropic keeps the tools path)", cfg.Absorb.Pass2Mode)
+	}
+}
+
+// TestHostedLLMModelCascadesToAbsorbPasses is the regression for issue #43's
+// "move the whole pipeline to the cloud" config. With a hosted provider
+// (together/groq/...) the per-op model defaults are anthropic-shaped
+// ("haiku"/"sonnet"/"") and coerceProviderModel can't guess a hosted model
+// (it only knows ollama's recommended default). Before inheritHostedModel,
+// the absorb+contextualize stages would send "haiku"/"" to the hosted client,
+// which rejects an unknown/empty model — so a fully-hosted KB failed on
+// absorb. The top-level llm.model must cascade into every per-op model that
+// the user left at the anthropic default.
+func TestHostedLLMModelCascadesToAbsorbPasses(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `owner_name: Test
+llm:
+  provider: together
+  model: meta-llama/Llama-3.3-70B-Instruct-Turbo
+`
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(tmp)
+	const want = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+	for _, c := range []struct{ name, got string }{
+		{"Pass1Model", cfg.Absorb.Pass1Model},
+		{"Pass2Model", cfg.Absorb.Pass2Model},
+		{"SinglePassModel", cfg.Absorb.SinglePassModel},
+		{"FactsModel", cfg.Absorb.FactsModel},
+		{"Contextualize.Model", cfg.Absorb.Contextualize.Model},
+	} {
+		if c.got != want {
+			t.Errorf("%s = %q, want %q (cascaded from llm.model)", c.name, c.got, want)
+		}
+	}
+	// Providers cascade too, and pass-2 auto-flips off the tools path since a
+	// hosted OpenAI-compatible endpoint can't drive `claude -p`.
+	if cfg.Absorb.Pass2Provider != "together" {
+		t.Errorf("Pass2Provider = %q, want together", cfg.Absorb.Pass2Provider)
+	}
+	if cfg.Absorb.Pass2Mode != "json" {
+		t.Errorf("Pass2Mode = %q, want json (hosted can't use the tools path)", cfg.Absorb.Pass2Mode)
+	}
+}
+
+// TestHostedLLMModelRespectsExplicitPerOpModel confirms a per-op model set in
+// yaml still wins over the llm.model cascade — a user can pin one absorb pass
+// to a different hosted model (e.g. a cheaper one for facts).
+func TestHostedLLMModelRespectsExplicitPerOpModel(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `owner_name: Test
+llm:
+  provider: together
+  model: meta-llama/Llama-3.3-70B-Instruct-Turbo
+absorb:
+  facts_model: meta-llama/Llama-3.1-8B-Instruct-Turbo
+`
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(tmp)
+	if cfg.Absorb.FactsModel != "meta-llama/Llama-3.1-8B-Instruct-Turbo" {
+		t.Errorf("explicit facts_model should win, got %q", cfg.Absorb.FactsModel)
+	}
+	// A pass the user didn't pin still inherits the top-level model.
+	if cfg.Absorb.Pass1Model != "meta-llama/Llama-3.3-70B-Instruct-Turbo" {
+		t.Errorf("Pass1Model = %q, want the cascaded llm.model", cfg.Absorb.Pass1Model)
+	}
+}
+
+// TestAnthropicKeepsPerOpModelSplit guards the no-regression direction for
+// inheritHostedModel: anthropic must keep its deliberate haiku/sonnet per-op
+// split even when llm.model is set, never collapsing every pass onto one model.
+func TestAnthropicKeepsPerOpModelSplit(t *testing.T) {
+	tmp := t.TempDir()
+	yaml := `owner_name: Test
+llm:
+  provider: anthropic
+  model: opus
+`
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(tmp)
+	if cfg.Absorb.FactsModel != "haiku" {
+		t.Errorf("FactsModel = %q, want haiku (anthropic keeps its per-op default)", cfg.Absorb.FactsModel)
+	}
+	if cfg.Absorb.Contextualize.Model != "haiku" {
+		t.Errorf("Contextualize.Model = %q, want haiku (anthropic per-op default)", cfg.Absorb.Contextualize.Model)
 	}
 }
 

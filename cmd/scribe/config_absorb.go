@@ -402,6 +402,7 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 	// Provider/model coherence for facts mirrors the contextualize check
 	// below: ollama + Claude alias is a misconfiguration, swap to the
 	// recommended local default and log so the user notices.
+	cfg.FactsModel = inheritHostedModel(cfg.FactsProvider, cfg.FactsModel, llm)
 	cfg.FactsProvider, cfg.FactsModel = coerceProviderModel("absorb.facts", cfg.FactsProvider, cfg.FactsModel)
 	if cfg.Pass2Provider == "" {
 		cfg.Pass2Provider = llm.Provider
@@ -415,6 +416,7 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 	if cfg.Pass1Provider == "" {
 		cfg.Pass1Provider = d.FactsProvider // same anthropic default
 	}
+	cfg.Pass1Model = inheritHostedModel(cfg.Pass1Provider, cfg.Pass1Model, llm)
 	cfg.Pass1Provider, cfg.Pass1Model = coerceProviderModel("absorb.pass1", cfg.Pass1Provider, cfg.Pass1Model)
 	if cfg.SinglePassProvider == "" {
 		cfg.SinglePassProvider = llm.Provider
@@ -422,6 +424,7 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 	if cfg.SinglePassProvider == "" {
 		cfg.SinglePassProvider = d.FactsProvider // same anthropic default
 	}
+	cfg.SinglePassModel = inheritHostedModel(cfg.SinglePassProvider, cfg.SinglePassModel, llm)
 	cfg.SinglePassProvider, cfg.SinglePassModel = coerceProviderModel("absorb.single_pass", cfg.SinglePassProvider, cfg.SinglePassModel)
 	// Track whether the mode came from the user (yaml or env) — coercing
 	// the code default below is silent, overriding a user choice logs.
@@ -459,6 +462,7 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 		cfg.Pass2Mode = "json"
 	}
 	// Provider/model coherence: ollama + Claude alias swap, same as facts.
+	cfg.Pass2Model = inheritHostedModel(cfg.Pass2Provider, cfg.Pass2Model, llm)
 	cfg.Pass2Provider, cfg.Pass2Model = coerceProviderModel("absorb.pass2", cfg.Pass2Provider, cfg.Pass2Model)
 
 	// num_ctx defaults for the two paths that inline raw body. Empty →
@@ -503,6 +507,7 @@ func applyAbsorbDefaultsWithLLM(cfg *AbsorbConfig, llm LLMConfig) {
 	}
 
 	// Provider/model coherence: same alias swap as pass2/facts.
+	cfg.Contextualize.Model = inheritHostedModel(cfg.Contextualize.Provider, cfg.Contextualize.Model, llm)
 	cfg.Contextualize.Provider, cfg.Contextualize.Model = coerceProviderModel("contextualize", cfg.Contextualize.Provider, cfg.Contextualize.Model)
 }
 
