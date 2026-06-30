@@ -2,12 +2,50 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
-## [Unreleased]
+## [0.3.0] — 2026-06-30
 
-Offload the pipeline to hosted inference when local Ollama is inconvenient
-(e.g. a Mac mini running hot in summer) — without losing the local-Ollama or
-`claude -p` options — plus a `scribe cost` overhaul so multi-KB, multi-provider
+The big one: scribe grows from a single-user tool into one a small team can
+share. A handful of devs can point scribe at the same git-backed KB —
+fresh-clone bootstrap, pull-merge-reindex on every sync, one machine elected to
+dream, per-teammate subscriptions, and `scribe promote` to move an article from
+your personal KB into the shared one. A config-trust layer keeps a shared
+`scribe.yaml` from quietly widening what gets ingested or where content is sent.
+
+Alongside that: offload the pipeline to hosted inference when local Ollama is
+inconvenient (e.g. a Mac mini running hot in summer) — without losing the
+local-Ollama or `claude -p` options; a machine-level KB registry so one cron job
+set serves every KB; and a `scribe cost` overhaul so multi-KB, multi-provider
 spend is legible and reconciles with the provider's own dashboard.
+
+### Added — shared team knowledge bases
+- **Multi-writer shared KB.** A team can point scribe at one git-backed KB.
+  `scribe init --team` scaffolds it; teammates fresh-clone and scribe rebuilds
+  the local manifest from committed state. Every `scribe sync` pulls, merges,
+  and reindexes before extracting, so each run sees teammates' new pages.
+  Derived/coordination files get semantic auto-merges and scribe never leaves a
+  half-finished rebase behind.
+- **`scribe promote <article> --to <kb>`** copies an article from your personal
+  KB into another (e.g. the shared team KB) with provenance recorded — the
+  personal → team curation path. Derived/coordination files are refused as
+  promotion sources.
+- **Team dashboard** at `wiki/_digest.md` — a generated activity/ownership view
+  with per-domain owners routing.
+- **One machine dreams.** `scribe dream` takes a leader lease via a committed
+  lease file, so on a shared KB only one machine runs the weekly consolidation
+  instead of every teammate's cron racing.
+- **Pull subscriptions** surface teammates' new articles in domains you care
+  about; a **shared extraction ledger** lets teammates skip revisions another
+  machine already extracted.
+- **Project approval gate.** Discovered projects start pending; `scribe projects
+  {list,approve,ignore,review}` controls what enters the pipeline, and cron /
+  `scribe init --team` surface pending approvals. Discovery is further gated by
+  `allowed_remotes` (git-remote identity) and `sources` include/exclude filters
+  (`scribe init --allow/--disallow`).
+- **Contributor attribution** stamps a `contributor:` frontmatter field on new
+  articles at commit time — including scribe's own debounced sync commits.
+- **Team-mode secret-scan gate** holds any staged file with a likely secret
+  (entropy-confirmed) out of the commit and logs it loudly — never the secret
+  itself. Covers staged `raw/` markdown, not just wiki dirs.
 
 ### Added — hosted OpenAI-compatible providers (#43)
 - A new `openai-compat` provider path speaks `/v1/chat/completions`, so
@@ -26,6 +64,21 @@ spend is legible and reconciles with the provider's own dashboard.
 - Non-anthropic providers auto-flip absorb pass-2 to JSON mode (the `claude -p`
   tools path is anthropic-only), and every seam parsing hosted-model JSON
   defends against shape drift.
+
+### Added — single-KB quality of life
+- `scribe config update` appends commented docs for options added since the KB
+  was scaffolded, so an older `scribe.yaml` can adopt new settings without a
+  hand-merge (defaults unchanged).
+- Extraction prompts now carry a research-before-create dedup protocol — the
+  model checks for an existing article before proposing a new page, cutting
+  near-duplicate fan-out.
+- `scribe sync` folds linked git worktrees into their main project entry instead
+  of enrolling each worktree as a separate project.
+- `scribe doctor` flags foreign LaunchAgents that drive the same binary or KB
+  (duplicate jobs running twice per slot); `scribe lint`/`doctor` detect
+  unresolved git conflict markers left in articles by a botched merge.
+- Quieter startup, a `--version` flag, and a one-line strictness-hold summary in
+  place of one held-article line per file.
 
 ### Changed — runaway-spend backstop now covers every metered provider
 - `sync.daily_anthropic_output_token_ceiling` is generalized to
@@ -70,6 +123,11 @@ spend is legible and reconciles with the provider's own dashboard.
 - `ingest.inbox_path` is now containment-checked: a value that resolves outside
   the KB root is refused, so a repo-controlled config can't make `sync` drain
   an out-of-tree directory and ingest arbitrary local files.
+- KBs never harvest each other: ingestion and discovery walk up to the nearest
+  `scribe.yaml`, so a session or project nested inside another KB is never mined
+  into this one (no more `readme.md → readme.md.md` self-extract fan-out).
+- `scribe` fails closed on an unparseable `scribe.yaml` for gate and LLM
+  commands rather than silently proceeding with defaults.
 
 ### Fixed — hosted-provider follow-ups
 - Top-level `llm.model` now cascades into the absorb passes for hosted

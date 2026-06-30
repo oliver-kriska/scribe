@@ -615,6 +615,7 @@ scribe ingest url <url> --absorb   # queue-less ingest + contextualize + absorb
 scribe absorb <file>         # absorb a local file (md/txt/html) end-to-end
 scribe contextualize --scope raw|wiki|all   # insert retrieval-context paragraphs
 scribe status       # one-shot KB scoreboard (raw/wiki/backlog) — splits held-by-policy from genuinely-pending
+scribe projects {list,approve,ignore,review}  # approve/ignore discovered projects before they enter the pipeline
 scribe dream        # weekly memory consolidation (4-phase)
 scribe lint         # frontmatter + size + orphan checks (warnings grouped by class; -v per-file, -q errors-only)
 scribe lint --contradictions # LLM pass for factual disagreements across articles
@@ -632,6 +633,7 @@ scribe skill {install,list}                 # embedded scribe-kb agent skill bun
 scribe install-tools         # bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion
 scribe doctor       # deps + config + cron + freshness + errors + localmode + vault + stale + contradictions
 scribe fda          # macOS Full Disk Access probe + interactive grant flow
+scribe promote --to <kb> <article>  # copy an article into another KB with provenance (personal → team)
 scribe kb {add,list,remove}  # machine-level KB registry the scheduler iterates
 scribe each -- <subcommand>  # run a subcommand in every registered KB (cron uses this)
 scribe cron {install,status,uninstall}
