@@ -117,7 +117,9 @@ func TestLintFrontmatter(t *testing.T) {
 
 	var errors int
 	out := captureLintStdout(t, func() {
-		errors = lintFrontmatter(root, []string{good, bad})
+		rep := newLintReport(os.Stdout, false, false)
+		lintFrontmatter(rep, root, []string{good, bad})
+		errors = rep.errors
 	})
 	// A file with several missing fields still counts once.
 	if errors != 1 {
@@ -190,7 +192,12 @@ func TestLintSizes(t *testing.T) {
 			writeKBFile(t, root, tt.rel, tt.content)
 			var got int
 			out := captureLintStdout(t, func() {
-				got = lintSizes(root, []string{filepath.Join(root, tt.rel)})
+				// Verbose mode prints each warning's message inline so the
+				// per-class wantMsg substrings appear in the captured output;
+				// default mode would defer them to the grouped flush().
+				rep := newLintReport(os.Stdout, true, false)
+				lintSizes(rep, root, []string{filepath.Join(root, tt.rel)})
+				got = rep.warnings
 			})
 			if got != tt.warnings {
 				t.Errorf("warnings = %d, want %d\noutput:\n%s", got, tt.warnings, out)
@@ -211,7 +218,9 @@ func TestLintOrphans(t *testing.T) {
 
 	var warnings int
 	out := captureLintStdout(t, func() {
-		warnings = lintOrphans(root)
+		rep := newLintReport(os.Stdout, false, false)
+		lintOrphans(rep, root)
+		warnings = rep.warnings
 	})
 	// One warning for orphans (A + C have no inbound links), one for the
 	// missing page.
@@ -234,7 +243,8 @@ func TestLintOrphans_AliasResolvesLink(t *testing.T) {
 	writeKBFile(t, root, "wiki/b.md", lintValidArticle("B Article", 20, "aliases: [Bee]"))
 
 	out := captureLintStdout(t, func() {
-		lintOrphans(root)
+		rep := newLintReport(os.Stdout, false, false)
+		lintOrphans(rep, root)
 	})
 	if strings.Contains(out, "missing pages") {
 		t.Errorf("alias-linked page reported missing:\n%s", out)
@@ -246,9 +256,19 @@ func TestLintIndexConsistency(t *testing.T) {
 	writeKBFile(t, root, "wiki/a.md", lintValidArticle("A Article", 20))
 	writeKBFile(t, root, "wiki/b.md", lintValidArticle("B Article", 20))
 
-	t.Run("no index file is silent", func(t *testing.T) {
+	indexWarnings := func(t *testing.T) (int, string) {
+		t.Helper()
 		var w int
-		captureLintStdout(t, func() { w = lintIndexConsistency(root) })
+		out := captureLintStdout(t, func() {
+			rep := newLintReport(os.Stdout, false, false)
+			lintIndexConsistency(rep, root)
+			w = rep.warnings
+		})
+		return w, out
+	}
+
+	t.Run("no index file is silent", func(t *testing.T) {
+		w, _ := indexWarnings(t)
 		if w != 0 {
 			t.Errorf("warnings = %d, want 0 when index missing", w)
 		}
@@ -256,8 +276,7 @@ func TestLintIndexConsistency(t *testing.T) {
 
 	t.Run("small drift tolerated", func(t *testing.T) {
 		writeKBFile(t, root, "wiki/_index.md", "- [[A Article]] -- s\n")
-		var w int
-		out := captureLintStdout(t, func() { w = lintIndexConsistency(root) })
+		w, out := indexWarnings(t)
 		if w != 0 {
 			t.Errorf("warnings = %d, want 0 for diff of 1\noutput:\n%s", w, out)
 		}
@@ -270,8 +289,7 @@ func TestLintIndexConsistency(t *testing.T) {
 			fmt.Fprintf(&sb, "- [[Article %d]] -- s\n", i)
 		}
 		writeKBFile(t, root, "wiki/_index.md", sb.String())
-		var w int
-		out := captureLintStdout(t, func() { w = lintIndexConsistency(root) })
+		w, out := indexWarnings(t)
 		if w != 1 {
 			t.Errorf("warnings = %d, want 1\noutput:\n%s", w, out)
 		}
@@ -283,7 +301,7 @@ func TestLintIndexConsistency(t *testing.T) {
 	t.Run("second wikilink on a line not double counted", func(t *testing.T) {
 		writeKBFile(t, root, "wiki/_index.md",
 			"- [[A Article]] -- relates to [[B Article]] closely\n- [[B Article]] -- s\n")
-		out := captureLintStdout(t, func() { lintIndexConsistency(root) })
+		_, out := indexWarnings(t)
 		if !strings.Contains(out, "index: 2 entries, disk: 2 articles") {
 			t.Errorf("inline second wikilink miscounted:\n%s", out)
 		}
@@ -296,7 +314,11 @@ func TestLintConflictMarkers(t *testing.T) {
 	writeKBFile(t, root, "wiki/broken.md", "# B\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> origin/main\n")
 
 	var errors int
-	out := captureLintStdout(t, func() { errors = lintConflictMarkers(root) })
+	out := captureLintStdout(t, func() {
+		rep := newLintReport(os.Stdout, false, false)
+		lintConflictMarkers(rep, root)
+		errors = rep.errors
+	})
 	if errors != 1 {
 		t.Errorf("errors = %d, want 1\noutput:\n%s", errors, out)
 	}
