@@ -409,6 +409,25 @@
     outline-offset: 2px;
   }
   :focus:not(:focus-visible) { outline: none; }
+  /* skip-to-content: off-screen until keyboard focus, then slides in above the nav */
+  .skip-link {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 100;
+    padding: 9px 15px;
+    border-radius: var(--r-sm);
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: var(--shadow-modal);
+    transform: translateY(calc(-100% - 16px));
+    transition: transform .18s cubic-bezier(.2,.6,.2,1);
+  }
+  .skip-link:focus { transform: translateY(0); }
+  @media (prefers-reduced-motion: reduce) { .skip-link { transition: none; } }
   h1, h2, h3, h4 {
     font-family: var(--font-display);
     font-weight: 600;
@@ -1697,7 +1716,7 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
-  .anecdote h4 {
+  .anecdote h3 {
     font-size: 18px;
     letter-spacing: -0.014em;
     line-height: 1.35;
@@ -1900,6 +1919,7 @@
 </script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 
 <!-- scroll progress bar — width animated by RAF, sits above sticky nav -->
 <div class="scroll-progress" id="scrollProgress" aria-hidden="true"><span></span></div>
@@ -1963,7 +1983,7 @@
 <canvas class="site-graph" id="site-graph" aria-hidden="true"></canvas>
 
 <!-- ============================ HERO ============================ -->
-<main>
+<main id="main-content">
 <section class="hero">
   <div class="wrap">
     <div class="hero__grid">
@@ -2782,14 +2802,14 @@ scribe doctor <span class="flag">--section</span> localmode
     <div class="feels">
       <article class="anecdote">
         <span class="anecdote__chip">Cross-project memory</span>
-        <h4>Evaluated a Phoenix translation library for one app. Months later, started a different Phoenix project with the same problem.</h4>
+        <h3>Evaluated a Phoenix translation library for one app. Months later, started a different Phoenix project with the same problem.</h3>
         <p>scribe had already absorbed the verdict from the prior project's session: DB-backed Gettext with a LiveView admin UX, weighed against standard <code>.po</code> files and managed services. When Claude Code opened the new repo and asked the KB for translation options, the existing "skip" verdict surfaced first with the reasoning attached. No re-research; the agent cited the prior decision and moved on. The whole loop was invisible; the only thing the maintainer noticed was that the new project skipped the comparison shopping the first one did.</p>
         <div class="anecdote__outcome"><code>tools/kanta.md · verdict: skip</code> · surfaced via <code>qmd query "phoenix translation library"</code></div>
       </article>
 
       <article class="anecdote">
         <span class="anecdote__chip">Solved twice, written once</span>
-        <h4>Fixed an Oban idempotency bug in project A. Months later the same shape appeared in project B.</h4>
+        <h3>Fixed an Oban idempotency bug in project A. Months later the same shape appeared in project B.</h3>
         <p>The fix from project A (an idempotency-key strategy for an external-call worker) got captured automatically when the post-fix session was mined into the KB. When the same race showed up in a different Phoenix app months later, the agent grepped the KB before guessing, found the prior pattern, and proposed the exact same shape with the prior trade-offs already weighed. The second fix took fifteen minutes instead of an afternoon.</p>
         <div class="anecdote__outcome"><code>solutions/oban-external-call-worker-idempotency.md</code> · linked from <code>solutions/fly-io-oban-cron-multi-node-double-fire.md</code></div>
       </article>
