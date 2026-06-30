@@ -695,7 +695,7 @@
     height: 100vh;
     pointer-events: none;
     z-index: 0;
-    opacity: 0.62;
+    opacity: 0.32; /* quiet ambient texture — the only loud things on the page should be evidence */
     /* vertical fade so graph breathes near nav + footer, side feather keeps focus on the column */
     -webkit-mask-image:
       linear-gradient(180deg, transparent 0, black 11%, black 86%, transparent 100%),
@@ -708,7 +708,7 @@
     transition: opacity .35s ease;
   }
   @media (prefers-reduced-motion: reduce) {
-    .site-graph { opacity: 0.45; }
+    .site-graph { opacity: 0.24; }
   }
 
   /* -------------------- hero -------------------- */
