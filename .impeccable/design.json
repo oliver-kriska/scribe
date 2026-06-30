@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-23T00:00:00Z",
+  "title": "Design System: scribe",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Prompt Blue",
+        "canonical": "oklch(55% 0.18 255)",
+        "darkValue": "oklch(70% 0.16 255)",
+        "tonalRamp": [
+          "oklch(22% 0.10 255)",
+          "oklch(32% 0.14 255)",
+          "oklch(42% 0.17 255)",
+          "oklch(49% 0.18 255)",
+          "oklch(55% 0.18 255)",
+          "oklch(66% 0.16 255)",
+          "oklch(80% 0.10 255)",
+          "oklch(94% 0.04 255)"
+        ]
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(18% 0.012 250)",
+        "tonalRamp": [
+          "oklch(14% 0.012 250)",
+          "oklch(18% 0.012 250)",
+          "oklch(28% 0.014 250)",
+          "oklch(40% 0.013 250)",
+          "oklch(54% 0.012 250)",
+          "oklch(72% 0.008 250)",
+          "oklch(88% 0.005 250)",
+          "oklch(97% 0.003 250)"
+        ]
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(99% 0.002 240)",
+        "darkValue": "oklch(14% 0.012 250)",
+        "tonalRamp": [
+          "oklch(14% 0.012 250)",
+          "oklch(20% 0.014 250)",
+          "oklch(32% 0.014 250)",
+          "oklch(54% 0.012 250)",
+          "oklch(85% 0.007 250)",
+          "oklch(95% 0.004 250)",
+          "oklch(97.5% 0.003 250)",
+          "oklch(99% 0.002 240)"
+        ]
+      },
+      "term-bg": {
+        "role": "tertiary",
+        "displayName": "Terminal Slate",
+        "canonical": "oklch(20% 0.014 250)",
+        "tonalRamp": [
+          "oklch(16% 0.014 250)",
+          "oklch(20% 0.014 250)",
+          "oklch(24% 0.014 250)",
+          "oklch(30% 0.014 250)",
+          "oklch(44% 0.013 250)",
+          "oklch(64% 0.010 240)",
+          "oklch(82% 0.007 240)",
+          "oklch(94% 0.005 240)"
+        ]
+      },
+      "success": { "role": "tertiary", "displayName": "Status Green", "canonical": "oklch(50% 0.15 152)", "darkValue": "oklch(72% 0.14 152)" },
+      "warn": { "role": "tertiary", "displayName": "Status Amber", "canonical": "oklch(54% 0.13 75)", "darkValue": "oklch(78% 0.16 75)" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero h1 only. System sans at weight 600, tight negative tracking." },
+      "headline": { "displayName": "Headline", "purpose": "Section titles (.s__title)." },
+      "title": { "displayName": "Title", "purpose": "Step titles and feature-card headings." },
+      "body": { "displayName": "Body", "purpose": "All prose, held to 58-75ch." },
+      "label": { "displayName": "Mono Kicker / Label", "purpose": "Section kickers, tags, stat labels, all machine-voice metadata. Monospace, uppercase, tracked." }
+    },
+    "shadows": [
+      { "name": "shadow-terminal", "value": "0 1px 1px oklch(20% 0.012 250 / 0.04), 0 10px 30px oklch(20% 0.012 250 / 0.10), 0 28px 60px oklch(20% 0.012 250 / 0.08)", "purpose": "The hero terminal only — marks the page's primary evidence object." },
+      { "name": "shadow-card-hover", "value": "0 4px 14px oklch(20% 0.012 250 / 0.06)", "purpose": "Appears on feature-card :hover, paired with translateY(-1px)." },
+      { "name": "shadow-modal", "value": "0 8px 24px oklch(20% 0.012 250 / 0.08), 0 1px 2px oklch(20% 0.012 250 / 0.04)", "purpose": "Mobile menu / overlay surfaces." }
+    ],
+    "motion": [
+      { "name": "ease-reveal", "value": "cubic-bezier(0.2, 0.6, 0.2, 1)", "purpose": "Scroll-reveal opacity/transform (0.7s). Disabled under prefers-reduced-motion." },
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Theme view-transition crossfade (320ms) and default state transitions." },
+      { "name": "press", "value": "transform 60ms ease", "purpose": "Button :active +0.5px tactile dip." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "880px", "purpose": "Nav collapses to menu button; hero grid stacks to one column." },
+      { "name": "sm", "value": "560px", "purpose": "Hero h1 clamp drops; feature/audience grids go single column." }
+    ],
+    "themes": {
+      "strategy": "data-theme attribute on :root with prefers-color-scheme fallback; no-FOUC bootstrap script; view-transition crossfade on toggle.",
+      "light": "Paper oklch(99%) bg, Ink oklch(18%) text, accent oklch(55% 0.18 255).",
+      "dark": "oklch(14%) bg, oklch(96%) text, accent brightened to oklch(70% 0.16 255)."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Highest-emphasis inverted action: Ink fill, Paper text.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Get started</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 6px; border: 1px solid transparent; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-weight: 500; font-size: 14px; letter-spacing: -0.005em; cursor: pointer; transition: transform .06s ease, background .15s, border-color .15s; } .ds-btn:active { transform: translateY(0.5px); } .ds-btn:focus-visible { outline: 2px solid oklch(55% 0.18 255); outline-offset: 2px; } .ds-btn-primary { background: oklch(18% 0.012 250); color: oklch(99% 0.002 240); } .ds-btn-primary:hover { background: oklch(28% 0.014 250); }"
+    },
+    {
+      "name": "Accent Button",
+      "kind": "button",
+      "refersTo": "button-accent",
+      "description": "Single most-important conversion. Prompt-Blue fill.",
+      "html": "<button class=\"ds-btn ds-btn-accent\">Install scribe</button>",
+      "css": ".ds-btn-accent { background: oklch(55% 0.18 255); color: oklch(99% 0 0); } .ds-btn-accent:hover { background: oklch(49% 0.18 255); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary action: hairline border, fills on hover.",
+      "html": "<button class=\"ds-btn ds-btn-ghost\">View on GitHub</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: oklch(18% 0.012 250); border-color: oklch(92% 0.005 250); } .ds-btn-ghost:hover { background: oklch(97.5% 0.003 250); border-color: oklch(85% 0.007 250); }"
+    },
+    {
+      "name": "Section Kicker",
+      "kind": "custom",
+      "refersTo": "label",
+      "description": "The mono Prompt-Blue wayfinding kicker above a section title. One per section, never decorative.",
+      "html": "<span class=\"ds-kicker\">How it works</span>",
+      "css": ".ds-kicker { display: inline-flex; align-items: center; gap: 8px; font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.09em; color: oklch(55% 0.18 255); font-weight: 500; } .ds-kicker::before { content: ''; width: 14px; height: 1px; background: oklch(55% 0.18 255); opacity: 0.55; }"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Mono capability tag under how-it-works steps. Static, pill-shaped.",
+      "html": "<span class=\"ds-tag\">ccrider FTS5</span>",
+      "css": ".ds-tag { font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace; font-size: 11px; color: oklch(54% 0.012 250); padding: 3px 7px; background: oklch(97.5% 0.003 250); border: 1px solid oklch(92% 0.005 250); border-radius: 999px; letter-spacing: 0.01em; }"
+    },
+    {
+      "name": "Feature Card",
+      "kind": "card",
+      "refersTo": "feature-card",
+      "description": "Flat-at-rest card; lifts on hover. Leads with a tinted Prompt-Blue icon tile.",
+      "html": "<article class=\"ds-feature\"><span class=\"ds-feature-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 19.5A2.5 2.5 0 0 1 6.5 17H20\"/><path d=\"M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z\"/></svg></span><h3>Cross-project memory</h3><p>Decisions and solved bugs live in <strong>one KB</strong>, not siloed per repo.</p></article>",
+      "css": ".ds-feature { background: oklch(100% 0 0); border: 1px solid oklch(92% 0.005 250); border-radius: 14px; padding: 22px 22px 24px; display: flex; flex-direction: column; gap: 10px; transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; } .ds-feature:hover { border-color: oklch(85% 0.007 250); box-shadow: 0 4px 14px oklch(20% 0.012 250 / 0.06); transform: translateY(-1px); } .ds-feature-icon { width: 32px; height: 32px; border-radius: 6px; background: oklch(97.5% 0.003 250); border: 1px solid oklch(92% 0.005 250); display: grid; place-items: center; color: oklch(55% 0.18 255); } .ds-feature-icon svg { width: 16px; height: 16px; } .ds-feature h3 { font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-size: 16px; font-weight: 600; letter-spacing: -0.012em; margin: 0; color: oklch(18% 0.012 250); } .ds-feature p { font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: oklch(54% 0.012 250); font-size: 14px; line-height: 1.55; margin: 0; } .ds-feature p strong { color: oklch(32% 0.012 250); font-weight: 600; }"
+    },
+    {
+      "name": "Hero Eyebrow",
+      "kind": "custom",
+      "refersTo": "hero-eyebrow",
+      "description": "Status pill above the hero h1 with a live-dot.",
+      "html": "<span class=\"ds-eyebrow\"><span class=\"ds-eyebrow-dot\"></span>Runs on cron &middot; <strong>$0/sync local</strong></span>",
+      "css": ".ds-eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 4px 11px 4px 6px; border: 1px solid oklch(92% 0.005 250); border-radius: 999px; background: oklch(100% 0 0); font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-size: 12.5px; color: oklch(54% 0.012 250); } .ds-eyebrow strong { color: oklch(32% 0.012 250); font-weight: 600; } .ds-eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: oklch(58% 0.14 152); box-shadow: 0 0 0 3px color-mix(in oklch, oklch(58% 0.14 152) 22%, transparent); margin-left: 4px; }"
+    },
+    {
+      "name": "Terminal Demo",
+      "kind": "custom",
+      "refersTo": "terminal",
+      "description": "Signature hero object: a real scribe run on a dark slate card with ANSI-colored output and a blinking caret. The only thing on the page allowed a deep shadow.",
+      "html": "<div class=\"ds-term\"><div class=\"ds-term-bar\"><span class=\"ds-term-dot\"></span><span class=\"ds-term-dot\"></span><span class=\"ds-term-dot\"></span><span class=\"ds-term-title\">scribe sync</span></div><div class=\"ds-term-body\"><span class=\"ds-line\"><span class=\"u\">scribe</span> sync --sessions</span><span class=\"ds-line\"><span class=\"ok\">✓</span> mined 3 sessions <span class=\"dim\">(BM25 pre-filter)</span></span><span class=\"ds-line\"><span class=\"key\">absorbed</span> 11 articles <span class=\"caret\"></span></span></div></div>",
+      "css": ".ds-term { background: oklch(20% 0.014 250); border-radius: 14px; overflow: hidden; border: 1px solid oklch(30% 0.014 250); box-shadow: 0 1px 1px oklch(20% 0.012 250 / 0.04), 0 10px 30px oklch(20% 0.012 250 / 0.10), 0 28px 60px oklch(20% 0.012 250 / 0.08); } .ds-term-bar { display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: oklch(24% 0.014 250); border-bottom: 1px solid oklch(30% 0.014 250); } .ds-term-dot { width: 11px; height: 11px; border-radius: 50%; background: oklch(40% 0.01 250); } .ds-term-dot:nth-child(1) { background: oklch(62% 0.16 30); } .ds-term-dot:nth-child(2) { background: oklch(78% 0.14 90); } .ds-term-dot:nth-child(3) { background: oklch(70% 0.14 150); } .ds-term-title { flex: 1; text-align: center; color: oklch(64% 0.01 240); font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; } .ds-term-body { padding: 18px; color: oklch(94% 0.005 240); font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 13.25px; line-height: 1.65; } .ds-term-body .ds-line { display: block; white-space: pre-wrap; } .ds-term-body .u { color: oklch(78% 0.15 150); } .ds-term-body .ok { color: oklch(78% 0.15 150); } .ds-term-body .key { color: oklch(78% 0.10 220); } .ds-term-body .dim { color: oklch(64% 0.01 240); } .ds-term-body .caret { display: inline-block; width: 7px; height: 14px; background: oklch(94% 0.005 240); vertical-align: -2px; animation: ds-blink 1s steps(1, end) infinite; } @keyframes ds-blink { 50% { opacity: 0; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Lab Notebook",
+    "overview": "scribe's surface behaves like a careful researcher's bound notebook: dated, measured, and unwilling to assert anything it can't back with a figure. The page is a bright, near-white workspace where the only things that raise their voice are the evidence — a dark terminal showing a real run, monospace metadata carrying exact numbers, and a single blue accent that marks what matters. This is a product-register surface, not a brand campaign: design serves the message, restraint is the floor, and the interface disappears into the content the way scribe disappears into your cron schedule.",
+    "keyCharacteristics": [
+      "Evidence over adjectives: numbers in tabular mono, a live terminal, a knowledge-graph backdrop — not slogans.",
+      "One accent (Prompt Blue), spent sparingly on state and emphasis, never as decoration.",
+      "Flat, bordered surfaces; shadow is reserved for the hero terminal and interaction.",
+      "System-native type (no webfonts) plus a monospace voice for all metadata and labels.",
+      "OKLCH throughout, dual light/dark themes, reduced-motion honored."
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Prompt Blue is the only saturated color outside the terminal. It appears on a small fraction of any screen; its rarity is what makes it read as 'look here.' Never add a second accent hue — add emphasis with weight, size, or a number.", "section": "colors" },
+      { "name": "The True-White-Not-Cream Rule", "body": "The body background is oklch(99% 0.002 240) — near-zero chroma, faintly cool. It is never warmed toward beige/sand/cream.", "section": "colors" },
+      { "name": "The Two-Voice Rule", "body": "The system sans is for humans; the monospace is for machines and metadata. A label that names a number, command, tag, or file is mono.", "section": "typography" },
+      { "name": "The One-Kicker Rule", "body": "The mono Prompt-Blue kicker labels a section once, as a deliberate wayfinding system — never stacked with a second eyebrow, never decorative mid-section.", "section": "typography" },
+      { "name": "The Earned-Kicker Rule", "body": "A kicker only appears when it adds a frame the heading does not already carry. When the heading already names the topic, the kicker is dropped — it rides 7 of 10 sections, not every section. An eyebrow on every section is the AI-grammar tell this prevents.", "section": "typography" },
+      { "name": "The Flat-At-Rest Rule", "body": "Cards, panels, tags, and inputs are flat with a hairline border until interacted with. The terminal demo is the only standing exception, because it is the literal subject of the page.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep Prompt Blue as the only saturated color outside the terminal — spend it on state, links, and one emphasized word, never as fill-for-interest.",
+      "Do set every number, command, tag, file path, and label in the monospace voice with tabular-nums.",
+      "Do keep surfaces flat with 1px hairline borders at rest; let only the terminal and hover states carry shadow.",
+      "Do hold body prose to 58-75ch and lead large headings with text-wrap pretty/balance and negative tracking.",
+      "Do keep the body background a near-zero-chroma cool white; carry both themes through every contrast check.",
+      "Do add a visible, non-color-only :focus-visible ring to every interactive element (the shipped CSS currently lacks this)."
+    ],
+    "donts": [
+      "Don't ship the generic SaaS template: no gradient hero, no three identical icon+heading+text cards, no pricing-tier grid, no big-number hero-metric block, no 'Trusted by' logo wall.",
+      "Don't drift into AI-startup slop: no purple/violet gradients, no decorative glassmorphism, no emoji bullets, and never background-clip:text gradient text.",
+      "Don't go corporate/enterprise: no stock-photo people, no navy-and-gold, no buzzword soup.",
+      "Don't go over-designed editorial: no display-serif + italic drop caps + broadsheet grid.",
+      "Don't warm the neutrals toward cream/sand/beige, or introduce a second accent hue.",
+      "Don't put a drop shadow on a resting card, stack a second eyebrow above the mono kicker, or use a >1px colored side-stripe border."
+    ]
+  }
+}

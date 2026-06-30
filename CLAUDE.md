@@ -150,6 +150,23 @@ wrangler deploy
 streams edge logs. The page embeds a Plausible analytics snippet — no other
 runtime JS lives in the source.
 
+### Design Context
+
+The site's design system is documented for agents (and the `impeccable` skill)
+in two repo-root files:
+
+- **`PRODUCT.md`** — strategic: register (`product`), audience (skeptical,
+  terminal-dwelling developers), the "technical, honest, understated" voice,
+  anti-references (no SaaS template / AI slop / corporate / over-designed
+  editorial), and the WCAG 2.2 AA target. Read before changing site copy or IA.
+- **`DESIGN.md`** (+ `.impeccable/design.json` sidecar) — visual: the OKLCH
+  token system, "Prompt Blue" single-accent rule, system-native type, the
+  flat-at-rest elevation rule, and named do's/don'ts. Read before changing site
+  CSS/components so the dual light/dark themes stay on-brand.
+
+Both scope **only** `site/public/index.html`, not the Go CLI. Keep claims on the
+page backed by a concrete number/command (receipts over adjectives).
+
 ---
 
 ## Reference KB: scriptorium
