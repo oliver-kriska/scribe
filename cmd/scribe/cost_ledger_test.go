@@ -422,3 +422,41 @@ func TestModelRateUSDPerMillion_KnownModelsHavePrices(t *testing.T) {
 		}
 	}
 }
+
+// TestMergeByModelAggregatesAcrossKBs checks that the multi-KB rollup sums
+// per-model metrics across KBs (the default `scribe cost` behavior) — the
+// combined together row must equal the provider's per-API-key total.
+func TestMergeByModelAggregatesAcrossKBs(t *testing.T) {
+	combined := map[string]*CostSummary{}
+	// scriptorium's together rollup for the window
+	mergeByModel(combined, []CostSummary{
+		{Model: "together/x", Calls: 59, InputTokens: 361612, OutputTokens: 43847, ActualUSD: 0.098631, CallsWithUsage: 59},
+		{Model: "ollama/y", Calls: 10},
+	})
+	// enaia-kb's together rollup, same key
+	mergeByModel(combined, []CostSummary{
+		{Model: "together/x", Calls: 55, InputTokens: 347256, OutputTokens: 42052, ActualUSD: 0.094682, CallsWithUsage: 55},
+	})
+
+	tg := combined["together/x"]
+	if tg.Calls != 114 {
+		t.Errorf("calls: got %d, want 114", tg.Calls)
+	}
+	if tg.InputTokens != 708868 {
+		t.Errorf("input tokens: got %d, want 708868", tg.InputTokens)
+	}
+	if tg.CallsWithUsage != 114 {
+		t.Errorf("callsWithUsage: got %d, want 114", tg.CallsWithUsage)
+	}
+	if want := 0.193313; tg.ActualUSD < want-1e-6 || tg.ActualUSD > want+1e-6 {
+		t.Errorf("usd: got %f, want ~%f", tg.ActualUSD, want)
+	}
+
+	rows := sortedByCost(combined)
+	if len(rows) != 2 || rows[0].Model != "together/x" {
+		t.Fatalf("sortedByCost should rank the spender first; got %+v", rows)
+	}
+	if total := totalOfCosts(rows); total.Calls != 124 {
+		t.Errorf("total calls across models: got %d, want 124", total.Calls)
+	}
+}
