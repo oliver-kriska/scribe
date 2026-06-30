@@ -1414,6 +1414,32 @@
   }
 
   /* -------------------- comparison table -------------------- */
+  .cmp-details { margin-top: 2px; }
+  .cmp-details > summary {
+    list-style: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--font-mono); font-size: 13px; letter-spacing: .01em;
+    color: var(--fg-soft);
+    padding: 11px 16px;
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--surface);
+    transition: border-color .15s, color .15s;
+  }
+  .cmp-details > summary:hover { border-color: var(--border-hover); color: var(--fg); }
+  .cmp-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cmp-details > summary::-webkit-details-marker { display: none; }
+  .cmp-details > summary::after {
+    content: ""; flex: none; width: 16px; height: 16px;
+    background-color: var(--muted);
+    -webkit-mask: center/13px no-repeat url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'><line x1='2' y1='6' x2='10' y2='6'/><line x1='6' y1='2' x2='6' y2='10'/></svg>");
+            mask: center/13px no-repeat url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'><line x1='2' y1='6' x2='10' y2='6'/><line x1='6' y1='2' x2='6' y2='10'/></svg>");
+    transition: background-color .2s ease;
+  }
+  .cmp-details[open] > summary { margin-bottom: 18px; }
+  .cmp-details[open] > summary::after {
+    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'><line x1='2' y1='6' x2='10' y2='6'/></svg>");
+            mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'><line x1='2' y1='6' x2='10' y2='6'/></svg>");
+  }
   .cmp-wrap { display: grid; gap: 18px; }
   .cmp {
     width: 100%;
@@ -2457,6 +2483,8 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
     <p class="scroll-hint" aria-hidden="true">↔ swipe the table to see every tool column</p>
     <p class="cmp__caption">scribe is the only one of these that auto-writes a portable, git-versioned markdown wiki your agents read before they decide, with no vector database. Unlike AnythingLLM, scribe stores plain markdown in git and needs no vector database or running server. Snapshot 2026-06-08; tool capabilities change, so check each project's docs before deciding.</p>
 
+    <details class="cmp-details">
+      <summary>Full comparison · 6 tools across 6 build-level axes</summary>
     <div class="cmp-wrap">
       <table class="cmp">
         <thead>
@@ -2593,6 +2621,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
         <cite>— project README</cite>
       </blockquote>
     </div>
+    </details>
   </div>
 </section>
 
