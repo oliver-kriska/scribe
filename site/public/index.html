@@ -142,7 +142,7 @@
       "name": "Does scribe require an Anthropic API key?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. Every LLM op in scribe — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining claude -p callsite in a normal scribe sync. A single line in scribe.yaml flips the whole pipeline. Per-op overrides still work if you want to keep some passes on Anthropic."
+        "text": "No. Every LLM op in scribe runs end-to-end against a local Ollama server: per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate. There is no remaining claude -p callsite in a normal scribe sync. A single line in scribe.yaml flips the whole pipeline. Per-op overrides still work if you want to keep some passes on Anthropic."
       }
     },
     {
@@ -166,7 +166,7 @@
       "name": "Where does scribe store the knowledge base?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "In a plain git repo of markdown files at whatever path you pass to scribe init. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook."
+        "text": "In a plain git repo of markdown files at whatever path you pass to scribe init. Push it to your own GitHub, Gitea, or Forgejo; there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook."
       }
     },
     {
@@ -174,7 +174,7 @@
       "name": "What does the cron schedule look like?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday at 02:00 for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
+        "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider (and Codex CLI sessions in that same pass when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday at 02:00 for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
       }
     },
     {
@@ -190,7 +190,7 @@
       "name": "How is scribe different from Code Insights, AnythingLLM, or Obsidian?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Code Insights turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them — plus your git repos and self-sent URLs — into a portable markdown wiki in git that your agents read back before they decide. AnythingLLM is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. Obsidian is a manual notes tool you type into yourself, whereas scribe writes the notes for you."
+        "text": "Code Insights turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them (plus your git repos and self-sent URLs) into a portable markdown wiki in git that your agents read back before they decide. AnythingLLM is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. Obsidian is a manual notes tool you type into yourself, whereas scribe writes the notes for you."
       }
     },
     {
@@ -288,7 +288,7 @@
     --fg:      oklch(18% 0.012 250);
     --fg-soft: oklch(32% 0.012 250);
     --muted:   oklch(54% 0.012 250);
-    --muted-2: oklch(62% 0.008 250);
+    --muted-2: oklch(53% 0.009 250);
     --border:  oklch(92% 0.005 250);
     --border-2:oklch(95% 0.004 250);
     --border-hover: oklch(85% 0.007 250);
@@ -296,8 +296,8 @@
     --accent-soft: oklch(96% 0.025 255);
     --accent-fg:   oklch(99% 0 0);
     --accent-hover: oklch(49% 0.18 255);
-    --success: oklch(58% 0.14 152);
-    --warn:    oklch(70% 0.16 75);
+    --success: oklch(50% 0.15 152);
+    --warn:    oklch(54% 0.13 75);
 
     --btn-primary-hover: oklch(28% 0.014 250);
 
@@ -322,6 +322,7 @@
     --font-body:    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
     --font-mono:    ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
 
+    --r-xs: 4px;
     --r-sm: 6px;
     --r-md: 10px;
     --r-lg: 14px;
@@ -351,7 +352,7 @@
     --fg:      oklch(96% 0.005 250);
     --fg-soft: oklch(82% 0.008 250);
     --muted:   oklch(62% 0.012 250);
-    --muted-2: oklch(55% 0.010 250);
+    --muted-2: oklch(61% 0.011 250);
     --border:  oklch(26% 0.014 250);
     --border-2:oklch(22% 0.012 250);
     --border-hover: oklch(36% 0.016 250);
@@ -399,7 +400,7 @@
       --fg:      oklch(96% 0.005 250);
       --fg-soft: oklch(82% 0.008 250);
       --muted:   oklch(62% 0.012 250);
-      --muted-2: oklch(55% 0.010 250);
+      --muted-2: oklch(61% 0.011 250);
       --border:  oklch(26% 0.014 250);
       --border-2:oklch(22% 0.012 250);
       --border-hover: oklch(36% 0.016 250);
@@ -456,6 +457,15 @@
   }
   ::selection { background: var(--selection); }
   a { color: inherit; text-decoration: none; }
+  /* Keyboard focus ring: replace the UA default with an on-brand accent ring.
+     outline-offset draws it on the page background, so it stays visible over
+     accent-filled buttons too. :focus-visible keeps it off mouse clicks; the
+     outline follows each element's own border-radius in modern engines. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  :focus:not(:focus-visible) { outline: none; }
   h1, h2, h3, h4 {
     font-family: var(--font-display);
     font-weight: 600;
@@ -471,7 +481,7 @@
     padding: 1px 6px;
     border: 1px solid var(--border);
     border-bottom-width: 2px;
-    border-radius: 5px;
+    border-radius: var(--r-xs);
     background: var(--surface);
     font-size: 11px;
     color: var(--fg-soft);
@@ -498,7 +508,8 @@
   .scroll-progress > span {
     display: block;
     height: 100%;
-    width: 0;
+    width: 100%;
+    transform: scaleX(0);
     background: linear-gradient(90deg,
       color-mix(in oklch, var(--accent), transparent 35%) 0%,
       var(--accent) 60%,
@@ -506,7 +517,7 @@
     box-shadow: 0 0 8px color-mix(in oklch, var(--accent), transparent 60%);
     transform-origin: left center;
     transition: opacity .2s ease;
-    will-change: width;
+    will-change: transform;
   }
   .scroll-progress.is-idle > span { opacity: 0.7; }
 
@@ -579,7 +590,7 @@
   }
   .brand__mark {
     width: 22px; height: 22px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     background: var(--fg);
     color: var(--bg);
     display: grid;
@@ -596,7 +607,7 @@
   }
   .nav__link {
     padding: 6px 11px;
-    border-radius: 7px;
+    border-radius: var(--r-sm);
     color: var(--muted);
     font-size: 14px;
     transition: color .15s, background .15s;
@@ -625,7 +636,7 @@
     width: 34px; height: 34px;
     margin-left: 4px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--r-sm);
     background: var(--surface);
     color: var(--muted);
     cursor: pointer;
@@ -646,7 +657,7 @@
     margin: 12px 0 0;
     width: 100%;
     height: 46px;
-    border-radius: 10px;
+    border-radius: var(--r-md);
     gap: 10px;
     font-size: 14px;
     color: var(--fg-soft);
@@ -678,7 +689,7 @@
     align-items: center;
     gap: 7px;
     padding: 9px 15px;
-    border-radius: 8px;
+    border-radius: var(--r-sm);
     border: 1px solid transparent;
     font: inherit;
     font-weight: 500;
@@ -705,7 +716,7 @@
     border-color: var(--border);
   }
   .btn--ghost:hover { background: var(--bg-sub); border-color: var(--border-hover); }
-  .btn--sm { padding: 6px 11px; font-size: 13px; border-radius: 7px; }
+  .btn--sm { padding: 6px 11px; font-size: 13px; border-radius: var(--r-sm); }
   .btn svg { width: 14px; height: 14px; }
 
   /* keep all body content above the fixed graph layer (canvas sits at z-index 0) */
@@ -722,12 +733,12 @@
     opacity: 0.62;
     /* vertical fade so graph breathes near nav + footer, side feather keeps focus on the column */
     -webkit-mask-image:
-      linear-gradient(180deg, transparent 0, #000 11%, #000 86%, transparent 100%),
-      radial-gradient(ellipse 78% 100% at 50% 50%, #000 55%, transparent 100%);
+      linear-gradient(180deg, transparent 0, black 11%, black 86%, transparent 100%),
+      radial-gradient(ellipse 78% 100% at 50% 50%, black 55%, transparent 100%);
     -webkit-mask-composite: source-in;
             mask-image:
-      linear-gradient(180deg, transparent 0, #000 11%, #000 86%, transparent 100%),
-      radial-gradient(ellipse 78% 100% at 50% 50%, #000 55%, transparent 100%);
+      linear-gradient(180deg, transparent 0, black 11%, black 86%, transparent 100%),
+      radial-gradient(ellipse 78% 100% at 50% 50%, black 55%, transparent 100%);
             mask-composite: intersect;
     transition: opacity .35s ease;
   }
@@ -1006,7 +1017,7 @@
   }
   .feature__icon {
     width: 32px; height: 32px;
-    border-radius: 8px;
+    border-radius: var(--r-sm);
     background: var(--bg-sub);
     border: 1px solid var(--border);
     display: grid; place-items: center;
@@ -1052,7 +1063,7 @@
     font-size: 12.5px;
     color: var(--muted);
     cursor: pointer;
-    border-radius: 8px 8px 0 0;
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
     border: 1px solid transparent;
     border-bottom: none;
     margin-bottom: -1px;
@@ -1093,7 +1104,7 @@
     border: 1px solid var(--border);
     color: var(--muted);
     padding: 5px 10px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     font: inherit;
     font-size: 11.5px;
     cursor: pointer;
@@ -1287,7 +1298,7 @@
   details.q .answer code {
     background: var(--bg-sub);
     padding: 1px 6px;
-    border-radius: 4px;
+    border-radius: var(--r-xs);
     border: 1px solid var(--border);
     font-size: 0.88em;
   }
@@ -1323,7 +1334,7 @@
   }
   .stage__num span {
     width: 40px; height: 40px;
-    border-radius: 10px;
+    border-radius: var(--r-md);
     display: grid; place-items: center;
     background: var(--accent-soft);
     border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--border));
@@ -1443,8 +1454,6 @@
   .cmp tr.cmp__scribe th {
     color: var(--fg);
     font-weight: 600;
-    border-left: 3px solid var(--accent);
-    padding-left: 13px;
   }
   .cmp tr.cmp__scribe td { color: var(--fg); }
   .cmp__yes, .cmp__partial, .cmp__no {
@@ -1549,9 +1558,8 @@
     line-height: 1.6;
   }
   .cmp__quote {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--border));
     border-radius: var(--r-md);
     padding: 20px 24px;
     color: var(--fg-soft);
@@ -1609,7 +1617,7 @@
     background: var(--bg-sub);
     border: 1px solid var(--border);
     padding: 1px 6px;
-    border-radius: 4px;
+    border-radius: var(--r-xs);
     font-size: 0.9em;
     color: var(--fg-soft);
   }
@@ -1641,7 +1649,7 @@
     display: grid; place-items: center;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     color: var(--accent);
   }
   .search-card__icon svg { width: 14px; height: 14px; }
@@ -1976,14 +1984,14 @@
     <div class="hero__grid">
       <div class="hero__copy">
         <span class="hero__eyebrow">
-          <span class="brand__mark" style="width:18px;height:18px;border-radius:4px;font-size:11px;">s</span>
+          <span class="brand__mark" style="width:18px;height:18px;border-radius:var(--r-xs);font-size:11px;">s</span>
           Single Go binary · runs on cron · self-hosted
         </span>
         <h1>
           Your knowledge base, <span class="accent">written by your tools.</span>
         </h1>
         <p class="hero__sub">
-          <strong>scribe is the compiled, LLM-written knowledge base</strong> — the &ldquo;LLM Wiki&rdquo; pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It&rsquo;s memory your AI agents read before they decide, not a second brain you maintain and never reopen — turning your <strong>git repos</strong>, <strong>Claude Code &amp; Codex sessions</strong>, and self-sent URLs into a curated, semantically searchable wiki. Cross-project, cron-driven, and capable of running <strong>100% locally on Ollama</strong> for zero API spend.
+          <strong>scribe is the compiled, LLM-written knowledge base</strong>: the &ldquo;LLM Wiki&rdquo; pattern as a single-binary CLI, plain markdown in git, no vector DB, no RAG. It&rsquo;s memory your AI agents read before they decide, not a second brain you maintain and never reopen. It turns your <strong>git repos</strong>, <strong>Claude Code &amp; Codex sessions</strong>, and self-sent URLs into a curated, semantically searchable wiki. Cross-project, cron-driven, and capable of running <strong>100% locally on Ollama</strong> for zero API spend.
         </p>
         <div class="hero__cta">
           <a class="btn btn--accent" href="#install">
@@ -2033,7 +2041,7 @@
     <header class="s__head">
       <div class="s__eyebrow">How it works</div>
       <h2 class="s__title">Three stages, one pipeline.</h2>
-      <p class="s__sub">scribe mines four input streams, filters out the noise before any LLM touches it, then fans dense sources into entity-first wiki pages. Every step runs on cron — set it up once and forget it.</p>
+      <p class="s__sub">scribe mines four input streams, filters out the noise before any LLM touches it, then fans dense sources into entity-first wiki pages. Every step runs on cron; set it up once and forget it.</p>
     </header>
 
     <div class="steps">
@@ -2048,7 +2056,7 @@
       <div class="step">
         <div class="step__index"><span>2</span> Triage &amp; absorb</div>
         <h3 class="step__title">BM25 first, LLM second.</h3>
-        <p class="step__body">Keyword-density scoring rejects boilerplate sessions before any LLM call — so cheap sessions cost nothing. Survivors go through a two-pass absorb: pass 1 grounds atomic facts, pass 2 fans dense sources into multiple entity-first wiki pages.</p>
+        <p class="step__body">Keyword-density scoring rejects boilerplate sessions before any LLM call, so cheap sessions cost nothing. Survivors go through a two-pass absorb: pass 1 grounds atomic facts, pass 2 fans dense sources into multiple entity-first wiki pages.</p>
         <div class="step__tags">
           <span class="tag">BM25 triage</span><span class="tag">two-pass</span><span class="tag">entity fan-out</span>
         </div>
@@ -2056,7 +2064,7 @@
       <div class="step">
         <div class="step__index"><span>3</span> Compile &amp; index</div>
         <h3 class="step__title">A typed graph of plain markdown.</h3>
-        <p class="step__body">Auto-generated wikilinks, backlinks JSON, and retrieval-context paragraphs spliced into every article so embeddings catch implicit entities. <code>qmd</code> reindexes for semantic search — from any terminal, in any directory, or from inside Claude Code via MCP.</p>
+        <p class="step__body">Auto-generated wikilinks, backlinks JSON, and retrieval-context paragraphs spliced into every article so embeddings catch implicit entities. <code>qmd</code> reindexes for semantic search, reachable from any terminal, in any directory, or from inside Claude Code via MCP.</p>
         <div class="step__tags">
           <span class="tag">qmd</span><span class="tag">wikilinks</span><span class="tag">typed edges</span>
         </div>
@@ -2080,7 +2088,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5C2 3.4 2.9 2.5 4 2.5h8c1.1 0 2 .9 2 2v7c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-7z"/><path d="M5 6h6M5 8.5h6M5 11h3"/></svg>
         </div>
         <h3>Context-aware agents</h3>
-        <p><code>scribe init</code> writes a handshake block into <strong>both</strong> <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code> — every session in every project queries your KB before recommending a library or proposing an architecture.</p>
+        <p><code>scribe init</code> writes a handshake block into <strong>both</strong> <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>, so every session in every project queries your KB before recommending a library or proposing an architecture.</p>
       </article>
 
       <article class="feature">
@@ -2104,7 +2112,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M4.5 13.5h7M8 11v2.5"/><circle cx="8" cy="7" r="1.5"/></svg>
         </div>
         <h3>100% Ollama-capable</h3>
-        <p>Per-project extraction, two-pass absorb, Dream cycle, assess, deep, session-mine, relations migrate — every LLM op runs end-to-end against a local Ollama server. One line in <code>scribe.yaml</code> flips the whole pipeline. <strong>Zero API spend.</strong></p>
+        <p>Per-project extraction, two-pass absorb, Dream cycle, assess, deep, session-mine, relations migrate: every LLM op runs end-to-end against a local Ollama server. One line in <code>scribe.yaml</code> flips the whole pipeline. <strong>Zero API spend.</strong></p>
       </article>
 
       <article class="feature">
@@ -2112,7 +2120,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h6L13.5 6v7.5c0 .55-.45 1-1 1h-8.5c-.55 0-1-.45-1-1V3.5c0-.55.45-1 1-1z"/><path d="M9.5 2.5V6h4"/><path d="M5.5 9.5h5M5.5 11.5h3"/></svg>
         </div>
         <h3>Plain markdown you own</h3>
-        <p>File over app — the corpus has to outlive the pipeline. A git repo of plain markdown with YAML frontmatter. Push to your own GitHub, Gitea, or Forgejo; open in Obsidian, VS Code, vim, or mdbook. <strong>No SaaS, no vendor lock-in.</strong></p>
+        <p>File over app: the corpus has to outlive the pipeline. A git repo of plain markdown with YAML frontmatter. Push to your own GitHub, Gitea, or Forgejo; open in Obsidian, VS Code, vim, or mdbook. <strong>No SaaS, no vendor lock-in.</strong></p>
       </article>
 
       <article class="feature">
@@ -2132,7 +2140,7 @@
     <header class="s__head">
       <div class="s__eyebrow">Autonomous loop</div>
       <h2 class="s__title">Five things happen on cron. You set it up once.</h2>
-      <p class="s__sub">After <code>scribe init</code> and <code>scribe cron install</code>, the loop closes by itself. New work flows in, the KB grows, and the next Claude Code or Codex session — in any project — queries what scribe just wrote.</p>
+      <p class="s__sub">After <code>scribe init</code> and <code>scribe cron install</code>, the loop closes by itself. New work flows in, the KB grows, and the next Claude Code or Codex session, in any project, queries what scribe just wrote.</p>
     </header>
 
     <div class="autonomous">
@@ -2142,7 +2150,7 @@
           <h3>scribe finds every project you've already touched</h3>
           <span class="stage__pill">Claude Code + Codex</span>
         </div>
-        <p class="stage__body">A single walk over <code>~/.claude/projects/*</code> and <code>~/.codex/sessions/*</code> finds every repo you've opened in either agent. Each one becomes an entry in the manifest with a stable name, last-seen timestamp, and source provenance. No config, no manual list — if you've coded there, scribe sees it.</p>
+        <p class="stage__body">A single walk over <code>~/.claude/projects/*</code> and <code>~/.codex/sessions/*</code> finds every repo you've opened in either agent. Each one becomes an entry in the manifest with a stable name, last-seen timestamp, and source provenance. No config, no manual list; if you've coded there, scribe sees it.</p>
         <div class="stage__src">cmd/scribe/sync.go: <code>discover()</code> + cmd/scribe/codex.go: <code>discoverCodex()</code> → <code>~/.claude/projects/*</code> + <code>~/.codex/sessions/*</code> → <code>manifest.Projects</code></div>
       </article>
 
@@ -2152,7 +2160,7 @@
           <h3>The agent handshake</h3>
           <span class="stage__pill">~/.claude/CLAUDE.md + ~/.codex/AGENTS.md</span>
         </div>
-        <p class="stage__body">scribe writes a maintained block into <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>. Every Claude Code and Codex session, in every repo, picks up the same instructions: query the KB first, and drop reusable findings as files. The handshake is idempotent — re-run init and only that block updates.</p>
+        <p class="stage__body">scribe writes a maintained block into <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>. Every Claude Code and Codex session, in every repo, picks up the same instructions: query the KB first, and drop reusable findings as files. The handshake is idempotent: re-run init and only that block updates.</p>
         <div class="stage__src">cmd/scribe/init.go: <code>installClaudeMD()</code> + <code>installCodexMD()</code> → <code>templates/claude-md-kb.md</code> + <code>templates/codex-agents-md.md</code> → marker-fenced block in both files</div>
       </article>
 
@@ -2172,7 +2180,7 @@
           <h3>Auto-publish to your private git remote</h3>
           <span class="stage__pill">hourly</span>
         </div>
-        <p class="stage__body">A separate cron entry runs <code>scribe commit</code> every hour — stages everything the absorb pipeline produced, writes a structured commit message, and pushes to your private remote (GitHub, Gitea, Forgejo, anywhere). On non-fast-forward it runs <code>git pull --rebase</code> and retries once; force-push is never attempted. Your KB is version-controlled, diffable, and recoverable. No web UI; the source of truth is markdown in git.</p>
+        <p class="stage__body">A separate cron entry runs <code>scribe commit</code> every hour: it stages everything the absorb pipeline produced, writes a structured commit message, and pushes to your private remote (GitHub, Gitea, Forgejo, anywhere). On non-fast-forward it runs <code>git pull --rebase</code> and retries once; force-push is never attempted. Your KB is version-controlled, diffable, and recoverable, with no web UI; the source of truth is markdown in git.</p>
         <div class="stage__src">cmd/scribe/commit.go: <code>CommitCmd.Run()</code> + cmd/scribe/gitops.go → <code>git add</code> · <code>git commit</code> · <code>git push origin main</code></div>
       </article>
 
@@ -2182,12 +2190,12 @@
           <h3>Sunday 02:00 — the Dream cycle</h3>
           <span class="stage__pill">100% Ollama</span>
         </div>
-        <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Runs entirely on local Ollama — no token spend, no third party touches your notes. The KB stays small enough to fit in an agent's context window for years.</p>
+        <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Runs entirely on local Ollama: no token spend, no third party touches your notes. The KB stays small enough to fit in an agent's context window for years.</p>
         <div class="stage__src">cmd/scribe/cron.go: weekly entry @ <code>Sun 02:00</code> → cmd/scribe/dream.go: <code>DreamCmd.Run()</code> → <code>prompts/dream-ollama.md</code> on gemma3:12b</div>
       </article>
     </div>
 
-    <p class="autonomous__closer">Every absorb tick reindexes qmd, so the next Claude Code or Codex session — in any repo on this machine — finds what scribe just wrote. The loop closes itself, in the background, on a schedule you forget about.</p>
+    <p class="autonomous__closer">Every absorb tick reindexes qmd, so the next Claude Code or Codex session, in any repo on this machine, finds what scribe just wrote. The loop closes itself, in the background, on a schedule you forget about.</p>
   </div>
 </section>
 
@@ -2197,7 +2205,7 @@
     <header class="s__head">
       <div class="s__eyebrow">How it compares</div>
       <h2 class="s__title">Not RAG. Not Obsidian. Not another LLM-on-every-session burner.</h2>
-      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25, so there's nothing to embed and nothing to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that — it's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler) — a curated wiki on top of raw sources kept verbatim, small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
+      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25, so there's nothing to embed and nothing to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that. It's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler): a curated wiki on top of raw sources kept verbatim, small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
     </header>
 
     <!-- buyer-intent comparison — head-to-head with the tools AI engines suggest instead of scribe -->
@@ -2273,7 +2281,7 @@
         </tbody>
       </table>
     </div>
-    <p class="cmp__caption">scribe is the only one of these that auto-writes a portable, git-versioned markdown wiki your agents read before they decide — with no vector database. Unlike AnythingLLM, scribe stores plain markdown in git and needs no vector database or running server. Snapshot 2026-06-08; tool capabilities change, so check each project's docs before deciding.</p>
+    <p class="cmp__caption">scribe is the only one of these that auto-writes a portable, git-versioned markdown wiki your agents read before they decide, with no vector database. Unlike AnythingLLM, scribe stores plain markdown in git and needs no vector database or running server. Snapshot 2026-06-08; tool capabilities change, so check each project's docs before deciding.</p>
 
     <div class="cmp-wrap">
       <table class="cmp">
@@ -2425,13 +2433,13 @@
 
     <div class="code-card">
       <div class="code-tabs" role="tablist" id="tabs">
-        <button class="code-tab" role="tab" data-tab="install" aria-selected="true" id="install">install</button>
-        <button class="code-tab" role="tab" data-tab="local" aria-selected="false">scribe.yaml (local mode)</button>
-        <button class="code-tab" role="tab" data-tab="query" aria-selected="false">search</button>
-        <button class="code-tab" role="tab" data-tab="doctor" aria-selected="false">doctor</button>
+        <button class="code-tab" role="tab" data-tab="install" aria-selected="true" aria-controls="panel-install" id="install" tabindex="0">install</button>
+        <button class="code-tab" role="tab" data-tab="local" aria-selected="false" aria-controls="panel-local" id="tab-local" tabindex="-1">scribe.yaml (local mode)</button>
+        <button class="code-tab" role="tab" data-tab="query" aria-selected="false" aria-controls="panel-query" id="tab-query" tabindex="-1">search</button>
+        <button class="code-tab" role="tab" data-tab="doctor" aria-selected="false" aria-controls="panel-doctor" id="tab-doctor" tabindex="-1">doctor</button>
       </div>
 
-      <div class="code-panel" data-tab="install" data-active="true">
+      <div class="code-panel" data-tab="install" data-active="true" id="panel-install" role="tabpanel" aria-labelledby="install" tabindex="0">
         <button class="copy-btn" data-copy-target="code-install">copy</button>
 <pre id="code-install"><span class="comment"># brew</span>
 brew tap oliver-kriska/scribe
@@ -2447,7 +2455,7 @@ scribe doctor
 curl <span class="flag">-fsSL</span> <span class="str">https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh</span> | bash</pre>
       </div>
 
-      <div class="code-panel" data-tab="local">
+      <div class="code-panel" data-tab="local" id="panel-local" role="tabpanel" aria-labelledby="tab-local" tabindex="0">
         <button class="copy-btn" data-copy-target="code-local">copy</button>
 <pre id="code-local"><span class="comment"># scribe.yaml — flip the whole pipeline onto local Ollama</span>
 <span class="kw">llm</span>:
@@ -2464,7 +2472,7 @@ curl <span class="flag">-fsSL</span> <span class="str">https://raw.githubusercon
     <span class="kw">model</span>: <span class="str">qwen3:30b-a3b</span>       <span class="comment"># highest-quality writes</span></pre>
       </div>
 
-      <div class="code-panel" data-tab="query">
+      <div class="code-panel" data-tab="query" id="panel-query" role="tabpanel" aria-labelledby="tab-query" tabindex="0">
         <button class="copy-btn" data-copy-target="code-query">copy</button>
 <pre id="code-query"><span class="comment"># from any terminal, any directory</span>
 qmd query <span class="str">"how did I solve the oban idempotency bug last quarter"</span>
@@ -2476,7 +2484,7 @@ qmd search <span class="str">"unique_constraint Multi"</span>
 mcp__plugin_qmd_qmd__query</pre>
       </div>
 
-      <div class="code-panel" data-tab="doctor">
+      <div class="code-panel" data-tab="doctor" id="panel-doctor" role="tabpanel" aria-labelledby="tab-doctor" tabindex="0">
         <button class="copy-btn" data-copy-target="code-doctor">copy</button>
 <pre id="code-doctor"><span class="comment"># validate setup, cron, git remote, Ollama models</span>
 scribe doctor
@@ -2495,7 +2503,6 @@ scribe doctor <span class="flag">--section</span> localmode
 <section class="s" id="commands">
   <div class="wrap">
     <header class="s__head">
-      <div class="s__eyebrow">CLI surface</div>
       <h2 class="s__title">38 subcommands. One binary.</h2>
       <p class="s__sub">Here are the ones you'll actually type. Everything else is <code>scribe doctor</code>-discoverable.</p>
     </header>
@@ -2531,9 +2538,8 @@ scribe doctor <span class="flag">--section</span> localmode
 <section class="s" id="search">
   <div class="wrap">
     <header class="s__head">
-      <div class="s__eyebrow">Search</div>
       <h2 class="s__title">Search from any terminal. Or from inside the agent.</h2>
-      <p class="s__sub">The same <code>qmd</code> index is used by every consumer — your shell, Claude Code via MCP, Codex via MCP, your editor's grep. No reindex per tool. No format conversion.</p>
+      <p class="s__sub">The same <code>qmd</code> index is used by every consumer: your shell, Claude Code via MCP, Codex via MCP, your editor's grep. No reindex per tool. No format conversion.</p>
     </header>
 
     <div class="search">
@@ -2586,7 +2592,7 @@ scribe doctor <span class="flag">--section</span> localmode
       <div>
         <span class="local__pill">100% Ollama</span>
         <h2>Run the whole pipeline for $0.</h2>
-        <p class="local__body">No remaining <code>claude -p</code> callsite in a normal <code>scribe sync</code>. Per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, relations migrate — every LLM op fires through bounded JSON-envelope subtasks against your local Ollama server. <code>ollama ps</code> shows the work; <code>ollama</code> does it.</p>
+        <p class="local__body">No remaining <code>claude -p</code> callsite in a normal <code>scribe sync</code>. Per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, relations migrate: every LLM op fires through bounded JSON-envelope subtasks against your local Ollama server. <code>ollama ps</code> shows the work; <code>ollama</code> does it.</p>
         <div class="local__metrics">
           <div class="metric">
             <div class="metric__num">7,472<span class="unit">documents</span></div>
@@ -2626,7 +2632,7 @@ scribe doctor <span class="flag">--section</span> localmode
     <header class="s__head">
       <div class="s__eyebrow">Who it's for</div>
       <h2 class="s__title">Built for developers who use AI tools every day.</h2>
-      <p class="s__sub">For developers, the expensive half of the job isn't deciding — it's rebuilding the context you already had. scribe automates that half: if your Claude Code or Codex history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.</p>
+      <p class="s__sub">For developers, the expensive half of the job isn't deciding. It's rebuilding the context you already had. scribe automates that half: if your Claude Code or Codex history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.</p>
     </header>
 
     <div class="audience">
@@ -2647,7 +2653,7 @@ scribe doctor <span class="flag">--section</span> localmode
         <p class="who__body">One cross-project KB means Friday's repo can pull Monday's fix. Typed edges keep the graph honest as patterns evolve.</p>
         <ul class="who__check">
           <li>Auto-discovery across every git repo you've opened</li>
-          <li>Entity-first fan-out — no buried summaries</li>
+          <li>Entity-first fan-out, no buried summaries</li>
           <li>Typed relations: <code>supersedes</code>, <code>contradicts</code>, <code>specializes</code></li>
         </ul>
       </article>
@@ -2672,21 +2678,21 @@ scribe doctor <span class="flag">--section</span> localmode
     <header class="s__head">
       <div class="s__eyebrow">In practice</div>
       <h2 class="s__title">What it actually feels like.</h2>
-      <p class="s__sub">Two real loops from the maintainer's normal use — concrete, not marketing.</p>
+      <p class="s__sub">Two real loops from the maintainer's normal use: concrete, not marketing.</p>
     </header>
 
     <div class="feels">
       <article class="anecdote">
         <span class="anecdote__chip">Cross-project memory</span>
         <h4>Evaluated a Phoenix translation library for one app. Months later, started a different Phoenix project with the same problem.</h4>
-        <p>scribe had already absorbed the verdict from the prior project's session — DB-backed Gettext with a LiveView admin UX, weighed against standard <code>.po</code> files and managed services. When Claude Code opened the new repo and asked the KB for translation options, the existing "skip" verdict surfaced first with the reasoning attached. No re-research; the agent cited the prior decision and moved on. The whole loop was invisible — the only thing the maintainer noticed was that the new project skipped the comparison shopping the first one did.</p>
+        <p>scribe had already absorbed the verdict from the prior project's session: DB-backed Gettext with a LiveView admin UX, weighed against standard <code>.po</code> files and managed services. When Claude Code opened the new repo and asked the KB for translation options, the existing "skip" verdict surfaced first with the reasoning attached. No re-research; the agent cited the prior decision and moved on. The whole loop was invisible; the only thing the maintainer noticed was that the new project skipped the comparison shopping the first one did.</p>
         <div class="anecdote__outcome"><code>tools/kanta.md · verdict: skip</code> · surfaced via <code>qmd query "phoenix translation library"</code></div>
       </article>
 
       <article class="anecdote">
         <span class="anecdote__chip">Solved twice, written once</span>
         <h4>Fixed an Oban idempotency bug in project A. Months later the same shape appeared in project B.</h4>
-        <p>The fix from project A — an idempotency-key strategy for an external-call worker — got captured automatically when the post-fix session was mined into the KB. When the same race showed up in a different Phoenix app months later, the agent grepped the KB before guessing, found the prior pattern, and proposed the exact same shape with the prior trade-offs already weighed. The second fix took fifteen minutes instead of an afternoon.</p>
+        <p>The fix from project A (an idempotency-key strategy for an external-call worker) got captured automatically when the post-fix session was mined into the KB. When the same race showed up in a different Phoenix app months later, the agent grepped the KB before guessing, found the prior pattern, and proposed the exact same shape with the prior trade-offs already weighed. The second fix took fifteen minutes instead of an afternoon.</p>
         <div class="anecdote__outcome"><code>solutions/oban-external-call-worker-idempotency.md</code> · linked from <code>solutions/fly-io-oban-cron-multi-node-double-fire.md</code></div>
       </article>
     </div>
@@ -2697,54 +2703,53 @@ scribe doctor <span class="flag">--section</span> localmode
 <section class="s" id="faq">
   <div class="wrap">
     <header class="s__head">
-      <div class="s__eyebrow">FAQ</div>
       <h2 class="s__title">Common questions.</h2>
     </header>
 
     <div class="faq">
       <details class="q">
         <summary>How is scribe different from RAG, Obsidian, or claude-memory-compiler?</summary>
-        <div class="answer">RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned <strong>$115 in 20 minutes</strong> (issue #3). scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.</div>
+        <div class="answer">RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session; one user burned <strong>$115 in 20 minutes</strong> (issue #3). scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.</div>
       </details>
 
       <details class="q">
         <summary>Does scribe require an Anthropic API key?</summary>
-        <div class="answer">No. Every LLM op in scribe — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining <code>claude -p</code> callsite in a normal <code>scribe sync</code>. A single line in <code>scribe.yaml</code> flips the whole pipeline. Per-op overrides still work if you want to keep some passes on Anthropic.</div>
+        <div class="answer">No. Every LLM op in scribe runs end-to-end against a local Ollama server: per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate. There is no remaining <code>claude -p</code> callsite in a normal <code>scribe sync</code>. A single line in <code>scribe.yaml</code> flips the whole pipeline. Per-op overrides still work if you want to keep some passes on Anthropic.</div>
       </details>
 
       <details class="q">
         <summary>What does it cost to run?</summary>
-        <div class="answer"><strong>Zero</strong> on the local-mode path (Ollama) for the entire pipeline — every <code>claude -p</code> callsite in a normal <code>scribe sync</code>, including per-project extraction and the weekly Dream cycle, runs locally. On the Anthropic-hosted path, contextualize costs roughly <strong>$0.0001 per article</strong> via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard prices. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend.</div>
+        <div class="answer"><strong>Zero</strong> on the local-mode path (Ollama) for the entire pipeline: every <code>claude -p</code> callsite in a normal <code>scribe sync</code>, including per-project extraction and the weekly Dream cycle, runs locally. On the Anthropic-hosted path, contextualize costs roughly <strong>$0.0001 per article</strong> via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard prices. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend.</div>
       </details>
 
       <details class="q">
         <summary>Does scribe work on Linux?</summary>
-        <div class="answer">Yes. macOS gets LaunchAgents via <code>scribe cron install</code>; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (<code>scribe watch</code>) is not cron-friendly on either OS — run it under launchd KeepAlive on macOS or systemd-user on Linux. The iMessage capture step is macOS-only because it reads <code>chat.db</code>; everything else is portable.</div>
+        <div class="answer">Yes. macOS gets LaunchAgents via <code>scribe cron install</code>; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (<code>scribe watch</code>) is not cron-friendly on either OS; run it under launchd KeepAlive on macOS or systemd-user on Linux. The iMessage capture step is macOS-only because it reads <code>chat.db</code>; everything else is portable.</div>
       </details>
 
       <details class="q">
         <summary>Where does scribe store the knowledge base?</summary>
-        <div class="answer">In a plain git repo of markdown files at whatever path you pass to <code>scribe init</code>. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.</div>
+        <div class="answer">In a plain git repo of markdown files at whatever path you pass to <code>scribe init</code>. Push it to your own GitHub, Gitea, or Forgejo; there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.</div>
       </details>
 
       <details class="q">
         <summary>What does the cron schedule look like?</summary>
-        <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday at 02:00 for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
+        <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider (and Codex CLI sessions in that same pass when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday at 02:00 for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
       </details>
 
       <details class="q">
         <summary>Is scribe an alternative to RAG for a personal knowledge base?</summary>
-        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong> — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the curated wiki stays small enough for an agent to read whole.</div>
+        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong>: it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the curated wiki stays small enough for an agent to read whole.</div>
       </details>
 
       <details class="q">
         <summary>How is scribe different from Code Insights, AnythingLLM, or Obsidian?</summary>
-        <div class="answer"><strong>Code Insights</strong> turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them — plus your git repos and self-sent URLs — into a portable markdown wiki in git that your agents read back before they decide. <strong>AnythingLLM</strong> is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. <strong>Obsidian</strong> is a manual notes tool you type into yourself — scribe writes the notes for you.</div>
+        <div class="answer"><strong>Code Insights</strong> turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them (plus your git repos and self-sent URLs) into a portable markdown wiki in git that your agents read back before they decide. <strong>AnythingLLM</strong> is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. <strong>Obsidian</strong> is a manual notes tool you type into yourself; scribe writes the notes for you.</div>
       </details>
 
       <details class="q">
         <summary>Is scribe an AnythingLLM alternative?</summary>
-        <div class="answer">Yes. scribe is an <strong>AnythingLLM alternative</strong> for people who want an <strong>LLM wiki</strong> instead of a RAG server: it's a compiled knowledge base — plain markdown in git, no vector database, no server to run — where AnythingLLM is a RAG chat app built around a vector store and documents you upload. The concrete difference: scribe auto-captures knowledge from your <strong>Claude Code and Codex coding sessions</strong> into portable markdown your agents read back before they decide, instead of you uploading files to chat with.</div>
+        <div class="answer">Yes. scribe is an <strong>AnythingLLM alternative</strong> for people who want an <strong>LLM wiki</strong> instead of a RAG server: it's a compiled knowledge base (plain markdown in git, no vector database, no server to run), where AnythingLLM is a RAG chat app built around a vector store and documents you upload. The concrete difference: scribe auto-captures knowledge from your <strong>Claude Code and Codex coding sessions</strong> into portable markdown your agents read back before they decide, instead of you uploading files to chat with.</div>
       </details>
 
       <details class="q">
@@ -2754,7 +2759,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>Is scribe local-first, and does it work without an API key?</summary>
-        <div class="answer">Yes. The entire pipeline can run <strong>100% locally against an Ollama server</strong> with no Anthropic API key — a single line in <code>scribe.yaml</code> flips every LLM op (extraction, absorb, dream, session-mine) to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync.</div>
+        <div class="answer">Yes. The entire pipeline can run <strong>100% locally against an Ollama server</strong> with no Anthropic API key: a single line in <code>scribe.yaml</code> flips every LLM op (extraction, absorb, dream, session-mine) to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync.</div>
       </details>
 
       <details class="q">
@@ -2897,7 +2902,7 @@ scribe doctor <span class="flag">--section</span> localmode
       const doc = document.documentElement;
       const max = doc.scrollHeight - window.innerHeight;
       const pct = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
-      bar.style.width = (pct * 100).toFixed(2) + '%';
+      bar.style.transform = 'scaleX(' + pct.toFixed(4) + ')';
       el.classList.toggle('is-idle', pct < 0.005);
       ticking = false;
     };
@@ -2962,15 +2967,36 @@ scribe doctor <span class="flag">--section</span> localmode
     io.observe(target);
   })();
 
-  // ---------- code tabs ----------
+  // ---------- code tabs (WAI-ARIA tabs pattern) ----------
   const tabBar = document.getElementById('tabs');
   const panels = document.querySelectorAll('.code-panel');
+  const tabs = Array.from(tabBar.querySelectorAll('.code-tab'));
+  function selectTab(btn, focus) {
+    const target = btn.dataset.tab;
+    tabs.forEach(t => {
+      const on = t === btn;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+    });
+    panels.forEach(p => p.setAttribute('data-active', p.dataset.tab === target ? 'true' : 'false'));
+    if (focus) btn.focus();
+  }
   tabBar.addEventListener('click', e => {
     const btn = e.target.closest('.code-tab');
-    if (!btn) return;
-    const target = btn.dataset.tab;
-    tabBar.querySelectorAll('.code-tab').forEach(t => t.setAttribute('aria-selected', t === btn ? 'true' : 'false'));
-    panels.forEach(p => p.setAttribute('data-active', p.dataset.tab === target ? 'true' : 'false'));
+    if (btn) selectTab(btn, false);
+  });
+  // Arrow / Home / End move + activate (automatic activation; panels are cheap)
+  tabBar.addEventListener('keydown', e => {
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    let n = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') n = (i + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') n = (i - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') n = 0;
+    else if (e.key === 'End') n = tabs.length - 1;
+    if (n === null) return;
+    e.preventDefault();
+    selectTab(tabs[n], true);
   });
 
   // ---------- copy buttons ----------
