@@ -460,3 +460,40 @@ func TestMergeByModelAggregatesAcrossKBs(t *testing.T) {
 		t.Errorf("total calls across models: got %d, want 124", total.Calls)
 	}
 }
+
+// TestProviderRollup checks the per-provider summary: model keys map to the
+// right backend, and rows roll up (anthropic = the bare-alias claude -p calls).
+func TestProviderRollup(t *testing.T) {
+	for model, want := range map[string]string{
+		"sonnet": "anthropic",
+		"haiku":  "anthropic",
+		"opus":   "anthropic",
+		"together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput": "together",
+		"ollama/gemma3:4b":   "ollama",
+		"groq/llama-3.3-70b": "groq",
+	} {
+		if got := providerOf(model); got != want {
+			t.Errorf("providerOf(%q) = %q, want %q", model, got, want)
+		}
+	}
+
+	groups := groupByProvider([]CostSummary{
+		{Model: "sonnet", Calls: 10, ActualUSD: 92.80, InputTokens: 100, CallsWithUsage: 10},
+		{Model: "haiku", Calls: 5, ActualUSD: 10.77, InputTokens: 50, CallsWithUsage: 5},
+		{Model: "together/Qwen/x", Calls: 3, ActualUSD: 0.33, InputTokens: 30, CallsWithUsage: 3},
+		{Model: "ollama/gemma3:4b", Calls: 7, InputTokens: 70},
+	})
+	byName := map[string]CostSummary{}
+	for _, g := range groups {
+		byName[g.Model] = g
+	}
+	if a := byName["anthropic"]; a.Calls != 15 || a.ActualUSD < 103.56 || a.ActualUSD > 103.58 {
+		t.Errorf("anthropic rollup wrong: %+v", a)
+	}
+	if byName["together"].Calls != 3 || byName["ollama"].Calls != 7 {
+		t.Errorf("provider rollup miscounted: %+v", byName)
+	}
+	if groups[0].Model != "anthropic" {
+		t.Errorf("groupByProvider should rank the biggest spender (anthropic) first; got %s", groups[0].Model)
+	}
+}
