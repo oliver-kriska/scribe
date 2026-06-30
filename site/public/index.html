@@ -741,29 +741,6 @@
   /* keep all body content above the fixed graph layer (canvas sits at z-index 0) */
   main, footer { position: relative; z-index: 1; }
 
-  /* -------------------- site-wide graph backdrop -------------------- */
-  .site-graph {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.32; /* quiet ambient texture — the only loud things on the page should be evidence */
-    /* vertical fade so graph breathes near nav + footer, side feather keeps focus on the column */
-    -webkit-mask-image:
-      linear-gradient(180deg, transparent 0, black 11%, black 86%, transparent 100%),
-      radial-gradient(ellipse 78% 100% at 50% 50%, black 55%, transparent 100%);
-    -webkit-mask-composite: source-in;
-            mask-image:
-      linear-gradient(180deg, transparent 0, black 11%, black 86%, transparent 100%),
-      radial-gradient(ellipse 78% 100% at 50% 50%, black 55%, transparent 100%);
-            mask-composite: intersect;
-    transition: opacity .35s ease;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .site-graph { opacity: 0.24; }
-  }
 
   /* -------------------- hero -------------------- */
   .hero {
@@ -1101,6 +1078,27 @@
     line-height: 1.55;
   }
   .feature p strong { color: var(--fg-soft); font-weight: 600; }
+
+  /* concrete typed knowledge-graph: a real KB slice, replaces the old ambient
+     backdrop. Evidence, not decoration — real slugs + the real edge schema. */
+  .kgraph { margin-top: clamp(28px, 4vw, 44px); }
+  .kgraph svg { display: block; width: 100%; max-width: 760px; height: auto; margin: 0 auto; overflow: visible; }
+  .kgraph figcaption {
+    margin: 14px auto 0;
+    max-width: 60ch;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .kg__node { fill: var(--surface); stroke: var(--border); stroke-width: 1; }
+  .kg__hub  { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .kg__edge { stroke: var(--border-hover); stroke-width: 1.25; fill: none; }
+  .kg__arrow { fill: var(--border-hover); }
+  .kg__t      { font-family: var(--font-mono); font-size: 12.5px; fill: var(--fg-soft); }
+  .kg__t--hub { fill: var(--accent-on-soft); font-weight: 600; }
+  .kg__elabel { font-family: var(--font-mono); font-size: 10.5px; fill: var(--muted); }
+  .kg__elabel-bg { fill: var(--bg); }
 
   /* for-teams: same content as a feature grid, deliberately re-skinned as a
      flat 2-col spec list (no icon tiles, no card surfaces, hairline row rules)
@@ -2197,9 +2195,6 @@
   <a class="btn btn--primary" href="#install">Install scribe</a>
 </div>
 
-<!-- ============================ SITE-WIDE GRAPH BACKDROP ============================ -->
-<canvas class="site-graph" id="site-graph" aria-hidden="true"></canvas>
-
 <!-- ============================ HERO ============================ -->
 <main id="main-content">
 <section class="hero">
@@ -2398,6 +2393,36 @@
         <p>Articles connect via typed edges: <code>supersedes</code>, <code>contradicts</code>, <code>specializes</code>, <code>derived_from</code>, <code>extends</code>. <code>scribe relations migrate</code> classifies existing <code>related:</code> links into the typed schema with an LLM.</p>
       </article>
     </div>
+
+    <figure class="kgraph">
+      <svg viewBox="0 0 720 330" role="img" aria-label="A slice of a real scribe knowledge base: entities such as ecto-multi, oban-idempotency, and genserver-backpressure joined by typed edges — supersedes, derived_from, contradicts, specializes, extends — rather than folders or tags.">
+        <!-- edges first; opaque node pills cover the endpoints -->
+        <path class="kg__edge" d="M360 170 L115 66"/>
+        <path class="kg__edge" d="M375 46 L360 170"/>
+        <path class="kg__edge" d="M610 74 L375 46"/>
+        <path class="kg__edge" d="M445 280 L140 272"/>
+        <path class="kg__edge" d="M360 170 L445 280"/>
+        <path class="kg__edge" d="M615 258 L360 170"/>
+
+        <!-- typed-edge labels (real schema), on a bg chip so the line reads under them -->
+        <g><rect class="kg__elabel-bg" x="201" y="110" width="76" height="15" rx="3"/><text class="kg__elabel" x="239" y="121" text-anchor="middle">supersedes</text></g>
+        <g><rect class="kg__elabel-bg" x="323" y="100" width="90" height="15" rx="3"/><text class="kg__elabel" x="368" y="111" text-anchor="middle">derived_from</text></g>
+        <g><rect class="kg__elabel-bg" x="452" y="52"  width="80" height="15" rx="3"/><text class="kg__elabel" x="492" y="63"  text-anchor="middle">contradicts</text></g>
+        <g><rect class="kg__elabel-bg" x="252" y="268" width="82" height="15" rx="3"/><text class="kg__elabel" x="293" y="279" text-anchor="middle">specializes</text></g>
+        <g><rect class="kg__elabel-bg" x="375" y="218" width="56" height="15" rx="3"/><text class="kg__elabel" x="403" y="229" text-anchor="middle">extends</text></g>
+        <g><rect class="kg__elabel-bg" x="444" y="206" width="90" height="15" rx="3"/><text class="kg__elabel" x="489" y="217" text-anchor="middle">derived_from</text></g>
+
+        <!-- entity nodes (real KB slugs) -->
+        <g><rect class="kg__node" x="46"  y="52"  width="138" height="28" rx="8"/><text class="kg__t" x="115" y="70"  text-anchor="middle">ecto-transaction</text></g>
+        <g><rect class="kg__node" x="306" y="32"  width="138" height="28" rx="8"/><text class="kg__t" x="375" y="50"  text-anchor="middle">oban-idempotency</text></g>
+        <g><rect class="kg__node" x="552" y="60"  width="116" height="28" rx="8"/><text class="kg__t" x="610" y="78"  text-anchor="middle">advisory-lock</text></g>
+        <g><rect class="kg__node" x="85"  y="258" width="110" height="28" rx="8"/><text class="kg__t" x="140" y="276" text-anchor="middle">token-bucket</text></g>
+        <g><rect class="kg__node" x="355" y="266" width="180" height="28" rx="8"/><text class="kg__t" x="445" y="284" text-anchor="middle">genserver-backpressure</text></g>
+        <g><rect class="kg__node" x="546" y="244" width="138" height="28" rx="8"/><text class="kg__t" x="615" y="262" text-anchor="middle">liveview-streams</text></g>
+        <g><rect class="kg__hub" x="306" y="156" width="108" height="28" rx="8"/><text class="kg__t kg__t--hub" x="360" y="174" text-anchor="middle">ecto-multi</text></g>
+      </svg>
+      <figcaption>A slice of a real scribe KB: entities linked by typed edges like supersedes and contradicts, not folders or tags, so an agent can follow why a decision was made, not just keyword-match it.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -3488,280 +3513,6 @@ scribe doctor <span class="flag">--section</span> localmode
     }
   })();
 
-  // ---------- site-wide knowledge graph (vanilla canvas, no deps) ----------
-  (() => {
-    const canvas = document.getElementById('site-graph');
-    if (!canvas || !canvas.getContext) return;
-    const hero = document.querySelector('.hero');
-    const ctx = canvas.getContext('2d');
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    // dimensions, populated on resize (viewport, not container)
-    let W = 0, H = 0;
-    let nodes = [], edges = [];
-
-    // tunables
-    const REPULSE   = 1850;
-    const SPRING    = 0.004;
-    const SPRING_LEN= 132;
-    const DAMP      = 0.86;
-    const MAX_V     = 1.25;
-    const HUB_RATIO = 0.13;   // ~13% of nodes are hubs
-    const POINTER_R = 150;    // px radius for cursor parallax
-    const POINTER_F = 0.0035; // attraction strength
-
-    // theme-bound colors (re-read on theme switch)
-    let cEdge = '', cEdgeHot = '', cNode = '', cHub = '', cHalo = '';
-    const readColors = () => {
-      const cs = getComputedStyle(document.documentElement);
-      cEdge    = cs.getPropertyValue('--graph-edge').trim()     || 'rgba(45,92,220,0.11)';
-      cEdgeHot = cs.getPropertyValue('--graph-edge-hot').trim() || 'rgba(45,92,220,0.22)';
-      cNode    = cs.getPropertyValue('--graph-node').trim()     || 'rgba(45,92,220,0.34)';
-      cHub     = cs.getPropertyValue('--graph-node-hub').trim() || 'rgba(45,92,220,0.62)';
-      cHalo    = cs.getPropertyValue('--graph-halo').trim()     || 'rgba(45,92,220,0.18)';
-    };
-
-    // cursor target (relative to canvas), -1,-1 = inactive
-    let mx = -1, my = -1;
-
-    const targetNodeCount = () => {
-      // scale node density with viewport area; fixed full-viewport canvas
-      const area = window.innerWidth * window.innerHeight;
-      if (area < 400000)  return 28;   // phones
-      if (area < 800000)  return 40;   // small tablets
-      if (area < 1500000) return 56;   // laptops
-      return 68;                       // desktop / wide
-    };
-
-    const buildGraph = () => {
-      const N = targetNodeCount();
-      const hubCount = Math.max(3, Math.round(N * HUB_RATIO));
-      const hubs = new Set();
-      while (hubs.size < hubCount) hubs.add(Math.floor(Math.random() * N));
-
-      nodes = [];
-      for (let i = 0; i < N; i++) {
-        const isHub = hubs.has(i);
-        nodes.push({
-          x: 40 + Math.random() * (W - 80),
-          y: 40 + Math.random() * (H - 80),
-          vx: (Math.random() - 0.5) * 0.6,
-          vy: (Math.random() - 0.5) * 0.6,
-          r: isHub ? 2.6 + Math.random() * 2.0 : 1.4 + Math.random() * 1.1,
-          hub: isHub
-        });
-      }
-
-      // hubs get 3-4 neighbours; regular nodes get 1-2. dedup edge keys.
-      edges = [];
-      const seen = new Set();
-      for (let a = 0; a < N; a++) {
-        const dists = [];
-        for (let b = 0; b < N; b++) {
-          if (a === b) continue;
-          const dx = nodes[a].x - nodes[b].x, dy = nodes[a].y - nodes[b].y;
-          dists.push([b, dx * dx + dy * dy]);
-        }
-        dists.sort((p, q) => p[1] - q[1]);
-        const k = nodes[a].hub
-          ? 3 + (Math.random() < 0.5 ? 0 : 1)
-          : 1 + (Math.random() < 0.55 ? 0 : 1);
-        for (let m = 0; m < k && m < dists.length; m++) {
-          const j = dists[m][0];
-          const key = a < j ? a + '|' + j : j + '|' + a;
-          if (!seen.has(key)) { seen.add(key); edges.push({ a, b: j }); }
-        }
-      }
-    };
-
-    const resize = () => {
-      const newW = window.innerWidth;
-      const newH = window.innerHeight;
-      if (newW === 0 || newH === 0) return;
-      const hadDims = W > 0 && H > 0;
-      const sx = hadDims ? newW / W : 1;
-      const sy = hadDims ? newH / H : 1;
-      W = newW; H = newH;
-      canvas.width = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // rebuild on big shape changes (orientation flip), scale on small ones
-      if (!hadDims) {
-        buildGraph();
-      } else if (Math.abs(sx - 1) > 0.25 || Math.abs(sy - 1) > 0.25 || nodes.length !== targetNodeCount()) {
-        buildGraph();
-      } else {
-        for (const p of nodes) { p.x *= sx; p.y *= sy; }
-      }
-    };
-
-    const step = () => {
-      const N = nodes.length;
-      // pairwise repulsion
-      for (let i = 0; i < N; i++) {
-        for (let j = i + 1; j < N; j++) {
-          const dx = nodes[j].x - nodes[i].x;
-          const dy = nodes[j].y - nodes[i].y;
-          const d2 = dx * dx + dy * dy + 0.01;
-          const d  = Math.sqrt(d2);
-          const f  = REPULSE / d2;
-          const fx = (dx / d) * f, fy = (dy / d) * f;
-          nodes[i].vx -= fx; nodes[i].vy -= fy;
-          nodes[j].vx += fx; nodes[j].vy += fy;
-        }
-      }
-      // spring along edges
-      for (let e = 0; e < edges.length; e++) {
-        const na = nodes[edges[e].a], nb = nodes[edges[e].b];
-        const ex = nb.x - na.x, ey = nb.y - na.y;
-        const ed = Math.sqrt(ex * ex + ey * ey) || 0.01;
-        const ef = SPRING * (ed - SPRING_LEN);
-        const efx = (ex / ed) * ef, efy = (ey / ed) * ef;
-        na.vx += efx; na.vy += efy;
-        nb.vx -= efx; nb.vy -= efy;
-      }
-      // cursor attraction (only when pointer is over the hero)
-      if (mx >= 0 && my >= 0) {
-        for (let n = 0; n < N; n++) {
-          const p = nodes[n];
-          const dx = mx - p.x, dy = my - p.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < POINTER_R * POINTER_R) {
-            const d = Math.sqrt(d2) + 0.01;
-            const t = 1 - d / POINTER_R; // 0 at edge, 1 at center
-            p.vx += (dx / d) * POINTER_F * t * t * 12;
-            p.vy += (dy / d) * POINTER_F * t * t * 12;
-          }
-        }
-      }
-      // integrate + damp + clamp + soft-bounce
-      for (let n = 0; n < N; n++) {
-        const p = nodes[n];
-        p.vx *= DAMP; p.vy *= DAMP;
-        const v = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-        if (v > MAX_V) { p.vx = p.vx / v * MAX_V; p.vy = p.vy / v * MAX_V; }
-        p.x += p.vx; p.y += p.vy;
-        const pad = 24;
-        if (p.x < pad)      p.vx += (pad - p.x) * 0.025;
-        if (p.x > W - pad)  p.vx += (W - pad - p.x) * 0.025;
-        if (p.y < pad)      p.vy += (pad - p.y) * 0.025;
-        if (p.y > H - pad)  p.vy += (H - pad - p.y) * 0.025;
-      }
-    };
-
-    const draw = () => {
-      ctx.clearRect(0, 0, W, H);
-      // edges
-      ctx.lineWidth = 1;
-      for (let e = 0; e < edges.length; e++) {
-        const a = nodes[edges[e].a], b = nodes[edges[e].b];
-        // pick the warmer color when the edge connects two hubs OR when near the cursor
-        const hot = a.hub && b.hub;
-        let stroke = hot ? cEdgeHot : cEdge;
-        if (mx >= 0) {
-          const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-          const dx = mx - cx, dy = my - cy;
-          if (dx * dx + dy * dy < POINTER_R * POINTER_R) stroke = cEdgeHot;
-        }
-        ctx.strokeStyle = stroke;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-      // nodes (halo on hubs first, then dots)
-      for (let n = 0; n < nodes.length; n++) {
-        const p = nodes[n];
-        if (p.hub) {
-          ctx.fillStyle = cHalo;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r + 5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      for (let n = 0; n < nodes.length; n++) {
-        const p = nodes[n];
-        ctx.fillStyle = p.hub ? cHub : cNode;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    };
-
-    let raf = 0, running = false;
-    const loop = () => { step(); draw(); raf = requestAnimationFrame(loop); };
-    const start = () => { if (!running && !reduced) { running = true; raf = requestAnimationFrame(loop); } };
-    const stop  = () => { if (running) { running = false; cancelAnimationFrame(raf); } };
-
-    // debounced resize
-    let rt;
-    window.addEventListener('resize', () => {
-      clearTimeout(rt);
-      rt = setTimeout(resize, 150);
-    });
-
-    // pause when offscreen / tab hidden
-    if ('IntersectionObserver' in window) {
-      new IntersectionObserver((es) => {
-        es.forEach((en) => en.isIntersecting ? start() : stop());
-      }, { threshold: 0.05 }).observe(canvas);
-    }
-    document.addEventListener('visibilitychange', () => {
-      document.hidden ? stop() : start();
-    });
-
-    // cursor parallax — global pointer listener, but only active while inside the hero rect
-    if (hero && !reduced) {
-      window.addEventListener('pointermove', (e) => {
-        const r = hero.getBoundingClientRect();
-        if (e.clientX < r.left || e.clientX > r.right ||
-            e.clientY < r.top  || e.clientY > r.bottom) {
-          mx = -1; my = -1;
-          return;
-        }
-        // canvas is fixed in viewport coords, so client coords map 1:1
-        mx = e.clientX;
-        my = e.clientY;
-      }, { passive: true });
-      window.addEventListener('pointerleave', () => { mx = -1; my = -1; });
-      // also drop the cursor as soon as the hero scrolls out of view
-      if ('IntersectionObserver' in window) {
-        new IntersectionObserver((es) => {
-          es.forEach((en) => { if (!en.isIntersecting) { mx = -1; my = -1; } });
-        }, { threshold: 0 }).observe(hero);
-      }
-    }
-
-    // theme reactivity — recolour on data-theme attribute change
-    if ('MutationObserver' in window) {
-      new MutationObserver(readColors).observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['data-theme']
-      });
-    }
-    if (window.matchMedia) {
-      const m = window.matchMedia('(prefers-color-scheme: dark)');
-      if (m.addEventListener) m.addEventListener('change', readColors);
-      else if (m.addListener) m.addListener(readColors);
-    }
-
-    // init
-    readColors();
-    resize();
-    if (W === 0 || H === 0) {
-      // hero not yet measured (display:none in some embed contexts) — retry once
-      setTimeout(() => { resize(); if (reduced) { for (let i = 0; i < 180; i++) step(); draw(); } else { start(); } }, 60);
-    } else if (reduced) {
-      // settle into a stable layout, then draw a single static frame
-      for (let i = 0; i < 240; i++) step();
-      draw();
-    } else {
-      // warm-start: do a few unrendered settling steps so first paint isn't a chaotic explosion
-      for (let i = 0; i < 30; i++) step();
-      start();
-    }
-  })();
 </script>
 
 </body>
