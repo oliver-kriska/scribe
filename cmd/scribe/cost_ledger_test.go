@@ -497,3 +497,36 @@ func TestProviderRollup(t *testing.T) {
 		t.Errorf("groupByProvider should rank the biggest spender (anthropic) first; got %s", groups[0].Model)
 	}
 }
+
+func TestCommaInt(t *testing.T) {
+	for _, tc := range []struct {
+		in   int64
+		want string
+	}{
+		{0, "0"},
+		{42, "42"},
+		{1234, "1,234"},
+		{16196224, "16,196,224"},
+		{-1234567, "-1,234,567"},
+	} {
+		if got := commaInt(tc.in); got != tc.want {
+			t.Errorf("commaInt(%d) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestHumanDuration(t *testing.T) {
+	for _, tc := range []struct {
+		in   float64
+		want string
+	}{
+		{42, "42s"},
+		{414, "6m54s"},
+		{3894.5, "1h04m"},
+		{170440.6, "47h20m"},
+	} {
+		if got := humanDuration(tc.in); got != tc.want {
+			t.Errorf("humanDuration(%v) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
