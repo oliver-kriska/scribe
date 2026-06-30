@@ -1062,16 +1062,16 @@
     box-shadow: var(--shadow-card-hover);
     transform: translateY(-1px);
   }
-  .feature__icon {
-    width: 32px; height: 32px;
-    border-radius: var(--r-sm);
-    background: var(--bg-sub);
-    border: 1px solid var(--border);
-    display: grid; place-items: center;
-    color: var(--accent);
-    margin-bottom: 4px;
+  /* mono receipt-label replaces the decorative icon tile (info over decoration);
+     accent is reserved for the one key card via .feature--key */
+  .feature__kicker {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: .01em;
+    color: var(--muted);
+    margin-bottom: 2px;
   }
-  .feature__icon svg { width: 16px; height: 16px; }
+  .feature--key .feature__kicker { color: var(--accent-on-soft); }
   .feature h3 {
     font-size: 16px;
     letter-spacing: -0.012em;
@@ -1106,7 +1106,6 @@
     box-shadow: none;
     transform: none;
   }
-  .team-grid .feature__icon { display: none; }
   .team-grid .feature h3 { font-size: 16px; }
 
   /* -------------------- code block / tabs -------------------- */
@@ -2244,49 +2243,37 @@
 
     <div class="features">
       <article class="feature">
-        <div class="feature__icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5C2 3.4 2.9 2.5 4 2.5h8c1.1 0 2 .9 2 2v7c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-7z"/><path d="M5 6h6M5 8.5h6M5 11h3"/></svg>
-        </div>
+        <div class="feature__kicker">agent handshake</div>
         <h3>Context-aware agents</h3>
         <p><code>scribe init</code> writes a handshake block into <strong>both</strong> <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>, so every session in every project queries your KB before recommending a library or proposing an architecture.</p>
       </article>
 
       <article class="feature">
-        <div class="feature__icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
-        </div>
+        <div class="feature__kicker">launchd · systemd</div>
         <h3>Runs itself on cron</h3>
         <p>Hourly auto-commits. Every 2 hours: project extraction. 3×/day: session mining. Every 30 minutes: queued URLs. Every 4 hours: self-iMessaged links. Sundays at 02:00: the weekly Dream consolidation cycle.</p>
       </article>
 
       <article class="feature">
-        <div class="feature__icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 L6 9 L9 11 L13 4"/><circle cx="3" cy="12" r="1"/><circle cx="13" cy="4" r="1"/></svg>
-        </div>
+        <div class="feature__kicker">cross-project</div>
         <h3>Compounds across projects</h3>
         <p>One cross-project KB, not siloed per repo. Solve the oban idempotency bug in project A on Monday; the agent finds your fix on Friday when the same shape comes up in project B.</p>
       </article>
 
-      <article class="feature">
-        <div class="feature__icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="8" rx="1.5"/><path d="M4.5 13.5h7M8 11v2.5"/><circle cx="8" cy="7" r="1.5"/></svg>
-        </div>
+      <article class="feature feature--key">
+        <div class="feature__kicker">local · $0</div>
         <h3>100% Ollama-capable</h3>
         <p>Per-project extraction, two-pass absorb, Dream cycle, assess, deep, session-mine, relations migrate: every LLM op runs end-to-end against a local Ollama server. One line in <code>scribe.yaml</code> flips the whole pipeline. <strong>Zero API spend.</strong></p>
       </article>
 
       <article class="feature">
-        <div class="feature__icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h6L13.5 6v7.5c0 .55-.45 1-1 1h-8.5c-.55 0-1-.45-1-1V3.5c0-.55.45-1 1-1z"/><path d="M9.5 2.5V6h4"/><path d="M5.5 9.5h5M5.5 11.5h3"/></svg>
-        </div>
+        <div class="feature__kicker">git · markdown</div>
         <h3>Plain markdown you own</h3>
         <p>File over app: the corpus has to outlive the pipeline. A git repo of plain markdown with YAML frontmatter. Push to your own GitHub, Gitea, or Forgejo; open in Obsidian, VS Code, vim, or mdbook. <strong>No SaaS, no vendor lock-in.</strong></p>
       </article>
 
       <article class="feature">
-        <div class="feature__icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><path d="M5.5 5 L7 10.5M10.5 5 L9 10.5M6 4 L10 4"/></svg>
-        </div>
+        <div class="feature__kicker">typed edges</div>
         <h3>Typed graph, not just tags</h3>
         <p>Articles connect via typed edges: <code>supersedes</code>, <code>contradicts</code>, <code>specializes</code>, <code>derived_from</code>, <code>extends</code>. <code>scribe relations migrate</code> classifies existing <code>related:</code> links into the typed schema with an LLM.</p>
       </article>
