@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -123,10 +122,12 @@ func renderStatus(w io.Writer, root string) error {
 		fmt.Fprintf(w, "  last sync:        %s\n", last)
 	}
 
-	// --- qmd index size ---
+	// --- qmd collection (this KB) ---
 	fmt.Fprintln(w)
-	if size, err := qmdIndexSize(); err == nil {
-		fmt.Fprintf(w, "  qmd index:        %s\n", size)
+	if detail, ok := qmdCollectionStatus(root); ok {
+		fmt.Fprintf(w, "  qmd collection:   %s\n", detail)
+	} else {
+		fmt.Fprintln(w, "  qmd collection:   not indexed yet — run `scribe sync` or `qmd update`")
 	}
 
 	return nil
@@ -282,20 +283,70 @@ func defaultStr(s, def string) string {
 	return s
 }
 
-// qmdIndexSize shells out to `qmd status` and grabs the reported size. Best
-// effort — returns "" if qmd isn't installed so status stays useful even
-// without the semantic layer.
-func qmdIndexSize() (string, error) {
-	out, err := runCmdErr("", "qmd", "status")
+// qmdCollectionStatus reports the qmd collection that indexes THIS KB —
+// file count and freshness — or ("", false) when no collection maps to
+// this KB (so status prints "not indexed yet"). The old qmdIndexSize
+// reported the GLOBAL qmd store size, which on a multi-collection install
+// is every KB combined (issue #27 item 5). qmd names a collection after
+// the indexed folder's basename; we confirm the match via `collection
+// show`'s Path so a same-named collection at a different folder can't be
+// misreported as this KB's.
+func qmdCollectionStatus(root string) (string, bool) {
+	name := filepath.Base(root)
+	show, err := runCmdErr(root, "qmd", "collection", "show", name)
 	if err != nil {
-		return "", err
+		return "", false
 	}
-	for line := range strings.SplitSeq(out, "\n") {
-		if strings.Contains(line, "Size:") {
-			return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "Size:")), nil
+	if p := qmdField(show, "Path:"); p == "" || !samePath(p, root) {
+		return "", false // no collection for this KB (or it points elsewhere)
+	}
+	detail := name
+	// Files + freshness live in `collection list`, not `collection show`.
+	if list, lerr := runCmdErr(root, "qmd", "collection", "list"); lerr == nil {
+		if files, updated := qmdCollectionFilesUpdated(list, name); files != "" {
+			detail += " — " + files + " files"
+			if updated != "" {
+				detail += ", updated " + updated
+			}
 		}
 	}
-	return "", errors.New("size line not found")
+	return detail, true
+}
+
+// qmdField returns the value after the first "<label> ..." line in qmd's
+// human-readable output (e.g. label "Path:"). Empty when absent.
+func qmdField(out, label string) string {
+	for line := range strings.SplitSeq(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(trimmed, label); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// qmdCollectionFilesUpdated parses `qmd collection list` for the Files
+// and Updated values of the named collection. The block is headed by
+// "<name> (qmd://<name>/)" and its fields are indented beneath it until
+// the next collection header; scanning stops there so one collection's
+// numbers can't bleed into another's.
+func qmdCollectionFilesUpdated(list, name string) (files, updated string) {
+	header := name + " (qmd://"
+	inBlock := false
+	for line := range strings.SplitSeq(list, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, header):
+			inBlock = true
+		case inBlock && strings.Contains(trimmed, "(qmd://"):
+			return files, updated // next collection's header — done
+		case inBlock && strings.HasPrefix(trimmed, "Files:"):
+			files = strings.TrimSpace(strings.TrimPrefix(trimmed, "Files:"))
+		case inBlock && strings.HasPrefix(trimmed, "Updated:"):
+			updated = strings.TrimSpace(strings.TrimPrefix(trimmed, "Updated:"))
+		}
+	}
+	return files, updated
 }
 
 // renderBacklog prints "what's not yet processed" so the user can
@@ -380,19 +431,20 @@ func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 		}
 	}
 
-	// Sessions.
+	// Sessions. Scope to projects THIS KB has actually adopted (approved
+	// manifest entries), not the whole global ccrider DB — counting the
+	// DB minus this KB's mined log made a fresh KB with zero approved
+	// projects report the machine's entire session pile as pending
+	// (issue #27 item 4). Mirrors the manifest/approval gate sync's
+	// preFilterSessions applies, so the backlog can't promise work sync
+	// won't do.
 	if cfg.CcriderDB != "" && fileExists(cfg.CcriderDB) {
 		processed := loadProcessedSessionIDs(filepath.Join(root, "wiki", "_sessions_log.json"))
-		total, ok := countSessionsInDB(cfg.CcriderDB)
-		if ok {
-			processedSet := make(map[string]struct{}, len(processed))
-			for _, id := range processed {
-				processedSet[id] = struct{}{}
-			}
-			pending := total - len(processedSet)
-			if pending < 0 {
-				pending = 0
-			}
+		processedSet := make(map[string]struct{}, len(processed))
+		for _, id := range processed {
+			processedSet[id] = struct{}{}
+		}
+		if pending, ok := countScopedPendingSessions(root, cfg, processedSet); ok {
 			rows = append(rows, backlog{label: "sessions (mine):", done: len(processedSet), todo: pending})
 		}
 	}
@@ -434,22 +486,57 @@ func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 	}
 }
 
-// countSessionsInDB reads the ccrider DB read-only and returns the
-// total number of sessions tracked. Returns (0, false) on any DB
-// error so the caller falls back to "no session backlog info" rather
-// than printing wrong numbers.
-func countSessionsInDB(dbPath string) (int, bool) {
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+// countScopedPendingSessions counts ccrider sessions THIS KB would mine
+// but hasn't — scoped to projects with an APPROVED manifest entry, the
+// same gate sync's preFilterSessions applies (issue #27 item 4). The old
+// whole-DB count made a KB with zero approved projects report the
+// machine's entire session pile as pending. processed is the set of
+// already-mined session IDs, excluded from the tally. Reads the DB
+// read-only; returns (0, false) on any DB/manifest error so the caller
+// drops the row rather than printing a wrong number.
+func countScopedPendingSessions(root string, cfg *ScribeConfig, processed map[string]struct{}) (int, bool) {
+	db, err := sql.Open("sqlite3", cfg.CcriderDB+"?mode=ro")
 	if err != nil {
 		return 0, false
 	}
 	defer db.Close()
-	var n int
-	//nolint:noctx // status command is short-lived
-	if err := db.QueryRow("SELECT COUNT(*) FROM sessions").Scan(&n); err != nil {
+
+	manifest, err := loadManifest(root)
+	if err != nil {
 		return 0, false
 	}
-	return n, true
+	//nolint:noctx // status command is short-lived
+	rows, err := db.Query("SELECT session_id, COALESCE(project_path, '') FROM sessions")
+	if err != nil {
+		return 0, false
+	}
+	defer rows.Close()
+
+	pending := 0
+	for rows.Next() {
+		var sid, ppath string
+		if err := rows.Scan(&sid, &ppath); err != nil {
+			continue
+		}
+		if ppath == "" {
+			continue
+		}
+		// entryForPath (not a keyed lookup) so a session run inside an
+		// approved project's worktree still resolves to that project, and
+		// a basename collision can't borrow another project's approval.
+		entry := manifest.entryForPath(ppath)
+		if entry == nil || !entry.IsApproved() {
+			continue
+		}
+		if _, done := processed[sid]; done {
+			continue
+		}
+		pending++
+	}
+	if err := rows.Err(); err != nil {
+		return 0, false
+	}
+	return pending, true
 }
 
 // pendingDropFiles lists the unprocessed drop files staged inside

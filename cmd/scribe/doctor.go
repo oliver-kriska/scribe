@@ -699,6 +699,7 @@ func checkCron(root string) []check {
 	jobs := scribeJobs(binary)
 	domain := guiDomain()
 	own := make(map[string]bool, len(jobs))
+	installed := 0
 	for _, job := range jobs {
 		label := plistLabel(job.Name)
 		path := plistPath(job.Name)
@@ -706,8 +707,10 @@ func checkCron(root string) []check {
 		state := probeLaunchAgent(domain, label, path)
 		switch state {
 		case "loaded":
+			installed++
 			out = append(out, check{Section: "cron", Name: label, Status: statusOK, Detail: "loaded"})
 		case "present":
+			installed++
 			out = append(out, check{
 				Section: "cron", Name: label, Status: statusFail,
 				Detail: "plist on disk but not loaded into " + domain,
@@ -721,6 +724,14 @@ func checkCron(root string) []check {
 			})
 		}
 	}
+	// KB-scope headline (issue #27 item 1): the agents above are a single
+	// KB-agnostic set (issue #26) shared by every registered KB, so a bare
+	// "loaded" is false confidence on a KB that isn't actually served.
+	// Resolve whether cron serves THIS KB and lead the section with it —
+	// only when agents exist, since "missing" rows already tell that story.
+	if installed > 0 {
+		out = append([]check{cronScopeCheck(root)}, out...)
+	}
 	agentsDir := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
 	if foreign := foreignScribeAgents(agentsDir, binary, root, own); len(foreign) > 0 {
 		out = append(out, check{
@@ -730,6 +741,34 @@ func checkCron(root string) []check {
 		})
 	}
 	return out
+}
+
+// cronScopeCheck answers the question the per-agent rows can't post-#26
+// (issue #27 item 1): the cron agents are a single KB-agnostic set that
+// serves every REGISTERED KB via `scribe each`, so "loaded" alone is
+// false confidence on a KB that isn't enrolled. This resolves whether
+// cron actually serves THIS KB.
+func cronScopeCheck(root string) check {
+	// Legacy pre-#26 install: a plist still embeds `cd "<other>"` and
+	// serves that KB alone, so from here the loaded agents are a mirage.
+	if other := otherKBServedByAgents(root); other != "" {
+		return check{
+			Section: "cron", Name: "kb-scope", Status: statusWarn,
+			Detail: "loaded agents are pre-registry and serve " + other + " only — they do NOT serve this KB",
+			Fix:    "scribe cron install   # migrate to the KB-agnostic (scribe each) scheduler",
+		}
+	}
+	if kbRegistered(loadUserConfig(), root) {
+		return check{
+			Section: "cron", Name: "kb-scope", Status: statusOK,
+			Detail: fmt.Sprintf("this KB is registered — cron serves it (%d KB(s) on this machine)", len(registeredKBs())),
+		}
+	}
+	return check{
+		Section: "cron", Name: "kb-scope", Status: statusWarn,
+		Detail: "agents are loaded but this KB is not in the registry — `scribe each` skips it, so cron does NOT serve this KB",
+		Fix:    "scribe cron install   # enrolls this KB in the registry and (re)installs the shared agents",
+	}
 }
 
 // foreignScribeAgents lists LaunchAgent plists that drive this scribe
