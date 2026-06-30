@@ -54,9 +54,10 @@ func commitRun(root string) error {
 	// Stage everything except output/
 	runCmd(root, "git", "add", "--ignore-errors", "--", ".", ":!output/")
 
-	// Team-mode credential gate — same funnel as gitAddWiki.
-	if !holdSecretFiles(root, cfg) {
-		logMsg("commit", "skipped: a detected secret could not be held back — resolve and rerun")
+	// Commit gate — secret scanner (team mode) + stop-words filter (all
+	// KBs), same funnel as gitAddWiki.
+	if !commitGate(root, cfg) {
+		logMsg("commit", "skipped: a detected secret or held word could not be held back — resolve and rerun")
 		return nil
 	}
 

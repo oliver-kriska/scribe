@@ -134,8 +134,8 @@ func (c *PromoteCmd) Run() error {
 		switch {
 		case stageErr != nil:
 			fmt.Printf("warning: target stage failed: %v — commit manually\n", stageErr)
-		case !holdSecretFiles(target, loadConfig(target)):
-			fmt.Println("warning: a detected secret in the target KB could not be held back — commit skipped; resolve there and commit manually")
+		case !commitGate(target, loadConfig(target)):
+			fmt.Println("warning: a detected secret or held word in the target KB could not be held back — commit skipped; resolve there and commit manually")
 		case runCmd(target, "git", "status", "--porcelain", "--", destRel) == "":
 			fmt.Println("target already had identical content committed — nothing to commit")
 		case runCmd(target, "git", "diff", "--cached", "--name-only", "--", destRel) == "":

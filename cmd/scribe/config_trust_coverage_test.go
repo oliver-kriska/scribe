@@ -149,6 +149,21 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Subscriptions.Notify":  true,
 
 	"Meta.RollingTargets": true,
+
+	// Stop-words commit gate (issue #25). Deliberately NOT trust-locked,
+	// even though a pushed change could in principle weaken a filter —
+	// two reasons: (1) the SOVEREIGN half of the list lives in each
+	// member's ~/.config/scribe/config.yaml, which is never committed and
+	// a push can never touch, so the hard privacy guarantee doesn't depend
+	// on the shared list; (2) the shared list is convenience team policy
+	// that members add words to constantly, and locking it would force
+	// every teammate to re-trust on each addition — friction that would
+	// discourage use of the very feature meant to protect them. The
+	// shared list can only ADD protection a member also wants; it can't
+	// widen ingestion, redirect data, or unlock the credential gate.
+	"StopWords.Hold":      true,
+	"StopWords.Mask":      true,
+	"StopWords.Redaction": true,
 }
 
 // configLeaf is one settable leaf of ScribeConfig.

@@ -45,6 +45,26 @@ team: true
 #   generic: false        # noisy generic key=value rule, entropy-gated
 #   allow_paths: []       # KB-relative globs to exempt, e.g. wiki/examples
 
+# Stop words — your own commit gate, on top of the credential scanner
+# and active for solo KBs too. Two modes, matched WHOLE-WORD and
+# case-insensitively by default (wrap an entry in /slashes/ for a regex):
+#   hold:  a staged article containing the word is held back from commit
+#          (stays local, never silently dropped) — for client names, NDA
+#          codenames, anything that must not enter the KB.
+#   mask:  every occurrence is redacted in place and the article still
+#          commits — keep the doc, lose one noun.
+# Add `scribe:allow` on a line to exempt it. The shared list here is team
+# policy; keep PERSONAL words out of this committed file and in
+# ~/.config/scribe/config.yaml under the same `stop_words:` key — the two
+# lists union, and the personal half never leaves your machine.
+# stop_words:
+#   hold:
+#     - AcmeCorp
+#     - "/codename-\\d+/"
+#   mask:
+#     - internal-tool-name
+#   redaction: "[redacted]"
+
 # Subscriptions surface teammates' incoming articles after each pull —
 # matches print to the sync log; notify: true also fires a macOS
 # notification. Personal preference, so set it in scribe.local.yaml:

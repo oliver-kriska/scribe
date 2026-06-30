@@ -134,6 +134,12 @@ type ScribeConfig struct {
 	// real-shaped tokens. Trust-locked: a pushed `disable: true` can't
 	// switch another member's gate off.
 	SecretScan SecretScanConfig `yaml:"secret_scan"`
+	// StopWords is the user-defined commit gate (stopwords.go): markdown
+	// staged with a held word never commits, and masked words are
+	// redacted in place. This is the SHARED (team-policy) half; each
+	// member also unions their own ~/.config/scribe/config.yaml list,
+	// which is never committed. NOT trust-locked — see StopWordsConfig.
+	StopWords  StopWordsConfig  `yaml:"stop_words"`
 	Assess     AssessConfig     `yaml:"assess"`
 	DeepIngest DeepIngestConfig `yaml:"deep_ingest"`
 	Extract    ExtractConfig    `yaml:"extract"`
@@ -779,6 +785,12 @@ type userConfig struct {
 	// API key, for setups that use more than one hosted provider at
 	// once. Checked before LLMAPIKey. Same never-in-the-KB rule.
 	LLMAPIKeys map[string]string `yaml:"llm_api_keys,omitempty"`
+	// StopWords is the PERSONAL half of the stop-words commit gate
+	// (stopwords.go): words you never want pushed to any KB, kept here
+	// — never in a shared scribe.yaml — so listing an NDA codename or a
+	// private name doesn't itself leak it to teammates. Unioned with the
+	// KB's shared stop_words at gate time.
+	StopWords StopWordsConfig `yaml:"stop_words,omitempty"`
 }
 
 // loadUserConfig reads the user-level config. Returns zero value if missing.

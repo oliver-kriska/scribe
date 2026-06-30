@@ -732,6 +732,20 @@ own sessions and repos; git is the merge layer.
      block is trust-locked like `sources` — a pushed change weakening it warns
      instead of applying. `scribe doctor` also scans the whole KB on disk, so
      leaks that predate the gate surface too.
+   - **Stop-words gate**: your own words on top of the credential scanner, and
+     active for solo KBs too. Matched **whole-word and case-insensitively** by
+     default (`Falcon` hits "the Falcon project" but not "falconry"); wrap an
+     entry in `/slashes/` for a regex. Two modes — `hold:` holds the whole
+     article back from the commit (like `SECRET HELD`, never silently dropped),
+     for client names / NDA codenames / anything that must not enter the KB;
+     `mask:` redacts every occurrence in place and lets the sanitized article
+     commit, when the doc is worth keeping minus one noun. `scribe:allow` on a
+     line exempts it. The list lives in **two halves that union**: a shared
+     `stop_words` block in `scribe.yaml` (team policy) and a personal one in
+     `~/.config/scribe/config.yaml` — keep words you don't want to name to the
+     whole team in the personal half, which never leaves your machine. Unlike
+     `secret_scan` it is deliberately **not** trust-locked: the shared list
+     evolves constantly and the personal half is the sovereign guarantee.
    - **Push conflicts** retry once through `git pull --rebase`; scribe never
      force-pushes. KB history is append-only.
 
