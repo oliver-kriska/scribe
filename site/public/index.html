@@ -1555,6 +1555,19 @@
 
   /* quick buyer-intent comparison — capability rows × named-tool columns */
   .cmp-quick-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* horizontal-scroll affordance for wide data blocks on narrow screens */
+  .scroll-hint { display: none; }
+  @media (max-width: 640px) {
+    .scroll-hint {
+      display: block;
+      margin-top: 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+  }
   .cmp-quick { min-width: 680px; }
   .cmp-quick thead th { white-space: normal; }
   .cmp-quick tbody th { width: 30%; }
@@ -2353,6 +2366,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
   Coverage: 3175/3331 calls had token data; the other 156 add ~$0.62 estimated, not shown above.
   usd = measured spend from token data.  cancl = sibling-canceled (rate-limit cascade).  tmout = ctx.DeadlineExceeded.</pre>
       </div>
+      <p class="scroll-hint" aria-hidden="true">↔ swipe the table for the full per-model breakdown</p>
       <p class="cost__caption">Real output, names anonymized. That week, the Anthropic path cost $103 on the team KB; the hosted Together run did comparable work for <strong>$0.34</strong>, and the local Ollama models cost nothing. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
     </div>
   </div>
@@ -2440,6 +2454,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
         </tbody>
       </table>
     </div>
+    <p class="scroll-hint" aria-hidden="true">↔ swipe the table to see every tool column</p>
     <p class="cmp__caption">scribe is the only one of these that auto-writes a portable, git-versioned markdown wiki your agents read before they decide, with no vector database. Unlike AnythingLLM, scribe stores plain markdown in git and needs no vector database or running server. Snapshot 2026-06-08; tool capabilities change, so check each project's docs before deciding.</p>
 
     <div class="cmp-wrap">
@@ -2571,7 +2586,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
         </div>
       </div>
 
-      <p class="cmp__caption">Snapshot 2026-05-18. Everything moves; check the source repos before deciding. Verdicts are pulled from public READMEs, issue trackers, and the scribe maintainer's tool evaluations.</p>
+      <p class="cmp__caption">Snapshot 2026-06-08. Everything moves; check the source repos before deciding. Verdicts are pulled from public READMEs, issue trackers, and the scribe maintainer's tool evaluations.</p>
 
       <blockquote class="cmp__quote">
         scribe is the wiki the LLM writes for you, sitting on top of raw sources kept verbatim. RAG retrieves chunks; scribe gives you a curated, named-entity wiki you can also grep.
