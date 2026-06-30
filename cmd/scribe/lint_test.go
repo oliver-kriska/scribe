@@ -47,7 +47,7 @@ func lintValidArticle(title string, bodyLines int, extra ...string) string {
 		sb.WriteString(e + "\n")
 	}
 	sb.WriteString("---\n\n")
-	for i := 0; i < bodyLines; i++ {
+	for i := range bodyLines {
 		fmt.Fprintf(&sb, "Body line %d of %s.\n", i, title)
 	}
 	return sb.String()
@@ -285,7 +285,7 @@ func TestLintIndexConsistency(t *testing.T) {
 	t.Run("large drift warns", func(t *testing.T) {
 		// 6 index entries vs 2 disk articles → diff -4.
 		var sb strings.Builder
-		for i := 0; i < 6; i++ {
+		for i := range 6 {
 			fmt.Fprintf(&sb, "- [[Article %d]] -- s\n", i)
 		}
 		writeKBFile(t, root, "wiki/_index.md", sb.String())

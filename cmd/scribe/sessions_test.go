@@ -141,7 +141,7 @@ func TestPreFilterSessions(t *testing.T) {
 	seed := func(sessionID, project string, userMsgs int, charsPerMsg int) {
 		rowid := insertFixtureSession(t, db, sessionID, project, userMsgs+1,
 			"2026-06-01T10:00:00", "2026-06-01T12:00:00", "s")
-		for i := 0; i < userMsgs; i++ {
+		for range userMsgs {
 			insertFixtureMessage(t, db, rowid, "user", strings.Repeat("x", charsPerMsg), false)
 		}
 	}
@@ -186,7 +186,7 @@ func TestPreFilterSessions_MissingDBKeepsAll(t *testing.T) {
 }
 
 func jsonQuote(s string) string {
-	b, _ := json.Marshal(s)
+	b, _ := json.Marshal(s) //nolint:errchkjson // marshaling a string is infallible
 	return string(b)
 }
 
@@ -366,7 +366,7 @@ func TestSessionsUnskipCmd(t *testing.T) {
 	db, dbPath := newCcriderDB(t)
 	// "wasrich" now passes the filter; "stillempty" doesn't.
 	rich := insertFixtureSession(t, db, "wasrich", "/p/alpha", 10, "2026-06-01T10:00:00", "2026-06-01T12:00:00", "s")
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		insertFixtureMessage(t, db, rich, "user", strings.Repeat("x", 800), false)
 	}
 	insertFixtureSession(t, db, "stillempty", "/p/alpha", 2, "2026-06-01T10:00:00", "2026-06-01T12:00:00", "s")
@@ -435,7 +435,7 @@ func TestSessionsUnskipCmd(t *testing.T) {
 func TestSessionsInspectCmd_JSON(t *testing.T) {
 	db, dbPath := newCcriderDB(t)
 	rich := insertFixtureSession(t, db, "abc-123", "/p/alpha", 12, "2026-06-01T10:00:00", "2026-06-01T12:00:00", "built a thing")
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		insertFixtureMessage(t, db, rich, "user", strings.Repeat("x", 800), false)
 	}
 

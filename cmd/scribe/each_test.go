@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"testing"
 
@@ -22,7 +22,7 @@ func TestEachCmd_IteratesWithFailureIsolation(t *testing.T) {
 	eachRunner = func(root string, args []string) error {
 		ran = append(ran, root+"|"+strings.Join(args, " "))
 		if root == a {
-			return fmt.Errorf("boom")
+			return errors.New("boom")
 		}
 		return nil
 	}

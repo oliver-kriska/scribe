@@ -146,9 +146,7 @@ func scaffoldTeamKB(t *testing.T, root, kbName, lockDir string) {
 // --sessions, no discoverable projects → discover/extract/mining are no-ops).
 func runSyncIn(t *testing.T, kb string) {
 	t.Helper()
-	if err := os.Setenv("SCRIBE_KB", kb); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("SCRIBE_KB", kb)
 	s := &SyncCmd{Max: 3, Parallel: 1, Model: "sonnet", SessionsMax: 3, SessionSort: "score"}
 	if err := s.Run(); err != nil {
 		t.Fatalf("sync %s: %v", kb, err)
@@ -207,7 +205,7 @@ func TestTeamWorkflow_EndToEnd(t *testing.T) {
 	// writeDigestFile regenerates from *committed* history, and ratelimit.md
 	// is only committed later in this same sync — so it surfaces in Alice's
 	// activity on the next sync (asserted after the secret-gate sync below).
-	if !fileExists(filepath.Join(alice, "wiki/_digest.md")) {
+	if !fileExists(filepath.Join(alice, "wiki", "_digest.md")) {
 		t.Error("team digest wiki/_digest.md not generated")
 	}
 
@@ -244,10 +242,10 @@ func TestTeamWorkflow_EndToEnd(t *testing.T) {
 		!strings.Contains(sub, "Alice") {
 		t.Errorf("subscription did not surface the backend article by Alice; logs:\n%s", sub)
 	}
-	if !fileExists(filepath.Join(bob, "wiki/patterns/ratelimit.md")) {
+	if !fileExists(filepath.Join(bob, "wiki", "patterns", "ratelimit.md")) {
 		t.Error("bob did not pull the published article")
 	}
-	if fileExists(filepath.Join(bob, "wiki/patterns/leak.md")) {
+	if fileExists(filepath.Join(bob, "wiki", "patterns", "leak.md")) {
 		t.Error("held credential file leaked to the remote and reached bob")
 	}
 }
@@ -296,7 +294,7 @@ func TestTeamConflict_DigestAutoResolves(t *testing.T) {
 	if rebaseInProgress(bob) {
 		t.Error("rebase left mid-flight after auto-resolve")
 	}
-	if !fileExists(filepath.Join(bob, "wiki/_digest.md")) {
+	if !fileExists(filepath.Join(bob, "wiki", "_digest.md")) {
 		t.Error("digest missing after auto-resolve (should regenerate)")
 	}
 }
