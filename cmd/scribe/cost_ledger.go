@@ -409,12 +409,10 @@ func summarizeCosts(root string, days int) ([]CostSummary, error) {
 	for _, row := range byModel {
 		out = append(out, *row)
 	}
-	// Sort by total USD (real + estimated high) descending. Real
-	// dominates when present, estimate kicks in for legacy rows.
+	// Sort by the magnitude each row actually displays, descending, so the
+	// table reads monotonically (see rowSortKey).
 	sort.Slice(out, func(i, j int) bool {
-		ti := out[i].ActualUSD + out[i].EstUSDHigh
-		tj := out[j].ActualUSD + out[j].EstUSDHigh
-		return ti > tj
+		return rowSortKey(out[i]) > rowSortKey(out[j])
 	})
 	return out, nil
 }
@@ -628,7 +626,7 @@ func sortedByCost(m map[string]*CostSummary) []CostSummary {
 		out = append(out, *r)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].ActualUSD+out[i].EstUSDHigh > out[j].ActualUSD+out[j].EstUSDHigh
+		return rowSortKey(out[i]) > rowSortKey(out[j])
 	})
 	return out
 }
@@ -698,7 +696,7 @@ func providerOf(model string) string {
 // table above, not their own totals.
 func printGroupSummary(colHeader string, rows []CostSummary) {
 	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].ActualUSD+rows[i].EstUSDHigh > rows[j].ActualUSD+rows[j].EstUSDHigh
+		return rowSortKey(rows[i]) > rowSortKey(rows[j])
 	})
 	header := []string{colHeader, "calls", "in-tokens", "out-tokens", "usd"}
 	body := make([][]string, 0, len(rows))
@@ -720,7 +718,21 @@ func printGroupSummary(colHeader string, rows []CostSummary) {
 // to the widest cell counted in runes, so comma-grouped numbers and the
 // em-dash "—" placeholder line up. (Named to avoid renderTable in convert_docx.)
 func printAlignedTable(header []string, body [][]string, footer []string) {
-	w := make([]int, len(header))
+	// Size the width slice to the widest row across header/body/footer, not
+	// just the header. Every caller today passes uniform column counts, but
+	// a future mismatched row would otherwise index w[c] out of range and
+	// panic the whole `scribe cost` command — a table renderer should never
+	// be able to crash the report.
+	cols := len(header)
+	for _, r := range body {
+		if len(r) > cols {
+			cols = len(r)
+		}
+	}
+	if len(footer) > cols {
+		cols = len(footer)
+	}
+	w := make([]int, cols)
 	measure := func(row []string) {
 		for c, cell := range row {
 			if n := len([]rune(cell)); n > w[c] {
@@ -809,11 +821,25 @@ func humanDuration(secs float64) string {
 	}
 }
 
-// formatRowUSD picks the most accurate dollar representation
-// available for a row. When all calls reported usage, we print the
-// real number; when none did, we print the estimate range; mixed
-// rows print "real $X + est $Y–$Z" so the user can see partial
-// instrumentation.
+// rowSortKey is the dollar magnitude formatRowUSD actually prints, so a
+// table sorted by it reads monotonically top-to-bottom. A measured row sorts
+// by its measured spend (its estimate is sub-cent noise folded into the
+// Coverage footnote, not shown in the cell), an unmeasured row by its
+// estimate high. Sorting by ActualUSD+EstUSDHigh instead could place a row
+// that displays "$4.00" above one that displays "~$4.50".
+func rowSortKey(r CostSummary) float64 {
+	if r.ActualUSD > 0 {
+		return r.ActualUSD
+	}
+	return r.EstUSDHigh
+}
+
+// formatRowUSD picks the most accurate dollar representation available for a
+// row. When any call reported usage, the measured spend is the headline —
+// one clean number, with the estimate for un-instrumented calls rolled into
+// the Coverage footnote rather than mashed into the cell. When no call did
+// (legacy rows), it prints the char-based estimate range, flagged with a
+// leading ~ so it never reads as a measured number.
 func formatRowUSD(r CostSummary) string {
 	switch {
 	case r.ActualUSD > 0:
