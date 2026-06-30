@@ -513,6 +513,79 @@ Resolution order is **env var → this file**: a one-off `export GROQ_API_KEY=�
 
 ---
 
+## Claude Desktop
+
+`scribe init` wires up Claude Code and Codex CLI automatically (the handshake block in [Why bother #1](#why-bother)). The **Claude Desktop app** doesn't read those files, but you can give it the same KB access by registering `qmd`'s MCP server and adding a short instruction block. After that, any Desktop chat can search your KB.
+
+### 1. Register the qmd MCP server
+
+Edit Claude Desktop's config file:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+Add an entry under `mcpServers` — name it after your KB:
+
+```json
+{
+  "mcpServers": {
+    "mykb": {
+      "command": "/absolute/path/to/qmd",
+      "args": ["mcp"],
+      "env": {
+        "PATH": "/dir/containing/qmd:/dir/containing/node:/usr/bin:/bin"
+      }
+    }
+  }
+}
+```
+
+- **`command`** — the absolute path to your `qmd` binary (`which qmd` / `command -v qmd`). MCP servers launched by the app don't inherit your shell PATH, so a bare `qmd` won't resolve.
+- **`args: ["mcp"]`** — starts qmd's stdio MCP server against the default index (where your KB lives). That's all most setups need.
+- **`env.PATH`** — qmd shells out to its embedding-model runner, so give it a PATH that includes qmd's own directory **and** `node`. Find both with:
+
+  ```sh
+  dirname "$(command -v qmd)"     # qmd's bin dir
+  dirname "$(command -v node)"    # node's bin dir
+  ```
+
+  Join them with the system dirs, e.g. `"<qmd-bin>:<node-bin>:/usr/bin:/bin"`. If you manage Node with a version switcher (nvm, mise, asdf, fnm, volta), `node` lives under that tool's versioned install dir — run `dirname "$(command -v node)"` in the **same shell where `qmd` works** so you capture the active version's path, not a stale one. (`which qmd` failing in a fresh shell usually means that switcher hasn't initialized — open the shell you normally use first.)
+
+> **Index ≠ collection — don't pin the wrong one.** In qmd an *index* is a database file; a *collection* is a named folder indexed inside it. Your KB is a **collection** living inside the **default index** (named `index`). It's tempting to add `--index mykb` to scope to your KB — **don't**: that points qmd at a *different, empty* index and you'll get zero results. Scoping to a collection happens in the prompt (step 2), not here. Only use `--index <name>` if you deliberately created a separate index.
+
+Restart Claude Desktop. A new chat's tools menu should list your KB server exposing `query`, `search`, `get`, `multi_get`, and `status`.
+
+### 2. Tell Claude when to use it
+
+Open **Settings → Profile → "Instructions for Claude"** (the personal-preferences box) and paste a block like this — replace `mykb` with your KB / collection name:
+
+```
+## mykb — my knowledge base
+
+The mykb MCP tools search my personal knowledge base. Always scope searches to
+collections: ["mykb"].
+
+Search it proactively — don't wait for me to ask:
+- Before recommending a library/tool/framework — I've already graded most;
+  don't suggest something I rejected.
+- Before proposing an architecture — cite the prior decision, don't reinvent.
+- When I say "have I done this", "what do I know about X", "didn't we decide on
+  X", or "how did I solve this".
+- When an error message looks recognizable — query the error text.
+
+How to search:
+- query with natural language; combine a lex sub-query (exact terms) and a vec
+  sub-query (meaning). Always pass intent.
+- get / multi_get to read full docs from the result paths.
+- If nothing relevant turns up, tell me the KB doesn't cover it yet.
+```
+
+The `collections: ["mykb"]` line is the prompt-level equivalent of the CLI's `qmd search "..." -c mykb`. With a single collection it's a no-op — but it keeps Desktop pinned to your KB the day you add a second collection to the same index. (For a hard, can't-leak guarantee instead of a prompt instruction, put the other collection in a *separate* index and the two never see each other.)
+
+This is for the Claude Desktop **app** only — Claude Code and Codex CLI already get a richer handshake from `scribe init`.
+
+---
+
 ## Command reference
 
 ```sh
