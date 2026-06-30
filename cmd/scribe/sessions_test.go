@@ -145,9 +145,13 @@ func TestPreFilterSessions(t *testing.T) {
 			insertFixtureMessage(t, db, rowid, "user", strings.Repeat("x", charsPerMsg), false)
 		}
 	}
-	seed("rich", "/p/alpha", 3, 800)
-	seed("thin", "/p/alpha", 2, 400)
-	seed("empty", "/p/alpha", 0, 0)
+	// Project path must clear isIgnored's depth floor (>=4 non-empty
+	// segments) or the scope gate drops these sessions as too-shallow
+	// system paths before the content verdict is ever reached.
+	const proj = "/home/dev/projects/alpha"
+	seed("rich", proj, 3, 800)
+	seed("thin", proj, 2, 400)
+	seed("empty", proj, 0, 0)
 	seed("inkb", root, 3, 800)
 	seed("pending", pendingProj, 3, 800)
 
