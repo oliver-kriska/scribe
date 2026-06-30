@@ -2,6 +2,59 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [Unreleased]
+
+Offload the pipeline to hosted inference when local Ollama is inconvenient
+(e.g. a Mac mini running hot in summer) — without losing the local-Ollama or
+`claude -p` options — plus a `scribe cost` overhaul so multi-KB, multi-provider
+spend is legible and reconciles with the provider's own dashboard.
+
+### Added — hosted OpenAI-compatible providers (#43)
+- A new `openai-compat` provider path speaks `/v1/chat/completions`, so
+  `llm.provider: together` (or `groq`, `fireworks`, `huggingface`, or a generic
+  `openai-compat` with `llm.base_url`) routes the **whole** pipeline through a
+  hosted endpoint. Local Ollama stays the default and `claude -p` is untouched —
+  all three backends coexist, and nothing routes to a paid provider without
+  explicit config.
+- The API key resolves, in order, from the provider's env var (e.g.
+  `TOGETHER_API_KEY`), the generic `SCRIBE_LLM_API_KEY`, or — the stable,
+  cron-friendly path — `llm_api_key` / `llm_api_keys` in
+  `~/.config/scribe/config.yaml`, so the key lives per-machine and never in a
+  shareable KB repo.
+- Optional `llm.pricing` map (USD per 1M input/output tokens) bakes real dollar
+  costs into the cost ledger for hosted models.
+- Non-anthropic providers auto-flip absorb pass-2 to JSON mode (the `claude -p`
+  tools path is anthropic-only), and every seam parsing hosted-model JSON
+  defends against shape drift.
+
+### Changed — runaway-spend backstop now covers every metered provider
+- `sync.daily_anthropic_output_token_ceiling` is generalized to
+  `sync.daily_output_token_ceiling` (the old key is still honored). It halts the
+  day's run once the output-token ceiling is hit across anthropic **and** hosted
+  providers; local Ollama is exempt (free). `doctor`'s ceiling check follows.
+
+### Changed — `scribe cost` is multi-KB and provider-aware
+- Aggregates **every registered KB by default** — hosted providers bill per API
+  key and one key usually serves all of a machine's KBs, so the combined total
+  matches the provider dashboard (verified to the cent against Together). Scope
+  to one KB with `--kb <name|path>`, `-C`, `SCRIBE_KB`, or by running inside a KB.
+- Adds **By provider** and **By KB** rollups, so spend per backend (anthropic /
+  hosted / local) and per KB is visible at a glance.
+- Measured dollars are now the headline number; the estimate for un-instrumented
+  calls moved to the Coverage footnote instead of the old unreadable
+  `$92.80+~$0.45` cell. Numbers are comma-grouped, wallclock is humanized
+  (`47h20m`), and the tables carry header/total rules.
+
+### Added — KB registry + KB-agnostic scheduler (#26)
+- A machine-level KB registry (`kbs:` in the user config) drives
+  `scribe each -- <subcommand>`, which runs a command in every registered KB.
+  Cron LaunchAgents now invoke `scribe each` instead of a hardcoded KB, so one
+  job set serves every KB; per-KB behavior still comes from each KB's own
+  `scribe.yaml`/`scribe.local.yaml`.
+- `scribe.local.yaml` (gitignored) is the per-machine override layer — provider
+  routing, capture handles, subscriptions — applied after team-config trust
+  enforcement, so it always wins locally without leaking to a shared KB.
+
 ## [0.2.29] — 2026-06-03
 
 Harden the shared LLM-action executor against the failure class behind a real

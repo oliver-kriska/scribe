@@ -477,6 +477,8 @@ provider. Per-op `provider`/`model` always win over the top-level block.
 > registered KB** — hosted providers bill per API key, and one key usually
 > serves all your KBs, so the combined total matches the provider dashboard.
 > Scope to one KB with `scribe cost --kb <name>` (or `-C`, or run inside a KB).
+> It also prints **By provider** and **By KB** rollups so you can see spend per
+> backend (anthropic / hosted / local) at a glance.
 
 ### `~/.config/scribe/config.yaml` (user)
 
