@@ -474,7 +474,7 @@ func (c *CostCmd) Run() error {
 	}
 	fmt.Printf("scribe cost — %s — %s\n\n", window, scope)
 
-	totalCalls, totalUsage := printCostTable(rows)
+	total := printCostTable(rows)
 
 	if len(reports) > 1 {
 		// Per-KB subtotals: which KB drove the spend, and proof the
@@ -497,10 +497,15 @@ func (c *CostCmd) Run() error {
 	}
 
 	fmt.Println()
-	fmt.Printf("  Coverage: %d/%d calls reported real token usage (--output-format json).\n", totalUsage, totalCalls)
-	fmt.Println("  USD column: real total when usage is present; otherwise est range ~4 chars/token, out 0.25–1.00× in.")
-	fmt.Println("  cancl = sibling-canceled (rate-limit cascade).  rate = direct rate-limit response.")
-	fmt.Println("  tmout = ctx.DeadlineExceeded.")
+	unmeasured := total.Calls - total.CallsWithUsage
+	if unmeasured > 0 && total.EstUSDHigh > 0 {
+		fmt.Printf("  Coverage: %d/%d calls had token data; the other %d add ~$%.2f estimated, not shown above.\n",
+			total.CallsWithUsage, total.Calls, unmeasured, total.EstUSDHigh)
+	} else {
+		fmt.Printf("  Coverage: %d/%d calls reported real token usage (--output-format json).\n", total.CallsWithUsage, total.Calls)
+	}
+	fmt.Println("  usd = measured spend from token data.  ~$lo-hi = char-based estimate for rows with no token data at all.")
+	fmt.Println("  cancl = sibling-canceled (rate-limit cascade).  rate = direct rate-limit response.  tmout = ctx.DeadlineExceeded.")
 	if len(reports) == 1 {
 		if n := len(registeredKBs()); n > 1 {
 			fmt.Printf("  Scoped to %s — drop --kb/-C and run outside a KB to aggregate all %d registered KBs.\n", reports[0].name, n)
@@ -628,11 +633,11 @@ func sortedByCost(m map[string]*CostSummary) []CostSummary {
 }
 
 // printCostTable renders the per-model table with a TOTAL footer and returns
-// (totalCalls, callsWithUsage) for the coverage line. The model and usd
-// columns size to their widest content so long hosted-provider slugs (e.g.
-// "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput") and the "$real+~$est"
-// USD form stay aligned instead of raggedding the table.
-func printCostTable(rows []CostSummary) (totalCalls, totalUsage int) {
+// the aggregate total (so the caller can report coverage and the rolled-up
+// estimate). The model and usd columns size to their widest content so long
+// hosted-provider slugs (e.g. "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput")
+// stay aligned instead of raggedding the table.
+func printCostTable(rows []CostSummary) CostSummary {
 	usds := make([]string, len(rows))
 	modelW := len("model") // also covers the "TOTAL" footer (5 chars)
 	usdW := len("usd")
@@ -658,7 +663,7 @@ func printCostTable(rows []CostSummary) (totalCalls, totalUsage int) {
 	}
 	fmt.Printf("  %-*s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %*s\n",
 		modelW, "TOTAL", total.Calls, total.OK, total.Canceled, total.RateLimit, total.Timeout, total.WallclockSeconds, total.InputTokens, total.OutputTokens, usdW, totalUSD)
-	return total.Calls, total.CallsWithUsage
+	return total
 }
 
 // formatRowUSD picks the most accurate dollar representation
@@ -667,15 +672,17 @@ func printCostTable(rows []CostSummary) (totalCalls, totalUsage int) {
 // rows print "real $X + est $Y–$Z" so the user can see partial
 // instrumentation.
 func formatRowUSD(r CostSummary) string {
-	hasReal := r.ActualUSD > 0
-	hasEst := r.EstUSDLow > 0 || r.EstUSDHigh > 0
 	switch {
-	case hasReal && !hasEst:
+	case r.ActualUSD > 0:
+		// Measured spend is the headline — one clean number. Any estimate
+		// for this row's un-instrumented calls is rolled into the Coverage
+		// footnote, not mashed into the cell: the old "$92.80+~$0.45" form
+		// was unreadable and the estimate is sub-1% noise on a measured row.
 		return usd2(r.ActualUSD)
-	case !hasReal && hasEst:
-		return fmt.Sprintf("$%.2f-%.2f", r.EstUSDLow, r.EstUSDHigh)
-	case hasReal && hasEst:
-		return fmt.Sprintf("%s+~$%.2f", usd2(r.ActualUSD), r.EstUSDHigh)
+	case r.EstUSDLow > 0 || r.EstUSDHigh > 0:
+		// No token data at all (legacy rows) — show the char-based estimate,
+		// flagged with a leading ~ so it never reads as a measured number.
+		return fmt.Sprintf("~$%.2f-%.2f", r.EstUSDLow, r.EstUSDHigh)
 	default:
 		return "—"
 	}
