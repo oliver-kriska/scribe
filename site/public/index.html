@@ -977,6 +977,25 @@
     max-width: 60ch;
   }
 
+  /* -------------------- pipeline rail (static schematic above the 3 steps) -------------------- */
+  .rail {
+    display: none;                 /* shown >=721px; the stacked step cards carry mobile */
+    width: 100%;
+    max-width: 940px;
+    margin: 0 auto clamp(20px, 3vw, 32px);
+  }
+  .rail svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .rail__node { fill: var(--surface); stroke: var(--border); stroke-width: 1; }
+  .rail__chip { fill: var(--bg-sub); stroke: var(--border); stroke-width: 1; }
+  .rail__gate { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .rail__line { stroke: var(--border-hover); stroke-width: 1.25; fill: none; }
+  .rail__dim  { stroke: var(--muted); stroke-width: 1.25; stroke-dasharray: 4 4; fill: none; opacity: .7; }
+  .rail__discard { fill: var(--bg-sub); stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; opacity: .85; }
+  .rail__t { font-family: var(--font-mono); fill: var(--fg-soft); }
+  .rail__t--mut { fill: var(--muted); }
+  .rail__t--accent { fill: var(--accent-on-soft); }
+  .rail__arrow { fill: var(--border-hover); }
+
   /* -------------------- how-it-works (3 steps) -------------------- */
   .steps {
     display: grid;
@@ -1941,6 +1960,9 @@
   .anecdote__outcome code { color: var(--fg-soft); }
 
   /* -------------------- responsive (new sections) -------------------- */
+  @media (min-width: 721px) {
+    .rail { display: block; }
+  }
   @media (max-width: 900px) {
     .feels, .search { grid-template-columns: 1fr; }
   }
@@ -2249,6 +2271,58 @@
       <h2 class="s__title">Three stages, one pipeline.</h2>
       <p class="s__sub">scribe mines four input streams, filters out the noise before any LLM touches it, then fans dense sources into entity-first wiki pages. Every step runs on cron; set it up once and forget it.</p>
     </header>
+
+    <div class="rail">
+      <svg viewBox="0 0 960 200" role="img" aria-label="Pipeline schematic: four input streams feed a BM25 triage gate; boilerplate is rejected before any model runs at zero cost, and only dense survivors pass through a two-pass absorb, qmd indexing, and into the agent's CLAUDE.md and AGENTS.md.">
+        <defs>
+          <marker id="rail-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 1 L9 5 L0 9 z" class="rail__arrow"/>
+          </marker>
+        </defs>
+
+        <!-- input streams converging into the gate -->
+        <g>
+          <rect class="rail__chip" x="6"  y="36"  width="104" height="26" rx="7"/>
+          <rect class="rail__chip" x="6"  y="72"  width="104" height="26" rx="7"/>
+          <rect class="rail__chip" x="6"  y="108" width="104" height="26" rx="7"/>
+          <rect class="rail__chip" x="6"  y="144" width="104" height="26" rx="7"/>
+          <text class="rail__t rail__t--mut" x="58" y="53"  text-anchor="middle" font-size="12.5">git</text>
+          <text class="rail__t rail__t--mut" x="58" y="89"  text-anchor="middle" font-size="12.5">sessions</text>
+          <text class="rail__t rail__t--mut" x="58" y="125" text-anchor="middle" font-size="12.5">urls</text>
+          <text class="rail__t rail__t--mut" x="58" y="161" text-anchor="middle" font-size="12.5">drop files</text>
+          <path class="rail__line" d="M110 49 L208 100"/>
+          <path class="rail__line" d="M110 85 L208 100"/>
+          <path class="rail__line" d="M110 121 L208 100"/>
+          <path class="rail__line" d="M110 157 L208 100"/>
+          <path class="rail__line" d="M208 100 L236 100" marker-end="url(#rail-arrow)"/>
+        </g>
+
+        <!-- BM25 triage gate: the only accent-marked node -->
+        <rect class="rail__gate" x="236" y="70" width="112" height="60" rx="12"/>
+        <text class="rail__t rail__t--accent" x="292" y="95"  text-anchor="middle" font-size="15" font-weight="600">BM25</text>
+        <text class="rail__t rail__t--accent" x="292" y="114" text-anchor="middle" font-size="13">triage</text>
+
+        <!-- reject fork: boilerplate dropped before any model runs, at $0 -->
+        <path class="rail__dim" d="M348 112 C 384 152, 400 158, 420 158" marker-end="url(#rail-arrow)"/>
+        <rect class="rail__discard" x="420" y="150" width="226" height="30" rx="8"/>
+        <text class="rail__t rail__t--mut" x="533" y="169" text-anchor="middle" font-size="12.5">boilerplate · rejected · $0</text>
+
+        <!-- survivors continue: absorb → index → agent -->
+        <path class="rail__line" d="M348 100 L408 100" marker-end="url(#rail-arrow)"/>
+        <rect class="rail__node" x="408" y="70" width="132" height="60" rx="12"/>
+        <text class="rail__t" x="474" y="95"  text-anchor="middle" font-size="14">absorb</text>
+        <text class="rail__t rail__t--mut" x="474" y="114" text-anchor="middle" font-size="12">pass 1 → 2</text>
+
+        <path class="rail__line" d="M540 100 L596 100" marker-end="url(#rail-arrow)"/>
+        <rect class="rail__node" x="596" y="70" width="118" height="60" rx="12"/>
+        <text class="rail__t" x="655" y="104" text-anchor="middle" font-size="14">qmd index</text>
+
+        <path class="rail__line" d="M714 100 L770 100" marker-end="url(#rail-arrow)"/>
+        <rect class="rail__node" x="770" y="70" width="184" height="60" rx="12"/>
+        <text class="rail__t" x="862" y="95"  text-anchor="middle" font-size="14">agent reads</text>
+        <text class="rail__t rail__t--mut" x="862" y="114" text-anchor="middle" font-size="10.5">CLAUDE.md · AGENTS.md</text>
+      </svg>
+    </div>
 
     <div class="steps">
       <div class="step">
