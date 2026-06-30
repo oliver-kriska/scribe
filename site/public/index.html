@@ -2217,7 +2217,7 @@
       <article class="stage">
         <div class="stage__num"><span>05</span></div>
         <div class="stage__head">
-          <h3>Sunday 02:00 — the Dream cycle</h3>
+          <h3>Sunday 02:00: the Dream cycle</h3>
           <span class="stage__pill">100% Ollama</span>
         </div>
         <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Runs entirely on local Ollama: no token spend, no third party touches your notes. The KB stays small enough to fit in an agent's context window for years.</p>
@@ -2235,7 +2235,7 @@
     <header class="s__head">
       <div class="s__eyebrow">For teams</div>
       <h2 class="s__title">One KB. The whole team writes to it.</h2>
-      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB — and scribe handles the coordination, so nobody hand-merges a wiki or runs the same extraction twice.</p>
+      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB, and scribe handles the coordination, so nobody hand-merges a wiki or runs the same extraction twice.</p>
     </header>
 
     <div class="team-grid">
@@ -2244,7 +2244,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><circle cx="12" cy="8" r="1.6"/><path d="M4 5.6v4.8M5.5 4.2c3 0 5 .9 5 3.8M5.5 11.8c3 0 5-.9 5-3.8"/></svg>
         </div>
         <h3>Clone and go</h3>
-        <p><code>scribe init --team</code> scaffolds a shared KB; a teammate clones it and scribe rebuilds the local manifest from committed state. Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts — so each run already sees what others wrote, and a shared ledger keeps two machines from extracting the same revision.</p>
+        <p><code>scribe init --team</code> scaffolds a shared KB; a teammate clones it and scribe rebuilds the local manifest from committed state. Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, so each run already sees what others wrote, and a shared ledger keeps two machines from extracting the same revision.</p>
       </article>
 
       <article class="feature">
@@ -2252,7 +2252,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8.5" width="11" height="5" rx="1.5"/><path d="M8 10.5V2.5M5.5 5 8 2.5 10.5 5"/></svg>
         </div>
         <h3>Promote what's worth sharing</h3>
-        <p><code>scribe promote &lt;article&gt; --to team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Curate privately; publish deliberately — derived and coordination files are refused as sources.</p>
+        <p><code>scribe promote &lt;article&gt; --to team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Curate privately; publish deliberately. Derived and coordination files are refused as sources.</p>
       </article>
 
       <article class="feature">
@@ -2260,7 +2260,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 9.2A5.5 5.5 0 0 1 6.8 3a5.5 5.5 0 1 0 6.2 6.2z"/></svg>
         </div>
         <h3>One machine dreams</h3>
-        <p>The weekly Dream consolidation takes a committed leader lease, so on a shared KB exactly one machine runs it. No two laptops race to rewrite the same wiki at 02:00 Sunday.</p>
+        <p>The weekly Dream consolidation takes a committed leader lease, so on a shared KB exactly one machine runs it, and two laptops never race to rewrite the same wiki at 02:00 Sunday.</p>
       </article>
 
       <article class="feature">
@@ -2268,7 +2268,7 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5 2v3.6c0 3.2-2.1 5.6-5 6.9-2.9-1.3-5-3.7-5-6.9V3.5l5-2z"/><path d="M5.8 8 7.3 9.5 10.3 6.3"/></svg>
         </div>
         <h3>A shared config can't widen ingestion</h3>
-        <p>A trust layer pins the sensitive surface of a shared <code>scribe.yaml</code> — provider, model, ingest paths. A pushed change that would redirect content to a new endpoint or drain a new directory reverts to the trusted snapshot until you approve it.</p>
+        <p>A trust layer pins the sensitive surface of a shared <code>scribe.yaml</code>: provider, model, ingest paths. A pushed change that would redirect content to a new endpoint or drain a new directory reverts to the trusted snapshot until you approve it.</p>
       </article>
 
       <article class="feature">
@@ -2296,7 +2296,7 @@
     <header class="s__head">
       <div class="s__eyebrow">Inference &amp; cost</div>
       <h2 class="s__title">Local, hosted, or Anthropic — and a bill you can read.</h2>
-      <p class="s__sub">Run the whole pipeline on local Ollama for $0, point it at a hosted OpenAI-compatible API — Together, Groq, Fireworks, Hugging Face — when the laptop is running hot, or keep <code>claude -p</code> for the Anthropic path. The three coexist; pick the trade per op in <code>scribe.yaml</code>, and nothing reaches a paid provider without explicit config. <code>scribe cost</code> then reconciles every token across providers and KBs — to the cent against the provider's own dashboard.</p>
+      <p class="s__sub">Run the whole pipeline on local Ollama for $0, point it at a hosted OpenAI-compatible API (Together, Groq, Fireworks, Hugging Face) when the laptop is running hot, or keep <code>claude -p</code> for the Anthropic path. The three coexist; pick the trade per op in <code>scribe.yaml</code>, and nothing reaches a paid provider without explicit config. <code>scribe cost</code> then reconciles every token across providers and KBs, to the cent against the provider's own dashboard.</p>
     </header>
 
     <div class="cost">
@@ -2682,7 +2682,7 @@ scribe doctor <span class="flag">--section</span> localmode
   <div class="wrap">
     <header class="s__head">
       <h2 class="s__title">Search from any terminal. Or from inside the agent.</h2>
-      <p class="s__sub">The same <code>qmd</code> index is used by every consumer: your shell, Claude Code via MCP, Codex via MCP, your editor's grep. No reindex per tool. No format conversion.</p>
+      <p class="s__sub">The same <code>qmd</code> index is used by every consumer: your shell, Claude Code via MCP, Codex via MCP, your editor's grep, with no reindex per tool and no format conversion.</p>
     </header>
 
     <div class="search">
@@ -2691,7 +2691,7 @@ scribe doctor <span class="flag">--section</span> localmode
           <span class="search-card__icon" aria-hidden="true">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 4 6 7 3 10"/><line x1="8" y1="10.5" x2="13" y2="10.5"/></svg>
           </span>
-          <div class="search-card__title">From any shell<small>~/anywhere — works from any cwd</small></div>
+          <div class="search-card__title">From any shell<small>~/anywhere, works from any cwd</small></div>
         </header>
         <div class="search-card__body">
 <pre><span class="comment"># ranked answers, anywhere on the machine</span>
