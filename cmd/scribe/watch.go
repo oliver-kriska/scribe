@@ -42,12 +42,25 @@ type WatchCmd struct {
 }
 
 func (w *WatchCmd) Run() error {
-	root, err := kbDir()
-	if err != nil {
-		return err
+	// Multi-KB (issue #26): one watcher serves every registered KB. The
+	// ccrider DB and the pending queue are both machine-global, so a single
+	// fsnotify watch feeds all KBs — what differs per KB is only the
+	// processed-session dedup, handled in scan. Fall back to the default KB
+	// when no registry exists (single-KB installs migrate untouched).
+	roots := registeredKBs()
+	if len(roots) == 0 {
+		root, err := kbDir()
+		if err != nil {
+			return err
+		}
+		roots = []string{root}
 	}
-	cfg := loadConfig(root)
-	dbPath := cfg.CcriderDB
+	// ccrider's DB is machine-global; resolve its path from the first KB's
+	// config (every KB points at the same sessions.db).
+	dbPath := loadConfig(roots[0]).CcriderDB
+	if dbPath == "" {
+		return fmt.Errorf("no ccrider_db configured in %s", roots[0])
+	}
 	walPath := dbPath + "-wal"
 
 	// We watch the directory (not the file directly) because the WAL file
@@ -69,11 +82,11 @@ func (w *WatchCmd) Run() error {
 		return fmt.Errorf("add watch %s: %w", watchDir, err)
 	}
 
-	logMsg("watch", "watching %s (debounce=%s, provider=%s, lookback=%dmin)",
-		walPath, w.Debounce, w.Provider, w.LookbackMin)
+	logMsg("watch", "watching %s for %d KB(s) (debounce=%s, provider=%s, lookback=%dmin)",
+		walPath, len(roots), w.Debounce, w.Provider, w.LookbackMin)
 
 	// Scan once at startup to catch anything that landed between runs.
-	w.scan(root, dbPath)
+	w.scan(roots, dbPath)
 
 	var debounceTimer *time.Timer
 	// Use a channel so the timer goroutine communicates back to the main loop.
@@ -107,7 +120,7 @@ func (w *WatchCmd) Run() error {
 			})
 
 		case <-fireCh:
-			w.scan(root, dbPath)
+			w.scan(roots, dbPath)
 
 		case err, ok := <-watcher.Errors:
 			if !ok {
@@ -120,12 +133,16 @@ func (w *WatchCmd) Run() error {
 
 // scan opens ccrider's DB, finds sessions updated in the last LookbackMin
 // minutes that match the target provider and aren't already in the pending
-// queue or processed log, scores them, and appends qualifying ones to the
-// pending file.
+// queue, scores them, and appends qualifying ones to the (machine-global)
+// pending file. A session is treated as already handled — and skipped —
+// only when EVERY registered KB has processed it; if even one KB hasn't,
+// it still reaches the queue so that KB's next sync can mine it. Per-KB
+// scope filtering happens at sync time (preFilterSessions), so the watcher
+// deliberately over-queues rather than replicating that logic here.
 //
 // All errors are logged and swallowed — this runs as a long-lived watcher,
 // and a transient DB lock should never kill the process.
-func (w *WatchCmd) scan(root, dbPath string) {
+func (w *WatchCmd) scan(roots []string, dbPath string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -174,7 +191,17 @@ func (w *WatchCmd) scan(root, dbPath string) {
 	}
 	defer rows.Close()
 
-	sessionsLog := filepath.Join(root, "wiki", "_sessions_log.json")
+	// Preload each KB's processed-session set once per scan, so a candidate
+	// can be checked against every KB without re-reading any log per row.
+	processedSets := make([]map[string]bool, len(roots))
+	for i, r := range roots {
+		ids := loadProcessedSessionIDs(filepath.Join(r, "wiki", "_sessions_log.json"))
+		set := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			set[id] = true
+		}
+		processedSets[i] = set
+	}
 	pendingFile := pendingSessionsFile()
 
 	type candidate struct {
@@ -205,9 +232,9 @@ func (w *WatchCmd) scan(root, dbPath string) {
 
 	queued := 0
 	for _, c := range candidates {
-		if isSessionProcessed(sessionsLog, c.id) {
+		if processedByAllKBs(processedSets, c.id) {
 			if w.Verbose {
-				logMsg("watch", "skip %s (already processed)", c.id)
+				logMsg("watch", "skip %s (already processed by all %d KB(s))", c.id, len(roots))
 			}
 			continue
 		}
@@ -237,6 +264,23 @@ func (w *WatchCmd) scan(root, dbPath string) {
 	if w.Verbose && queued == 0 {
 		logMsg("watch", "scan complete, 0 queued from %d candidates", len(candidates))
 	}
+}
+
+// processedByAllKBs reports whether every registered KB has already mined
+// this session — the only case where the watcher can safely drop it. As
+// long as one KB still hasn't processed it, the session reaches the shared
+// pending queue so that KB's next sync gets its chance. Empty set (no KBs)
+// reports false so nothing is dropped for lack of a registry.
+func processedByAllKBs(sets []map[string]bool, id string) bool {
+	if len(sets) == 0 {
+		return false
+	}
+	for _, s := range sets {
+		if !s[id] {
+			return false
+		}
+	}
+	return true
 }
 
 // appendPending writes one entry to the pending-sessions.txt file, creating

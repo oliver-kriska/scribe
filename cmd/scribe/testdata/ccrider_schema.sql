@@ -10,7 +10,10 @@ CREATE TABLE sessions (
     created_at    TEXT,
     updated_at    TEXT,
     summary       TEXT,
-    llm_summary   TEXT
+    llm_summary   TEXT,
+    -- provider distinguishes claude vs codex sessions; the watcher
+    -- (watch.go) filters on it, so the fixture must carry it too.
+    provider      TEXT
 );
 
 CREATE TABLE messages (

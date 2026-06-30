@@ -54,8 +54,9 @@ type calTime struct {
 // iterates the KB registry (kbs: in the user config) and runs <sub> in each
 // registered KB with per-KB failure isolation. One agent set therefore
 // serves every KB — installing from a second KB no longer clobbers the
-// first. `watch` is the exception: it's long-running, so it stays a single
-// agent resolving the default KB (multi-KB watch is a #26 follow-up).
+// first. `watch` is a single long-running agent, but it too serves every
+// registered KB: it watches the shared ccrider DB and feeds the machine-
+// global pending queue, deduping against all KBs' processed logs (watch.go).
 func scribeJobs(binary string) []cronJob {
 	logDir := "/tmp"
 	each := func(sub string) string { return binary + " each -- " + sub }
