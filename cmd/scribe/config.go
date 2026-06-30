@@ -758,13 +758,13 @@ type userConfig struct {
 	// [KBDir], so existing setups migrate with zero changes. There is no
 	// privileged "main" KB; KBDir degrades to an optional default for
 	// bare commands run outside any project.
-	KBs []string `yaml:"kbs"`
+	KBs []string `yaml:"kbs,omitempty"`
 	// Contributor overrides the identity stamped into the
 	// `contributor:` frontmatter of newly created articles. Lives in
 	// the per-person config (not the KB's scribe.yaml) so members of a
 	// shared team KB each attribute their own extractions. Empty means
 	// fall back to `git config user.name` / user.email.
-	Contributor string `yaml:"contributor"`
+	Contributor string `yaml:"contributor,omitempty"`
 	// LLMAPIKey is the hosted-provider API key for OpenAI-compatible
 	// providers (together/groq/fireworks/huggingface/openai-compat).
 	// It lives HERE — in the per-machine user config — and never in a
@@ -773,11 +773,11 @@ type userConfig struct {
 	// LLMAPIKeys when you route different ops to different providers.
 	// Resolution order is env var first (so a one-off export still
 	// overrides), then this file — so cron works with no shell exports.
-	LLMAPIKey string `yaml:"llm_api_key"`
+	LLMAPIKey string `yaml:"llm_api_key,omitempty"`
 	// LLMAPIKeys maps a provider name (together/groq/fireworks/…) to its
 	// API key, for setups that use more than one hosted provider at
 	// once. Checked before LLMAPIKey. Same never-in-the-KB rule.
-	LLMAPIKeys map[string]string `yaml:"llm_api_keys"`
+	LLMAPIKeys map[string]string `yaml:"llm_api_keys,omitempty"`
 }
 
 // loadUserConfig reads the user-level config. Returns zero value if missing.

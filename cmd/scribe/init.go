@@ -13,6 +13,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // templateFS carries every *template file* embedded in the binary. Kept here
@@ -956,8 +958,25 @@ func installUserConfig(root string, check, yes, bound bool) error {
 		return nil
 	}
 
-	content := fmt.Sprintf("# scribe user config — written by `scribe init`\nkb_dir: %s\n", root)
-	if err := writeGlobalState(root, bound, path, []byte(content), 0o644); err != nil {
+	// Re-point kb_dir while PRESERVING every other field. A wholesale
+	// rewrite here used to discard kbs (the #26 registry), the hosted
+	// llm_api_key/llm_api_keys, and contributor — so `scribe init --yes`
+	// run inside a second KB silently wiped the machine's API key and KB
+	// list. Marshal the loaded config back instead; omitempty keeps the
+	// file minimal when those fields are unset.
+	uc.KBDir = root
+	body, err := yaml.Marshal(&uc)
+	if err != nil {
+		return fmt.Errorf("marshal user config: %w", err)
+	}
+	content := "# scribe user config — written by `scribe init`\n" + string(body)
+	// Tighten perms to 0o600 whenever the file carries a hosted-provider
+	// secret; otherwise keep the historical 0o644 for the kb_dir-only case.
+	perm := os.FileMode(0o644)
+	if uc.LLMAPIKey != "" || len(uc.LLMAPIKeys) > 0 {
+		perm = 0o600
+	}
+	if err := writeGlobalState(root, bound, path, []byte(content), perm); err != nil {
 		return err
 	}
 	fmt.Printf("  wrote %s\n", path)

@@ -494,3 +494,82 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// TestInstallUserConfigPreservesSecretsAndRegistry is the regression for the
+// data-loss bug where installUserConfig rewrote ~/.config/scribe/config.yaml
+// wholesale on a kb_dir re-point — discarding the #26 KB registry (kbs:), the
+// hosted-provider api keys, and the contributor identity. `scribe init --yes`
+// run inside a second KB therefore wiped the machine's Together key and KB
+// list. The re-point must preserve every field but kb_dir.
+func TestInstallUserConfigPreservesSecretsAndRegistry(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	cfgDir := filepath.Join(fakeHome, ".config", "scribe")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := "" +
+		"kb_dir: /old/primary-kb\n" +
+		"kbs:\n" +
+		"  - /old/primary-kb\n" +
+		"  - /old/team-kb\n" +
+		"contributor: Test Owner <owner@example.com>\n" +
+		"llm_api_key: tgp_v1_SECRET_DO_NOT_DROP\n" +
+		"llm_api_keys:\n" +
+		"  together: tgp_v1_TOGETHER\n" +
+		"  groq: gsk_GROQ\n"
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Swallow stdout.
+	r, w, _ := os.Pipe()
+	origStdout := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = origStdout })
+	go func() {
+		buf := make([]byte, 32*1024)
+		for {
+			if _, err := r.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	newRoot := filepath.Join(t.TempDir(), "second-kb")
+	// bound=true bypasses the throwaway-path guard (newRoot is a tempdir);
+	// yes=true skips the interactive confirm.
+	if err := installUserConfig(newRoot, false, true, true); err != nil {
+		t.Fatalf("installUserConfig: %v", err)
+	}
+	_ = w.Close()
+
+	got := loadUserConfig()
+	if got.KBDir != newRoot {
+		t.Errorf("KBDir = %q, want %q (re-pointed)", got.KBDir, newRoot)
+	}
+	if len(got.KBs) != 2 || got.KBs[1] != "/old/team-kb" {
+		t.Errorf("KBs = %v, want the original 2-entry registry preserved", got.KBs)
+	}
+	if got.Contributor != "Test Owner <owner@example.com>" {
+		t.Errorf("Contributor = %q, want it preserved", got.Contributor)
+	}
+	if got.LLMAPIKey != "tgp_v1_SECRET_DO_NOT_DROP" {
+		t.Errorf("LLMAPIKey was dropped on re-point: got %q", got.LLMAPIKey)
+	}
+	if got.LLMAPIKeys["together"] != "tgp_v1_TOGETHER" || got.LLMAPIKeys["groq"] != "gsk_GROQ" {
+		t.Errorf("LLMAPIKeys dropped on re-point: got %v", got.LLMAPIKeys)
+	}
+
+	// A file holding a secret must not be world/group-readable.
+	info, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("config perms = %o, want 0600 (file carries an api key)", perm)
+	}
+}
