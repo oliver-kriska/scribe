@@ -144,6 +144,11 @@ type ScribeConfig struct {
 	DeepIngest DeepIngestConfig `yaml:"deep_ingest"`
 	Extract    ExtractConfig    `yaml:"extract"`
 	Meta       MetaConfig       `yaml:"meta"`
+	// Each tunes per-KB cadence for the KB-agnostic scheduler (issue #26):
+	// `scribe each` skips a job in this KB when its last ok run is younger
+	// than the configured interval, so the machine-level agent set can tick
+	// coarsely while each KB paces itself. See EachConfig (each.go).
+	Each EachConfig `yaml:"each"`
 }
 
 // MetaConfig controls the envelope's MetaAction surface — the side-

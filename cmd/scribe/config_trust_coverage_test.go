@@ -164,6 +164,11 @@ var nonSensitiveAllowlist = map[string]bool{
 	"StopWords.Hold":      true,
 	"StopWords.Mask":      true,
 	"StopWords.Redaction": true,
+
+	// Per-KB scheduler cadence (issue #26). A pushed change only shapes how
+	// OFTEN `scribe each` runs a job in this KB — it cannot widen ingestion,
+	// redirect data, or weaken a gate. Same class as the sync caps above.
+	"Each.Cadence": true,
 }
 
 // configLeaf is one settable leaf of ScribeConfig.

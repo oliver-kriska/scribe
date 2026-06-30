@@ -98,6 +98,20 @@ team: true
 #   allowed_remotes:
 #     - github.com/myorg
 {{end}}
+# Per-KB scheduler cadence (issue #26). The machine's cron agents run
+# `scribe each`, which ticks every job in every registered KB. A cadence
+# entry makes THIS KB skip a job when its last ok run (output/runs/*.jsonl)
+# is younger than the interval — so the shared agents can fire often while
+# each KB paces itself, without per-KB launchd schedules. Empty = run every
+# tick (the default). Keys are the command plus its first --flag (a bare
+# command covers all its modes as a fallback); values are Go durations
+# ("2h", "30m") or a day count ("7d").
+# each:
+#   cadence:
+#     "sync --sessions": 6h
+#     dream: 7d
+#     "capture --fetch": 4h
+
 # Paths
 claude_projects_dir: ~/.claude/projects
 # Codex CLI rollouts (~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl). Scanned
