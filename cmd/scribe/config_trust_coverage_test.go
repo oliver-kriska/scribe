@@ -27,9 +27,10 @@ import (
 //   - LoadErr: runtime parse-state, yaml:"-", never read from the repo.
 //   - identity/cosmetics (owner, domains, kb_name, owners): display and
 //     routing labels inside content that is already shared.
-//   - provider/model/mode/limits knobs: with every OllamaURL locked, a
-//     pushed provider flip can only route to an already-trusted
-//     endpoint ("Per-op provider flips stay unlocked" — config_trust.go).
+//   - mode/limits/num_ctx/timeout knobs: tuning that shapes HOW an op
+//     runs, not where data goes. (provider/model ARE locked now — a named
+//     hosted provider carries a built-in URL, so they redirect; see the
+//     LLMProviders/LLMModels note in config_trust.go.)
 //   - pipeline tuning (sync caps, absorb thresholds, triage weights,
 //     ingest converters, identities stopwords, meta rolling targets,
 //     subscriptions): shapes what the pipeline does with data it was
@@ -50,13 +51,12 @@ var nonSensitiveAllowlist = map[string]bool{
 	"LockDir":      true,
 	"DefaultModel": true,
 
-	// Top-level LLM routing (URL + key-env are locked; the rest is
-	// tuning). Pricing is a local cost-display table only — it never
-	// affects what's ingested, where data goes, or any gate.
-	"LLM.Provider": true,
-	"LLM.Model":    true,
-	"LLM.NumCtx":   true,
-	"LLM.Pricing":  true,
+	// Top-level LLM routing: provider/model/url/key-env are all locked
+	// now (see LLMProviders/LLMModels). num_ctx is tuning; pricing is a
+	// local cost-display table only — neither affects what's ingested,
+	// where data goes, or any gate.
+	"LLM.NumCtx":  true,
+	"LLM.Pricing": true,
 
 	// Sync pipeline caps + git cadence.
 	"Sync.MaxExtractions":                   true,
@@ -77,23 +77,17 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Triage.Keywords": true,
 	"Triage.Weights":  true,
 
-	// Absorb pipeline tuning (URL leaves are locked; these shape
-	// chunking/threshold/provider-model routing only).
+	// Absorb pipeline tuning (URL + provider + model leaves are locked;
+	// these shape chunking/threshold/timeouts only).
 	"Absorb.BriefThresholdWords":      true,
 	"Absorb.BriefThresholdHeadings":   true,
 	"Absorb.DenseThresholdWords":      true,
 	"Absorb.DenseThresholdHeadings":   true,
 	"Absorb.MaxPerRun":                true,
 	"Absorb.Strictness":               true,
-	"Absorb.SinglePassProvider":       true,
-	"Absorb.SinglePassModel":          true,
 	"Absorb.SinglePassTimeoutMin":     true,
 	"Absorb.SinglePassNumCtx":         true,
-	"Absorb.Pass1Provider":            true,
-	"Absorb.Pass1Model":               true,
 	"Absorb.Pass1TimeoutMin":          true,
-	"Absorb.Pass2Provider":            true,
-	"Absorb.Pass2Model":               true,
 	"Absorb.Pass2Mode":                true,
 	"Absorb.Pass2TimeoutMin":          true,
 	"Absorb.Pass2Parallel":            true,
@@ -102,12 +96,8 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Absorb.ChapterThreshold":         true,
 	"Absorb.ChapterParallel":          true,
 	"Absorb.AtomicFacts":              true,
-	"Absorb.FactsProvider":            true,
-	"Absorb.FactsModel":               true,
 	"Absorb.FactsTimeoutMin":          true,
 	"Absorb.Contextualize.Enabled":    true,
-	"Absorb.Contextualize.Provider":   true,
-	"Absorb.Contextualize.Model":      true,
 	"Absorb.Contextualize.TimeoutSec": true,
 	"Absorb.Contextualize.MaxPerRun":  true,
 
@@ -125,12 +115,8 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Identities.HandleStopwords":      true,
 	"Identities.EmailDomainStopwords": true,
 
-	// Per-op LLM routing: URLs are locked, the rest is tuning.
-	"Relations.Provider": true,
-	"Relations.Model":    true,
-
-	"SessionMine.Provider":           true,
-	"SessionMine.Model":              true,
+	// Per-op LLM routing: URL + provider + model are locked, the rest is
+	// tuning.
 	"SessionMine.Mode":               true,
 	"SessionMine.TranscriptMaxChars": true,
 	"SessionMine.TimeoutMin":         true,
@@ -141,24 +127,16 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Codex.LookbackHours": true,
 	"Codex.MinScore":      true,
 
-	"Dream.Provider":   true,
-	"Dream.Model":      true,
 	"Dream.Mode":       true,
 	"Dream.TimeoutMin": true,
 	"Dream.NumCtx":     true,
 
-	"Assess.Provider": true,
-	"Assess.Model":    true,
-	"Assess.Mode":     true,
-	"Assess.NumCtx":   true,
+	"Assess.Mode":   true,
+	"Assess.NumCtx": true,
 
-	"DeepIngest.Provider": true,
-	"DeepIngest.Model":    true,
-	"DeepIngest.Mode":     true,
-	"DeepIngest.NumCtx":   true,
+	"DeepIngest.Mode":   true,
+	"DeepIngest.NumCtx": true,
 
-	"Extract.Provider":      true,
-	"Extract.Model":         true,
 	"Extract.Mode":          true,
 	"Extract.MaxFileChars":  true,
 	"Extract.MaxTotalChars": true,

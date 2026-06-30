@@ -464,9 +464,12 @@ provider. Per-op `provider`/`model` always win over the top-level block.
 > (notes, decisions, source context) to a third party on every call. Local and
 > Anthropic stay the defaults; nothing routes to a paid provider without the
 > explicit `provider:` above. The key lives in an env var or the per-machine
-> user config, never in a KB's `scribe.yaml` — and in **team KBs**
-> `llm.base_url` and `llm.api_key_env` are trust-locked, so a pushed config
-> can't silently redirect a teammate's KB to an attacker's endpoint.
+> user config, never in a KB's `scribe.yaml` — and in **team KBs** the whole
+> LLM routing surface (`provider`, `model`, `base_url`, `api_key_env`, plus
+> every per-op override) is trust-locked, so a pushed config can't silently
+> redirect a teammate's KB to a hosted provider or an attacker's endpoint
+> (a *named* provider like `together` carries a built-in URL, so locking only
+> `base_url` would leave the `provider:` name itself as an open redirect).
 
 > **Runaway backstop.** A paid provider reintroduces real bill risk a free
 > local model doesn't — a single looping pass can emit millions of output
@@ -677,12 +680,16 @@ own sessions and repos; git is the merge layer.
    - **Config trust** (`team: true` in scribe.yaml, written by `--team`): the
      repo's scribe.yaml is writable by every member and auto-pulled before each
      sync, so its *sensitive* keys — source filters, ingestion dirs, capture,
-     `ollama_url` — are locked to a per-machine snapshot trusted at first sync.
+     the credential gate, and the entire LLM routing surface (`provider`,
+     `model`, `base_url`, `api_key_env`, `ollama_url`, plus every per-op
+     override) — are locked to a per-machine snapshot trusted at first sync.
      When a pushed change alters them, your scribe keeps running on the values
      you trusted and warns (`scribe doctor`, sync log); you review with
      `scribe config diff` and accept with `scribe config trust`. Pushing
      `team: false` can't unlock the layer — enforcement is anchored in
-     `~/.config/scribe/trust.json`, outside the repo.
+     `~/.config/scribe/trust.json`, outside the repo. (KBs trusted before the
+     routing lock shipped keep working unchanged; the next `scribe sync`
+     silently records the current provider/model as trusted.)
    - **`scribe.local.yaml`** (gitignored, same schema) holds per-user overrides
      that always win over the repo config. iMessage capture **never** runs from
      the shared scribe.yaml in team mode — it's off until a member enables it

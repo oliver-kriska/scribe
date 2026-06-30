@@ -52,9 +52,7 @@ const localConfigName = "scribe.local.yaml"
 //     contents) are POSTed here; a pushed remote URL would exfiltrate
 //     everything the pipeline reads. The per-op keys win over the
 //     global one in the resolver chain, so locking only llm.ollama_url
-//     would leave seven bypass routes. Per-op `provider` flips stay
-//     unlocked: with every URL locked they can only redirect to an
-//     already-trusted endpoint, and providers are a routine local tune.
+//     would leave seven bypass routes.
 //   - BaseURL (hosted OpenAI-compatible endpoint): the exact analog of
 //     OllamaURL for cloud providers — prompts with file contents are
 //     POSTed there. A pushed base_url would exfiltrate the whole KB to
@@ -63,6 +61,18 @@ const localConfigName = "scribe.local.yaml"
 //     A pushed change could misdirect an unrelated secret (whatever env
 //     var it names) into the Authorization header, so it is locked even
 //     though the key value itself never lives in the repo.
+//   - LLMProviders / LLMModels (top-level + every per-op): the provider
+//     NAME is the last unlocked redirect. A *named* hosted provider
+//     (together/groq/fireworks/huggingface) carries a built-in base URL,
+//     so `provider: together` ships the KB to Together's endpoint with no
+//     base_url to lock — the old "every URL is locked so providers are
+//     safe" reasoning was false once #43 added named providers. Per-op
+//     providers win over the top-level one in the resolver, so all twelve
+//     (provider, model) pairs are locked as a unit; see llmRoutingTargets.
+//     Models ride along: a pushed model swap can't redirect traffic but
+//     can pick a pricier hosted model, and locking them keeps the rule
+//     simple ("routing is frozen at approval"). Both maps are nil in a
+//     pre-#43 snapshot, which is the migration signal (see enforceConfigTrust).
 //   - CodexMine: enables an additional transcript source.
 //   - SecretScan: the credential gate — a pushed disable/allow_paths
 //     change must not weaken what another member's machine commits.
@@ -86,10 +96,56 @@ type sensitiveConfig struct {
 	DeepIngestOllamaURL    string `json:"deep_ingest_ollama_url"`
 	RelationsOllamaURL     string `json:"relations_ollama_url"`
 	ContextualizeOllamaURL string `json:"contextualize_ollama_url"`
+
+	// LLMProviders/LLMModels are keyed by op label ("llm", "absorb.pass1",
+	// …). Nil on a snapshot recorded before #43 added the routing lock —
+	// enforceConfigTrust treats nil as "routing not yet locked" so an old
+	// record neither false-alarms nor reverts provider/model until the next
+	// sync upgrades it. ensureConfigTrust does that upgrade.
+	LLMProviders map[string]string `json:"llm_providers,omitempty"`
+	LLMModels    map[string]string `json:"llm_models,omitempty"`
+}
+
+// llmRoutingField is a settable (provider, model) pair for one pipeline op.
+type llmRoutingField struct {
+	provider *string
+	model    *string
+}
+
+// llmRoutingOrder is the stable display order for the routing keys in
+// `scribe config diff` (maps iterate randomly). Must list every key
+// llmRoutingTargets returns.
+var llmRoutingOrder = []string{
+	"llm",
+	"absorb.pass1", "absorb.pass2", "absorb.single_pass",
+	"absorb.facts", "absorb.contextualize",
+	"extract", "dream", "session_mine", "assess", "deep_ingest", "relations",
+}
+
+// llmRoutingTargets returns the (provider, model) pointer pair for every
+// pipeline op whose provider can pick an LLM endpoint — the single source of
+// truth so sensitiveFrom (read), applyTo (revert), and sensitiveDiff stay in
+// lockstep. A new op with its own provider/model must be added here or it
+// silently escapes the team-KB routing lock.
+func llmRoutingTargets(cfg *ScribeConfig) map[string]llmRoutingField {
+	return map[string]llmRoutingField{
+		"llm":                  {&cfg.LLM.Provider, &cfg.LLM.Model},
+		"absorb.pass1":         {&cfg.Absorb.Pass1Provider, &cfg.Absorb.Pass1Model},
+		"absorb.pass2":         {&cfg.Absorb.Pass2Provider, &cfg.Absorb.Pass2Model},
+		"absorb.single_pass":   {&cfg.Absorb.SinglePassProvider, &cfg.Absorb.SinglePassModel},
+		"absorb.facts":         {&cfg.Absorb.FactsProvider, &cfg.Absorb.FactsModel},
+		"absorb.contextualize": {&cfg.Absorb.Contextualize.Provider, &cfg.Absorb.Contextualize.Model},
+		"extract":              {&cfg.Extract.Provider, &cfg.Extract.Model},
+		"dream":                {&cfg.Dream.Provider, &cfg.Dream.Model},
+		"session_mine":         {&cfg.SessionMine.Provider, &cfg.SessionMine.Model},
+		"assess":               {&cfg.Assess.Provider, &cfg.Assess.Model},
+		"deep_ingest":          {&cfg.DeepIngest.Provider, &cfg.DeepIngest.Model},
+		"relations":            {&cfg.Relations.Provider, &cfg.Relations.Model},
+	}
 }
 
 func sensitiveFrom(cfg *ScribeConfig) sensitiveConfig {
-	return sensitiveConfig{
+	s := sensitiveConfig{
 		Team:              cfg.Team,
 		Sources:           cfg.Sources,
 		ClaudeProjectsDir: cfg.ClaudeProjectsDir,
@@ -109,7 +165,17 @@ func sensitiveFrom(cfg *ScribeConfig) sensitiveConfig {
 		DeepIngestOllamaURL:    cfg.DeepIngest.OllamaURL,
 		RelationsOllamaURL:     cfg.Relations.OllamaURL,
 		ContextualizeOllamaURL: cfg.Absorb.Contextualize.OllamaURL,
+
+		// Always non-nil so a freshly recorded snapshot is unambiguously
+		// "routing locked" — nil only ever means a pre-#43 record.
+		LLMProviders: map[string]string{},
+		LLMModels:    map[string]string{},
 	}
+	for label, f := range llmRoutingTargets(cfg) {
+		s.LLMProviders[label] = *f.provider
+		s.LLMModels[label] = *f.model
+	}
+	return s
 }
 
 // hash returns a stable digest of the sensitive view for drift checks.
@@ -144,6 +210,28 @@ func (s sensitiveConfig) applyTo(cfg *ScribeConfig) {
 	cfg.DeepIngest.OllamaURL = s.DeepIngestOllamaURL
 	cfg.Relations.OllamaURL = s.RelationsOllamaURL
 	cfg.Absorb.Contextualize.OllamaURL = s.ContextualizeOllamaURL
+
+	// Routing revert. Nil maps (a pre-#43 snapshot) leave provider/model
+	// untouched — the `ok` guard is the whole migration story: an old record
+	// simply doesn't lock routing until the next sync re-records it.
+	for label, f := range llmRoutingTargets(cfg) {
+		if v, ok := s.LLMProviders[label]; ok {
+			*f.provider = v
+		}
+		if v, ok := s.LLMModels[label]; ok {
+			*f.model = v
+		}
+	}
+}
+
+// withoutLLMRouting returns a copy with the routing maps cleared — used to
+// compare a current config against a pre-#43 snapshot on only the keys that
+// snapshot actually locked, so the newly-tracked routing doesn't read as drift
+// before the record is upgraded.
+func (s sensitiveConfig) withoutLLMRouting() sensitiveConfig {
+	s.LLMProviders = nil
+	s.LLMModels = nil
+	return s
 }
 
 // trustRecord is one approved sensitive snapshot for one KB root.
@@ -226,7 +314,14 @@ func enforceConfigTrust(root string, cfg *ScribeConfig) {
 		// simultaneously showing nothing. An unreadable/unparseable file
 		// counts as drift: run on the trusted values.
 		repoView, ok := repoSensitiveView(root)
-		if !ok || repoView.hash() != rec.Sensitive.hash() {
+		trusted := rec.Sensitive
+		if trusted.LLMProviders == nil {
+			// Pre-#43 snapshot: routing not yet locked. Compare only the
+			// keys it recorded so the newly-tracked provider/model don't
+			// false-alarm. applyTo below leaves routing alone (nil maps).
+			repoView = repoView.withoutLLMRouting()
+		}
+		if !ok || repoView.hash() != trusted.hash() {
 			rec.Sensitive.applyTo(cfg)
 			// The trusted snapshot stores raw values, so keys the
 			// approved scribe.yaml never set come back as empty strings —
@@ -287,7 +382,19 @@ func ensureConfigTrust(root string) {
 	if !ok || !sv.Team {
 		return
 	}
-	if loadTrustRecord(root) != nil {
+	if existing := loadTrustRecord(root); existing != nil {
+		// Auto-migrate a pre-#43 record so the routing lock starts applying
+		// without forcing the user to re-approve — but ONLY when the keys it
+		// already locked still match. If the old set has drifted, leave it:
+		// the user must resolve that via `scribe config diff` / `config trust`
+		// first, and that command records at the new schema anyway.
+		if existing.Sensitive.LLMProviders == nil && len(sensitiveDiff(existing.Sensitive, sv)) == 0 {
+			if err := saveTrustRecord(root, trustRecord{Sensitive: sv, ApprovedAt: existing.ApprovedAt}); err != nil {
+				logMsg("trust", "could not upgrade config trust record: %v", err)
+				return
+			}
+			logMsg("trust", "team KB: locked llm provider/model routing at the current values (added this version — `scribe config diff` shows future changes)")
+		}
 		return
 	}
 	if err := saveTrustRecord(root, trustRecord{Sensitive: sv, ApprovedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
@@ -331,6 +438,19 @@ func sensitiveDiff(trusted, current sensitiveConfig) []string {
 		newJSON, _ := json.Marshal(p.new)
 		if string(oldJSON) != string(newJSON) {
 			out = append(out, fmt.Sprintf("%s: %s -> %s", p.key, oldJSON, newJSON))
+		}
+	}
+	// Routing keys only diff against a snapshot that actually locks them — a
+	// pre-#43 record (nil maps) shows no routing drift until it's upgraded,
+	// so `scribe config diff` doesn't light up with phantom changes.
+	if trusted.LLMProviders != nil {
+		for _, label := range llmRoutingOrder {
+			if o, n := trusted.LLMProviders[label], current.LLMProviders[label]; o != n {
+				out = append(out, fmt.Sprintf("%s.provider: %q -> %q", label, o, n))
+			}
+			if o, n := trusted.LLMModels[label], current.LLMModels[label]; o != n {
+				out = append(out, fmt.Sprintf("%s.model: %q -> %q", label, o, n))
+			}
 		}
 	}
 	return out

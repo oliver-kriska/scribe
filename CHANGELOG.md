@@ -55,6 +55,33 @@ spend is legible and reconciles with the provider's own dashboard.
   routing, capture handles, subscriptions — applied after team-config trust
   enforcement, so it always wins locally without leaking to a shared KB.
 
+### Security — team-mode trust now locks the full LLM routing surface
+- The team-KB trust layer locks `llm.provider`/`llm.model` and every per-op
+  provider/model (absorb passes, contextualize, dream, extract, session-mine,
+  assess, deep-ingest, relations) — not just the URLs. A *named* hosted
+  provider (`together`/`groq`/…) carries a built-in base URL, so the previous
+  "every URL is locked, so a provider flip can only reach a trusted endpoint"
+  reasoning was false once #43 landed: a pushed `provider: together` redirected
+  a teammate's KB content to Together with nothing to catch it. All twelve
+  (provider, model) pairs now revert to the trusted snapshot on drift and show
+  up in `scribe config diff`. KBs trusted before this shipped keep working
+  unchanged — the next `scribe sync` silently records the current routing as
+  trusted (no re-approval needed unless other keys also drifted).
+- `ingest.inbox_path` is now containment-checked: a value that resolves outside
+  the KB root is refused, so a repo-controlled config can't make `sync` drain
+  an out-of-tree directory and ingest arbitrary local files.
+
+### Fixed — hosted-provider follow-ups
+- Top-level `llm.model` now cascades into the absorb passes for hosted
+  providers, so the documented "move the whole pipeline to the cloud" config no
+  longer fails on the absorb/contextualize stage with an empty/`haiku` model.
+  Contextualize also cascades `llm.provider` like the other passes.
+- `scribe init` re-pointing `kb_dir` preserves the user config's api keys, KB
+  registry, and contributor instead of rewriting the file wholesale.
+- Hosted-provider 429s are recorded as `rate_limit` (not `other`) in the cost
+  ledger; `scribe cost` rows sort by the dollar figure they actually display
+  and the table renderer tolerates ragged rows.
+
 ## [0.2.29] — 2026-06-03
 
 Harden the shared LLM-action executor against the failure class behind a real
