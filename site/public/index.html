@@ -1773,6 +1773,54 @@
     font-size: 0.9em;
     color: var(--fg-soft);
   }
+  /* paired money moment: one week of inference priced three ways (mono figures) */
+  .cost__figures {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: clamp(24px, 5vw, 60px);
+    align-items: baseline;
+    margin: 4px 0 6px;
+  }
+  .cost__fig {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(32px, 5vw, 50px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    color: var(--fg);
+    text-align: center;
+  }
+  .cost__fig--free { color: var(--accent); }
+  .cost__fig small {
+    display: block;
+    margin-top: 10px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .02em;
+    color: var(--muted);
+  }
+  /* folded local-path note (replaces the standalone #local section) */
+  .cost__local {
+    max-width: 74ch;
+    text-align: center;
+    color: var(--fg-soft);
+    font-size: 14.5px;
+    line-height: 1.6;
+  }
+  .cost__local p { margin: 0; }
+  .cost__local .local__pill { margin-bottom: 12px; }
+  .cost__local strong { color: var(--fg); font-weight: 600; }
+  .cost__local code {
+    background: var(--bg-sub);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: var(--r-xs);
+    font-size: 0.9em;
+    color: var(--fg-soft);
+  }
 
   /* -------------------- search section (2-col code cards) -------------------- */
   .search {
@@ -2091,7 +2139,6 @@
       <a class="nav__link" href="#cost">Cost</a>
       <a class="nav__link" href="#compare">Compare</a>
       <a class="nav__link" href="#cli">CLI</a>
-      <a class="nav__link" href="#local">Local mode</a>
       <a class="nav__link" href="#faq">FAQ</a>
       <a class="nav__link" href="https://github.com/oliver-kriska/scribe">GitHub ↗</a>
     </nav>
@@ -2117,7 +2164,6 @@
   <a href="#cost">Cost</a>
   <a href="#compare">Compare</a>
   <a href="#cli">CLI</a>
-  <a href="#local">Local mode</a>
   <a href="#faq">FAQ</a>
   <a href="https://github.com/oliver-kriska/scribe">GitHub</a>
   <button class="theme-toggle theme-toggle--mobile" id="themeToggleMobile" type="button" aria-label="Toggle theme">
@@ -2399,6 +2445,12 @@
     </header>
 
     <div class="cost">
+      <div class="cost__figures" role="group" aria-label="One week of inference on the same machine, priced three ways">
+        <div class="cost__fig cost__fig--free">$0<small>local · ollama</small></div>
+        <div class="cost__fig">$0.34<small>hosted · together</small></div>
+        <div class="cost__fig cost__fig--paid">$103.91<small>anthropic · 7 days</small></div>
+      </div>
+
       <div class="terminal" aria-label="scribe cost — example output">
         <div class="terminal__bar">
           <div class="terminal__dots"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span></div>
@@ -2437,7 +2489,12 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
   usd = measured spend from token data.  cancl = sibling-canceled (rate-limit cascade).  tmout = ctx.DeadlineExceeded.</pre>
       </div>
       <p class="scroll-hint" aria-hidden="true">↔ swipe the table for the full per-model breakdown</p>
-      <p class="cost__caption">Real output, names anonymized. That week, the Anthropic path cost $103 on the team KB; the hosted Together run did comparable work for <strong>$0.34</strong>, and the local Ollama models cost nothing. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
+      <p class="cost__caption">Real output, names anonymized. Same week, same machine: the Anthropic path cost $103 on the team KB; the hosted Together run did comparable work for <strong>$0.34</strong>; the local Ollama models cost nothing. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
+
+      <div class="cost__local">
+        <span class="local__pill">100% Ollama</span>
+        <p>On the local path there's no <code>claude -p</code> callsite in a normal <code>scribe sync</code>: per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, and relations migrate all fire through bounded JSON-envelope subtasks against your Ollama server. A full weekly sync: <strong>0 errors, $0.00, ~68s</strong>, 7,447 → 7,472 articles. One line in <code>scribe.yaml</code> flips the whole pipeline.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -2832,47 +2889,6 @@ scribe doctor <span class="flag">--section</span> localmode
   </div>
 </section>
 
-<!-- ============================ LOCAL MODE CALLOUT ============================ -->
-<section class="s" id="local">
-  <div class="wrap">
-    <div class="local">
-      <div>
-        <span class="local__pill">100% Ollama</span>
-        <h2>Run the whole pipeline for $0.</h2>
-        <p class="local__body">No remaining <code>claude -p</code> callsite in a normal <code>scribe sync</code>. Per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, relations migrate: every LLM op fires through bounded JSON-envelope subtasks against your local Ollama server. <code>ollama ps</code> shows the work; <code>ollama</code> does it.</p>
-        <div class="local__metrics">
-          <div class="metric">
-            <div class="metric__num">7,472<span class="unit">documents</span></div>
-            <div class="metric__label">verified end-to-end</div>
-          </div>
-          <div class="metric">
-            <div class="metric__num">~70<span class="unit">s</span></div>
-            <div class="metric__label">full Dream cycle</div>
-          </div>
-          <div class="metric">
-            <div class="metric__num">$0<span class="unit">/sync</span></div>
-            <div class="metric__label">zero Anthropic calls</div>
-          </div>
-        </div>
-      </div>
-      <div class="local__code" aria-hidden="true">
-        <div class="local__code-bar">
-          <span>~/my-kb · scribe sync</span>
-          <span>ollama ps</span>
-        </div>
-<pre>$ <span class="y-key">scribe</span> sync
-<span class="y-cmt">→ discovering projects ...                      41 found</span>
-<span class="y-cmt">→ triage (BM25)  ...........  142 sessions / 18 kept</span>
-<span class="y-cmt">→ absorb pass 1  ...........  atomic facts grounded</span>
-<span class="y-cmt">→ absorb pass 2  ...........  fan-out: 24 entity pages</span>
-<span class="y-cmt">→ retrieval-context splice ..  done</span>
-<span class="y-cmt">→ qmd reindex .............  7,447 → 7,472 articles</span>
-<span class="y-key">ok</span>  <span class="y-str">0 errors</span>  <span class="y-num">$0.00</span>  <span class="y-num">68.4s</span></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- ============================ USE CASES ============================ -->
 <section class="s" id="who">
   <div class="wrap">
@@ -3047,7 +3063,7 @@ scribe doctor <span class="flag">--section</span> localmode
         <h4>Product</h4>
         <a href="#how">How it works</a>
         <a href="#features">Features</a>
-        <a href="#local">Local mode</a>
+        <a href="#cost">Inference &amp; cost</a>
         <a href="#cli">CLI</a>
       </div>
       <div class="footer__col">
