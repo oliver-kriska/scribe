@@ -292,7 +292,11 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 // variant labels). If throughput becomes a problem, guard concurrent writes
 // with a per-wiki-path lock and parallelize.
 //
-//nolint:gocognit // concurrent LLM pipeline with stop-the-world rate-limit semantics — behavior now pinned by the stub-harness tests in sync_absorb_dense_test.go (issue #9); decompose in a dedicated change with those tests green
+// absorbDenseTwoPass runs the entity-first two-pass absorb for dense raw
+// articles. Issue #9 decomposed the original single function into the helpers
+// below — the stop-the-world rate-limit/budget semantics, the per-label write
+// serialization, and the parallel fan-out are all pinned by
+// sync_absorb_dense_test.go and preserved exactly here.
 func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	cfg := loadConfig(root)
 	plansDir := filepath.Join(root, "output", "absorb-plans")
@@ -303,27 +307,8 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 
 	ctx := context.Background()
 
-	// Phase 3A.5 chaptered path: when a TOC sidecar exists with at
-	// least cfg.Absorb.ChapterThreshold chapters, fan pass-1 out
-	// across chapters in parallel and merge the per-chapter plans.
-	// Falls through to the legacy single-shot path on any disqualifier
-	// (no sidecar, too few chapters, ChapterAware disabled).
-	if chaptered, chunks, _ := shouldAbsorbChaptered(rawFile, cfg.Absorb); chaptered {
-		if err := s.runPass1Chaptered(ctx, root, rawFile, rawName, chunks, cfg.Absorb, planFile); err != nil {
-			if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
-				return err
-			}
-			// Chapter pass had a non-rate-limit failure — fall back
-			// to whole-article pass-1 so the article still absorbs.
-			logMsg("sync", "chaptered pass1 failed for %s (%v); falling back to whole-article pass1", rawName, err)
-			if err := s.runPass1Whole(ctx, root, rawFile, planFile, cfg.Absorb); err != nil {
-				return err
-			}
-		}
-	} else {
-		if err := s.runPass1Whole(ctx, root, rawFile, planFile, cfg.Absorb); err != nil {
-			return err
-		}
+	if err := s.runPass1(ctx, root, rawFile, rawName, planFile, cfg.Absorb); err != nil {
+		return err
 	}
 
 	// Parse plan JSON.
@@ -341,6 +326,63 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	}
 	logMsg("sync", "pass1 planned %d entities for %s", len(plan.Entities), rawName)
 
+	run, ctx, err := s.preparePass2(ctx, root, rawFile, rawName, planFile, planBytes, plan, cfg)
+	if err != nil {
+		return err
+	}
+
+	return s.runPass2(ctx, run, plan)
+}
+
+// runPass1 dispatches pass 1 (the entity-planning pass): the chaptered fan-out
+// when a TOC sidecar qualifies the article, else the whole-article path. A
+// non-rate-limit chaptered failure falls back to the whole-article path so the
+// article still absorbs; rate-limit / budget signals propagate unchanged.
+func (s *SyncCmd) runPass1(ctx context.Context, root, rawFile, rawName, planFile string, absorbCfg AbsorbConfig) error {
+	// Phase 3A.5 chaptered path: when a TOC sidecar exists with at
+	// least cfg.Absorb.ChapterThreshold chapters, fan pass-1 out
+	// across chapters in parallel and merge the per-chapter plans.
+	// Falls through to the legacy single-shot path on any disqualifier
+	// (no sidecar, too few chapters, ChapterAware disabled).
+	if chaptered, chunks, _ := shouldAbsorbChaptered(rawFile, absorbCfg); chaptered {
+		err := s.runPass1Chaptered(ctx, root, rawFile, rawName, chunks, absorbCfg, planFile)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
+			return err
+		}
+		// Chapter pass had a non-rate-limit failure — fall back
+		// to whole-article pass-1 so the article still absorbs.
+		logMsg("sync", "chaptered pass1 failed for %s (%v); falling back to whole-article pass1", rawName, err)
+		return s.runPass1Whole(ctx, root, rawFile, planFile, absorbCfg)
+	}
+	return s.runPass1Whole(ctx, root, rawFile, planFile, absorbCfg)
+}
+
+// pass2Run carries the resolved pass-2 configuration shared by every
+// per-entity goroutine in runPass2.
+type pass2Run struct {
+	root        string
+	rawFile     string
+	planFile    string
+	domain      string
+	model       string
+	timeout     time.Duration
+	tools       []string
+	parallel    int
+	jsonMode    bool
+	provider    llmProviderGenerator
+	rawBody     string // inlined raw article body (json mode only)
+	planJSON    string // inlined plan JSON (json mode only)
+	mergedFacts *MergedFacts
+}
+
+// preparePass2 resolves the pass-2 settings from config + the parsed plan.
+// For the json-mode path it constructs the provider, preloads the raw body
+// and plan JSON, and tags the returned context with num_ctx so every parallel
+// goroutine inherits it. Returns the (possibly num_ctx-tagged) context.
+func (s *SyncCmd) preparePass2(ctx context.Context, root, rawFile, rawName, planFile string, planBytes []byte, plan absorbPlan, cfg *ScribeConfig) (pass2Run, context.Context, error) {
 	// Pass 2: one wiki page per entity. Runs in parallel with SetLimit to
 	// throttle concurrent claude -p invocations (each entity gets its own
 	// process). Two entities writing to the same wiki file would race, so
@@ -354,28 +396,34 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	if pass2Model == "" {
 		pass2Model = s.Model
 	}
-	pass2Timeout := time.Duration(cfg.Absorb.Pass2TimeoutMin) * time.Minute
-	pass2Tools := []string{"Read", "Write", "Edit", "Glob", "Grep", "Bash(wc:*)"}
 
-	// Phase 4B layer 2: pass2_mode=json runs the JSON-action-envelope
-	// path through llmProviderGenerator instead of `claude -p`. The
-	// inlined-everything prompt + envelope executor live in
-	// prompts/absorb-pass2-json.md and wiki_actions.go respectively.
-	pass2JSONMode := strings.EqualFold(cfg.Absorb.Pass2Mode, "json")
-	var pass2Provider llmProviderGenerator
-	var rawBodyForPrompt, planJSONForPrompt string
-	if pass2JSONMode {
-		pass2Provider = newLLMProvider(cfg.Absorb.Pass2Provider, pass2Model, cfg.Absorb.Contextualize.OllamaURL, root)
+	run := pass2Run{
+		root:     root,
+		rawFile:  rawFile,
+		planFile: planFile,
+		domain:   domain,
+		model:    pass2Model,
+		timeout:  time.Duration(cfg.Absorb.Pass2TimeoutMin) * time.Minute,
+		tools:    []string{"Read", "Write", "Edit", "Glob", "Grep", "Bash(wc:*)"},
+		// Phase 4B layer 2: pass2_mode=json runs the JSON-action-envelope
+		// path through llmProviderGenerator instead of `claude -p`. The
+		// inlined-everything prompt + envelope executor live in
+		// prompts/absorb-pass2-json.md and wiki_actions.go respectively.
+		jsonMode: strings.EqualFold(cfg.Absorb.Pass2Mode, "json"),
+	}
+
+	if run.jsonMode {
+		run.provider = newLLMProvider(cfg.Absorb.Pass2Provider, pass2Model, cfg.Absorb.Contextualize.OllamaURL, root)
 		// Preload the raw article body and plan JSON once; every
 		// pass-2 goroutine inlines the same blobs (only the entity
 		// fields differ).
-		if data, err := os.ReadFile(rawFile); err == nil {
-			rawBodyForPrompt = string(data)
-		} else {
-			return fmt.Errorf("pass2 json: read raw article: %w", err)
+		data, err := os.ReadFile(rawFile)
+		if err != nil {
+			return pass2Run{}, ctx, fmt.Errorf("pass2 json: read raw article: %w", err)
 		}
-		planJSONForPrompt = string(planBytes)
-		logMsg("sync", "pass2 mode=json provider=%s model=%s num_ctx=%d", pass2Provider.Name(), pass2Model, cfg.Absorb.Pass2NumCtx)
+		run.rawBody = string(data)
+		run.planJSON = string(planBytes)
+		logMsg("sync", "pass2 mode=json provider=%s model=%s num_ctx=%d", run.provider.Name(), pass2Model, cfg.Absorb.Pass2NumCtx)
 		// Tag parent ctx so every parallel pass-2 goroutine inherits the
 		// num_ctx. Anthropic providers ignore the value; Ollama reads it
 		// when building the /api/generate request.
@@ -389,6 +437,7 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	if parallel > len(plan.Entities) {
 		parallel = len(plan.Entities)
 	}
+	run.parallel = parallel
 	logMsg("sync", "pass2: %d entities, parallel=%d", len(plan.Entities), parallel)
 
 	// Phase 3B.5: load merged facts so each pass-2 prompt can be
@@ -401,7 +450,18 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	if err != nil {
 		logMsg("sync", "pass2: load facts failed for %s (%v); proceeding un-grounded", rawName, err)
 	}
+	run.mergedFacts = mergedFacts
 
+	return run, ctx, nil
+}
+
+// runPass2 fans out one wiki-writing goroutine per planned entity, capped at
+// run.parallel via errgroup SetLimit. A per-label mutex serializes the rare
+// case of two entities targeting the same article. Rate-limit and
+// daily-budget signals are stop-the-world: the first such signal cancels the
+// group and the distinct sentinel surfaces to the caller (budget takes
+// precedence over rate-limit when both fired).
+func (s *SyncCmd) runPass2(ctx context.Context, run pass2Run, plan absorbPlan) error {
 	// Per-target-label lock map so two entities aiming at the same wiki
 	// article (rare but possible when Pass 1 proposes variants) don't race.
 	var labelLocksMu gosync.Mutex
@@ -418,7 +478,7 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(parallel)
+	g.SetLimit(run.parallel)
 
 	var rateLimited bool
 	var budgetExhausted bool
@@ -429,40 +489,7 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 			if gctx.Err() != nil {
 				return nil // canceled due to rate limit
 			}
-			keyClaims := strings.Join(ent.KeyClaims, " | ")
-			if keyClaims == "" {
-				keyClaims = "(none flagged)"
-			}
-			// Phase 3B.5: pull this entity's chapter slice from
-			// the merged facts (if available). nil → empty block,
-			// which the prompt template tolerates.
-			factsBlock := ""
-			if mergedFacts != nil && ent.SourceChapter != nil {
-				factsBlock = formatFactsForPrompt(mergedFacts.factsForChapter(*ent.SourceChapter))
-			}
-			promptName := "absorb-pass2.md"
-			vars := map[string]string{
-				"KB_DIR":            root,
-				"RAW_FILE":          rawFile,
-				"PLAN_FILE":         planFile,
-				"ENTITY_LABEL":      ent.Label,
-				"ENTITY_TYPE":       ent.Type,
-				"ENTITY_ONE_LINE":   ent.OneLine,
-				"ENTITY_KEY_CLAIMS": keyClaims,
-				"DOMAIN":            domain,
-				"FACTS":             factsBlock,
-			}
-			if pass2JSONMode {
-				promptName = "absorb-pass2-json.md"
-				vars["RAW_BODY"] = rawBodyForPrompt
-				vars["PLAN_JSON"] = planJSONForPrompt
-				// Many local models lack date awareness and hallucinate
-				// `created:` values from training-data era. Inline today's
-				// date so the prompt's "use this exact value" instruction
-				// has a concrete literal to substitute.
-				vars["TODAY"] = time.Now().UTC().Format("2006-01-02")
-			}
-			pass2Prompt, err := loadPrompt(promptName, vars)
+			pass2Prompt, err := s.buildPass2Prompt(run, ent)
 			if err != nil {
 				return fmt.Errorf("load pass2 prompt: %w", err)
 			}
@@ -472,82 +499,27 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 			defer lock.Unlock()
 
 			logMsg("sync", "pass2 [%d/%d] writing %s", i+1, len(plan.Entities), ent.Label)
-			if pass2JSONMode {
-				env, err := runPass2JSONOnce(gctx, pass2Provider, pass2Prompt, pass2Timeout)
-				if err != nil {
-					if errors.Is(err, ErrRateLimit) {
-						rateLimitMu.Lock()
-						rateLimited = true
-						rateLimitMu.Unlock()
-						return err
-					}
-					if errors.Is(err, ErrDailyBudgetExhausted) {
-						// Treat the daily-budget ceiling as a stop-the-world
-						// signal: same shape as rate-limit, the outer caller
-						// commits progress and exits clean. Tracked
-						// separately so the aggregator preserves the
-						// distinct error for log fidelity.
-						rateLimitMu.Lock()
-						budgetExhausted = true
-						rateLimitMu.Unlock()
-						return err
-					}
-					// One-shot corrective retry. The Phase 4B layer 2 e2e
-					// runs showed local models occasionally wrap the
-					// envelope in prose or code fences. A second pass
-					// with a sharper instruction recovers most of those
-					// without burning much extra wallclock. Anthropic
-					// rarely needs the retry but pays a small premium
-					// for the safety net.
-					logMsg("sync", "pass2 entity %q: first attempt failed (%v) — retrying with corrective prompt", ent.Label, err)
-					correctivePrompt := pass2Prompt + "\n\n## CORRECTION\n\nYour previous response could not be parsed as a JSON envelope. Output ONLY one JSON object matching WikiActionEnvelope. No prose. No markdown fences. No explanation. The object is the entire response.\n"
-					env, err = runPass2JSONOnce(gctx, pass2Provider, correctivePrompt, pass2Timeout)
-					if err != nil {
-						logMsg("sync", "pass2 entity %q: retry also failed: %v", ent.Label, err)
-						return nil
-					}
-				}
-				// Content robustness (fabricated [cNN-fM] strip +
-				// related: normalize) now runs inside applyWikiActions via
-				// the SanitizeContent seam — see sanitizeEnvelopeContent.
-				// The valid set is whatever the facts pass produced for
-				// this raw article; nil when facts is off or the file is
-				// absent (every bracket strips, matching the prompt's
-				// drop-the-bracket fallback).
-				var validIDs map[string]bool
-				if mergedFacts != nil {
-					validIDs = make(map[string]bool, len(mergedFacts.Facts))
-					for _, f := range mergedFacts.Facts {
-						validIDs[f.ID] = true
-					}
-				}
-				res, err := applyWikiActions(root, env, ApplyOptions{
-					AllowOverwrite:        true,
-					RemapUnknownTopToWiki: true,
-					SanitizeContent:       true,
-					ValidFactIDs:          validIDs,
-				})
-				if err != nil {
-					logMsg("sync", "pass2 entity %q: apply actions: %v", ent.Label, err)
-					return nil
-				}
-				if len(res.Errors) > 0 {
-					logMsg("sync", "pass2 entity %q: %d applied, %d errors: %s", ent.Label, len(res.Applied), len(res.Errors), strings.Join(res.Errors, "; "))
-				} else {
-					logMsg("sync", "pass2 entity %q: applied %d action(s)", ent.Label, len(res.Applied))
-				}
-				return nil
-			}
-			if _, err := runClaude(withOpLabel(gctx, "absorb-pass2"), root, pass2Prompt, pass2Model, pass2Tools, pass2Timeout); err != nil {
-				if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
+			if run.jsonMode {
+				if err := s.runPass2JSONEntity(gctx, run, ent, pass2Prompt); err != nil {
 					rateLimitMu.Lock()
-					rateLimited = true
+					if errors.Is(err, ErrDailyBudgetExhausted) {
+						// Daily-budget ceiling is tracked separately from
+						// rate-limit so the aggregator preserves the distinct
+						// error for log fidelity; both stop the world.
+						budgetExhausted = true
+					} else {
+						rateLimited = true
+					}
 					rateLimitMu.Unlock()
 					return err
 				}
-				logMsg("sync", "pass2 failed for entity %q: %v", ent.Label, err)
-				// Continue on non-rate-limit errors — partial absorb is better
-				// than losing the whole source.
+				return nil
+			}
+			if err := s.runPass2ToolsEntity(gctx, run, ent, pass2Prompt); err != nil {
+				rateLimitMu.Lock()
+				rateLimited = true
+				rateLimitMu.Unlock()
+				return err
 			}
 			return nil
 		})
@@ -561,6 +533,119 @@ func (s *SyncCmd) absorbDenseTwoPass(root, rawFile, rawName string) error {
 		}
 		// Any other error bubbles from the one goroutine that returned non-nil.
 		return err
+	}
+	return nil
+}
+
+// buildPass2Prompt renders the pass-2 prompt for one entity, grounding it in
+// the entity's chapter facts when available and inlining the raw body + plan
+// JSON on the json-mode path.
+func (s *SyncCmd) buildPass2Prompt(run pass2Run, ent absorbEntity) (string, error) {
+	keyClaims := strings.Join(ent.KeyClaims, " | ")
+	if keyClaims == "" {
+		keyClaims = "(none flagged)"
+	}
+	// Phase 3B.5: pull this entity's chapter slice from the merged facts
+	// (if available). nil → empty block, which the prompt template tolerates.
+	factsBlock := ""
+	if run.mergedFacts != nil && ent.SourceChapter != nil {
+		factsBlock = formatFactsForPrompt(run.mergedFacts.factsForChapter(*ent.SourceChapter))
+	}
+	promptName := "absorb-pass2.md"
+	vars := map[string]string{
+		"KB_DIR":            run.root,
+		"RAW_FILE":          run.rawFile,
+		"PLAN_FILE":         run.planFile,
+		"ENTITY_LABEL":      ent.Label,
+		"ENTITY_TYPE":       ent.Type,
+		"ENTITY_ONE_LINE":   ent.OneLine,
+		"ENTITY_KEY_CLAIMS": keyClaims,
+		"DOMAIN":            run.domain,
+		"FACTS":             factsBlock,
+	}
+	if run.jsonMode {
+		promptName = "absorb-pass2-json.md"
+		vars["RAW_BODY"] = run.rawBody
+		vars["PLAN_JSON"] = run.planJSON
+		// Many local models lack date awareness and hallucinate
+		// `created:` values from training-data era. Inline today's
+		// date so the prompt's "use this exact value" instruction
+		// has a concrete literal to substitute.
+		vars["TODAY"] = time.Now().UTC().Format("2006-01-02")
+	}
+	return loadPrompt(promptName, vars)
+}
+
+// runPass2JSONEntity drives the json-mode pass-2 for one entity: call the
+// provider, retry once with a corrective prompt on a parse failure, then apply
+// the resulting envelope. Returns ErrRateLimit or ErrDailyBudgetExhausted
+// (stop-the-world) unchanged; every other failure is logged and returns nil so
+// a partial absorb beats losing the whole source.
+func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent absorbEntity, prompt string) error {
+	env, err := runPass2JSONOnce(gctx, run.provider, prompt, run.timeout)
+	if err != nil {
+		if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
+			return err
+		}
+		// One-shot corrective retry. The Phase 4B layer 2 e2e
+		// runs showed local models occasionally wrap the
+		// envelope in prose or code fences. A second pass
+		// with a sharper instruction recovers most of those
+		// without burning much extra wallclock. Anthropic
+		// rarely needs the retry but pays a small premium
+		// for the safety net.
+		logMsg("sync", "pass2 entity %q: first attempt failed (%v) — retrying with corrective prompt", ent.Label, err)
+		correctivePrompt := prompt + "\n\n## CORRECTION\n\nYour previous response could not be parsed as a JSON envelope. Output ONLY one JSON object matching WikiActionEnvelope. No prose. No markdown fences. No explanation. The object is the entire response.\n"
+		env, err = runPass2JSONOnce(gctx, run.provider, correctivePrompt, run.timeout)
+		if err != nil {
+			logMsg("sync", "pass2 entity %q: retry also failed: %v", ent.Label, err)
+			return nil
+		}
+	}
+	// Content robustness (fabricated [cNN-fM] strip +
+	// related: normalize) now runs inside applyWikiActions via
+	// the SanitizeContent seam — see sanitizeEnvelopeContent.
+	// The valid set is whatever the facts pass produced for
+	// this raw article; nil when facts is off or the file is
+	// absent (every bracket strips, matching the prompt's
+	// drop-the-bracket fallback).
+	var validIDs map[string]bool
+	if run.mergedFacts != nil {
+		validIDs = make(map[string]bool, len(run.mergedFacts.Facts))
+		for _, f := range run.mergedFacts.Facts {
+			validIDs[f.ID] = true
+		}
+	}
+	res, err := applyWikiActions(run.root, env, ApplyOptions{
+		AllowOverwrite:        true,
+		RemapUnknownTopToWiki: true,
+		SanitizeContent:       true,
+		ValidFactIDs:          validIDs,
+	})
+	if err != nil {
+		logMsg("sync", "pass2 entity %q: apply actions: %v", ent.Label, err)
+		return nil
+	}
+	if len(res.Errors) > 0 {
+		logMsg("sync", "pass2 entity %q: %d applied, %d errors: %s", ent.Label, len(res.Applied), len(res.Errors), strings.Join(res.Errors, "; "))
+	} else {
+		logMsg("sync", "pass2 entity %q: applied %d action(s)", ent.Label, len(res.Applied))
+	}
+	return nil
+}
+
+// runPass2ToolsEntity drives the legacy tools-mode pass-2 for one entity via
+// the runClaude seam. Returns the rate-limit / budget sentinel unchanged
+// (stop-the-world); other errors are logged and return nil so a partial
+// absorb beats losing the whole source.
+func (s *SyncCmd) runPass2ToolsEntity(gctx context.Context, run pass2Run, ent absorbEntity, prompt string) error {
+	if _, err := runClaude(withOpLabel(gctx, "absorb-pass2"), run.root, prompt, run.model, run.tools, run.timeout); err != nil {
+		if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
+			return err
+		}
+		logMsg("sync", "pass2 failed for entity %q: %v", ent.Label, err)
+		// Continue on non-rate-limit errors — partial absorb is better
+		// than losing the whole source.
 	}
 	return nil
 }

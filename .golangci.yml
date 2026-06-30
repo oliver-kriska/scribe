@@ -59,9 +59,11 @@ linters:
       check-blank: false
     # Complexity ratchet: the 2026-06-10 refactor round brought every
     # covered function under 60 (worst offenders were 107/97/95/90/85).
-    # The three still above are 0%-coverage LLM drivers carrying explicit
-    # //nolint:gocognit markers with reasons — don't add new ones;
-    # decompose at write time instead.
+    # The last three holdouts — absorbDenseTwoPass (97), ScanCmd.Run (77),
+    # DeepCmd.Run (73) — were 0%-coverage LLM drivers carrying explicit
+    # //nolint:gocognit markers; issue #9 added the stub harness, pinned
+    # their behavior, and decomposed all three, so no nolint:gocognit
+    # marker remains. Don't add new ones; decompose at write time instead.
     gocognit:
       min-complexity: 60
     # Diagnostic tag = the bug-finders (weakCond, appendAssign, badCond, …).

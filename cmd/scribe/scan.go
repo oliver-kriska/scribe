@@ -40,7 +40,12 @@ var (
 	toolsRE    = regexp.MustCompile(`(?i)(uses|integrates with|depends on|powered by|built with|replaced) [A-Z][a-zA-Z]*`)
 )
 
-//nolint:gocognit // report contract now pinned by scan_run_test.go (issue #9 harness); decompose in a dedicated change with those tests green
+// Run renders the project-scan context packet. It is a sequence of
+// independent report sections, each delegated to a scanPrint* helper so the
+// driver stays a flat list (issue #9: decompose the gocognit-exempt drivers
+// once scan_run_test.go pinned the section contract). The output is
+// byte-for-byte what the inlined version produced — the helpers print the
+// same lines in the same order.
 func (s *ScanCmd) Run() error {
 	projectPath, err := filepath.Abs(s.Path)
 	if err != nil {
@@ -51,10 +56,31 @@ func (s *ScanCmd) Run() error {
 	}
 
 	projectName := filepath.Base(projectPath)
-
 	root, _ := kbDir()
 
-	// ─── Metadata ───
+	scanPrintMetadata(projectPath, projectName)
+	scanPrintScribeContext(root, projectName)
+	scanPrintDropFiles(projectPath, root)
+	scanPrintStack(projectPath)
+
+	// knowledgeFiles is computed once and shared by the tree, directory
+	// summary, and key-entity sections.
+	knowledgeFiles := collectKnowledgeFiles(projectPath)
+	scanPrintKnowledgeTree(knowledgeFiles)
+	scanPrintDirectorySummary(projectPath, knowledgeFiles)
+	scanPrintKeyEntities(projectPath, knowledgeFiles)
+
+	scanPrintRootDocs(projectPath)
+	scanPrintGitLog(projectPath)
+	scanPrintConfigFiles(projectPath)
+	scanPrintCIWorkflows(projectPath)
+	scanPrintMixDeps(projectPath)
+
+	return nil
+}
+
+// ─── Metadata ───
+func scanPrintMetadata(projectPath, projectName string) {
 	fmt.Printf("# Project Scan: %s\n\n", projectName)
 	fmt.Printf("**Path**: `%s`\n", projectPath)
 	fmt.Printf("**Scanned**: %s\n", time.Now().UTC().Format(time.RFC3339))
@@ -65,29 +91,35 @@ func (s *ScanCmd) Run() error {
 		fmt.Printf("**Git SHA**: %s\n", sha)
 		fmt.Printf("**Branch**: %s\n", branch)
 	}
+}
 
-	// ─── scribe context ───
-	if root != "" {
-		projLower := strings.ToLower(projectName)
-		repoYaml := filepath.Join(root, "projects", projLower, ".repo.yaml")
-		if _, err := os.Stat(repoYaml); err == nil {
-			fmt.Printf("\n## scribe Link\n```yaml\n")
-			data, _ := os.ReadFile(repoYaml)
-			fmt.Print(string(data))
-			fmt.Println("```")
+// ─── scribe context ───
+func scanPrintScribeContext(root, projectName string) {
+	if root == "" {
+		return
+	}
+	projLower := strings.ToLower(projectName)
+	repoYaml := filepath.Join(root, "projects", projLower, ".repo.yaml")
+	if _, err := os.Stat(repoYaml); err != nil {
+		return
+	}
+	fmt.Printf("\n## scribe Link\n```yaml\n")
+	data, _ := os.ReadFile(repoYaml)
+	fmt.Print(string(data))
+	fmt.Println("```")
 
-			kbDir := filepath.Dir(repoYaml)
-			entries, _ := filepath.Glob(filepath.Join(kbDir, "*.md"))
-			if len(entries) > 0 {
-				fmt.Printf("\nKB articles in %s/:\n", filepath.Base(kbDir))
-				for _, e := range entries {
-					fmt.Printf("- %s\n", filepath.Base(e))
-				}
-			}
+	kbDir := filepath.Dir(repoYaml)
+	entries, _ := filepath.Glob(filepath.Join(kbDir, "*.md"))
+	if len(entries) > 0 {
+		fmt.Printf("\nKB articles in %s/:\n", filepath.Base(kbDir))
+		for _, e := range entries {
+			fmt.Printf("- %s\n", filepath.Base(e))
 		}
 	}
+}
 
-	// ─── Drop files ───
+// ─── Drop files ───
+func scanPrintDropFiles(projectPath, root string) {
 	dropDir := filepath.Join(projectPath, ".claude", kbName(root))
 	if drops, _ := filepath.Glob(filepath.Join(dropDir, "*.md")); len(drops) > 0 {
 		fmt.Printf("\n## scribe Drop Files (%d pending)\n", len(drops))
@@ -95,8 +127,10 @@ func (s *ScanCmd) Run() error {
 			fmt.Println(filepath.Base(d))
 		}
 	}
+}
 
-	// ─── Stack ───
+// ─── Stack ───
+func scanPrintStack(projectPath string) {
 	fmt.Println("\n## Stack")
 	detected := 0
 	for _, s := range stackDetectors {
@@ -108,10 +142,10 @@ func (s *ScanCmd) Run() error {
 	if detected == 0 {
 		fmt.Println("- (none detected)")
 	}
+}
 
-	// ─── Knowledge file tree ───
-	knowledgeFiles := collectKnowledgeFiles(projectPath)
-
+// ─── Knowledge file tree ───
+func scanPrintKnowledgeTree(knowledgeFiles []string) {
 	fmt.Println("\n## Knowledge File Tree")
 	fmt.Println("```")
 	maxTree := 80
@@ -129,8 +163,10 @@ func (s *ScanCmd) Run() error {
 		}
 	}
 	fmt.Println("```")
+}
 
-	// ─── Directory summary ───
+// ─── Directory summary ───
+func scanPrintDirectorySummary(projectPath string, knowledgeFiles []string) {
 	fmt.Println("\n## Directory Summary")
 	fmt.Println("\nTop directories by content volume (knowledge files only):")
 	fmt.Println()
@@ -157,7 +193,7 @@ func (s *ScanCmd) Run() error {
 		files int
 		lines int
 	}
-	var entries []dirEntry
+	entries := make([]dirEntry, 0, len(dirStats))
 	for dir, stats := range dirStats {
 		entries = append(entries, dirEntry{dir, stats.files, stats.lines})
 	}
@@ -173,8 +209,10 @@ func (s *ScanCmd) Run() error {
 		}
 		fmt.Printf("| %-50s | %5d | %5d | %3d |\n", e.dir, e.files, e.lines, avg)
 	}
+}
 
-	// ─── Key entities ───
+// ─── Key entities ───
+func scanPrintKeyEntities(projectPath string, knowledgeFiles []string) {
 	fmt.Println("\n## Key Entities")
 	fmt.Println("\nDecisions, quantitative claims, and named tools/patterns found in knowledge files:")
 
@@ -187,8 +225,10 @@ func (s *ScanCmd) Run() error {
 	printEntitySection("Decisions", projectPath, scanFiles, decisionRE, 15)
 	printEntitySection("Quantitative Claims", projectPath, scanFiles, quantRE, 15)
 	printEntitySection("Tools & Libraries", projectPath, scanFiles, toolsRE, 10)
+}
 
-	// ─── Root docs ───
+// ─── Root docs ───
+func scanPrintRootDocs(projectPath string) {
 	fmt.Println("\n## Root Docs")
 	maxInline := 200
 
@@ -229,8 +269,10 @@ func (s *ScanCmd) Run() error {
 			fmt.Printf("\n*... truncated at 40 of %d lines*\n", lines)
 		}
 	}
+}
 
-	// ─── Git history ───
+// ─── Git history ───
+func scanPrintGitLog(projectPath string) {
 	fmt.Println("\n## Git Log (last 30)")
 	fmt.Println("```")
 	if isGitRepo(projectPath) {
@@ -239,8 +281,10 @@ func (s *ScanCmd) Run() error {
 		fmt.Println("(not a git repo)")
 	}
 	fmt.Println("```")
+}
 
-	// ─── Config files ───
+// ─── Config files ───
+func scanPrintConfigFiles(projectPath string) {
 	fmt.Println("\n## Config Files")
 	for _, name := range []string{".claude-plugin/plugin.json", "fly.toml", "Dockerfile", "docker-compose.yml", "Makefile"} {
 		cfgPath := filepath.Join(projectPath, name)
@@ -258,8 +302,10 @@ func (s *ScanCmd) Run() error {
 		}
 		fmt.Println("```")
 	}
+}
 
-	// CI workflows
+// ─── CI workflows ───
+func scanPrintCIWorkflows(projectPath string) {
 	workflows, _ := filepath.Glob(filepath.Join(projectPath, ".github", "workflows", "*.yml"))
 	workflows2, _ := filepath.Glob(filepath.Join(projectPath, ".github", "workflows", "*.yaml"))
 	workflows = append(workflows, workflows2...)
@@ -272,33 +318,35 @@ func (s *ScanCmd) Run() error {
 		fmt.Printf("... (%d total)\n", lines)
 		fmt.Println("```")
 	}
+}
 
-	// mix.exs deps
+// ─── mix.exs deps ───
+func scanPrintMixDeps(projectPath string) {
 	mixPath := filepath.Join(projectPath, "mix.exs")
-	if content, err := os.ReadFile(mixPath); err == nil {
-		fmt.Println("\n### mix.exs deps")
-		fmt.Println("```elixir")
-		inDeps := false
-		lineCount := 0
-		for line := range strings.SplitSeq(string(content), "\n") {
-			if strings.Contains(line, "defp deps") {
-				inDeps = true
+	content, err := os.ReadFile(mixPath)
+	if err != nil {
+		return
+	}
+	fmt.Println("\n### mix.exs deps")
+	fmt.Println("```elixir")
+	inDeps := false
+	lineCount := 0
+	for line := range strings.SplitSeq(string(content), "\n") {
+		if strings.Contains(line, "defp deps") {
+			inDeps = true
+		}
+		if inDeps {
+			fmt.Println(line)
+			lineCount++
+			if lineCount > 40 {
+				break
 			}
-			if inDeps {
-				fmt.Println(line)
-				lineCount++
-				if lineCount > 40 {
-					break
-				}
-				if strings.TrimSpace(line) == "end" && lineCount > 1 {
-					break
-				}
+			if strings.TrimSpace(line) == "end" && lineCount > 1 {
+				break
 			}
 		}
-		fmt.Println("```")
 	}
-
-	return nil
+	fmt.Println("```")
 }
 
 func collectKnowledgeFiles(projectPath string) []string {

@@ -29,7 +29,11 @@ var excludedDirNames = map[string]bool{
 	"evals":        true,
 }
 
-//nolint:gocognit // LLM-driving batch loop — behavior now pinned by the stub-harness tests in deep_run_test.go (issue #9); decompose in a dedicated change with those tests green
+// Run drives deep, batch-by-directory extraction for one project. Issue #9
+// decomposed the original single function — its observable semantics
+// (manifest checkpointing, rate-limit stop, per-dir error tolerance, dry-run,
+// already-extracted skip, batch cap) are pinned by deep_run_test.go, and the
+// helpers below preserve them exactly.
 func (d *DeepCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
@@ -51,17 +55,11 @@ func (d *DeepCmd) Run() error {
 
 	projectPath := entry.Path
 	domain := entry.Domain
-	extractedDirs := entry.ExtractedDirs
 
 	logMsg("deep", "starting deep extraction for %s at %s", d.Project, projectPath)
 
 	// Build set of already-extracted directories for fast lookup.
-	extractedSet := make(map[string]bool)
-	if extractedDirs != "" {
-		for dir := range strings.SplitSeq(extractedDirs, ",") {
-			extractedSet[strings.TrimSpace(dir)] = true
-		}
-	}
+	extractedSet := parseExtractedDirs(entry.ExtractedDirs)
 
 	// Find all knowledge directories: unique parent dirs of .md files.
 	knowledgeDirs, err := findKnowledgeDirs(projectPath)
@@ -71,6 +69,44 @@ func (d *DeepCmd) Run() error {
 
 	logMsg("deep", "found %d knowledge directories", len(knowledgeDirs))
 
+	batchNum, newlyExtracted, err := d.extractBatch(root, projectPath, domain, knowledgeDirs, extractedSet)
+	if err != nil {
+		return err
+	}
+
+	if !d.DryRun {
+		d.checkpointManifest(root, manifest, entry, projectPath, extractedSet, newlyExtracted)
+	}
+
+	if !d.DryRun && batchNum > 0 {
+		d.reindexAndCommit(root, batchNum)
+	}
+
+	totalDirs := len(extractedSet) + len(newlyExtracted)
+	logMsg("deep", "done (%d batches extracted, %d total dirs)", batchNum, totalDirs)
+
+	return nil
+}
+
+// parseExtractedDirs splits a comma-joined extracted_dirs string into a set.
+func parseExtractedDirs(extractedDirs string) map[string]bool {
+	extractedSet := make(map[string]bool)
+	if extractedDirs != "" {
+		for dir := range strings.SplitSeq(extractedDirs, ",") {
+			extractedSet[strings.TrimSpace(dir)] = true
+		}
+	}
+	return extractedSet
+}
+
+// extractBatch walks the knowledge dirs in order, extracting up to BatchMax
+// not-yet-extracted directories. It returns the batches taken and the newly
+// extracted relative dirs. A rate-limit signal stops the loop immediately
+// (the rate-limited dir is not recorded, so it retries next run); a fatal
+// setup error (e.g. an unloadable prompt) aborts and propagates. Any other
+// per-dir error is logged inside extractDir and the dir is still marked
+// extracted so one broken dir can't wedge the loop forever.
+func (d *DeepCmd) extractBatch(root, projectPath, domain string, knowledgeDirs []string, extractedSet map[string]bool) (int, []string, error) {
 	batchNum := 0
 	var newlyExtracted []string
 
@@ -107,51 +143,12 @@ func (d *DeepCmd) Run() error {
 			continue
 		}
 
-		ctx := context.Background()
-
-		// Phase 4E: envelope mode pulls per-directory files into the
-		// prompt and asks for one envelope; tools mode keeps the
-		// legacy `claude -p` path. The cfg dispatcher matches the
-		// pattern from assess + dream.
-		cfg := loadConfig(root)
-		if cfg != nil && strings.EqualFold(cfg.DeepIngest.Mode, "envelope") {
-			rl, err := runDeepExtractEnvelope(ctx, root, cfg, d.Project, projectPath, relDir, domain, mdFiles)
-			if rl {
-				logMsg("deep", "  [%s] rate limited — stopping, will resume next run", relDir)
-				break
-			}
-			if err != nil {
-				logMsg("deep", "  [%s] envelope error: %v", relDir, err)
-			}
-		} else {
-			fileList := strings.Join(mdFiles, ",")
-			prompt, err := loadPrompt("deep-extract.md", map[string]string{
-				"KB_DIR":    root,
-				"REL_DIR":   relDir,
-				"PROJECT":   d.Project,
-				"P_PATH":    projectPath,
-				"DOMAIN":    domain,
-				"FILE_LIST": fileList,
-			})
-			if err != nil {
-				return fmt.Errorf("load prompt: %w", err)
-			}
-
-			tools := []string{
-				"Read", "Write", "Edit", "Glob", "Grep",
-				"Bash(git log:*)", "Bash(git -C:*)",
-				"Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
-			}
-
-			_, err = runClaude(withOpLabel(ctx, "deep-extract"), root, prompt, d.Model, tools, 600*time.Second)
-			if err != nil {
-				if errors.Is(err, ErrRateLimit) {
-					logMsg("deep", "  [%s] rate limited — stopping, will resume next run", relDir)
-					break
-				}
-				logMsg("deep", "  [%s] claude error: %v", relDir, err)
-				// Continue with next directory rather than aborting the whole batch.
-			}
+		stop, err := d.extractDir(root, projectPath, relDir, domain, mdFiles)
+		if err != nil {
+			return batchNum, newlyExtracted, err
+		}
+		if stop {
+			break
 		}
 
 		newlyExtracted = append(newlyExtracted, relDir)
@@ -159,79 +156,136 @@ func (d *DeepCmd) Run() error {
 		logMsg("deep", "  [%s] done", relDir)
 	}
 
-	// Update manifest with extracted dirs.
-	if !d.DryRun {
-		// Rebuild the full extracted_dirs string.
-		allDirs := make([]string, 0, len(extractedSet)+len(newlyExtracted))
-		for dir := range extractedSet {
-			allDirs = append(allDirs, dir)
+	return batchNum, newlyExtracted, nil
+}
+
+// extractDir runs one directory's extraction through whichever protocol the
+// KB config selects: envelope mode (the provider seam) or legacy tools mode
+// (the runClaude seam). It returns stop=true when the call was rate-limited,
+// signaling the batch loop to halt and resume next run without recording this
+// directory. A non-nil error is fatal and aborts the whole run (only the
+// embedded-prompt load failure, which never happens at runtime). Other
+// per-dir errors are logged and return (false, nil) so the loop records the
+// dir and moves on.
+func (d *DeepCmd) extractDir(root, projectPath, relDir, domain string, mdFiles []string) (bool, error) {
+	ctx := context.Background()
+
+	// Phase 4E: envelope mode pulls per-directory files into the
+	// prompt and asks for one envelope; tools mode keeps the
+	// legacy `claude -p` path. The cfg dispatcher matches the
+	// pattern from assess + dream.
+	cfg := loadConfig(root)
+	if cfg != nil && strings.EqualFold(cfg.DeepIngest.Mode, "envelope") {
+		rl, err := runDeepExtractEnvelope(ctx, root, cfg, d.Project, projectPath, relDir, domain, mdFiles)
+		if rl {
+			logMsg("deep", "  [%s] rate limited — stopping, will resume next run", relDir)
+			return true, nil
 		}
-		allDirs = append(allDirs, newlyExtracted...)
-		sort.Strings(allDirs)
-
-		entry.ExtractedDirs = strings.Join(allDirs, ",")
-
-		timestamp := time.Now().UTC().Format(time.RFC3339)
-		entry.LastExtracted = timestamp
-
-		if hasGit(projectPath) {
-			entry.LastSHA = gitSHA(projectPath)
-		} else {
-			entry.LastSHA = "no-git"
+		if err != nil {
+			logMsg("deep", "  [%s] envelope error: %v", relDir, err)
 		}
+		return false, nil
+	}
 
-		if err := manifest.save(); err != nil {
-			logMsg("deep", "warning: failed to save manifest: %v", err)
+	fileList := strings.Join(mdFiles, ",")
+	prompt, err := loadPrompt("deep-extract.md", map[string]string{
+		"KB_DIR":    root,
+		"REL_DIR":   relDir,
+		"PROJECT":   d.Project,
+		"P_PATH":    projectPath,
+		"DOMAIN":    domain,
+		"FILE_LIST": fileList,
+	})
+	if err != nil {
+		return false, fmt.Errorf("load prompt: %w", err)
+	}
+
+	tools := []string{
+		"Read", "Write", "Edit", "Glob", "Grep",
+		"Bash(git log:*)", "Bash(git -C:*)",
+		"Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
+	}
+
+	if _, err := runClaude(withOpLabel(ctx, "deep-extract"), root, prompt, d.Model, tools, 600*time.Second); err != nil {
+		if errors.Is(err, ErrRateLimit) {
+			logMsg("deep", "  [%s] rate limited — stopping, will resume next run", relDir)
+			return true, nil
 		}
+		logMsg("deep", "  [%s] claude error: %v", relDir, err)
+		// Continue with next directory rather than aborting the whole batch.
+	}
+	return false, nil
+}
 
-		// Deep extraction covers regular extraction — record it in the
-		// shared ledger so teammates skip this revision too.
-		if entry.LastSHA != "no-git" && entry.LastSHA != "" {
-			if key := repoLedgerKey(projectPath); key != "" {
-				ledger := loadLedger(root)
-				ledger.record(key, entry.LastSHA, resolveContributor(root))
-				if err := ledger.save(); err != nil {
-					logMsg("deep", "warning: extraction ledger save failed: %v", err)
-				}
+// checkpointManifest folds the newly-extracted dirs into the project entry,
+// stamps the extraction time + SHA, saves the manifest, and records the
+// revision in the shared extraction ledger so teammates skip it too.
+func (d *DeepCmd) checkpointManifest(root string, manifest *Manifest, entry *ProjectEntry, projectPath string, extractedSet map[string]bool, newlyExtracted []string) {
+	// Rebuild the full extracted_dirs string.
+	allDirs := make([]string, 0, len(extractedSet)+len(newlyExtracted))
+	for dir := range extractedSet {
+		allDirs = append(allDirs, dir)
+	}
+	allDirs = append(allDirs, newlyExtracted...)
+	sort.Strings(allDirs)
+
+	entry.ExtractedDirs = strings.Join(allDirs, ",")
+
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	entry.LastExtracted = timestamp
+
+	if hasGit(projectPath) {
+		entry.LastSHA = gitSHA(projectPath)
+	} else {
+		entry.LastSHA = "no-git"
+	}
+
+	if err := manifest.save(); err != nil {
+		logMsg("deep", "warning: failed to save manifest: %v", err)
+	}
+
+	// Deep extraction covers regular extraction — record it in the
+	// shared ledger so teammates skip this revision too.
+	if entry.LastSHA != "no-git" && entry.LastSHA != "" {
+		if key := repoLedgerKey(projectPath); key != "" {
+			ledger := loadLedger(root)
+			ledger.record(key, entry.LastSHA, resolveContributor(root))
+			if err := ledger.save(); err != nil {
+				logMsg("deep", "warning: extraction ledger save failed: %v", err)
 			}
 		}
 	}
+}
 
-	// Reindex and commit.
-	if !d.DryRun && batchNum > 0 {
-		// Rebuild wiki index + backlinks before qmd re-embed.
-		// Envelope-mode deep writes wiki articles via applyWikiActions
-		// without touching _index.md / _backlinks.json. The legacy
-		// tools-mode path edited those files inside `claude -p`; on
-		// the envelope path the rebuild has to happen here.
-		rebuildIndexAndBacklinks(root)
-		logMsg("deep", "reindexing qmd...")
-		runCmd(root, "qmd", "update")
-		runCmd(root, "qmd", "embed")
+// reindexAndCommit rebuilds the wiki index, re-embeds via qmd, and commits +
+// pushes the batch. Envelope-mode deep writes wiki articles via
+// applyWikiActions without touching _index.md / _backlinks.json (the legacy
+// tools-mode path edited those inside `claude -p`), so the rebuild has to
+// happen here.
+func (d *DeepCmd) reindexAndCommit(root string, batchNum int) {
+	rebuildIndexAndBacklinks(root)
+	logMsg("deep", "reindexing qmd...")
+	runCmd(root, "qmd", "update")
+	runCmd(root, "qmd", "embed")
 
-		if gitIsDirty(root) {
-			if !gitAddWiki(root) {
-				logMsg("deep", "commit skipped: a detected secret could not be held back — resolve and rerun")
-			} else {
-				commitMsg := fmt.Sprintf("deep-extract: %s %s (%d batches)",
-					d.Project, time.Now().Format("2006-01-02"), batchNum)
-				if err := gitCommit(root, commitMsg); err != nil {
-					logMsg("deep", "warning: commit failed: %v", err)
-				} else {
-					if err := gitPush(root); err != nil {
-						logMsg("deep", "warning: push failed: %v", err)
-					} else {
-						logMsg("deep", "committed and pushed")
-					}
-				}
-			}
-		}
+	if !gitIsDirty(root) {
+		return
 	}
-
-	totalDirs := len(extractedSet) + len(newlyExtracted)
-	logMsg("deep", "done (%d batches extracted, %d total dirs)", batchNum, totalDirs)
-
-	return nil
+	if !gitAddWiki(root) {
+		logMsg("deep", "commit skipped: a detected secret could not be held back — resolve and rerun")
+		return
+	}
+	commitMsg := fmt.Sprintf("deep-extract: %s %s (%d batches)",
+		d.Project, time.Now().Format("2006-01-02"), batchNum)
+	if err := gitCommit(root, commitMsg); err != nil {
+		logMsg("deep", "warning: commit failed: %v", err)
+		return
+	}
+	if err := gitPush(root); err != nil {
+		logMsg("deep", "warning: push failed: %v", err)
+		return
+	}
+	logMsg("deep", "committed and pushed")
 }
 
 // findKnowledgeDirs walks the project path for .md files and returns
