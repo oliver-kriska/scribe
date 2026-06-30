@@ -768,6 +768,31 @@
     margin-top: 28px;
   }
   .hero__cta .btn { padding: 11px 17px; font-size: 14.5px; }
+  /* paste-and-go install command, right at the decision moment */
+  .hero__install {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 24px;
+    max-width: 430px;
+    padding: 8px 8px 8px 14px;
+    background: var(--bg-sub);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  .hero__install-sigil { color: var(--muted); user-select: none; }
+  .hero__install code {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .hero__install code::-webkit-scrollbar { display: none; }
+  .hero__install .copy-btn { position: static; flex: none; }
   .hero__stats {
     margin-top: 36px;
     display: flex;
@@ -2030,6 +2055,11 @@
         <p class="hero__sub">
           <strong>scribe is the compiled, LLM-written knowledge base</strong>: the &ldquo;LLM Wiki&rdquo; pattern as a single-binary CLI, plain markdown in git, no vector DB, no RAG. It&rsquo;s memory your AI agents read before they decide, not a second brain you maintain and never reopen. It turns your <strong>git repos</strong>, <strong>Claude Code &amp; Codex sessions</strong>, and self-sent URLs into a curated, semantically searchable wiki. Cross-project, cron-driven, and capable of running <strong>100% locally on Ollama</strong> for zero API spend.
         </p>
+        <div class="hero__install">
+          <span class="hero__install-sigil" aria-hidden="true">$</span>
+          <code id="code-hero-install">brew install oliver-kriska/scribe/scribe</code>
+          <button class="copy-btn" data-copy-target="code-hero-install" aria-label="Copy install command">copy</button>
+        </div>
         <div class="hero__cta">
           <a class="btn btn--accent" href="#install">
             Install scribe
