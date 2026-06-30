@@ -96,20 +96,34 @@ const budgetCacheTTL = 30 * time.Second
 // without typo risk.
 const budgetBypassEnv = "SCRIBE_BYPASS_BUDGET" // #nosec G101 -- env var name, not a credential
 
-// checkBudget returns nil unless today's metered output-token sum has
-// reached limit. A zero limit disables the check; SCRIBE_BYPASS_BUDGET=1
-// also bypasses it. Best-effort on ledger I/O — if the file can't be
-// read we treat used as zero and let the call through (the ceiling is
-// a safety net, not a correctness invariant).
+// checkBudget returns nil unless a configured ceiling has been reached:
+// the per-KB `limit` for THIS root, OR the machine-wide ceiling summed
+// across every registered KB (issue #26 — several KBs share one API key,
+// so a per-KB cap alone can't bound the bill). Either ceiling being zero
+// disables that half; SCRIBE_BYPASS_BUDGET=1 bypasses both. Best-effort on
+// ledger I/O — an unreadable file counts as zero and lets the call through
+// (the ceiling is a safety net, not a correctness invariant).
 func checkBudget(root string, limit int64) error {
-	if limit <= 0 || os.Getenv(budgetBypassEnv) == "1" {
+	if os.Getenv(budgetBypassEnv) == "1" {
 		return nil
 	}
-	used := getDailyMeteredOutputTokens(root)
-	if used >= limit {
-		return fmt.Errorf("%w: used %d / limit %d", ErrDailyBudgetExhausted, used, limit)
+	if limit > 0 {
+		if used := getDailyMeteredOutputTokens(root); used >= limit {
+			return fmt.Errorf("%w: used %d / limit %d", ErrDailyBudgetExhausted, used, limit)
+		}
+	}
+	if mlimit := machineOutputTokenCeiling(); mlimit > 0 {
+		if mused := getMachineDailyMeteredOutputTokens(); mused >= mlimit {
+			return fmt.Errorf("%w: machine-wide used %d / limit %d (across all registered KBs)", ErrDailyBudgetExhausted, mused, mlimit)
+		}
 	}
 	return nil
+}
+
+// machineOutputTokenCeiling reads the per-machine daily ceiling from the
+// user config (~/.config/scribe/config.yaml). Zero = disabled.
+func machineOutputTokenCeiling() int64 {
+	return loadUserConfig().DailyOutputTokenCeiling
 }
 
 // getDailyMeteredOutputTokens returns the sum of output_tokens for
@@ -132,6 +146,34 @@ func getDailyMeteredOutputTokens(root string) int64 {
 	budgetState.usedTokens = used
 	budgetState.lastRefresh = time.Now()
 	return used
+}
+
+// machineBudgetState caches the machine-wide metered-token sum the same
+// way budgetState caches the per-KB sum — separately, because this one
+// fans out across every registered KB's ledger and must not be confused
+// with a single KB's figure.
+var machineBudgetState budgetCache
+
+// getMachineDailyMeteredOutputTokens sums today's metered output tokens
+// across EVERY registered KB's cost ledger (issue #26). Cached for
+// budgetCacheTTL like the per-KB reader, so the cross-KB fan-out stays off
+// the hot path. registeredKBs() already dedups by absolute path, so no KB
+// is double-counted.
+func getMachineDailyMeteredOutputTokens() int64 {
+	today := time.Now().UTC().Format("2006-01-02")
+	machineBudgetState.mu.Lock()
+	defer machineBudgetState.mu.Unlock()
+	if machineBudgetState.day == today && time.Since(machineBudgetState.lastRefresh) < budgetCacheTTL {
+		return machineBudgetState.usedTokens
+	}
+	var sum int64
+	for _, kb := range registeredKBs() {
+		sum += readDailyMeteredOutputTokens(kb, today)
+	}
+	machineBudgetState.day = today
+	machineBudgetState.usedTokens = sum
+	machineBudgetState.lastRefresh = time.Now()
+	return sum
 }
 
 // readDailyMeteredOutputTokens reads <root>/output/costs/<day>.jsonl and
@@ -171,9 +213,11 @@ func readDailyMeteredOutputTokens(root, day string) int64 {
 // resetBudgetCacheForTest is a hook for tests that need to force a
 // re-read after writing fixture entries. Not exposed elsewhere.
 func resetBudgetCacheForTest() {
-	budgetState.mu.Lock()
-	defer budgetState.mu.Unlock()
-	budgetState.lastRefresh = time.Time{}
-	budgetState.day = ""
-	budgetState.usedTokens = 0
+	for _, s := range []*budgetCache{&budgetState, &machineBudgetState} {
+		s.mu.Lock()
+		s.lastRefresh = time.Time{}
+		s.day = ""
+		s.usedTokens = 0
+		s.mu.Unlock()
+	}
 }

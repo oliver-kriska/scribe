@@ -796,6 +796,14 @@ type userConfig struct {
 	// private name doesn't itself leak it to teammates. Unioned with the
 	// KB's shared stop_words at gate time.
 	StopWords StopWordsConfig `yaml:"stop_words,omitempty"`
+	// DailyOutputTokenCeiling is the MACHINE-level metered output-token
+	// ceiling across every registered KB (issue #26). The per-KB
+	// `sync.daily_output_token_ceiling` in scribe.yaml caps one KB; this
+	// caps the whole machine, because the Anthropic/hosted bill is per API
+	// key and several KBs share it. Lives here (the per-machine config),
+	// not in any KB's scribe.yaml, so one KB can't set the machine budget
+	// for the others. Zero = disabled. See budget.go.
+	DailyOutputTokenCeiling int64 `yaml:"daily_output_token_ceiling,omitempty"`
 }
 
 // loadUserConfig reads the user-level config. Returns zero value if missing.

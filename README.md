@@ -479,7 +479,11 @@ provider. Per-op `provider`/`model` always win over the top-level block.
 > local model doesn't — a single looping pass can emit millions of output
 > tokens. `sync.daily_output_token_ceiling` halts that across **every metered
 > provider** (anthropic + hosted); local Ollama is exempt. Set it before
-> pointing at a paid endpoint. `scribe cost` rolls up tokens (and dollars, when
+> pointing at a paid endpoint. That key caps one KB; if you run several KBs on
+> one machine they share one API key and bill, so also set a machine-wide
+> `daily_output_token_ceiling` in `~/.config/scribe/config.yaml` — it sums
+> today's metered tokens across **every registered KB**, and whichever ceiling
+> (per-KB or machine) is hit first aborts the call. `scribe cost` rolls up tokens (and dollars, when
 > `pricing` is set) per `provider/model`. By default it aggregates **every
 > registered KB** — hosted providers bill per API key, and one key usually
 > serves all your KBs, so the combined total matches the provider dashboard.

@@ -224,6 +224,12 @@ sync:
   # Legacy alias (anthropic-only name, still honored; prefer the
   # generalized key above). When both are set, the generalized one wins.
   # daily_anthropic_output_token_ceiling: 0
+  #
+  # This ceiling caps THIS KB only. If you run several KBs on one machine
+  # they share one API key and one bill, so also set a MACHINE-level
+  # ceiling in ~/.config/scribe/config.yaml (issue #26):
+  #   daily_output_token_ceiling: 4000000   # summed across every registered KB
+  # whichever ceiling (per-KB or machine) is hit first aborts the call.
 
 deep:
   batch_max: 5
