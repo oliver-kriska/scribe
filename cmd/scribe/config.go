@@ -599,6 +599,12 @@ func loadConfig(root string) *ScribeConfig {
 	cfg.Absorb.Pass2Provider = ""
 	cfg.Absorb.SinglePassProvider = ""
 	cfg.Absorb.FactsProvider = ""
+	// Contextualize is part of the same absorb pipeline and must cascade
+	// llm.provider identically — otherwise a fully-ollama/hosted KB leaves
+	// the contextualize pass pinned to the pre-seeded "anthropic" default,
+	// silently billing (or, for a no-anthropic-key hosted setup, failing)
+	// the one stage everyone forgets. Reset for the same "" = unset reason.
+	cfg.Absorb.Contextualize.Provider = ""
 
 	cfgPath := filepath.Join(root, "scribe.yaml")
 	data, err := os.ReadFile(cfgPath)

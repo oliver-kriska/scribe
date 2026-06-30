@@ -290,6 +290,26 @@ func coerceProviderModel(label, provider, model string) (string, string) {
 	return provider, model
 }
 
+// inheritHostedModel makes a non-anthropic absorb pass adopt the top-level
+// llm.model when the per-op model is empty or still a Claude alias (the
+// anthropic-shaped per-op default). Anthropic keeps its deliberate per-op
+// haiku/sonnet split; ollama and hosted providers get the single model the
+// user configured up top. Without this, `llm: {provider: together, model: X}`
+// leaves the absorb pass models at "haiku"/"sonnet"/"" and the hosted client
+// rejects them — the documented "move the whole pipeline to the cloud" config
+// would fail on the absorb+contextualize stage (issue #43 follow-up). Unlike
+// coerceProviderModel (which only knows the ollama recommended default), this
+// honors an explicit llm.model for every non-anthropic backend.
+func inheritHostedModel(provider, model string, llm LLMConfig) string {
+	if llm.Model == "" || strings.EqualFold(provider, "anthropic") {
+		return model
+	}
+	if model == "" || isClaudeModelAlias(model) {
+		return llm.Model
+	}
+	return model
+}
+
 // inheritProviderFromLLM returns the effective (provider, model,
 // ollamaURL) for a per-op config that may leave any field empty. The
 // fallback chain is: per-op value → LLMConfig value → llmDefaults().
