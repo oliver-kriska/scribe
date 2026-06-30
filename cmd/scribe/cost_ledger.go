@@ -633,37 +633,35 @@ func sortedByCost(m map[string]*CostSummary) []CostSummary {
 	return out
 }
 
-// printCostTable renders the per-model table with a TOTAL footer and returns
-// the aggregate total (so the caller can report coverage and the rolled-up
-// estimate). The model and usd columns size to their widest content so long
-// hosted-provider slugs (e.g. "together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput")
-// stay aligned instead of raggedding the table.
+// printCostTable renders the per-model table with header/footer rules and a
+// TOTAL row, returning the aggregate total (so the caller can report coverage
+// and the rolled-up estimate). Numbers are comma-grouped, wallclock humanized;
+// columns size to content (rune-aware, so the "—" placeholder and long
+// hosted-provider slugs stay aligned).
 func printCostTable(rows []CostSummary) CostSummary {
-	usds := make([]string, len(rows))
-	modelW := len("model") // also covers the "TOTAL" footer (5 chars)
-	usdW := len("usd")
 	total := totalOfCosts(rows)
-	for i, r := range rows {
-		usds[i] = formatRowUSD(r)
-		if len(r.Model) > modelW {
-			modelW = len(r.Model)
+	header := []string{"model", "calls", "ok", "cancl", "rate", "tmout", "wallclock", "in-tokens", "out-tokens", "usd"}
+	cells := func(r CostSummary) []string {
+		return []string{
+			r.Model,
+			commaInt(int64(r.Calls)),
+			commaInt(int64(r.OK)),
+			commaInt(int64(r.Canceled)),
+			commaInt(int64(r.RateLimit)),
+			commaInt(int64(r.Timeout)),
+			humanDuration(r.WallclockSeconds),
+			commaInt(r.InputTokens),
+			commaInt(r.OutputTokens),
+			formatRowUSD(r),
 		}
-		if len(usds[i]) > usdW {
-			usdW = len(usds[i])
-		}
 	}
-	totalUSD := formatRowUSD(total)
-	if len(totalUSD) > usdW {
-		usdW = len(totalUSD)
+	body := make([][]string, 0, len(rows))
+	for _, r := range rows {
+		body = append(body, cells(r))
 	}
-	fmt.Printf("  %-*s  %6s  %6s  %6s  %6s  %6s  %10s  %12s  %12s  %*s\n",
-		modelW, "model", "calls", "ok", "cancl", "rate", "tmout", "wallclock", "in-tokens", "out-tokens", usdW, "usd")
-	for i, r := range rows {
-		fmt.Printf("  %-*s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %*s\n",
-			modelW, r.Model, r.Calls, r.OK, r.Canceled, r.RateLimit, r.Timeout, r.WallclockSeconds, r.InputTokens, r.OutputTokens, usdW, usds[i])
-	}
-	fmt.Printf("  %-*s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %*s\n",
-		modelW, "TOTAL", total.Calls, total.OK, total.Canceled, total.RateLimit, total.Timeout, total.WallclockSeconds, total.InputTokens, total.OutputTokens, usdW, totalUSD)
+	footer := cells(total)
+	footer[0] = "TOTAL"
+	printAlignedTable(header, body, footer)
 	return total
 }
 
@@ -694,28 +692,120 @@ func providerOf(model string) string {
 	return "anthropic"
 }
 
-// printGroupSummary prints a compact, aligned rollup (by provider or KB) under
-// the detailed per-model table: name, calls, tokens, and measured USD. Rows
-// are ordered by spend descending; the name and usd columns size to content.
+// printGroupSummary prints a compact rollup (by provider or KB) under the
+// detailed per-model table: name, calls, tokens, and measured USD, ordered by
+// spend descending. No footer rule — these are supporting cross-cuts of the
+// table above, not their own totals.
 func printGroupSummary(colHeader string, rows []CostSummary) {
 	sort.Slice(rows, func(i, j int) bool {
 		return rows[i].ActualUSD+rows[i].EstUSDHigh > rows[j].ActualUSD+rows[j].EstUSDHigh
 	})
-	usds := make([]string, len(rows))
-	nameW := len(colHeader)
-	usdW := len("usd")
-	for i, r := range rows {
-		usds[i] = formatRowUSD(r)
-		if len(r.Model) > nameW {
-			nameW = len(r.Model)
-		}
-		if len(usds[i]) > usdW {
-			usdW = len(usds[i])
+	header := []string{colHeader, "calls", "in-tokens", "out-tokens", "usd"}
+	body := make([][]string, 0, len(rows))
+	for _, r := range rows {
+		body = append(body, []string{
+			r.Model,
+			commaInt(int64(r.Calls)),
+			commaInt(r.InputTokens),
+			commaInt(r.OutputTokens),
+			formatRowUSD(r),
+		})
+	}
+	printAlignedTable(header, body, nil)
+}
+
+// printAlignedTable prints a 2-space-indented table: the first column is
+// left-aligned, the rest right-aligned, with a horizontal rule under the
+// header (and, when footer != nil, above the footer row). Column widths size
+// to the widest cell counted in runes, so comma-grouped numbers and the
+// em-dash "—" placeholder line up. (Named to avoid renderTable in convert_docx.)
+func printAlignedTable(header []string, body [][]string, footer []string) {
+	w := make([]int, len(header))
+	measure := func(row []string) {
+		for c, cell := range row {
+			if n := len([]rune(cell)); n > w[c] {
+				w[c] = n
+			}
 		}
 	}
-	fmt.Printf("    %-*s  %8s  %12s  %12s  %*s\n", nameW, colHeader, "calls", "in-tokens", "out-tokens", usdW, "usd")
-	for i, r := range rows {
-		fmt.Printf("    %-*s  %8d  %12d  %12d  %*s\n", nameW, r.Model, r.Calls, r.InputTokens, r.OutputTokens, usdW, usds[i])
+	measure(header)
+	for _, r := range body {
+		measure(r)
+	}
+	if footer != nil {
+		measure(footer)
+	}
+
+	line := func(row []string) string {
+		var b strings.Builder
+		b.WriteString("  ")
+		for c, cell := range row {
+			if c > 0 {
+				b.WriteString("  ")
+			}
+			b.WriteString(padCell(cell, w[c], c == 0))
+		}
+		return strings.TrimRight(b.String(), " ")
+	}
+	full := 2
+	for c, width := range w {
+		if c > 0 {
+			full += 2
+		}
+		full += width
+	}
+	rule := "  " + strings.Repeat("─", full-2)
+
+	fmt.Println(line(header))
+	fmt.Println(rule)
+	for _, r := range body {
+		fmt.Println(line(r))
+	}
+	if footer != nil {
+		fmt.Println(rule)
+		fmt.Println(line(footer))
+	}
+}
+
+// padCell pads s to width runes — on the right when left-aligned, else the left.
+func padCell(s string, width int, left bool) string {
+	gap := max(0, width-len([]rune(s)))
+	if left {
+		return s + strings.Repeat(" ", gap)
+	}
+	return strings.Repeat(" ", gap) + s
+}
+
+// commaInt formats an integer with thousands separators (16196224 ->
+// "16,196,224") so long token and call counts stay scannable.
+func commaInt(n int64) string {
+	s := fmt.Sprintf("%d", n)
+	sign := ""
+	if strings.HasPrefix(s, "-") {
+		sign, s = "-", s[1:]
+	}
+	head := len(s) % 3
+	if head == 0 {
+		head = 3
+	}
+	parts := []string{s[:head]}
+	for i := head; i < len(s); i += 3 {
+		parts = append(parts, s[i:i+3])
+	}
+	return sign + strings.Join(parts, ",")
+}
+
+// humanDuration renders a seconds total compactly (170440s -> "47h20m",
+// 3894s -> "1h04m", 414s -> "6m54s", 42s -> "42s").
+func humanDuration(secs float64) string {
+	total := int(secs + 0.5)
+	switch {
+	case total < 60:
+		return fmt.Sprintf("%ds", total)
+	case total < 3600:
+		return fmt.Sprintf("%dm%02ds", total/60, total%60)
+	default:
+		return fmt.Sprintf("%dh%02dm", total/3600, (total%3600)/60)
 	}
 }
 
