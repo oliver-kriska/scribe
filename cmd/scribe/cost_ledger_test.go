@@ -344,6 +344,46 @@ func TestFormatRowUSD_BranchSelection(t *testing.T) {
 	}
 }
 
+// TestRowSortKey_MatchesDisplayedMagnitude pins that the sort key equals what
+// formatRowUSD actually prints: a measured row sorts by its measured spend
+// (estimate folded into the Coverage footnote, not the cell), an unmeasured
+// row by its estimate high. Sorting by ActualUSD+EstUSDHigh could rank a row
+// that displays "$4.00" above one that displays "~$4.50".
+func TestRowSortKey_MatchesDisplayedMagnitude(t *testing.T) {
+	measured := CostSummary{ActualUSD: 4.00, EstUSDHigh: 2.00} // displays $4.00
+	estimated := CostSummary{EstUSDHigh: 4.50}                 // displays ~$…4.50
+	if rowSortKey(measured) != 4.00 {
+		t.Errorf("measured row key = %v, want 4.00 (the displayed magnitude, not 6.00)", rowSortKey(measured))
+	}
+	if rowSortKey(estimated) != 4.50 {
+		t.Errorf("estimated row key = %v, want 4.50", rowSortKey(estimated))
+	}
+	// The estimated row displays a bigger number, so it must sort ahead.
+	if !(rowSortKey(estimated) > rowSortKey(measured)) {
+		t.Errorf("estimated ($4.50 shown) should outrank measured ($4.00 shown)")
+	}
+}
+
+// TestPrintAlignedTable_RaggedRowsDoNotPanic guards the width-slice sizing: a
+// body/footer row wider than the header used to index w[c] out of range and
+// panic the whole `scribe cost` command. The renderer must tolerate ragged
+// rows instead of crashing the report.
+func TestPrintAlignedTable_RaggedRowsDoNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("printAlignedTable panicked on a ragged row: %v", r)
+		}
+	}()
+	header := []string{"a", "b"}
+	body := [][]string{
+		{"1", "2", "3"}, // wider than header
+		{"x"},           // narrower than header
+		{"y", "z"},      // exact
+	}
+	footer := []string{"f1", "f2", "f3", "f4"} // widest of all
+	printAlignedTable(header, body, footer)
+}
+
 func TestParseClaudeResult_HappyPath(t *testing.T) {
 	stdout := `{"type":"result","subtype":"success","is_error":false,"result":"ok","usage":{"input_tokens":10,"output_tokens":20},"total_cost_usd":0.001}`
 	env, ok := parseClaudeResult(stdout)
