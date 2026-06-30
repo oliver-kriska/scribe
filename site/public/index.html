@@ -2008,7 +2008,7 @@
       Install
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8h9M9 4.5l3.5 3.5L9 11.5"/></svg>
     </a>
-    <button class="nav__menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false">
+    <button class="nav__menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
     </button>
   </div>
@@ -2017,14 +2017,12 @@
 <div class="menu" id="menu">
   <a href="#how">How it works</a>
   <a href="#features">Features</a>
-  <a href="#autonomous">Autonomous loop</a>
+  <a href="#autonomous">Loop</a>
   <a href="#teams">Teams</a>
-  <a href="#cost">Inference &amp; cost</a>
-  <a href="#compare">How it compares</a>
+  <a href="#cost">Cost</a>
+  <a href="#compare">Compare</a>
   <a href="#cli">CLI</a>
-  <a href="#commands">Commands</a>
   <a href="#local">Local mode</a>
-  <a href="#feels">In practice</a>
   <a href="#faq">FAQ</a>
   <a href="https://github.com/oliver-kriska/scribe">GitHub</a>
   <button class="theme-toggle theme-toggle--mobile" id="themeToggleMobile" type="button" aria-label="Toggle theme">
@@ -3041,15 +3039,15 @@ scribe doctor <span class="flag">--section</span> localmode
   // ---------- mobile menu ----------
   const menuBtn = document.getElementById('menuBtn');
   const menu = document.getElementById('menu');
-  menuBtn.addEventListener('click', () => {
-    const open = menu.classList.toggle('is-open');
+  const setMenu = open => {
+    menu.classList.toggle('is-open', open);
     menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
-  menu.addEventListener('click', e => {
-    if (e.target.matches('a')) {
-      menu.classList.remove('is-open');
-      menuBtn.setAttribute('aria-expanded', 'false');
-    }
+    menuBtn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  };
+  menuBtn.addEventListener('click', () => setMenu(!menu.classList.contains('is-open')));
+  menu.addEventListener('click', e => { if (e.target.matches('a')) setMenu(false); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && menu.classList.contains('is-open')) { setMenu(false); menuBtn.focus(); }
   });
 
   // ---------- scroll progress bar ----------
