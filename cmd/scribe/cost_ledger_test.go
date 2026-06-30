@@ -331,8 +331,8 @@ func TestFormatRowUSD_BranchSelection(t *testing.T) {
 		expect string
 	}{
 		{"real only", CostSummary{ActualUSD: 1.234}, "$1.23"},
-		{"est only", CostSummary{EstUSDLow: 0.1, EstUSDHigh: 0.5}, "$0.10-0.50"},
-		{"mixed", CostSummary{ActualUSD: 1.0, EstUSDHigh: 0.5}, "$1.00+~$0.50"},
+		{"est only is flagged with ~", CostSummary{EstUSDLow: 0.1, EstUSDHigh: 0.5}, "~$0.10-0.50"},
+		{"mixed shows measured only (est goes to footnote)", CostSummary{ActualUSD: 1.0, EstUSDHigh: 0.5}, "$1.00"},
 		{"sub-cent real floors to <$0.01", CostSummary{ActualUSD: 0.003}, "<$0.01"},
 		{"none", CostSummary{}, "—"},
 	}
