@@ -62,6 +62,14 @@ func sensitiveProbes() map[string]sensitiveConfig {
 	typ := reflect.TypeOf(sensitiveConfig{})
 	for i := range typ.NumField() {
 		field := typ.Field(i)
+		// The routing maps are keyed by fixed op labels and wired through
+		// llmRoutingTargets, not as scalar leaves — a generic "trust-probe"
+		// key can't round-trip through applyTo, and sensitiveFrom always
+		// canonicalizes to all 12 keys. They're covered end-to-end by
+		// TestRoutingLock* instead.
+		if field.Name == "LLMProviders" || field.Name == "LLMModels" {
+			continue
+		}
 		if field.Type.Kind() == reflect.Struct {
 			for j := range field.Type.NumField() {
 				var s sensitiveConfig
@@ -93,7 +101,10 @@ func TestSensitiveConfigWiringComplete(t *testing.T) {
 		// to a zero value (or never snapshot it at all).
 		cfg := &ScribeConfig{}
 		probe.applyTo(cfg)
-		if got := sensitiveFrom(cfg); !reflect.DeepEqual(got, probe) {
+		// Strip routing on both sides: these probes target scalar leaves and
+		// carry nil maps, while sensitiveFrom always emits the canonical
+		// 12-key routing maps. Routing round-trips in TestRoutingLock*.
+		if got := sensitiveFrom(cfg).withoutLLMRouting(); !reflect.DeepEqual(got, probe.withoutLLMRouting()) {
 			t.Errorf("%s: lost in applyTo→sensitiveFrom round-trip\n got %+v\nwant %+v", name, got, probe)
 		}
 		// Drift detection: the hash gates enforcement...

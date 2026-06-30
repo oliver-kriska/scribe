@@ -263,3 +263,157 @@ func TestSensitiveDiff(t *testing.T) {
 		t.Errorf("self-diff not empty: %v", d)
 	}
 }
+
+// --- #43 follow-up: LLM provider/model routing lock ---
+
+// TestRoutingLockRevertsPushedProvider: in a team KB a pushed llm.provider
+// (or per-op provider) flip to a NAMED hosted provider redirects KB content
+// to that provider's built-in endpoint with no base_url to catch it. The
+// trust lock must revert both the top-level and per-op routing to the trusted
+// snapshot.
+func TestRoutingLockRevertsPushedProvider(t *testing.T) {
+	root := setupTrustKB(t, "team: true\nllm:\n  provider: ollama\n  model: gemma3:4b\n", "")
+	ensureConfigTrust(root)
+
+	attack := "team: true\n" +
+		"llm:\n  provider: together\n  model: Qwen/Qwen3-235B\n" +
+		"absorb:\n  pass2_provider: groq\n  pass2_model: llama-3.3-70b\n"
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte(attack), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := loadConfig(root)
+	if cfg.LLM.Provider == "together" {
+		t.Errorf("pushed llm.provider=together survived the trust lock")
+	}
+	if cfg.LLM.Provider != "ollama" || cfg.LLM.Model != "gemma3:4b" {
+		t.Errorf("llm routing not reverted to trusted values: provider=%q model=%q", cfg.LLM.Provider, cfg.LLM.Model)
+	}
+	// The per-op flip is the bypass the old comment ignored — it must revert
+	// too (back to "" then cascade to the trusted ollama provider).
+	if cfg.Absorb.Pass2Provider == "groq" {
+		t.Errorf("pushed absorb.pass2_provider=groq survived the trust lock: %q", cfg.Absorb.Pass2Provider)
+	}
+}
+
+// TestRoutingLockMigrationNoSpuriousDrift: a snapshot recorded before #43
+// (nil routing maps) must NOT lock routing or report phantom drift — a
+// provider change reads through unreverted (preserving pre-#43 behavior)
+// until the record is upgraded. This is the safety that stops an upgrade
+// from silently flipping live routing on existing enaia/scriptorium records.
+func TestRoutingLockMigrationNoSpuriousDrift(t *testing.T) {
+	root := setupTrustKB(t, "team: true\nllm:\n  provider: ollama\n  model: gemma3:4b\n", "")
+	// Simulate a pre-#43 record: snapshot with the routing maps stripped.
+	view, ok := repoSensitiveView(root)
+	if !ok {
+		t.Fatal("repo view unreadable")
+	}
+	old := view.withoutLLMRouting()
+	if old.LLMProviders != nil {
+		t.Fatal("withoutLLMRouting did not nil the maps")
+	}
+	if err := saveTrustRecord(root, trustRecord{Sensitive: old, ApprovedAt: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A pushed provider change with the old record present must read through
+	// (not be reverted) — routing isn't locked until the record upgrades.
+	push := "team: true\nllm:\n  provider: together\n  model: Qwen/Qwen3-235B\n"
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte(push), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(root)
+	if cfg.LLM.Provider != "together" {
+		t.Errorf("pre-#43 record wrongly locked routing: provider=%q, want together (unreverted)", cfg.LLM.Provider)
+	}
+	// And `scribe config diff` shows no routing rows against an old record.
+	newView, _ := repoSensitiveView(root)
+	for _, line := range sensitiveDiff(old, newView) {
+		if strings.Contains(line, ".provider:") || strings.Contains(line, ".model:") {
+			t.Errorf("pre-#43 record produced a phantom routing diff row: %q", line)
+		}
+	}
+}
+
+// TestRoutingLockAutoUpgrade: the next sync (ensureConfigTrust) silently
+// upgrades a pre-#43 record to lock the then-current routing, after which a
+// pushed provider flip IS reverted.
+func TestRoutingLockAutoUpgrade(t *testing.T) {
+	root := setupTrustKB(t, "team: true\nllm:\n  provider: ollama\n  model: gemma3:4b\n", "")
+	view, _ := repoSensitiveView(root)
+	if err := saveTrustRecord(root, trustRecord{Sensitive: view.withoutLLMRouting(), ApprovedAt: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Upgrade fires only when the previously-locked keys still match.
+	ensureConfigTrust(root)
+	rec := loadTrustRecord(root)
+	if rec == nil || rec.Sensitive.LLMProviders == nil {
+		t.Fatalf("ensureConfigTrust did not upgrade the pre-#43 record")
+	}
+	if rec.Sensitive.LLMProviders["llm"] != "ollama" {
+		t.Errorf("upgraded record locked the wrong provider: %q", rec.Sensitive.LLMProviders["llm"])
+	}
+	// ApprovedAt is preserved (not a fresh approval).
+	if rec.ApprovedAt != "2026-01-01T00:00:00Z" {
+		t.Errorf("auto-upgrade reset ApprovedAt to %q", rec.ApprovedAt)
+	}
+
+	// Now routing is locked: a pushed flip reverts.
+	push := "team: true\nllm:\n  provider: together\n  model: Qwen/Qwen3-235B\n"
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte(push), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(root)
+	if cfg.LLM.Provider != "ollama" {
+		t.Errorf("after auto-upgrade a pushed provider flip was not reverted: provider=%q", cfg.LLM.Provider)
+	}
+}
+
+// TestRoutingLockAutoUpgradeSkippedOnV0Drift: if the previously-locked keys
+// themselves drifted, ensureConfigTrust must NOT auto-upgrade (that would
+// silently bless an unreviewed change); the user resolves it explicitly.
+func TestRoutingLockAutoUpgradeSkippedOnV0Drift(t *testing.T) {
+	root := setupTrustKB(t, "team: true\nsources:\n  exclude: [\"/personal\"]\n", "")
+	view, _ := repoSensitiveView(root)
+	if err := saveTrustRecord(root, trustRecord{Sensitive: view.withoutLLMRouting(), ApprovedAt: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	// v0 drift: the exclude filter (a locked key) changes.
+	drift := "team: true\nsources:\n  exclude: []\n"
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte(drift), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ensureConfigTrust(root)
+	rec := loadTrustRecord(root)
+	if rec.Sensitive.LLMProviders != nil {
+		t.Errorf("auto-upgrade ran despite v0 drift — would bless an unreviewed change")
+	}
+}
+
+// TestRoutingLockDiffShowsRows: against a #43 snapshot, sensitiveDiff surfaces
+// provider/model changes so `scribe config diff` shows what to review.
+func TestRoutingLockDiffShowsRows(t *testing.T) {
+	root := setupTrustKB(t, "team: true\nllm:\n  provider: ollama\n  model: gemma3:4b\n", "")
+	ensureConfigTrust(root)
+	rec := loadTrustRecord(root)
+
+	changed := ScribeConfig{}
+	changed.LLM.Provider = "together"
+	changed.LLM.Model = "Qwen/Qwen3-235B"
+	current := sensitiveFrom(&changed)
+
+	diff := sensitiveDiff(rec.Sensitive, current)
+	var sawProvider, sawModel bool
+	for _, line := range diff {
+		if strings.HasPrefix(line, "llm.provider:") {
+			sawProvider = true
+		}
+		if strings.HasPrefix(line, "llm.model:") {
+			sawModel = true
+		}
+	}
+	if !sawProvider || !sawModel {
+		t.Errorf("config diff missing routing rows: %v", diff)
+	}
+}
