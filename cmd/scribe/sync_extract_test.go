@@ -40,7 +40,7 @@ func TestProjectsNeedingExtractionUnchangedSummary(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &Manifest{Projects: map[string]*ProjectEntry{}}
-			for i := 0; i < tc.unchanged; i++ {
+			for i := range tc.unchanged {
 				// Non-git dir, previously extracted, no .md files newer
 				// than the marker → counted as unchanged.
 				m.Projects[fmt.Sprintf("idle-%d", i)] = &ProjectEntry{
@@ -49,7 +49,7 @@ func TestProjectsNeedingExtractionUnchangedSummary(t *testing.T) {
 					LastExtracted: time.Now().UTC().Format(time.RFC3339),
 				}
 			}
-			for i := 0; i < tc.changed; i++ {
+			for i := range tc.changed {
 				// Never extracted → needs extraction.
 				m.Projects[fmt.Sprintf("busy-%d", i)] = &ProjectEntry{
 					Path: t.TempDir(),

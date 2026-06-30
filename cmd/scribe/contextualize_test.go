@@ -227,10 +227,13 @@ func TestContextualizeRawArticles_MarkerIsSourceOfTruth(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Both recorded "done" in the (now non-authoritative) filename log.
-	logBytes, _ := json.Marshal(map[string]string{
+	logBytes, err := json.Marshal(map[string]string{
 		"a.md": "2026-06-01T00:00:00Z",
 		"b.md": "2026-06-01T00:00:00Z",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "wiki", "_contextualized_log.json"), logBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}

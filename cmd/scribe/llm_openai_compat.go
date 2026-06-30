@@ -374,7 +374,7 @@ func (p *openaiCompatProvider) postChat(ctx context.Context, reqBody oaiChatRequ
 		return "", oaiChatResponse{}, 0, "", fmt.Errorf("marshal request: %w", err)
 	}
 	url := p.baseURL + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return "", oaiChatResponse{}, 0, "", fmt.Errorf("build request: %w", err)
 	}

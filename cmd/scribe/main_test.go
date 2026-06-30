@@ -77,7 +77,7 @@ func TestMain(m *testing.M) {
 // "Commands:" section at the top of --help.
 func TestRootCommandsAreGrouped(t *testing.T) {
 	tp := reflect.TypeOf(CLI{})
-	for i := 0; i < tp.NumField(); i++ {
+	for i := range tp.NumField() {
 		f := tp.Field(i)
 		if _, isCmd := f.Tag.Lookup("cmd"); !isCmd {
 			continue

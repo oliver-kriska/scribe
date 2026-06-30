@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -791,7 +792,7 @@ func padCell(s string, width int, left bool) string {
 // commaInt formats an integer with thousands separators (16196224 ->
 // "16,196,224") so long token and call counts stay scannable.
 func commaInt(n int64) string {
-	s := fmt.Sprintf("%d", n)
+	s := strconv.FormatInt(n, 10)
 	sign := ""
 	if strings.HasPrefix(s, "-") {
 		sign, s = "-", s[1:]

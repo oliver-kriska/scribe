@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -51,7 +52,7 @@ func (c *EachCmd) effectiveArgs() []string {
 func (c *EachCmd) Run() error {
 	args := c.effectiveArgs()
 	if len(args) == 0 {
-		return fmt.Errorf("usage: scribe each -- <subcommand> [args...]")
+		return errors.New("usage: scribe each -- <subcommand> [args...]")
 	}
 	kbs := registeredKBs()
 	if len(kbs) == 0 {

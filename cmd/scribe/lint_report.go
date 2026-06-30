@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 )
 
 // Warning classes for grouped lint output. Constants keep the warnf call
@@ -136,7 +137,7 @@ func (r *lintReport) flush() {
 		return classes[i] < classes[j]
 	})
 
-	countW := len(fmt.Sprintf("%d", r.classCounts[classes[0]]))
+	countW := len(strconv.Itoa(r.classCounts[classes[0]]))
 	nameW := 0
 	for _, c := range classes {
 		if len(c) > nameW {

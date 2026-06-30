@@ -345,7 +345,7 @@ func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 				continue
 			}
 			total++
-			needs := false
+			var needs bool
 			switch {
 			case entry.LastSHA == "":
 				needs = true

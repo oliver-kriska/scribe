@@ -152,7 +152,7 @@ func TestAddJitter(t *testing.T) {
 		t.Errorf("addJitter(-1s) = %v", got)
 	}
 	base := 100 * time.Millisecond
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		got := addJitter(base)
 		if got < base || got >= base+base/2 {
 			t.Fatalf("addJitter(%v) = %v, want [d, d+d/2)", base, got)

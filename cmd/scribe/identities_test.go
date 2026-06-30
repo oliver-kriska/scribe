@@ -161,7 +161,7 @@ func TestRenderMentionsBlock(t *testing.T) {
 
 	t.Run("truncates at the prompt cap", func(t *testing.T) {
 		counts := make(map[string]int, maxMentionsForIdentityPrompt+10)
-		for i := 0; i < maxMentionsForIdentityPrompt+10; i++ {
+		for i := range maxMentionsForIdentityPrompt + 10 {
 			counts[fmt.Sprintf("Person%04d Mention", i)] = 1
 		}
 		got := renderMentionsBlock(counts)
