@@ -1622,6 +1622,44 @@
     color: var(--fg-soft);
   }
 
+  /* -------------------- cost surface (re-uses .terminal chrome) -------------------- */
+  .cost {
+    display: grid;
+    gap: 18px;
+    justify-items: center;
+  }
+  .cost .terminal {
+    width: 100%;
+    max-width: 900px;
+  }
+  .cost__lines {
+    margin: 0;
+    padding: 16px 18px 18px;
+    color: var(--term-fg);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.55;
+    white-space: pre;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cost__lines .c-prompt { color: var(--term-cyan); user-select: none; }
+  .cost__caption {
+    color: var(--muted);
+    font-size: 13.5px;
+    max-width: 64ch;
+    text-align: center;
+    line-height: 1.55;
+  }
+  .cost__caption code {
+    background: var(--bg-sub);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: var(--r-xs);
+    font-size: 0.9em;
+    color: var(--fg-soft);
+  }
+
   /* -------------------- search section (2-col code cards) -------------------- */
   .search {
     display: grid;
@@ -1934,6 +1972,8 @@
       <a class="nav__link" href="#how">How it works</a>
       <a class="nav__link" href="#features">Features</a>
       <a class="nav__link" href="#autonomous">Loop</a>
+      <a class="nav__link" href="#teams">Teams</a>
+      <a class="nav__link" href="#cost">Cost</a>
       <a class="nav__link" href="#compare">Compare</a>
       <a class="nav__link" href="#cli">CLI</a>
       <a class="nav__link" href="#local">Local mode</a>
@@ -1958,6 +1998,8 @@
   <a href="#how">How it works</a>
   <a href="#features">Features</a>
   <a href="#autonomous">Autonomous loop</a>
+  <a href="#teams">Teams</a>
+  <a href="#cost">Inference &amp; cost</a>
   <a href="#compare">How it compares</a>
   <a href="#cli">CLI</a>
   <a href="#commands">Commands</a>
@@ -2196,6 +2238,119 @@
     </div>
 
     <p class="autonomous__closer">Every absorb tick reindexes qmd, so the next Claude Code or Codex session, in any repo on this machine, finds what scribe just wrote. The loop closes itself, in the background, on a schedule you forget about.</p>
+  </div>
+</section>
+
+<!-- ============================ TEAMS ============================ -->
+<section class="s" id="teams">
+  <div class="wrap">
+    <header class="s__head">
+      <div class="s__eyebrow">For teams</div>
+      <h2 class="s__title">One KB. The whole team writes to it.</h2>
+      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB — and scribe handles the coordination, so nobody hand-merges a wiki or runs the same extraction twice.</p>
+    </header>
+
+    <div class="features">
+      <article class="feature">
+        <div class="feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.6"/><circle cx="4" cy="12" r="1.6"/><circle cx="12" cy="8" r="1.6"/><path d="M4 5.6v4.8M5.5 4.2c3 0 5 .9 5 3.8M5.5 11.8c3 0 5-.9 5-3.8"/></svg>
+        </div>
+        <h3>Clone and go</h3>
+        <p><code>scribe init --team</code> scaffolds a shared KB; a teammate clones it and scribe rebuilds the local manifest from committed state. Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts — so each run already sees what others wrote, and a shared ledger keeps two machines from extracting the same revision.</p>
+      </article>
+
+      <article class="feature">
+        <div class="feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8.5" width="11" height="5" rx="1.5"/><path d="M8 10.5V2.5M5.5 5 8 2.5 10.5 5"/></svg>
+        </div>
+        <h3>Promote what's worth sharing</h3>
+        <p><code>scribe promote &lt;article&gt; --to team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Curate privately; publish deliberately — derived and coordination files are refused as sources.</p>
+      </article>
+
+      <article class="feature">
+        <div class="feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 9.2A5.5 5.5 0 0 1 6.8 3a5.5 5.5 0 1 0 6.2 6.2z"/></svg>
+        </div>
+        <h3>One machine dreams</h3>
+        <p>The weekly Dream consolidation takes a committed leader lease, so on a shared KB exactly one machine runs it. No two laptops race to rewrite the same wiki at 02:00 Sunday.</p>
+      </article>
+
+      <article class="feature">
+        <div class="feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5 2v3.6c0 3.2-2.1 5.6-5 6.9-2.9-1.3-5-3.7-5-6.9V3.5l5-2z"/><path d="M5.8 8 7.3 9.5 10.3 6.3"/></svg>
+        </div>
+        <h3>A shared config can't widen ingestion</h3>
+        <p>A trust layer pins the sensitive surface of a shared <code>scribe.yaml</code> — provider, model, ingest paths. A pushed change that would redirect content to a new endpoint or drain a new directory reverts to the trusted snapshot until you approve it.</p>
+      </article>
+
+      <article class="feature">
+        <div class="feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5.3 8.1 7 9.8l3.7-3.9"/></svg>
+        </div>
+        <h3>Approval gate on discovery</h3>
+        <p>Discovered projects start pending. <code>scribe projects {list,approve,ignore,review}</code> controls what enters the pipeline; <code>allowed_remotes</code> and source filters gate discovery by git-remote identity, so a teammate's unrelated repo never leaks in.</p>
+      </article>
+
+      <article class="feature">
+        <div class="feature__icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 6h11M6 6v7.5"/></svg>
+        </div>
+        <h3>See what the team's learning</h3>
+        <p>A generated <code>wiki/_digest.md</code> dashboard routes activity by owner and domain; pull subscriptions surface teammates' new pages in the domains you care about, instead of a silent wiki you forget to read.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ INFERENCE & COST ============================ -->
+<section class="s" id="cost">
+  <div class="wrap">
+    <header class="s__head">
+      <div class="s__eyebrow">Inference &amp; cost</div>
+      <h2 class="s__title">Local, hosted, or Anthropic — and a bill you can read.</h2>
+      <p class="s__sub">Run the whole pipeline on local Ollama for $0, point it at a hosted OpenAI-compatible API — Together, Groq, Fireworks, Hugging Face — when the laptop is running hot, or keep <code>claude -p</code> for the Anthropic path. The three coexist; pick the trade per op in <code>scribe.yaml</code>, and nothing reaches a paid provider without explicit config. <code>scribe cost</code> then reconciles every token across providers and KBs — to the cent against the provider's own dashboard.</p>
+    </header>
+
+    <div class="cost">
+      <div class="terminal" aria-label="scribe cost — example output">
+        <div class="terminal__bar">
+          <div class="terminal__dots"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span></div>
+          <div class="terminal__title">scribe cost — 7 days, 2 KBs</div>
+          <div style="width:40px;"></div>
+        </div>
+<pre class="cost__lines"><span class="c-prompt">~ $</span> scribe cost
+
+scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
+
+  model                                             calls     ok  cancl  rate  tmout  wallclock   in-tokens  out-tokens      usd
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  sonnet                                              301    281      0     0      3      6h54m     250,468     789,357   $92.80
+  haiku                                               151    144      0     0      7      2h21m       1,251     551,761   $10.77
+  together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput    195    195      0     0      0      1h06m   1,261,197     146,728    $0.34
+  ollama/gemma3:12b                                   120    120      0     0      0      4h57m   1,037,866     138,258        —
+  ollama/qwen3:30b-a3b-instruct-2507-q4_K_M         1,643  1,627      0     0      0     23h39m  11,317,941   1,122,293        —
+  ollama/gemma3:4b                                    921    912      0     0      0      8h23m   2,355,608     672,157        —
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  TOTAL                                             3,331  3,279      0     0     10     47h22m  16,224,331   3,420,554  $103.91
+
+  By provider:
+  provider   calls   in-tokens  out-tokens      usd
+  ─────────────────────────────────────────────────
+  anthropic    452     251,719   1,341,118  $103.57
+  together     195   1,261,197     146,728    $0.34
+  ollama     2,684  14,711,415   1,932,708        —
+
+  By KB:
+  KB           calls  in-tokens  out-tokens      usd
+  ──────────────────────────────────────────────────
+  team-kb      1,732  7,020,329   2,211,137  $102.96
+  personal-kb  1,599  9,204,002   1,209,417    $0.95
+
+  Coverage: 3175/3331 calls had token data; the other 156 add ~$0.62 estimated, not shown above.
+  usd = measured spend from token data.  cancl = sibling-canceled (rate-limit cascade).  tmout = ctx.DeadlineExceeded.</pre>
+      </div>
+      <p class="cost__caption">Real output, names anonymized. That week, the Anthropic path cost $103 on the team KB; the hosted Together run did comparable work for <strong>$0.34</strong>, and the local Ollama models cost nothing. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
+    </div>
   </div>
 </section>
 
