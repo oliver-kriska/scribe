@@ -1540,10 +1540,10 @@
 
   .cmp__caption {
     color: var(--muted);
-    font-size: 12.5px;
-    font-family: var(--font-mono);
-    letter-spacing: 0.01em;
+    font-size: 13px;
+    font-family: var(--font-body);
     line-height: 1.6;
+    max-width: 78ch;
   }
   .cmp__quote {
     background: var(--accent-soft);
@@ -2108,7 +2108,6 @@
 <section class="s" id="features">
   <div class="wrap">
     <header class="s__head">
-      <div class="s__eyebrow">Features</div>
       <h2 class="s__title">What makes scribe different.</h2>
       <p class="s__sub">scribe isn't RAG, it isn't Obsidian, and it isn't another LLM-on-every-session burner. It sits between them: watches your work, writes the notes for you, and compounds knowledge across every project you touch.</p>
     </header>
@@ -2774,7 +2773,6 @@ scribe doctor <span class="flag">--section</span> localmode
 <section class="s" id="who">
   <div class="wrap">
     <header class="s__head">
-      <div class="s__eyebrow">Who it's for</div>
       <h2 class="s__title">Built for developers who use AI tools every day.</h2>
       <p class="s__sub">For developers, the expensive half of the job isn't deciding. It's rebuilding the context you already had. scribe automates that half: if your Claude Code or Codex history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.</p>
     </header>
