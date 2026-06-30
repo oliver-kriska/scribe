@@ -29,7 +29,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
-<meta property="article:modified_time" content="2026-06-08T00:00:00Z" />
+<meta property="article:modified_time" content="2026-06-30T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -194,7 +194,7 @@
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og-v2.png",
   "datePublished": "2026-05-14",
-  "dateModified": "2026-06-08",
+  "dateModified": "2026-06-30",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -2098,7 +2098,7 @@
       </div>
 
       <div class="hero__visual">
-        <div class="terminal" aria-hidden="false">
+        <div class="terminal" aria-hidden="true">
           <div class="terminal__bar">
             <div class="terminal__dots">
               <span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span>
@@ -2993,7 +2993,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT · last updated 2026-06-08</span>
+      <span>MIT · last updated 2026-06-30</span>
       <span>github.com/oliver-kriska/scribe</span>
     </div>
   </div>
@@ -3054,10 +3054,12 @@ scribe doctor <span class="flag">--section</span> localmode
   // ---------- mobile menu ----------
   const menuBtn = document.getElementById('menuBtn');
   const menu = document.getElementById('menu');
+  const bgEls = [document.getElementById('main-content'), document.querySelector('.footer')].filter(Boolean);
   const setMenu = open => {
     menu.classList.toggle('is-open', open);
     menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     menuBtn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    bgEls.forEach(el => { el.inert = open; }); // trap focus in the overlay while open
   };
   menuBtn.addEventListener('click', () => setMenu(!menu.classList.contains('is-open')));
   menu.addEventListener('click', e => { if (e.target.matches('a')) setMenu(false); });
