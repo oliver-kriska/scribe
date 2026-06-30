@@ -1,63 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><script data-od-sandbox-shim>(function(){
-  function makeStore(){
-    var data = {};
-    var api = {
-      getItem: function(k){ return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
-      setItem: function(k, v){ data[k] = String(v); },
-      removeItem: function(k){ delete data[k]; },
-      clear: function(){ data = {}; },
-      key: function(i){ return Object.keys(data)[i] || null; }
-    };
-    Object.defineProperty(api, 'length', { get: function(){ return Object.keys(data).length; } });
-    return api;
-  }
-  function tryShim(name){
-    var works = false;
-    try { works = !!window[name] && typeof window[name].getItem === 'function'; void window[name].length; }
-    catch (_) { works = false; }
-    if (works) return;
-    try { Object.defineProperty(window, name, { configurable: true, value: makeStore() }); }
-    catch (_) { try { window[name] = makeStore(); } catch (__) {} }
-  }
-  tryShim('localStorage');
-  tryShim('sessionStorage');
-  document.addEventListener('click', (e) => {
-    if (!e.target || !(e.target instanceof Element)) return;
-    var link = e.target.closest('a[href]');
-    if (!link) return;
-    var href = link.getAttribute('href');
-    if (href === null) return;
-    var isAnchor = href.startsWith('#') || href === '';
-    if (isAnchor) {
-      e.preventDefault();
-      if (href === '' || href === '#') {
-        window.scrollTo({ top: 0 });
-        history.replaceState(null, '', ' ');
-      } else {
-        var targetId = href.slice(1);
-        var target = targetId ? document.getElementById(targetId) : null;
-        if (target) {
-          target.scrollIntoView();
-          location.hash === href && history.replaceState(null, '', ' ');
-          location.hash = href;
-        }
-      }
-    } else if (link.getAttribute('target') === '_blank') {
-      e.preventDefault();
-      let safe = false;
-      try {
-        var url = new URL(href, location.href);
-        safe =
-          url.protocol === 'http:' ||
-          url.protocol === 'https:' ||
-          url.protocol === 'mailto:';
-      } catch (_) {}
-      safe && window.open(href, '_blank', 'noopener,noreferrer');
-    }
-  });
-})();</script>
+<head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>scribe — your knowledge base, written by your tools</title>
@@ -84,7 +27,7 @@
 <meta property="og:image" content="https://getscribe.dev/og-v2.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,000 docs. $0/sync. ~70s." />
+<meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
 <meta property="article:modified_time" content="2026-06-08T00:00:00Z" />
 
@@ -2588,13 +2531,13 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
 
     <div class="code-card">
       <div class="code-tabs" role="tablist" id="tabs">
-        <button class="code-tab" role="tab" data-tab="install" aria-selected="true" aria-controls="panel-install" id="install" tabindex="0">install</button>
+        <button class="code-tab" role="tab" data-tab="install" aria-selected="true" aria-controls="panel-install" id="tab-install" tabindex="0">install</button>
         <button class="code-tab" role="tab" data-tab="local" aria-selected="false" aria-controls="panel-local" id="tab-local" tabindex="-1">scribe.yaml (local mode)</button>
         <button class="code-tab" role="tab" data-tab="query" aria-selected="false" aria-controls="panel-query" id="tab-query" tabindex="-1">search</button>
         <button class="code-tab" role="tab" data-tab="doctor" aria-selected="false" aria-controls="panel-doctor" id="tab-doctor" tabindex="-1">doctor</button>
       </div>
 
-      <div class="code-panel" data-tab="install" data-active="true" id="panel-install" role="tabpanel" aria-labelledby="install" tabindex="0">
+      <div class="code-panel" data-tab="install" data-active="true" id="panel-install" role="tabpanel" aria-labelledby="tab-install" tabindex="0">
         <button class="copy-btn" data-copy-target="code-install">copy</button>
 <pre id="code-install"><span class="comment"># brew</span>
 brew tap oliver-kriska/scribe
@@ -2769,7 +2712,7 @@ scribe doctor <span class="flag">--section</span> localmode
           <span>ollama ps</span>
         </div>
 <pre>$ <span class="y-key">scribe</span> sync
-<span class="y-cmt">→ discovering projects ...                      37 found</span>
+<span class="y-cmt">→ discovering projects ...                      41 found</span>
 <span class="y-cmt">→ triage (BM25)  ...........  142 sessions / 18 kept</span>
 <span class="y-cmt">→ absorb pass 1  ...........  atomic facts grounded</span>
 <span class="y-cmt">→ absorb pass 2  ...........  fan-out: 24 entity pages</span>
