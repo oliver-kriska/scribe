@@ -30,6 +30,27 @@ import (
 //
 // Phase 1B: synchronous, single-file marker invocations. Phase 3 will
 // add marker_server batching for cold-load amortization.
+// pathWithinRoot reports whether target resolves to root itself or a path
+// beneath it. Lexical only (Abs + Rel) — it deliberately does not resolve
+// symlinks, since the target may not exist yet, but that is enough to reject
+// the `../../` and absolute-path escapes a repo-controlled scribe.yaml could
+// smuggle into a path field.
+func pathWithinRoot(root, target string) bool {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(absRoot, absTarget)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
 func drainFileInbox(root string) (int, error) {
 	cfg := loadConfig(root)
 	inboxRel := cfg.Ingest.InboxPath
@@ -37,6 +58,16 @@ func drainFileInbox(root string) (int, error) {
 		inboxRel = "raw/inbox"
 	}
 	inbox := filepath.Join(root, inboxRel)
+
+	// Containment guard: ingest.inbox_path comes from the (repo-controlled,
+	// NOT trust-locked) scribe.yaml. A path that escapes the KB root —
+	// `../../etc`, an absolute path, a symlink-y traversal — would let a
+	// shared team config make scribe read arbitrary local files and ingest
+	// them as articles (exfiltration), or scatter .processed/.failed dirs
+	// outside the KB. Refuse anything that doesn't resolve under root.
+	if !pathWithinRoot(root, inbox) {
+		return 0, fmt.Errorf("ingest.inbox_path %q resolves outside the KB root %q — refusing to drain an out-of-tree inbox", inboxRel, root)
+	}
 
 	st, err := os.Stat(inbox)
 	if err != nil {
