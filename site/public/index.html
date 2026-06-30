@@ -66,6 +66,53 @@
 }
 </script>
 
+<!-- JSON-LD: HowTo (install + first run; mirrors the CLI install tab) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Install scribe and run the knowledge-base pipeline",
+  "description": "Install the scribe CLI with Homebrew, bootstrap a knowledge base, put the extraction pipeline on a schedule, and verify the setup.",
+  "totalTime": "PT5M",
+  "tool": [
+    { "@type": "HowToTool", "name": "Homebrew" },
+    { "@type": "HowToTool", "name": "git" }
+  ],
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Tap the formula",
+      "text": "Add the scribe Homebrew tap: brew tap oliver-kriska/scribe",
+      "url": "https://getscribe.dev/#install"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Install the binary",
+      "text": "Install the single-binary CLI: brew install oliver-kriska/scribe/scribe",
+      "url": "https://getscribe.dev/#install"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Bootstrap a knowledge base",
+      "text": "Scaffold a KB and wire the agent handshake into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md: scribe init --path ~/my-kb",
+      "url": "https://getscribe.dev/#install"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Put the pipeline on a schedule",
+      "text": "Install LaunchAgents on macOS (or get crontab lines on Linux) so the pipeline runs itself: scribe cron install",
+      "url": "https://getscribe.dev/#install"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Verify the setup",
+      "text": "Check the install, cron, git remote, and Ollama health: scribe doctor",
+      "url": "https://getscribe.dev/#install"
+    }
+  ]
+}
+</script>
+
 <!-- JSON-LD: FAQPage (mirrors the FAQ section) -->
 <script type="application/ld+json">
 {
@@ -278,6 +325,11 @@
       0 1px 1px oklch(20% 0.012 250 / 0.04),
       0 10px 30px oklch(20% 0.012 250 / 0.10),
       0 28px 60px oklch(20% 0.012 250 / 0.08);
+    /* flatter rest-state shadow for secondary terminals (#commands, #cost);
+       the hero terminal keeps the full 3-layer depth as the primary object */
+    --shadow-terminal-2:
+      0 1px 2px oklch(20% 0.012 250 / 0.05),
+      0 8px 24px oklch(20% 0.012 250 / 0.06);
 
     /* hero knowledge-graph (rgba so canvas can consume directly) */
     --graph-edge:     rgba(45, 92, 220, 0.11);
@@ -326,6 +378,9 @@
       0 0 0 1px oklch(30% 0.014 250),
       0 10px 30px oklch(0% 0 0 / 0.45),
       0 28px 60px oklch(0% 0 0 / 0.40);
+    --shadow-terminal-2:
+      0 0 0 1px oklch(30% 0.014 250),
+      0 8px 24px oklch(0% 0 0 / 0.35);
 
     /* hero knowledge-graph (rgba so canvas can consume directly) */
     --graph-edge:     rgba(140, 175, 255, 0.14);
@@ -375,6 +430,9 @@
         0 0 0 1px oklch(30% 0.014 250),
         0 10px 30px oklch(0% 0 0 / 0.45),
         0 28px 60px oklch(0% 0 0 / 0.40);
+      --shadow-terminal-2:
+        0 0 0 1px oklch(30% 0.014 250),
+        0 8px 24px oklch(0% 0 0 / 0.35);
 
       /* hero knowledge-graph (rgba so canvas can consume directly) */
       --graph-edge:     rgba(140, 175, 255, 0.14);
@@ -475,11 +533,7 @@
     height: 100%;
     width: 100%;
     transform: scaleX(0);
-    background: linear-gradient(90deg,
-      color-mix(in oklch, var(--accent), transparent 35%) 0%,
-      var(--accent) 60%,
-      color-mix(in oklch, var(--accent), white 25%) 100%);
-    box-shadow: 0 0 8px color-mix(in oklch, var(--accent), transparent 60%);
+    background: var(--accent);
     transform-origin: left center;
     transition: opacity .2s ease;
     will-change: transform;
@@ -802,14 +856,15 @@
     border-top: 1px solid var(--border);
   }
   .stat__num {
-    font-family: var(--font-display);
-    font-size: 26px;
+    font-family: var(--font-mono);
+    font-size: 27px;
     font-weight: 600;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
     color: var(--fg);
     line-height: 1;
   }
-  .stat__num .unit { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+  .stat__num .unit { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; color: var(--muted); margin-left: 4px; letter-spacing: .02em; }
   .stat__label {
     margin-top: 6px;
     font-size: 12.5px;
@@ -826,6 +881,8 @@
     box-shadow: var(--shadow-terminal);
     border: 1px solid var(--term-border);
   }
+  /* secondary terminals rest flatter; only the hero terminal carries full depth */
+  #commands .terminal, #cost .terminal { box-shadow: var(--shadow-terminal-2); }
   .terminal__bar {
     display: flex;
     align-items: center;
