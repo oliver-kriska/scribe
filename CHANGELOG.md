@@ -82,6 +82,48 @@ spend is legible and reconciles with the provider's own dashboard.
   ledger; `scribe cost` rows sort by the dollar figure they actually display
   and the table renderer tolerates ragged rows.
 
+### Added — output & CLI ergonomics (#15, #16, #17)
+- `scribe lint` groups warnings by class in the default view — e.g.
+  `412× index_tier missing  (run: scribe tier write --missing-only)` — instead
+  of a flat per-file stream that buried real signal under hundreds of identical
+  lines. `--verbose`/`-v` restores the per-file lines; `--quiet`/`-q` (used by
+  `sync` mid-extract) prints only per-file ERRORs plus the verdict. Errors stay
+  per-file in every mode. (#15)
+- `scribe --help` groups the 60+ subcommands into titled sections — Core,
+  Content, Quality, Team, System, Debug — via Kong `group:` tags, with a
+  regression test that fails if a new command lands ungrouped. (#16)
+- `scribe status` separates the backlog **held by policy** (strictness=high with
+  no absorb opt-in, or projects over `sync.max_extract_files`) from genuinely
+  **pending** work, so a steady-state held backlog no longer reads as actionable.
+  (#17)
+
+### Changed — build/deploy split & quieter discovery (#18, #20)
+- `make build` now compiles only to the repo-local `./bin/scribe` and never
+  touches `~/.local/bin`; the deploy moved to a separate `make install`. On
+  macOS this stops a routine rebuild from invalidating the chat.db Full Disk
+  Access grant — only `install` replaces the live binary (and reminds you to
+  re-run `scribe fda`). (#18)
+- `sync --discover` collapses the per-project "unchanged, skipping" lines into a
+  single summary instead of one line per project, so the cron log surfaces real
+  activity. (#20)
+
+### Internal — lint ratchet, coverage, dependencies
+- The lint ratchet enables 17+ more golangci-lint analyzers (gocritic, intrange,
+  perfsprint, errchkjson, usestdlibvars, usetesting, wastedassign,
+  rowserrcheck/sqlclosecheck, …) and fixes every hit; `nolintlint` now requires
+  each `//nolint` to name its linter and a reason. (#32)
+- Substantially expanded `cmd/scribe` test coverage — structural lint phases,
+  identity proposals, session-log repair/pre-filter, graph subcommands, capture
+  I/O, cost estimation and retry policy. (#34)
+- Dependency bumps: `go-sqlite3` 1.14.47, `html-to-markdown` 2.5.2, plus CI
+  actions (`actions/checkout`, `actions/setup-go`, `golangci-lint-action`, …)
+  via Dependabot (#44–#49).
+
+> Note: features #15–#18 and #20 above were originally developed before the
+> hosted-provider work but were accidentally closed unmerged when a base branch
+> was deleted; they were relanded (patch-equivalent, reconciled against current
+> `main`) via #50.
+
 ## [0.2.29] — 2026-06-03
 
 Harden the shared LLM-action executor against the failure class behind a real
