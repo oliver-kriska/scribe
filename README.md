@@ -473,7 +473,10 @@ provider. Per-op `provider`/`model` always win over the top-level block.
 > tokens. `sync.daily_output_token_ceiling` halts that across **every metered
 > provider** (anthropic + hosted); local Ollama is exempt. Set it before
 > pointing at a paid endpoint. `scribe cost` rolls up tokens (and dollars, when
-> `pricing` is set) per `provider/model`.
+> `pricing` is set) per `provider/model`. By default it aggregates **every
+> registered KB** — hosted providers bill per API key, and one key usually
+> serves all your KBs, so the combined total matches the provider dashboard.
+> Scope to one KB with `scribe cost --kb <name>` (or `-C`, or run inside a KB).
 
 ### `~/.config/scribe/config.yaml` (user)
 
@@ -538,7 +541,7 @@ scribe lint --contradictions # LLM pass for factual disagreements across article
 scribe link         # link orphan articles to contextual hosts via See Also sections
 scribe watch        # long-running fsnotify watcher on ccrider DB (near-real-time session extraction)
 scribe assess <project>      # one-shot parallel deep assessment of a project (5 tracks + consolidation)
-scribe cost         # summarize claude -p calls (count, wallclock, USD estimate) from the cost ledger
+scribe cost         # summarize LLM calls (tokens, wallclock, USD) — aggregates all registered KBs; scope with --kb
 scribe sections {build,list,get}            # H1/H2/H3 section sidecars for wiki articles (Phase 5A)
 scribe tier {compute,list,set,write}        # index_tier hint (stub|brief|standard|deep|reference) (Phase 5B)
 scribe relations {get,set,rm,graph,check,migrate,migrate-revert}   # typed edges between articles (Phase 6A)
