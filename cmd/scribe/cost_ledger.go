@@ -476,24 +476,25 @@ func (c *CostCmd) Run() error {
 
 	total := printCostTable(rows)
 
+	// By provider — the rollup that maps to how you're actually billed:
+	// anthropic (claude -p), each hosted endpoint (together/groq/…), and local
+	// ollama ($0). Always shown; it's the headline cross-cut of the per-model
+	// table above.
+	fmt.Println()
+	fmt.Println("  By provider:")
+	printGroupSummary("provider", groupByProvider(rows))
+
 	if len(reports) > 1 {
-		// Per-KB subtotals: which KB drove the spend, and proof the
-		// combined TOTAL above decomposes into them.
-		sort.Slice(reports, func(i, j int) bool {
-			return reports[i].total.ActualUSD+reports[i].total.EstUSDHigh >
-				reports[j].total.ActualUSD+reports[j].total.EstUSDHigh
-		})
-		nameW := 0
-		for _, r := range reports {
-			if len(r.name) > nameW {
-				nameW = len(r.name)
-			}
+		// Per-KB subtotals: which KB drove the spend, and proof the combined
+		// TOTAL above decomposes into them.
+		kbRows := make([]CostSummary, len(reports))
+		for i, rep := range reports {
+			kbRows[i] = rep.total
+			kbRows[i].Model = rep.name
 		}
 		fmt.Println()
 		fmt.Println("  By KB:")
-		for _, r := range reports {
-			fmt.Printf("    %-*s  %6d calls  %s\n", nameW, r.name, r.total.Calls, formatRowUSD(r.total))
-		}
+		printGroupSummary("KB", kbRows)
 	}
 
 	fmt.Println()
@@ -664,6 +665,58 @@ func printCostTable(rows []CostSummary) CostSummary {
 	fmt.Printf("  %-*s  %6d  %6d  %6d  %6d  %6d  %9.1fs  %12d  %12d  %*s\n",
 		modelW, "TOTAL", total.Calls, total.OK, total.Canceled, total.RateLimit, total.Timeout, total.WallclockSeconds, total.InputTokens, total.OutputTokens, usdW, totalUSD)
 	return total
+}
+
+// groupByProvider rolls per-model rows up to their backend provider, ordered
+// by spend descending.
+func groupByProvider(rows []CostSummary) []CostSummary {
+	m := map[string]*CostSummary{}
+	for _, r := range rows {
+		p := providerOf(r.Model)
+		d := m[p]
+		if d == nil {
+			d = &CostSummary{Model: p}
+			m[p] = d
+		}
+		addCost(d, r)
+	}
+	return sortedByCost(m)
+}
+
+// providerOf extracts the backend from a cost-ledger model key. Hosted and
+// local models are stored provider-qualified ("together/Qwen/...",
+// "ollama/gemma3:4b"); bare aliases ("sonnet"/"haiku"/"opus") are claude -p,
+// i.e. anthropic.
+func providerOf(model string) string {
+	if i := strings.IndexByte(model, '/'); i > 0 {
+		return model[:i]
+	}
+	return "anthropic"
+}
+
+// printGroupSummary prints a compact, aligned rollup (by provider or KB) under
+// the detailed per-model table: name, calls, tokens, and measured USD. Rows
+// are ordered by spend descending; the name and usd columns size to content.
+func printGroupSummary(colHeader string, rows []CostSummary) {
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].ActualUSD+rows[i].EstUSDHigh > rows[j].ActualUSD+rows[j].EstUSDHigh
+	})
+	usds := make([]string, len(rows))
+	nameW := len(colHeader)
+	usdW := len("usd")
+	for i, r := range rows {
+		usds[i] = formatRowUSD(r)
+		if len(r.Model) > nameW {
+			nameW = len(r.Model)
+		}
+		if len(usds[i]) > usdW {
+			usdW = len(usds[i])
+		}
+	}
+	fmt.Printf("    %-*s  %8s  %12s  %12s  %*s\n", nameW, colHeader, "calls", "in-tokens", "out-tokens", usdW, "usd")
+	for i, r := range rows {
+		fmt.Printf("    %-*s  %8d  %12d  %12d  %*s\n", nameW, r.Model, r.Calls, r.InputTokens, r.OutputTokens, usdW, usds[i])
+	}
 }
 
 // formatRowUSD picks the most accurate dollar representation
