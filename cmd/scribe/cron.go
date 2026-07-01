@@ -129,6 +129,13 @@ func scribeJobs(binary string) []cronJob {
 			Schedule: schedSpec{Calendar: everyNMinutes(30)},
 		},
 		{
+			Name:     "pull-sources",
+			Desc:     "Pull configured integrations (Pinboard, …) into the ingest queue hourly at :17",
+			Command:  each("pull"),
+			LogFile:  filepath.Join(logDir, "scribe-pull.log"),
+			Schedule: schedSpec{Calendar: hourlyAt(17)},
+		},
+		{
 			Name:     "capture-refetch",
 			Desc:     "Retry stub links daily at 06:30 (parks failures in _unfetched-links.md)",
 			Command:  each("capture --refetch"),
