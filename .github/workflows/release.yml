@@ -26,15 +26,20 @@ on:
         description: "Tag to release (e.g. v0.2.7)"
         required: true
 
+# Read-only at the top level (Scorecard Token-Permissions). The write
+# scopes below are granted only to the one job that needs them.
 permissions:
-  contents: write
-  # Keyless cosign signing: the OIDC token proves this workflow (not a
-  # stolen key) produced the signature on checksums.txt.
-  id-token: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      # GoReleaser creates the GitHub release and uploads the artifacts.
+      contents: write
+      # Keyless cosign signing: the OIDC token proves this workflow (not a
+      # stolen key) produced the signature on checksums.txt.
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

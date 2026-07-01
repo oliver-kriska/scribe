@@ -1,0 +1,41 @@
+# CodeQL — GitHub's SAST engine, run over the Go source.
+#
+# Uses build-mode: none: CodeQL extracts and analyzes the source without
+# compiling it, so this job skips the CGO + sqlite_fts5 + libsqlite3-dev
+# toolchain that the real build (Makefile) needs. Results land in the
+# code-scanning tab and satisfy the OSSF Scorecard SAST check.
+
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "45 6 * * 1" # weekly, Monday 06:45 UTC (just after scorecard)
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (go)
+    runs-on: ubuntu-latest
+    permissions:
+      # Upload analysis results to the code-scanning dashboard.
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          languages: go
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          category: "/language:go"
