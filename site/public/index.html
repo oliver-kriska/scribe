@@ -29,7 +29,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
-<meta property="article:modified_time" content="2026-06-30T00:00:00Z" />
+<meta property="article:modified_time" content="2026-07-01T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -73,7 +73,7 @@
   "@type": "HowTo",
   "name": "Install scribe and run the knowledge-base pipeline",
   "description": "Install the scribe CLI with Homebrew, bootstrap a knowledge base, put the extraction pipeline on a schedule, and verify the setup.",
-  "totalTime": "PT5M",
+  "totalTime": "PT1M",
   "tool": [
     { "@type": "HowToTool", "name": "Homebrew" },
     { "@type": "HowToTool", "name": "git" }
@@ -2174,7 +2174,10 @@
     .nav__menu-btn { display: inline-flex; }
   }
   @media (max-width: 640px) {
-    .nav__cta { display: none; }
+    /* keep the one conversion always reachable — compact Install, pushed right beside the menu */
+    .nav__cta { margin-left: auto; padding-inline: 12px; }
+    .nav__cta svg { display: none; }
+    .nav__menu-btn { margin-left: 8px; }
     .theme-toggle:not(.theme-toggle--mobile) { display: none; }
     .features, .audience, .team-grid { grid-template-columns: 1fr; }
     .footer__grid { grid-template-columns: 1fr 1fr; gap: 28px; }
@@ -3461,7 +3464,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT · last updated 2026-06-30</span>
+      <span>MIT · last updated 2026-07-01</span>
       <span>github.com/oliver-kriska/scribe</span>
     </div>
   </div>
