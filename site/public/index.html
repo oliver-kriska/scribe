@@ -1125,6 +1125,32 @@
   }
   .team-grid .feature h3 { font-size: 16px; }
 
+  /* for-teams trust boundary: the security story as a diagram — what tries to
+     cross into the shared KB, the code-enforced gate that stops it, and the one
+     thing that does cross. Desktop-only; the six spec cards below carry the same
+     mechanisms on every viewport, so nothing is lost when this is hidden. */
+  .tb { margin: clamp(26px, 4vw, 40px) 0 clamp(28px, 4vw, 44px); display: none; }
+  @media (min-width: 820px) { .tb { display: block; } }
+  .tb svg { display: block; width: 100%; max-width: 760px; height: auto; margin: 0 auto; overflow: visible; }
+  .tb__kb { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .tb__kbtitle { font-family: var(--font-mono); font-size: 13px; font-weight: 600; fill: var(--accent-on-soft); }
+  .tb__kbsub   { font-family: var(--font-mono); font-size: 10px; fill: var(--muted); }
+  .tb__src  { fill: var(--surface); stroke: var(--border); stroke-width: 1; }
+  .tb__txt  { font-family: var(--font-mono); font-size: 11.5px; fill: var(--fg-soft); }
+  .tb__node { fill: var(--bg-sub); stroke: var(--border-hover); stroke-width: 1; }
+  .tb__gate { font-family: var(--font-mono); font-size: 10.5px; fill: var(--fg-soft); }
+  .tb__out  { font-family: var(--font-mono); font-size: 9.5px; fill: var(--muted); }
+  .tb__wire { stroke: var(--border-hover); stroke-width: 1.25; fill: none; }
+  .tb__wire--held { stroke-dasharray: 3 3; opacity: .65; }
+  .tb__wire--pass { stroke: var(--accent); stroke-width: 1.5; fill: none; }
+  .tb__stop { stroke: var(--muted); stroke-width: 1.5; }
+  .tb__hdr  { font-family: var(--font-mono); font-size: 10.5px; fill: var(--muted); letter-spacing: .02em; }
+  .tb__pill    { fill: var(--bg); stroke: var(--accent); stroke-width: 1; }
+  .tb__pilltxt { font-family: var(--font-mono); font-size: 10.5px; fill: var(--accent-on-soft); }
+  .tb__ok      { font-family: var(--font-mono); font-size: 12px; font-weight: 600; fill: var(--accent); }
+  .tb__arrow   { fill: var(--accent); }
+  .tb figcaption { margin: 16px auto 0; max-width: 66ch; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.55; }
+
   /* -------------------- code block / tabs -------------------- */
   .code-card {
     border: 1px solid var(--border);
@@ -2497,8 +2523,76 @@
     <header class="s__head">
       <div class="s__eyebrow">For teams</div>
       <h2 class="s__title">One KB. The whole team writes to it.</h2>
-      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB: clone the repo, and scribe rebuilds local state from what's committed. The unusual part is the governance underneath.</p>
+      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB. The obvious fear with sharing agent sessions — a leaked secret, a private client repo, one teammate's config change reaching everyone — is exactly what the gates below are built to stop. Only knowledge you meant to keep crosses into the shared KB.</p>
     </header>
+
+    <figure class="tb">
+      <svg viewBox="0 0 720 340" role="img" aria-labelledby="tb-title tb-desc">
+        <title id="tb-title">The shared-KB trust boundary</title>
+        <desc id="tb-desc">Four things approach the shared team knowledge base. An AWS key is stopped by the secret-scan gate, a private client repo by the remote allowlist, and a pushed config change by the trust layer — none cross. Only the reasoning behind a fix, promoted deliberately, crosses into the shared KB.</desc>
+        <defs>
+          <marker id="tb-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="tb__arrow"/>
+          </marker>
+        </defs>
+
+        <!-- shared team KB: the protected zone -->
+        <rect class="tb__kb" x="470" y="40" width="236" height="280" rx="14"/>
+        <text class="tb__kbtitle" x="588" y="72" text-anchor="middle">shared team KB</text>
+        <text class="tb__kbsub"   x="588" y="90" text-anchor="middle">git · what teammates see</text>
+        <rect class="tb__pill" x="518" y="114" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="131" text-anchor="middle">decisions</text>
+        <rect class="tb__pill" x="518" y="150" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="167" text-anchor="middle">patterns</text>
+        <rect class="tb__pill" x="518" y="186" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="203" text-anchor="middle">solutions</text>
+
+        <!-- column headers -->
+        <text class="tb__hdr" x="119" y="20" text-anchor="middle">what tries to cross</text>
+        <text class="tb__hdr" x="354" y="20" text-anchor="middle">the gate that stops it</text>
+
+        <!-- lane 1: secret -> secret-scan gate -> held -->
+        <rect class="tb__src" x="14" y="69" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="88" text-anchor="middle">an AWS key in a transcript</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="84" x2="298" y2="84"/>
+        <rect class="tb__node" x="298" y="70" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="87.5" text-anchor="middle">secret-scan gate</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="84" x2="452" y2="84"/>
+        <line class="tb__stop" x1="452" y1="75" x2="452" y2="93"/>
+        <text class="tb__out" x="354" y="112" text-anchor="middle">held back — never committed</text>
+
+        <!-- lane 2: private repo -> remote allowlist -> held -->
+        <rect class="tb__src" x="14" y="135" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="154" text-anchor="middle">a teammate's client repo</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="150" x2="298" y2="150"/>
+        <rect class="tb__node" x="298" y="136" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="153.5" text-anchor="middle">remote allowlist</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="150" x2="452" y2="150"/>
+        <line class="tb__stop" x1="452" y1="141" x2="452" y2="159"/>
+        <text class="tb__out" x="354" y="178" text-anchor="middle">never ingested without an approve</text>
+
+        <!-- lane 3: config repoint -> trust layer -> held -->
+        <rect class="tb__src" x="14" y="201" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="220" text-anchor="middle">config that repoints the LLM</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="216" x2="298" y2="216"/>
+        <rect class="tb__node" x="298" y="202" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="219.5" text-anchor="middle">trust layer</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="216" x2="452" y2="216"/>
+        <line class="tb__stop" x1="452" y1="207" x2="452" y2="225"/>
+        <text class="tb__out" x="354" y="244" text-anchor="middle">reverted to the last trusted snapshot</text>
+
+        <!-- lane 4: a decision -> curated extract -> crosses -->
+        <rect class="tb__src" x="14" y="267" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="286" text-anchor="middle">the reasoning behind a fix</text>
+        <line class="tb__wire tb__wire--pass" x1="224" y1="282" x2="298" y2="282"/>
+        <rect class="tb__node" x="298" y="268" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="285.5" text-anchor="middle">curated extract</text>
+        <line class="tb__wire tb__wire--pass" x1="410" y1="282" x2="484" y2="282" marker-end="url(#tb-arrow)"/>
+        <text class="tb__ok" x="500" y="286">✓</text>
+        <text class="tb__out" x="354" y="310" text-anchor="middle">promoted · provenance kept</text>
+      </svg>
+      <figcaption>Sensitive material stops at the commit gate. Only knowledge you deliberately keep crosses into the shared KB — and every gate here is a mechanism in the code, not a policy in a doc.</figcaption>
+    </figure>
 
     <div class="team-grid">
       <article class="feature">
