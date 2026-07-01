@@ -919,6 +919,19 @@
     padding-block: clamp(56px, 7vw, 104px);
     border-top: 1px solid var(--border);
   }
+  /* two-tier divider: marks where the decider spine ends and the reference /
+     "under the hood" sections begin. A single tinted landmark band (not an
+     alternating stripe); mono label kept muted so it doesn't add accent surface. */
+  .uth { border-top: 1px solid var(--border); background: var(--bg-sub); }
+  .uth > .wrap {
+    display: flex; align-items: baseline; gap: 8px 16px; flex-wrap: wrap;
+    padding-block: clamp(22px, 3vw, 32px);
+  }
+  .uth__label {
+    font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--fg-soft); flex: none;
+  }
+  .uth__note { font-size: 13.5px; color: var(--muted); line-height: 1.5; max-width: 60ch; }
   .s__head {
     max-width: 720px;
     margin-bottom: clamp(36px, 4vw, 56px);
@@ -2207,11 +2220,11 @@
     <nav class="nav__links" aria-label="Primary">
       <a class="nav__link" href="#how">How it works</a>
       <a class="nav__link" href="#features">Features</a>
-      <a class="nav__link" href="#autonomous">Loop</a>
+      <a class="nav__link" href="#compare">Compare</a>
       <a class="nav__link" href="#teams">Teams</a>
       <a class="nav__link" href="#cost">Cost</a>
-      <a class="nav__link" href="#compare">Compare</a>
       <a class="nav__link" href="#cli">CLI</a>
+      <a class="nav__link" href="#autonomous">Loop</a>
       <a class="nav__link" href="#faq">FAQ</a>
       <a class="nav__link" href="https://github.com/oliver-kriska/scribe">GitHub ↗</a>
     </nav>
@@ -2232,11 +2245,11 @@
 <div class="menu" id="menu">
   <a href="#how">How it works</a>
   <a href="#features">Features</a>
-  <a href="#autonomous">Loop</a>
+  <a href="#compare">Compare</a>
   <a href="#teams">Teams</a>
   <a href="#cost">Cost</a>
-  <a href="#compare">Compare</a>
   <a href="#cli">CLI</a>
+  <a href="#autonomous">Loop</a>
   <a href="#faq">FAQ</a>
   <a href="https://github.com/oliver-kriska/scribe">GitHub</a>
   <button class="theme-toggle theme-toggle--mobile" id="themeToggleMobile" type="button" aria-label="Toggle theme">
@@ -2510,246 +2523,6 @@ advisory locks table-ambiguous under load.
   </div>
 </section>
 
-<!-- ============================ AUTONOMOUS LOOP ============================ -->
-<section class="s" id="autonomous">
-  <div class="wrap">
-    <header class="s__head">
-      <div class="s__eyebrow">Autonomous loop</div>
-      <h2 class="s__title">Five things happen on cron. You set it up once.</h2>
-      <p class="s__sub">After <code>scribe init</code> and <code>scribe cron install</code>, the loop closes by itself. New work flows in, the KB grows, and the next Claude Code or Codex session, in any project, queries what scribe just wrote.</p>
-    </header>
-
-    <div class="autonomous">
-      <article class="stage">
-        <div class="stage__num"><span>01</span></div>
-        <div class="stage__head">
-          <h3>scribe finds every project you've already touched</h3>
-          <span class="stage__pill">Claude Code + Codex</span>
-        </div>
-        <p class="stage__body">A single walk over <code>~/.claude/projects/*</code> and <code>~/.codex/sessions/*</code> finds every repo you've opened in either agent. Each one becomes an entry in the manifest with a stable name, last-seen timestamp, and source provenance. No config, no manual list; if you've coded there, scribe sees it.</p>
-        <div class="stage__src">cmd/scribe/sync.go: <code>discover()</code> + cmd/scribe/codex.go: <code>discoverCodex()</code> → <code>~/.claude/projects/*</code> + <code>~/.codex/sessions/*</code> → <code>manifest.Projects</code></div>
-      </article>
-
-      <article class="stage">
-        <div class="stage__num"><span>02</span></div>
-        <div class="stage__head">
-          <h3>The agent handshake</h3>
-          <span class="stage__pill">~/.claude/CLAUDE.md + ~/.codex/AGENTS.md</span>
-        </div>
-        <p class="stage__body">scribe writes a maintained block into <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>. Every Claude Code and Codex session, in every repo, picks up the same instructions: query the KB first, and drop reusable findings as files. The handshake is idempotent: re-run init and only that block updates.</p>
-        <div class="stage__src">cmd/scribe/init.go: <code>installClaudeMD()</code> + <code>installCodexMD()</code> → <code>templates/claude-md-kb.md</code> + <code>templates/codex-agents-md.md</code> → marker-fenced block in both files</div>
-      </article>
-
-      <article class="stage">
-        <div class="stage__num"><span>03</span></div>
-        <div class="stage__head">
-          <h3>Cron sweeps move drop files into the absorb pipeline</h3>
-          <span class="stage__pill">2h / 4h / 30min</span>
-        </div>
-        <p class="stage__body">Three cron entries do the boring work: <code>sync</code> for session mining and per-project extraction, <code>capture</code> for queued URLs and self-sent iMessage links, and <code>sync --sessions</code> on a faster cadence. Drop files written by an agent in any repo are picked up on the next tick and flow through density triage → contextualize → atomic facts → pass-2 absorb.</p>
-        <div class="stage__src">cmd/scribe/cron.go: <code>CronInstallCmd.Run()</code> → launchd / systemd / crontab entries → <code>scribe sync</code> + <code>scribe capture</code></div>
-      </article>
-
-      <article class="stage">
-        <div class="stage__num"><span>04</span></div>
-        <div class="stage__head">
-          <h3>Auto-publish to your private git remote</h3>
-          <span class="stage__pill">hourly</span>
-        </div>
-        <p class="stage__body">A separate cron entry runs <code>scribe commit</code> every hour: it stages everything the absorb pipeline produced, writes a structured commit message, and pushes to your private remote (GitHub, Gitea, Forgejo, anywhere). On non-fast-forward it runs <code>git pull --rebase</code> and retries once; force-push is never attempted. Your KB is version-controlled, diffable, and recoverable, with no web UI; the source of truth is markdown in git.</p>
-        <div class="stage__src">cmd/scribe/commit.go: <code>CommitCmd.Run()</code> + cmd/scribe/gitops.go → <code>git add</code> · <code>git commit</code> · <code>git push origin main</code></div>
-      </article>
-
-      <article class="stage">
-        <div class="stage__num"><span>05</span></div>
-        <div class="stage__head">
-          <h3>Sunday 02:00: the Dream cycle</h3>
-          <span class="stage__pill">100% Ollama</span>
-        </div>
-        <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Runs entirely on local Ollama: no token spend, no third party touches your notes. The KB stays small enough to fit in an agent's context window for years.</p>
-        <div class="stage__src">cmd/scribe/cron.go: weekly entry @ <code>Sun 02:00</code> → cmd/scribe/dream.go: <code>DreamCmd.Run()</code> → <code>prompts/dream-ollama.md</code> on gemma3:12b</div>
-      </article>
-    </div>
-
-    <p class="autonomous__closer">Every absorb tick reindexes qmd, so the next Claude Code or Codex session, in any repo on this machine, finds what scribe just wrote. The loop closes itself, in the background, on a schedule you forget about.</p>
-  </div>
-</section>
-
-<!-- ============================ TEAMS ============================ -->
-<section class="s" id="teams">
-  <div class="wrap">
-    <header class="s__head">
-      <div class="s__eyebrow">For teams</div>
-      <h2 class="s__title">One KB. The whole team writes to it.</h2>
-      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB. The obvious fear with sharing agent sessions — a leaked secret, a private client repo, one teammate's config change reaching everyone — is exactly what the gates below are built to stop. Only knowledge you meant to keep crosses into the shared KB.</p>
-    </header>
-
-    <figure class="tb">
-      <svg viewBox="0 0 720 340" role="img" aria-labelledby="tb-title tb-desc">
-        <title id="tb-title">The shared-KB trust boundary</title>
-        <desc id="tb-desc">Four things approach the shared team knowledge base. An AWS key is stopped by the secret-scan gate, a private client repo by the remote allowlist, and a pushed config change by the trust layer — none cross. Only the reasoning behind a fix, promoted deliberately, crosses into the shared KB.</desc>
-        <defs>
-          <marker id="tb-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" class="tb__arrow"/>
-          </marker>
-        </defs>
-
-        <!-- shared team KB: the protected zone -->
-        <rect class="tb__kb" x="470" y="40" width="236" height="280" rx="14"/>
-        <text class="tb__kbtitle" x="588" y="72" text-anchor="middle">shared team KB</text>
-        <text class="tb__kbsub"   x="588" y="90" text-anchor="middle">git · what teammates see</text>
-        <rect class="tb__pill" x="518" y="114" width="140" height="26" rx="13"/>
-        <text class="tb__pilltxt" x="588" y="131" text-anchor="middle">decisions</text>
-        <rect class="tb__pill" x="518" y="150" width="140" height="26" rx="13"/>
-        <text class="tb__pilltxt" x="588" y="167" text-anchor="middle">patterns</text>
-        <rect class="tb__pill" x="518" y="186" width="140" height="26" rx="13"/>
-        <text class="tb__pilltxt" x="588" y="203" text-anchor="middle">solutions</text>
-
-        <!-- column headers -->
-        <text class="tb__hdr" x="119" y="20" text-anchor="middle">what tries to cross</text>
-        <text class="tb__hdr" x="354" y="20" text-anchor="middle">the gate that stops it</text>
-
-        <!-- lane 1: secret -> secret-scan gate -> held -->
-        <rect class="tb__src" x="14" y="69" width="210" height="30" rx="8"/>
-        <text class="tb__txt" x="119" y="88" text-anchor="middle">an AWS key in a transcript</text>
-        <line class="tb__wire tb__wire--held" x1="224" y1="84" x2="298" y2="84"/>
-        <rect class="tb__node" x="298" y="70" width="112" height="28" rx="7"/>
-        <text class="tb__gate" x="354" y="87.5" text-anchor="middle">secret-scan gate</text>
-        <line class="tb__wire tb__wire--held" x1="410" y1="84" x2="452" y2="84"/>
-        <line class="tb__stop" x1="452" y1="75" x2="452" y2="93"/>
-        <text class="tb__out" x="354" y="112" text-anchor="middle">held back — never committed</text>
-
-        <!-- lane 2: private repo -> remote allowlist -> held -->
-        <rect class="tb__src" x="14" y="135" width="210" height="30" rx="8"/>
-        <text class="tb__txt" x="119" y="154" text-anchor="middle">a teammate's client repo</text>
-        <line class="tb__wire tb__wire--held" x1="224" y1="150" x2="298" y2="150"/>
-        <rect class="tb__node" x="298" y="136" width="112" height="28" rx="7"/>
-        <text class="tb__gate" x="354" y="153.5" text-anchor="middle">remote allowlist</text>
-        <line class="tb__wire tb__wire--held" x1="410" y1="150" x2="452" y2="150"/>
-        <line class="tb__stop" x1="452" y1="141" x2="452" y2="159"/>
-        <text class="tb__out" x="354" y="178" text-anchor="middle">never ingested without an approve</text>
-
-        <!-- lane 3: config repoint -> trust layer -> held -->
-        <rect class="tb__src" x="14" y="201" width="210" height="30" rx="8"/>
-        <text class="tb__txt" x="119" y="220" text-anchor="middle">config that repoints the LLM</text>
-        <line class="tb__wire tb__wire--held" x1="224" y1="216" x2="298" y2="216"/>
-        <rect class="tb__node" x="298" y="202" width="112" height="28" rx="7"/>
-        <text class="tb__gate" x="354" y="219.5" text-anchor="middle">trust layer</text>
-        <line class="tb__wire tb__wire--held" x1="410" y1="216" x2="452" y2="216"/>
-        <line class="tb__stop" x1="452" y1="207" x2="452" y2="225"/>
-        <text class="tb__out" x="354" y="244" text-anchor="middle">reverted to the last trusted snapshot</text>
-
-        <!-- lane 4: a decision -> curated extract -> crosses -->
-        <rect class="tb__src" x="14" y="267" width="210" height="30" rx="8"/>
-        <text class="tb__txt" x="119" y="286" text-anchor="middle">the reasoning behind a fix</text>
-        <line class="tb__wire tb__wire--pass" x1="224" y1="282" x2="298" y2="282"/>
-        <rect class="tb__node" x="298" y="268" width="112" height="28" rx="7"/>
-        <text class="tb__gate" x="354" y="285.5" text-anchor="middle">curated extract</text>
-        <line class="tb__wire tb__wire--pass" x1="410" y1="282" x2="484" y2="282" marker-end="url(#tb-arrow)"/>
-        <text class="tb__ok" x="500" y="286">✓</text>
-        <text class="tb__out" x="354" y="310" text-anchor="middle">promoted · provenance kept</text>
-      </svg>
-      <figcaption>Sensitive material stops at the commit gate. Only knowledge you deliberately keep crosses into the shared KB — and every gate here is a mechanism in the code, not a policy in a doc.</figcaption>
-    </figure>
-
-    <div class="team-grid">
-      <article class="feature">
-        <h3>Shared config is untrusted by default</h3>
-        <p>A trust layer pins the sensitive surface of a shared <code>scribe.yaml</code>: provider, model, ingest paths, and the secret scanner itself. A pushed change that would repoint inference to a new endpoint or drain a new directory into the KB reverts to the last trusted snapshot until a human approves it.</p>
-      </article>
-
-      <article class="feature">
-        <h3>Secrets never reach shared history</h3>
-        <p>scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path.</p>
-      </article>
-
-      <article class="feature">
-        <h3>Extraction is paid for once, not per laptop</h3>
-        <p>Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB.</p>
-      </article>
-
-      <article class="feature">
-        <h3>A teammate's unrelated repo never leaks in</h3>
-        <p>Discovered projects start pending. <code>allowed_remotes</code> and source filters gate discovery by git-remote identity, and <code>scribe projects {list,approve,ignore,review}</code> controls what enters the pipeline, so a side project or a client checkout never lands in the shared KB without an approve.</p>
-      </article>
-
-      <article class="feature">
-        <h3>Curate privately, promote deliberately</h3>
-        <p><code>scribe promote &lt;article&gt; --to team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.</p>
-      </article>
-
-      <article class="feature">
-        <h3>One machine consolidates, no server</h3>
-        <p>The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.</p>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ INFERENCE & COST ============================ -->
-<section class="s" id="cost">
-  <div class="wrap">
-    <header class="s__head">
-      <div class="s__eyebrow">Inference &amp; cost</div>
-      <h2 class="s__title">Local, hosted, or Anthropic — and a bill you can read.</h2>
-      <p class="s__sub">Run the whole pipeline on local Ollama for $0, point it at a hosted OpenAI-compatible API (Together, Groq, Fireworks, Hugging Face) when the laptop is running hot, or keep <code>claude -p</code> for the Anthropic path. The three coexist; pick the trade per op in <code>scribe.yaml</code>, and nothing reaches a paid provider without explicit config. <code>scribe cost</code> then reconciles every token across providers and KBs, to the cent against the provider's own dashboard.</p>
-    </header>
-
-    <div class="cost">
-      <div class="cost__figures" role="group" aria-label="One week of inference on the same machine, priced three ways">
-        <div class="cost__fig cost__fig--free">$0<small>local · ollama</small></div>
-        <div class="cost__fig">$0.34<small>hosted · together</small></div>
-        <div class="cost__fig cost__fig--paid">$103.91<small>anthropic · 7 days</small></div>
-      </div>
-
-      <div class="terminal" aria-label="scribe cost — example output">
-        <div class="terminal__bar">
-          <div class="terminal__dots"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span></div>
-          <div class="terminal__title">scribe cost — 7 days, 2 KBs</div>
-          <div style="width:40px;"></div>
-        </div>
-<pre class="cost__lines"><span class="c-prompt">~ $</span> scribe cost
-
-scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
-
-  model                                             calls     ok  cancl  rate  tmout  wallclock   in-tokens  out-tokens      usd
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  sonnet                                              301    281      0     0      3      6h54m     250,468     789,357   $92.80
-  haiku                                               151    144      0     0      7      2h21m       1,251     551,761   $10.77
-  together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput    195    195      0     0      0      1h06m   1,261,197     146,728    $0.34
-  ollama/gemma3:12b                                   120    120      0     0      0      4h57m   1,037,866     138,258        —
-  ollama/qwen3:30b-a3b-instruct-2507-q4_K_M         1,643  1,627      0     0      0     23h39m  11,317,941   1,122,293        —
-  ollama/gemma3:4b                                    921    912      0     0      0      8h23m   2,355,608     672,157        —
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  TOTAL                                             3,331  3,279      0     0     10     47h22m  16,224,331   3,420,554  $103.91
-
-  By provider:
-  provider   calls   in-tokens  out-tokens      usd
-  ─────────────────────────────────────────────────
-  anthropic    452     251,719   1,341,118  $103.57
-  together     195   1,261,197     146,728    $0.34
-  ollama     2,684  14,711,415   1,932,708        —
-
-  By KB:
-  KB           calls  in-tokens  out-tokens      usd
-  ──────────────────────────────────────────────────
-  team-kb      1,732  7,020,329   2,211,137  $102.96
-  personal-kb  1,599  9,204,002   1,209,417    $0.95
-
-  Coverage: 3175/3331 calls had token data; the other 156 add ~$0.62 estimated, not shown above.
-  usd = measured spend from token data.  cancl = sibling-canceled (rate-limit cascade).  tmout = ctx.DeadlineExceeded.</pre>
-      </div>
-      <p class="scroll-hint" aria-hidden="true">↔ swipe the table for the full per-model breakdown</p>
-      <p class="cost__caption">Real output, names anonymized. Same week, same machine: the Anthropic path cost $103 on the team KB; the hosted Together run did comparable work for <strong>$0.34</strong>; the local Ollama models cost nothing. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
-
-      <div class="cost__local">
-        <span class="local__pill">100% Ollama</span>
-        <p>On the local path there's no <code>claude -p</code> callsite in a normal <code>scribe sync</code>: per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, and relations migrate all fire through bounded JSON-envelope subtasks against your Ollama server. A full weekly sync: <strong>0 errors, $0.00, ~68s</strong>, 7,447 → 7,472 articles. One line in <code>scribe.yaml</code> flips the whole pipeline.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- ============================ COMPARISON TABLE ============================ -->
 <section class="s" id="compare">
   <div class="wrap">
@@ -2977,6 +2750,261 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
   </div>
 </section>
 
+<!-- ============================ TEAMS ============================ -->
+<section class="s" id="teams">
+  <div class="wrap">
+    <header class="s__head">
+      <div class="s__eyebrow">For teams</div>
+      <h2 class="s__title">One KB. The whole team writes to it.</h2>
+      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB. The obvious fear with sharing agent sessions — a leaked secret, a private client repo, one teammate's config change reaching everyone — is exactly what the gates below are built to stop. Only knowledge you meant to keep crosses into the shared KB.</p>
+    </header>
+
+    <figure class="tb">
+      <svg viewBox="0 0 720 340" role="img" aria-labelledby="tb-title tb-desc">
+        <title id="tb-title">The shared-KB trust boundary</title>
+        <desc id="tb-desc">Four things approach the shared team knowledge base. An AWS key is stopped by the secret-scan gate, a private client repo by the remote allowlist, and a pushed config change by the trust layer — none cross. Only the reasoning behind a fix, promoted deliberately, crosses into the shared KB.</desc>
+        <defs>
+          <marker id="tb-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="tb__arrow"/>
+          </marker>
+        </defs>
+
+        <!-- shared team KB: the protected zone -->
+        <rect class="tb__kb" x="470" y="40" width="236" height="280" rx="14"/>
+        <text class="tb__kbtitle" x="588" y="72" text-anchor="middle">shared team KB</text>
+        <text class="tb__kbsub"   x="588" y="90" text-anchor="middle">git · what teammates see</text>
+        <rect class="tb__pill" x="518" y="114" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="131" text-anchor="middle">decisions</text>
+        <rect class="tb__pill" x="518" y="150" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="167" text-anchor="middle">patterns</text>
+        <rect class="tb__pill" x="518" y="186" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="203" text-anchor="middle">solutions</text>
+
+        <!-- column headers -->
+        <text class="tb__hdr" x="119" y="20" text-anchor="middle">what tries to cross</text>
+        <text class="tb__hdr" x="354" y="20" text-anchor="middle">the gate that stops it</text>
+
+        <!-- lane 1: secret -> secret-scan gate -> held -->
+        <rect class="tb__src" x="14" y="69" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="88" text-anchor="middle">an AWS key in a transcript</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="84" x2="298" y2="84"/>
+        <rect class="tb__node" x="298" y="70" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="87.5" text-anchor="middle">secret-scan gate</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="84" x2="452" y2="84"/>
+        <line class="tb__stop" x1="452" y1="75" x2="452" y2="93"/>
+        <text class="tb__out" x="354" y="112" text-anchor="middle">held back — never committed</text>
+
+        <!-- lane 2: private repo -> remote allowlist -> held -->
+        <rect class="tb__src" x="14" y="135" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="154" text-anchor="middle">a teammate's client repo</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="150" x2="298" y2="150"/>
+        <rect class="tb__node" x="298" y="136" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="153.5" text-anchor="middle">remote allowlist</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="150" x2="452" y2="150"/>
+        <line class="tb__stop" x1="452" y1="141" x2="452" y2="159"/>
+        <text class="tb__out" x="354" y="178" text-anchor="middle">never ingested without an approve</text>
+
+        <!-- lane 3: config repoint -> trust layer -> held -->
+        <rect class="tb__src" x="14" y="201" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="220" text-anchor="middle">config that repoints the LLM</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="216" x2="298" y2="216"/>
+        <rect class="tb__node" x="298" y="202" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="219.5" text-anchor="middle">trust layer</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="216" x2="452" y2="216"/>
+        <line class="tb__stop" x1="452" y1="207" x2="452" y2="225"/>
+        <text class="tb__out" x="354" y="244" text-anchor="middle">reverted to the last trusted snapshot</text>
+
+        <!-- lane 4: a decision -> curated extract -> crosses -->
+        <rect class="tb__src" x="14" y="267" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="286" text-anchor="middle">the reasoning behind a fix</text>
+        <line class="tb__wire tb__wire--pass" x1="224" y1="282" x2="298" y2="282"/>
+        <rect class="tb__node" x="298" y="268" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="285.5" text-anchor="middle">curated extract</text>
+        <line class="tb__wire tb__wire--pass" x1="410" y1="282" x2="484" y2="282" marker-end="url(#tb-arrow)"/>
+        <text class="tb__ok" x="500" y="286">✓</text>
+        <text class="tb__out" x="354" y="310" text-anchor="middle">promoted · provenance kept</text>
+      </svg>
+      <figcaption>Sensitive material stops at the commit gate. Only knowledge you deliberately keep crosses into the shared KB — and every gate here is a mechanism in the code, not a policy in a doc.</figcaption>
+    </figure>
+
+    <div class="team-grid">
+      <article class="feature">
+        <h3>Shared config is untrusted by default</h3>
+        <p>A trust layer pins the sensitive surface of a shared <code>scribe.yaml</code>: provider, model, ingest paths, and the secret scanner itself. A pushed change that would repoint inference to a new endpoint or drain a new directory into the KB reverts to the last trusted snapshot until a human approves it.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Secrets never reach shared history</h3>
+        <p>scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Extraction is paid for once, not per laptop</h3>
+        <p>Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB.</p>
+      </article>
+
+      <article class="feature">
+        <h3>A teammate's unrelated repo never leaks in</h3>
+        <p>Discovered projects start pending. <code>allowed_remotes</code> and source filters gate discovery by git-remote identity, and <code>scribe projects {list,approve,ignore,review}</code> controls what enters the pipeline, so a side project or a client checkout never lands in the shared KB without an approve.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Curate privately, promote deliberately</h3>
+        <p><code>scribe promote &lt;article&gt; --to team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.</p>
+      </article>
+
+      <article class="feature">
+        <h3>One machine consolidates, no server</h3>
+        <p>The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ INFERENCE & COST ============================ -->
+<section class="s" id="cost">
+  <div class="wrap">
+    <header class="s__head">
+      <div class="s__eyebrow">Inference &amp; cost</div>
+      <h2 class="s__title">Local, hosted, or Anthropic — and a bill you can read.</h2>
+      <p class="s__sub">Run the whole pipeline on local Ollama for $0, point it at a hosted OpenAI-compatible API (Together, Groq, Fireworks, Hugging Face) when the laptop is running hot, or keep <code>claude -p</code> for the Anthropic path. The three coexist; pick the trade per op in <code>scribe.yaml</code>, and nothing reaches a paid provider without explicit config. <code>scribe cost</code> then reconciles every token across providers and KBs, to the cent against the provider's own dashboard.</p>
+    </header>
+
+    <div class="cost">
+      <div class="cost__figures" role="group" aria-label="One week of inference on the same machine, priced three ways">
+        <div class="cost__fig cost__fig--free">$0<small>local · ollama</small></div>
+        <div class="cost__fig">$0.34<small>hosted · together</small></div>
+        <div class="cost__fig cost__fig--paid">$103.91<small>anthropic · 7 days</small></div>
+      </div>
+
+      <div class="terminal" aria-label="scribe cost — example output">
+        <div class="terminal__bar">
+          <div class="terminal__dots"><span class="terminal__dot"></span><span class="terminal__dot"></span><span class="terminal__dot"></span></div>
+          <div class="terminal__title">scribe cost — 7 days, 2 KBs</div>
+          <div style="width:40px;"></div>
+        </div>
+<pre class="cost__lines"><span class="c-prompt">~ $</span> scribe cost
+
+scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
+
+  model                                             calls     ok  cancl  rate  tmout  wallclock   in-tokens  out-tokens      usd
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  sonnet                                              301    281      0     0      3      6h54m     250,468     789,357   $92.80
+  haiku                                               151    144      0     0      7      2h21m       1,251     551,761   $10.77
+  together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput    195    195      0     0      0      1h06m   1,261,197     146,728    $0.34
+  ollama/gemma3:12b                                   120    120      0     0      0      4h57m   1,037,866     138,258        —
+  ollama/qwen3:30b-a3b-instruct-2507-q4_K_M         1,643  1,627      0     0      0     23h39m  11,317,941   1,122,293        —
+  ollama/gemma3:4b                                    921    912      0     0      0      8h23m   2,355,608     672,157        —
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  TOTAL                                             3,331  3,279      0     0     10     47h22m  16,224,331   3,420,554  $103.91
+
+  By provider:
+  provider   calls   in-tokens  out-tokens      usd
+  ─────────────────────────────────────────────────
+  anthropic    452     251,719   1,341,118  $103.57
+  together     195   1,261,197     146,728    $0.34
+  ollama     2,684  14,711,415   1,932,708        —
+
+  By KB:
+  KB           calls  in-tokens  out-tokens      usd
+  ──────────────────────────────────────────────────
+  team-kb      1,732  7,020,329   2,211,137  $102.96
+  personal-kb  1,599  9,204,002   1,209,417    $0.95
+
+  Coverage: 3175/3331 calls had token data; the other 156 add ~$0.62 estimated, not shown above.
+  usd = measured spend from token data.  cancl = sibling-canceled (rate-limit cascade).  tmout = ctx.DeadlineExceeded.</pre>
+      </div>
+      <p class="scroll-hint" aria-hidden="true">↔ swipe the table for the full per-model breakdown</p>
+      <p class="cost__caption">Real output, names anonymized. Same week, same machine: the Anthropic path cost $103 on the team KB; the hosted Together run did comparable work for <strong>$0.34</strong>; the local Ollama models cost nothing. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
+
+      <div class="cost__local">
+        <span class="local__pill">100% Ollama</span>
+        <p>On the local path there's no <code>claude -p</code> callsite in a normal <code>scribe sync</code>: per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, and relations migrate all fire through bounded JSON-envelope subtasks against your Ollama server. A full weekly sync: <strong>0 errors, $0.00, ~68s</strong>, 7,447 → 7,472 articles. One line in <code>scribe.yaml</code> flips the whole pipeline.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ USE CASES ============================ -->
+<section class="s" id="who">
+  <div class="wrap">
+    <header class="s__head">
+      <h2 class="s__title">Built for developers who use AI tools every day.</h2>
+      <p class="s__sub">For developers, the expensive half of the job isn't deciding. It's rebuilding the context you already had. scribe automates that half: if your Claude Code or Codex history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.</p>
+    </header>
+
+    <div class="audience">
+      <article class="who">
+        <div class="who__role">Heavy AI user</div>
+        <h3>You live in Claude Code and Codex.</h3>
+        <p class="who__body">Your agents keep re-deriving the same answers because each session starts from zero. scribe gives them durable memory.</p>
+        <ul class="who__check">
+          <li>Handshake into <code>CLAUDE.md</code> + <code>AGENTS.md</code></li>
+          <li>3×/day session mining via ccrider + Codex rollouts</li>
+          <li>Drop files written back from any project</li>
+        </ul>
+      </article>
+
+      <article class="who">
+        <div class="who__role">Multi-project dev</div>
+        <h3>You solve the same problem twice.</h3>
+        <p class="who__body">One cross-project KB means Friday's repo can pull Monday's fix. Typed edges keep the graph honest as patterns evolve.</p>
+        <ul class="who__check">
+          <li>Auto-discovery across every git repo you've opened</li>
+          <li>Entity-first fan-out, no buried summaries</li>
+          <li>Typed relations: <code>supersedes</code>, <code>contradicts</code>, <code>specializes</code></li>
+        </ul>
+      </article>
+
+      <article class="who">
+        <div class="who__role">Local &amp; private</div>
+        <h3>You want zero API spend.</h3>
+        <p class="who__body">Run the entire pipeline locally on Ollama. Plain markdown on your own git remote. No SaaS, no cloud sync, no vendor lock-in.</p>
+        <ul class="who__check">
+          <li>One line of YAML flips to 100% Ollama</li>
+          <li>Push to your own GitHub, Gitea, or Forgejo</li>
+          <li>Open in Obsidian, VS Code, vim, or mdbook</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ WHAT IT ACTUALLY FEELS LIKE ============================ -->
+<section class="s" id="feels">
+  <div class="wrap">
+    <header class="s__head">
+      <div class="s__eyebrow">In practice</div>
+      <h2 class="s__title">What it actually feels like.</h2>
+      <p class="s__sub">Two real loops from the maintainer's normal use: concrete, not marketing.</p>
+    </header>
+
+    <div class="feels">
+      <article class="anecdote">
+        <span class="anecdote__chip">Cross-project memory</span>
+        <h3>Evaluated a Phoenix translation library for one app. Months later, started a different Phoenix project with the same problem.</h3>
+        <p>scribe had already absorbed the verdict from the prior project's session: DB-backed Gettext with a LiveView admin UX, weighed against standard <code>.po</code> files and managed services. When Claude Code opened the new repo and asked the KB for translation options, the existing "skip" verdict surfaced first with the reasoning attached. No re-research; the agent cited the prior decision and moved on. The whole loop was invisible; the only thing the maintainer noticed was that the new project skipped the comparison shopping the first one did.</p>
+        <div class="anecdote__outcome"><code>tools/kanta.md · verdict: skip</code> · surfaced via <code>qmd query "phoenix translation library"</code></div>
+      </article>
+
+      <article class="anecdote">
+        <span class="anecdote__chip">Solved twice, written once</span>
+        <h3>Fixed an Oban idempotency bug in project A. Months later the same shape appeared in project B.</h3>
+        <p>The fix from project A (an idempotency-key strategy for an external-call worker) got captured automatically when the post-fix session was mined into the KB. When the same race showed up in a different Phoenix app months later, the agent grepped the KB before guessing, found the prior pattern, and proposed the exact same shape with the prior trade-offs already weighed. The second fix took fifteen minutes instead of an afternoon.</p>
+        <div class="anecdote__outcome"><code>solutions/oban-external-call-worker-idempotency.md</code> · linked from <code>solutions/fly-io-oban-cron-multi-node-double-fire.md</code></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ UNDER THE HOOD (divider) ============================ -->
+<div class="uth">
+  <div class="wrap">
+    <span class="uth__label">Under the hood</span>
+    <span class="uth__note">The mechanics, the full command surface, and querying &mdash; for when you want the details.</span>
+  </div>
+</div>
+
 <!-- ============================ CLI / CODE ============================ -->
 <section class="s" id="cli">
   <div class="wrap">
@@ -3088,6 +3116,71 @@ scribe doctor <span class="flag">--section</span> localmode
   </div>
 </section>
 
+<!-- ============================ AUTONOMOUS LOOP ============================ -->
+<section class="s" id="autonomous">
+  <div class="wrap">
+    <header class="s__head">
+      <div class="s__eyebrow">Autonomous loop</div>
+      <h2 class="s__title">Five things happen on cron. You set it up once.</h2>
+      <p class="s__sub">After <code>scribe init</code> and <code>scribe cron install</code>, the loop closes by itself. New work flows in, the KB grows, and the next Claude Code or Codex session, in any project, queries what scribe just wrote.</p>
+    </header>
+
+    <div class="autonomous">
+      <article class="stage">
+        <div class="stage__num"><span>01</span></div>
+        <div class="stage__head">
+          <h3>scribe finds every project you've already touched</h3>
+          <span class="stage__pill">Claude Code + Codex</span>
+        </div>
+        <p class="stage__body">A single walk over <code>~/.claude/projects/*</code> and <code>~/.codex/sessions/*</code> finds every repo you've opened in either agent. Each one becomes an entry in the manifest with a stable name, last-seen timestamp, and source provenance. No config, no manual list; if you've coded there, scribe sees it.</p>
+        <div class="stage__src">cmd/scribe/sync.go: <code>discover()</code> + cmd/scribe/codex.go: <code>discoverCodex()</code> → <code>~/.claude/projects/*</code> + <code>~/.codex/sessions/*</code> → <code>manifest.Projects</code></div>
+      </article>
+
+      <article class="stage">
+        <div class="stage__num"><span>02</span></div>
+        <div class="stage__head">
+          <h3>The agent handshake</h3>
+          <span class="stage__pill">~/.claude/CLAUDE.md + ~/.codex/AGENTS.md</span>
+        </div>
+        <p class="stage__body">scribe writes a maintained block into <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>. Every Claude Code and Codex session, in every repo, picks up the same instructions: query the KB first, and drop reusable findings as files. The handshake is idempotent: re-run init and only that block updates.</p>
+        <div class="stage__src">cmd/scribe/init.go: <code>installClaudeMD()</code> + <code>installCodexMD()</code> → <code>templates/claude-md-kb.md</code> + <code>templates/codex-agents-md.md</code> → marker-fenced block in both files</div>
+      </article>
+
+      <article class="stage">
+        <div class="stage__num"><span>03</span></div>
+        <div class="stage__head">
+          <h3>Cron sweeps move drop files into the absorb pipeline</h3>
+          <span class="stage__pill">2h / 4h / 30min</span>
+        </div>
+        <p class="stage__body">Three cron entries do the boring work: <code>sync</code> for session mining and per-project extraction, <code>capture</code> for queued URLs and self-sent iMessage links, and <code>sync --sessions</code> on a faster cadence. Drop files written by an agent in any repo are picked up on the next tick and flow through density triage → contextualize → atomic facts → pass-2 absorb.</p>
+        <div class="stage__src">cmd/scribe/cron.go: <code>CronInstallCmd.Run()</code> → launchd / systemd / crontab entries → <code>scribe sync</code> + <code>scribe capture</code></div>
+      </article>
+
+      <article class="stage">
+        <div class="stage__num"><span>04</span></div>
+        <div class="stage__head">
+          <h3>Auto-publish to your private git remote</h3>
+          <span class="stage__pill">hourly</span>
+        </div>
+        <p class="stage__body">A separate cron entry runs <code>scribe commit</code> every hour: it stages everything the absorb pipeline produced, writes a structured commit message, and pushes to your private remote (GitHub, Gitea, Forgejo, anywhere). On non-fast-forward it runs <code>git pull --rebase</code> and retries once; force-push is never attempted. Your KB is version-controlled, diffable, and recoverable, with no web UI; the source of truth is markdown in git.</p>
+        <div class="stage__src">cmd/scribe/commit.go: <code>CommitCmd.Run()</code> + cmd/scribe/gitops.go → <code>git add</code> · <code>git commit</code> · <code>git push origin main</code></div>
+      </article>
+
+      <article class="stage">
+        <div class="stage__num"><span>05</span></div>
+        <div class="stage__head">
+          <h3>Sunday 02:00: the Dream cycle</h3>
+          <span class="stage__pill">100% Ollama</span>
+        </div>
+        <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Runs entirely on local Ollama: no token spend, no third party touches your notes. The KB stays small enough to fit in an agent's context window for years.</p>
+        <div class="stage__src">cmd/scribe/cron.go: weekly entry @ <code>Sun 02:00</code> → cmd/scribe/dream.go: <code>DreamCmd.Run()</code> → <code>prompts/dream-ollama.md</code> on gemma3:12b</div>
+      </article>
+    </div>
+
+    <p class="autonomous__closer">Every absorb tick reindexes qmd, so the next Claude Code or Codex session, in any repo on this machine, finds what scribe just wrote. The loop closes itself, in the background, on a schedule you forget about.</p>
+  </div>
+</section>
+
 <!-- ============================ COMMAND SURFACE ============================ -->
 <section class="s" id="commands">
   <div class="wrap">
@@ -3169,78 +3262,6 @@ scribe doctor <span class="flag">--section</span> localmode
 <span class="comment"># returns ranked hits + frontmatter;
 # the agent then reads the top file</span></pre>
         </div>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ USE CASES ============================ -->
-<section class="s" id="who">
-  <div class="wrap">
-    <header class="s__head">
-      <h2 class="s__title">Built for developers who use AI tools every day.</h2>
-      <p class="s__sub">For developers, the expensive half of the job isn't deciding. It's rebuilding the context you already had. scribe automates that half: if your Claude Code or Codex history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.</p>
-    </header>
-
-    <div class="audience">
-      <article class="who">
-        <div class="who__role">Heavy AI user</div>
-        <h3>You live in Claude Code and Codex.</h3>
-        <p class="who__body">Your agents keep re-deriving the same answers because each session starts from zero. scribe gives them durable memory.</p>
-        <ul class="who__check">
-          <li>Handshake into <code>CLAUDE.md</code> + <code>AGENTS.md</code></li>
-          <li>3×/day session mining via ccrider + Codex rollouts</li>
-          <li>Drop files written back from any project</li>
-        </ul>
-      </article>
-
-      <article class="who">
-        <div class="who__role">Multi-project dev</div>
-        <h3>You solve the same problem twice.</h3>
-        <p class="who__body">One cross-project KB means Friday's repo can pull Monday's fix. Typed edges keep the graph honest as patterns evolve.</p>
-        <ul class="who__check">
-          <li>Auto-discovery across every git repo you've opened</li>
-          <li>Entity-first fan-out, no buried summaries</li>
-          <li>Typed relations: <code>supersedes</code>, <code>contradicts</code>, <code>specializes</code></li>
-        </ul>
-      </article>
-
-      <article class="who">
-        <div class="who__role">Local &amp; private</div>
-        <h3>You want zero API spend.</h3>
-        <p class="who__body">Run the entire pipeline locally on Ollama. Plain markdown on your own git remote. No SaaS, no cloud sync, no vendor lock-in.</p>
-        <ul class="who__check">
-          <li>One line of YAML flips to 100% Ollama</li>
-          <li>Push to your own GitHub, Gitea, or Forgejo</li>
-          <li>Open in Obsidian, VS Code, vim, or mdbook</li>
-        </ul>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ WHAT IT ACTUALLY FEELS LIKE ============================ -->
-<section class="s" id="feels">
-  <div class="wrap">
-    <header class="s__head">
-      <div class="s__eyebrow">In practice</div>
-      <h2 class="s__title">What it actually feels like.</h2>
-      <p class="s__sub">Two real loops from the maintainer's normal use: concrete, not marketing.</p>
-    </header>
-
-    <div class="feels">
-      <article class="anecdote">
-        <span class="anecdote__chip">Cross-project memory</span>
-        <h3>Evaluated a Phoenix translation library for one app. Months later, started a different Phoenix project with the same problem.</h3>
-        <p>scribe had already absorbed the verdict from the prior project's session: DB-backed Gettext with a LiveView admin UX, weighed against standard <code>.po</code> files and managed services. When Claude Code opened the new repo and asked the KB for translation options, the existing "skip" verdict surfaced first with the reasoning attached. No re-research; the agent cited the prior decision and moved on. The whole loop was invisible; the only thing the maintainer noticed was that the new project skipped the comparison shopping the first one did.</p>
-        <div class="anecdote__outcome"><code>tools/kanta.md · verdict: skip</code> · surfaced via <code>qmd query "phoenix translation library"</code></div>
-      </article>
-
-      <article class="anecdote">
-        <span class="anecdote__chip">Solved twice, written once</span>
-        <h3>Fixed an Oban idempotency bug in project A. Months later the same shape appeared in project B.</h3>
-        <p>The fix from project A (an idempotency-key strategy for an external-call worker) got captured automatically when the post-fix session was mined into the KB. When the same race showed up in a different Phoenix app months later, the agent grepped the KB before guessing, found the prior pattern, and proposed the exact same shape with the prior trade-offs already weighed. The second fix took fifteen minutes instead of an afternoon.</p>
-        <div class="anecdote__outcome"><code>solutions/oban-external-call-worker-idempotency.md</code> · linked from <code>solutions/fly-io-oban-cron-multi-node-double-fire.md</code></div>
       </article>
     </div>
   </div>
