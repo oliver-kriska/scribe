@@ -145,6 +145,14 @@
     },
     {
       "@type": "Question",
+      "name": "Can a team share one KB safely?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. A small team points every machine at one git-backed KB. A trust layer treats a shared scribe.yaml as untrusted by default — a pushed change that repoints inference or widens ingest paths reverts to the last trusted snapshot until a human approves it. A deterministic secret-scan gate holds API keys and tokens back before they reach shared git history (a regex pass on the commit path, no LLM, no network). allowed_remotes gates discovery by git-remote identity, so a teammate's unrelated or client repo never leaks in. scribe promote moves curated pages into the team KB with provenance, and a committed leader lease elects the single machine that runs the weekly consolidation — no server, no etcd."
+      }
+    },
+    {
+      "@type": "Question",
       "name": "Does scribe work on Linux?",
       "acceptedAnswer": {
         "@type": "Answer",
@@ -3288,6 +3296,11 @@ scribe doctor <span class="flag">--section</span> localmode
       <details class="q">
         <summary>What does it cost to run?</summary>
         <div class="answer"><strong>Zero</strong> on the local-mode path (Ollama) for the entire pipeline: every <code>claude -p</code> callsite in a normal <code>scribe sync</code>, including per-project extraction and the weekly Dream cycle, runs locally. On the Anthropic-hosted path, contextualize costs roughly <strong>$0.0001 per article</strong> via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard prices. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend.</div>
+      </details>
+
+      <details class="q">
+        <summary>Can a team share one KB safely?</summary>
+        <div class="answer">Yes. A small team points every machine at one git-backed KB. A trust layer treats a shared <code>scribe.yaml</code> as untrusted by default: a pushed change that repoints inference or widens ingest paths reverts to the last trusted snapshot until a human approves it. A deterministic secret-scan gate holds API keys and tokens back before they reach shared git history (a regex pass on the commit path, no LLM, no network). <code>allowed_remotes</code> gates discovery by git-remote identity, so a teammate's unrelated or client repo never leaks in. <code>scribe promote</code> moves curated pages into the team KB with provenance, and a committed leader lease elects the single machine that runs the weekly consolidation: no server, no etcd.</div>
       </details>
 
       <details class="q">
