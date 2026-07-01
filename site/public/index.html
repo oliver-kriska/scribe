@@ -3689,7 +3689,8 @@ scribe doctor <span class="flag">--section</span> localmode
       try {
         if (navigator.share) { await navigator.share(data); }
         else { await navigator.clipboard.writeText(url); flash('link copied'); }
-      } catch (_) {
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // user dismissed the share sheet; not a failure
         try { await navigator.clipboard.writeText(url); flash('link copied'); } catch (__) { flash('copy failed'); }
       }
     });
