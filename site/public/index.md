@@ -28,7 +28,7 @@ Three stages, one pipeline:
 - **Knowledge compounds across projects.** One cross-project KB, not siloed per repo. Solve the oban idempotency bug in project A on Monday; the agent finds your fix on Friday when the same shape comes up in project B.
 - **Fully local-capable — 100% Ollama.** Every LLM op — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining `claude -p` callsite in the normal sync flow. A single line in `scribe.yaml` flips the whole pipeline: `llm.provider: ollama`. Zero API spend.
 - **Plain markdown you own.** A git repo of plain markdown files with YAML frontmatter. Push to your own GitHub, Gitea, or Forgejo. Open in Obsidian, VS Code, vim, or mdbook. No SaaS, no vendor lock-in.
-- **Typed graph, not just tags.** Articles connect via typed edges: `supersedes`, `contradicts`, `specializes`, `derived_from`, `extends`. `scribe relations migrate` uses an LLM to classify existing `related:` links into the typed schema. An agent can follow *why* a decision was made, not just keyword-match it.
+- **Typed graph, not just tags.** Articles connect via a closed 10-kind typed-edge schema: `supersedes`, `contradicts`, `derived_from`, `specializes`, `extends`, and five more (`superseded_by`, `applies_to`, `instance_of`, `cited_by`, `informs`). `scribe relations migrate` uses an LLM to classify existing `related:` links into it. An agent can follow *why* a decision was made, not just keyword-match it.
 
 Here is what one page scribe writes looks like — plain markdown in git, typed `[[wikilinks]]` that form the graph above:
 
@@ -182,7 +182,7 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 
 ## The command surface
 
-38 subcommands, one binary. The ones you'll actually type:
+44 subcommands, one binary. The ones you'll actually type:
 
 ```
 scribe init                 # bootstrap a KB, wire the agent handshake
@@ -197,7 +197,7 @@ scribe relations migrate    # classify `related:` into typed edges
 scribe cron install / uninstall / status
 ```
 
-Run `scribe --help` to see all 38. `scribe cron install` puts the boring ones on a schedule so you never type them again.
+Run `scribe --help` to see all 44. `scribe cron install` puts the boring ones on a schedule so you never type them again.
 
 ## In practice
 

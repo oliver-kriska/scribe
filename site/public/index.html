@@ -931,15 +931,45 @@
      "under the hood" sections begin. A single tinted landmark band (not an
      alternating stripe); mono label kept muted so it doesn't add accent surface. */
   .uth { border-top: 1px solid var(--border); background: var(--bg-sub); }
-  .uth > .wrap {
-    display: flex; align-items: baseline; gap: 8px 16px; flex-wrap: wrap;
-    padding-block: clamp(22px, 3vw, 32px);
-  }
+  .uth > .wrap { padding-block: clamp(22px, 3vw, 32px); }
+  .uth__head { display: flex; align-items: baseline; gap: 8px 16px; flex-wrap: wrap; }
   .uth__label {
     font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.1em;
     text-transform: uppercase; color: var(--fg-soft); flex: none;
   }
   .uth__note { font-size: 13.5px; color: var(--muted); line-height: 1.5; max-width: 60ch; }
+
+  /* scope strip: the surface area in numbers — receipts, not adjectives. Every
+     figure is verified against the code (subcommands, providers, edge kinds). */
+  .scope { border-top: 1px solid var(--border); margin-top: clamp(32px, 4vw, 52px); padding-top: clamp(28px, 3.6vw, 40px); }
+  .scope__grid {
+    display: flex; flex-wrap: wrap; justify-content: center;
+    gap: 10px 26px; font-family: var(--font-mono); font-size: 14px; color: var(--fg-soft);
+  }
+  .scope__i { white-space: nowrap; }
+  .scope__i b { color: var(--fg); font-weight: 600; }
+  .scope__cap { margin: 15px auto 0; max-width: 64ch; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+  /* full capability surface: the depth catalog for the reader who scrolls into
+     "under the hood" — a grouped spec sheet, collapsed by default (≈0 length). */
+  .surface { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; margin-top: clamp(20px, 3vw, 30px); }
+  .surface > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 15px 18px; font-family: var(--font-mono); font-size: 13.5px; color: var(--fg);
+  }
+  .surface > summary::-webkit-details-marker { display: none; }
+  .surface > summary::after { content: "+"; color: var(--muted); font-family: var(--font-mono); font-size: 16px; }
+  .surface[open] > summary::after { content: "\2212"; }
+  .surface[open] > summary { border-bottom: 1px solid var(--border); }
+  .surface__grid { display: grid; grid-template-columns: max-content 1fr; column-gap: 22px; row-gap: 12px; margin: 0; padding: 18px; }
+  .surface__grid dt { font: 600 11.5px/1.5 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-soft); }
+  .surface__grid dd { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.55; }
+  .surface__grid code { font-size: 12px; }
+  @media (max-width: 560px) {
+    .surface__grid { grid-template-columns: 1fr; row-gap: 3px; padding: 16px; }
+    .surface__grid dt { margin-top: 12px; }
+    .surface__grid dt:first-of-type { margin-top: 0; }
+  }
   .s__head {
     max-width: 720px;
     margin-bottom: clamp(36px, 4vw, 56px);
@@ -2464,7 +2494,7 @@
       <article class="feature">
         <div class="feature__kicker">typed edges</div>
         <h3>Typed graph, not just tags</h3>
-        <p>Articles connect via typed edges: <code>supersedes</code>, <code>contradicts</code>, <code>specializes</code>, <code>derived_from</code>, <code>extends</code>. <code>scribe relations migrate</code> classifies existing <code>related:</code> links into the typed schema with an LLM.</p>
+        <p>Articles connect via a closed <strong>10-kind</strong> typed-edge schema: <code>supersedes</code>, <code>contradicts</code>, <code>derived_from</code>, <code>specializes</code>, <code>extends</code>, and five more. <code>scribe relations migrate</code> classifies existing <code>related:</code> links into it with an LLM.</p>
       </article>
     </div>
 
@@ -2528,6 +2558,21 @@ advisory locks table-ambiguous under load.
       </svg>
       <figcaption>A slice of a real scribe KB: entities linked by typed edges like supersedes and contradicts, not folders or tags, so an agent can follow why a decision was made, not just keyword-match it.</figcaption>
     </figure>
+
+    <div class="scope">
+      <div class="scope__grid">
+        <span class="scope__i"><b>4</b> input streams</span>
+        <span class="scope__i"><b>44</b> subcommands</span>
+        <span class="scope__i"><b>10</b> typed-edge kinds</span>
+        <span class="scope__i"><b>3</b> inference modes</span>
+        <span class="scope__i"><b>7</b> providers</span>
+        <span class="scope__i">two-pass absorb</span>
+        <span class="scope__i"><b>0</b> vector DBs</span>
+        <span class="scope__i"><b>0</b> required API keys</span>
+        <span class="scope__i"><b>1</b> self-contained binary</span>
+      </div>
+      <p class="scope__cap">The whole surface, in numbers — every figure is checkable against <code>scribe --help</code> and <code>scribe.yaml</code>, not marketing.</p>
+    </div>
   </div>
 </section>
 
@@ -3008,8 +3053,23 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
 <!-- ============================ UNDER THE HOOD (divider) ============================ -->
 <div class="uth">
   <div class="wrap">
-    <span class="uth__label">Under the hood</span>
-    <span class="uth__note">The mechanics, the full command surface, and querying &mdash; for when you want the details.</span>
+    <div class="uth__head">
+      <span class="uth__label">Under the hood</span>
+      <span class="uth__note">The mechanics, the full command surface, and querying &mdash; for when you want the details.</span>
+    </div>
+    <details class="surface">
+      <summary>The full surface &mdash; everything scribe does</summary>
+      <dl class="surface__grid">
+        <dt>Capture</dt><dd>git repos &middot; Claude Code (ccrider FTS5) &middot; Codex rollouts &middot; iMessage self-chat &middot; drop files &middot; URL ingest</dd>
+        <dt>Triage</dt><dd>BM25 keyword-density gate &middot; zero-LLM reject &middot; <code>sync --estimate</code> token preview</dd>
+        <dt>Extract</dt><dd>two-pass absorb &middot; entity-first fan-out &middot; retrieval-context splicing &middot; <code>deep</code> / <code>assess</code> batch passes</dd>
+        <dt>Graph</dt><dd>closed 10-kind typed-edge schema &middot; <code>_backlinks.json</code> &middot; orphan linking &middot; qmd BM25 + vector index</dd>
+        <dt>Hygiene</dt><dd>frontmatter validate &middot; structural lint &middot; staleness ledger &middot; contradiction ledger &middot; Dream 4-phase consolidation</dd>
+        <dt>Governance</dt><dd>trust layer &middot; secret-scan commit gate &middot; <code>allowed_remotes</code> &middot; promote-with-provenance &middot; committed leader lease</dd>
+        <dt>Inference</dt><dd>local / hosted / Anthropic &middot; per-op model routing &middot; daily spend ceiling &middot; <code>scribe cost</code> reconciliation</dd>
+        <dt>Agents &amp; ops</dt><dd>CLAUDE.md + AGENTS.md handshake &middot; qmd MCP + shell query &middot; launchd / systemd &middot; checkpointed writes &middot; run records &middot; <code>scribe doctor</code></dd>
+      </dl>
+    </details>
   </div>
 </div>
 
@@ -3193,7 +3253,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <section class="s" id="commands">
   <div class="wrap">
     <header class="s__head">
-      <h2 class="s__title">38 subcommands. One binary.</h2>
+      <h2 class="s__title">44 subcommands. One binary.</h2>
       <p class="s__sub">Here are the ones you'll actually type. Everything else is <code>scribe doctor</code>-discoverable.</p>
     </header>
 
@@ -3219,7 +3279,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe cron</span> <span class="cmd-arg">install</span> / <span class="cmd-arg">uninstall</span> / <span class="cmd-arg">status</span>
 </code></pre>
       </div>
-      <p class="commands__caption">Run <code>scribe --help</code> to see all 38. <code>scribe cron install</code> puts the boring ones on a schedule so you never type them again.</p>
+      <p class="commands__caption">Run <code>scribe --help</code> to see all 44. <code>scribe cron install</code> puts the boring ones on a schedule so you never type them again.</p>
     </div>
   </div>
 </section>
