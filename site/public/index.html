@@ -2287,7 +2287,7 @@
       GitHub
     </a>
     <button class="nav__menu-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
     </button>
   </div>
 </header>
@@ -2331,7 +2331,7 @@
           <span class="hero__install-sigil" aria-hidden="true">$</span>
           <code id="code-hero-install">brew install oliver-kriska/scribe/scribe</code>
           <button class="copy-btn" data-copy-target="code-hero-install" aria-label="Copy install command">copy</button>
-          <button class="copy-btn hero__share" data-share aria-label="Share or save scribe to open on your desktop">save</button>
+          <button class="copy-btn hero__share" data-share aria-label="Share the scribe page, or copy its link">share</button>
         </div>
         <div class="hero__cta">
           <a class="btn btn--accent" href="#install">
@@ -3541,6 +3541,7 @@ scribe doctor <span class="flag">--section</span> localmode
     menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     menuBtn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
     bgEls.forEach(el => { el.inert = open; }); // trap focus in the overlay while open
+    if (open) { const first = menu.querySelector('a, button'); if (first) first.focus(); } // move focus into the disclosure
   };
   menuBtn.addEventListener('click', () => setMenu(!menu.classList.contains('is-open')));
   menu.addEventListener('click', e => { if (e.target.matches('a')) setMenu(false); });
@@ -3687,9 +3688,9 @@ scribe doctor <span class="flag">--section</span> localmode
       };
       try {
         if (navigator.share) { await navigator.share(data); }
-        else { await navigator.clipboard.writeText(url); flash('link saved'); }
+        else { await navigator.clipboard.writeText(url); flash('link copied'); }
       } catch (_) {
-        try { await navigator.clipboard.writeText(url); flash('link saved'); } catch (__) { /* ignore */ }
+        try { await navigator.clipboard.writeText(url); flash('link copied'); } catch (__) { flash('copy failed'); }
       }
     });
   });
