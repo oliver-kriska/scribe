@@ -40,6 +40,7 @@ type CLI struct {
 	Ingest        IngestCmd        `cmd:"" group:"content" help:"Ingest a URL into raw/articles/ (queue or synchronous)."`
 	Absorb        AbsorbCmd        `cmd:"" group:"content" help:"Absorb a local file (md/txt/html) into the KB end-to-end: ingest → contextualize → absorb."`
 	Capture       CaptureCmd       `cmd:"" group:"content" help:"Capture iMessage self-chat URLs/notes into raw/articles/."`
+	Pull          PullCmd          `cmd:"" group:"content" help:"Pull bookmarks from configured integrations (Pinboard, …) into the ingest queue."`
 	Contextualize ContextualizeCmd `cmd:"" group:"content" help:"Insert LLM-generated retrieval-context paragraph into raw articles for better qmd search."`
 	Projects      ProjectsCmd      `cmd:"" group:"content" help:"List, approve, ignore, or review discovered projects."`
 	Scan          ScanCmd          `cmd:"" group:"content" help:"Pre-scan a project for extraction."`
