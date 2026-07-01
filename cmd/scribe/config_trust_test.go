@@ -111,6 +111,27 @@ func TestTeamCaptureHardOff(t *testing.T) {
 	}
 }
 
+func TestTeamIntegrationsHardOff(t *testing.T) {
+	// Repo config enables a pull integration in a team KB — must be ignored
+	// even with no trust record yet (personal source, like capture).
+	root := setupTrustKB(t,
+		"team: true\nintegrations:\n  pinboard:\n    enabled: true\n    scope: all\n", "")
+	cfg := loadConfig(root)
+	if len(cfg.Integrations) != 0 {
+		t.Errorf("team KB took integrations config from the repo file: %+v", cfg.Integrations)
+	}
+
+	// scribe.local.yaml re-enables it — local layer is sovereign.
+	if err := os.WriteFile(filepath.Join(root, localConfigName),
+		[]byte("integrations:\n  pinboard:\n    enabled: true\n    scope: unread\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg = loadConfig(root)
+	if ic, ok := cfg.Integrations["pinboard"]; !ok || !ic.Enabled || ic.Scope != "unread" {
+		t.Errorf("local integrations override lost: %+v", cfg.Integrations)
+	}
+}
+
 func TestSoloKBUnaffected(t *testing.T) {
 	root := setupTrustKB(t,
 		"capture:\n  self_chat_handle: \"+421900000000\"\nsources:\n  include: [\"/my/path\"]\n", "")
