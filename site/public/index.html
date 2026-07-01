@@ -1100,6 +1100,33 @@
   .kg__elabel { font-family: var(--font-mono); font-size: 10.5px; fill: var(--muted); }
   .kg__elabel-bg { fill: var(--bg); }
 
+  /* the artifact itself — an actual scribe-written page. Everywhere else the
+     page shows scribe *running*; this shows what it *writes*. Theme-aware (it's
+     plain markdown you own and open in any editor), and accent is reserved for
+     the [[wikilinks]] — the same typed edges the graph below draws. */
+  .artifact { margin: clamp(28px, 4vw, 44px) auto 0; max-width: 600px; }
+  .artifact__card { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+  .artifact__bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px; background: var(--bg-sub); border-bottom: 1px solid var(--border);
+  }
+  .artifact__path { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--fg-soft); }
+  .artifact__ficon { width: 13px; height: 13px; color: var(--muted); flex: none; }
+  .artifact__tag { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+  .artifact__body {
+    margin: 0; padding: 16px 18px 18px;
+    font-family: var(--font-mono); font-size: 12.5px; line-height: 1.72;
+    color: var(--fg-soft); white-space: pre-wrap; overflow-x: auto;
+  }
+  .artifact__fm   { color: var(--muted); }
+  .artifact__key  { color: var(--muted); }
+  .artifact__link { color: var(--accent); font-weight: 500; }
+  .artifact__h1   { color: var(--fg); font-weight: 600; }
+  .artifact__h2   { color: var(--fg-soft); font-weight: 600; }
+  .artifact__em   { color: var(--fg); font-weight: 600; }
+  .artifact figcaption { margin: 14px auto 0; max-width: 62ch; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  @media (max-width: 520px) { .artifact__tag { display: none; } }
+
   /* for-teams: same content as a feature grid, deliberately re-skinned as a
      flat 2-col spec list (no icon tiles, no card surfaces, hairline row rules)
      so the section reads distinctly from the Features icon grid above. */
@@ -2419,6 +2446,37 @@
         <p>Articles connect via typed edges: <code>supersedes</code>, <code>contradicts</code>, <code>specializes</code>, <code>derived_from</code>, <code>extends</code>. <code>scribe relations migrate</code> classifies existing <code>related:</code> links into the typed schema with an LLM.</p>
       </article>
     </div>
+
+    <figure class="artifact">
+      <div class="artifact__card">
+        <div class="artifact__bar">
+          <span class="artifact__path">
+            <svg class="artifact__ficon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5z"/><path d="M9 1.5V5.5H13"/></svg>
+            wiki/decisions/ecto-multi.md
+          </span>
+          <span class="artifact__tag">written by scribe · not typed by hand</span>
+        </div>
+<pre class="artifact__body"><span class="artifact__fm">---</span>
+<span class="artifact__key">type:</span> decision
+<span class="artifact__key">tags:</span> [ecto, postgres, multi-tenancy]
+<span class="artifact__key">supersedes:</span> <span class="artifact__link">[[ecto-transaction]]</span>
+<span class="artifact__fm">---</span>
+
+<span class="artifact__h1"># Row-level tenancy over schema-per-tenant</span>
+
+Chose a tenant_id column with Postgres RLS over a schema
+per tenant: migrations stay single-pass and the pool
+doesn't fan out per tenant.
+
+<span class="artifact__em">Why:</span> schema-per-tenant broke oban job routing and made
+advisory locks table-ambiguous under load.
+
+<span class="artifact__h2">## See also</span>
+- <span class="artifact__link">[[oban-idempotency]]</span>        · dedupe key includes tenant_id
+- <span class="artifact__link">[[genserver-backpressure]]</span>  · per-tenant rate isolation</pre>
+      </div>
+      <figcaption>Not scribe running — scribe&rsquo;s output. A page it wrote to git: YAML frontmatter, prose, and typed <code>[[wikilinks]]</code>. Those links are the edges the graph below draws.</figcaption>
+    </figure>
 
     <figure class="kgraph">
       <svg viewBox="0 0 720 330" role="img" aria-label="A slice of a real scribe knowledge base: entities such as ecto-multi, oban-idempotency, and genserver-backpressure joined by typed edges — supersedes, derived_from, contradicts, specializes, extends — rather than folders or tags.">
