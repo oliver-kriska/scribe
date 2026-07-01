@@ -2831,13 +2831,15 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
     <header class="s__head">
       <div class="s__eyebrow">CLI</div>
       <h2 class="s__title">Set it up once. Forget it.</h2>
-      <p class="s__sub">Two commands to install. One line in a YAML to go fully local. One query from any terminal.</p>
+      <p class="s__sub">Two commands to install. One <code>llm</code> block in <code>scribe.yaml</code> routes the whole pipeline local, hosted, or Anthropic. One query from any terminal.</p>
     </header>
 
     <div class="code-card">
       <div class="code-tabs" role="tablist" id="tabs">
         <button class="code-tab" role="tab" data-tab="install" aria-selected="true" aria-controls="panel-install" id="tab-install" tabindex="0">install</button>
-        <button class="code-tab" role="tab" data-tab="local" aria-selected="false" aria-controls="panel-local" id="tab-local" tabindex="-1">scribe.yaml (local mode)</button>
+        <button class="code-tab" role="tab" data-tab="local" aria-selected="false" aria-controls="panel-local" id="tab-local" tabindex="-1">scribe.yaml · local</button>
+        <button class="code-tab" role="tab" data-tab="hosted" aria-selected="false" aria-controls="panel-hosted" id="tab-hosted" tabindex="-1">scribe.yaml · hosted</button>
+        <button class="code-tab" role="tab" data-tab="anthropic" aria-selected="false" aria-controls="panel-anthropic" id="tab-anthropic" tabindex="-1">scribe.yaml · Anthropic</button>
         <button class="code-tab" role="tab" data-tab="query" aria-selected="false" aria-controls="panel-query" id="tab-query" tabindex="-1">search</button>
         <button class="code-tab" role="tab" data-tab="doctor" aria-selected="false" aria-controls="panel-doctor" id="tab-doctor" tabindex="-1">doctor</button>
       </div>
@@ -2873,6 +2875,38 @@ curl <span class="flag">-fsSL</span> <span class="str">https://raw.githubusercon
     <span class="kw">model</span>: <span class="str">qwen3:30b-a3b</span>       <span class="comment"># quality-critical (MoE, fast)</span>
   <span class="kw">pass2</span>:
     <span class="kw">model</span>: <span class="str">qwen3:30b-a3b</span>       <span class="comment"># highest-quality writes</span></pre>
+      </div>
+
+      <div class="code-panel" data-tab="hosted" id="panel-hosted" role="tabpanel" aria-labelledby="tab-hosted" tabindex="0">
+        <button class="copy-btn" data-copy-target="code-hosted">copy</button>
+<pre id="code-hosted"><span class="comment"># scribe.yaml — run the same open models on a hosted GPU (~$2–6/mo)</span>
+<span class="kw">llm</span>:
+  <span class="kw">provider</span>: together          <span class="comment"># together | groq | fireworks | huggingface</span>
+  <span class="kw">model</span>: <span class="str">qwen3-30b-a3b</span>         <span class="comment"># a real hosted model id, not a Claude alias</span>
+  <span class="kw">api_key_env</span>: <span class="str">TOGETHER_API_KEY</span>  <span class="comment"># only the VAR NAME lives here — never the key</span>
+  <span class="kw">pricing</span>:                      <span class="comment"># optional, so `scribe cost` reports dollars</span>
+    <span class="str">"together/qwen3-30b-a3b"</span>: { <span class="kw">input</span>: <span class="num">0.10</span>, <span class="kw">output</span>: <span class="num">0.30</span> }
+
+<span class="comment"># the key stays OUT of this file (a shared KB may commit it):</span>
+<span class="comment">#   ~/.config/scribe/config.yaml →  llm_api_key: tok-xxxx   (chmod 600)</span>
+<span class="comment"># heads-up: a hosted provider sees your KB content on every call.</span></pre>
+      </div>
+
+      <div class="code-panel" data-tab="anthropic" id="panel-anthropic" role="tabpanel" aria-labelledby="tab-anthropic" tabindex="0">
+        <button class="copy-btn" data-copy-target="code-anthropic">copy</button>
+<pre id="code-anthropic"><span class="comment"># scribe.yaml — the default: Anthropic via `claude -p` (your CLI auth)</span>
+<span class="kw">llm</span>:
+  <span class="kw">provider</span>: anthropic         <span class="comment"># the default; no API key in scribe, uses claude -p</span>
+  <span class="kw">model</span>: <span class="str">sonnet</span>               <span class="comment"># cross-op default</span>
+
+<span class="comment"># per-op pinning: cheap entity pass on haiku, quality writes on sonnet</span>
+<span class="kw">absorb</span>:
+  <span class="kw">pass1_model</span>: <span class="str">haiku</span>         <span class="comment"># ≈ $0.0001/doc entity-list pass</span>
+  <span class="kw">pass2_model</span>: <span class="str">sonnet</span>        <span class="comment"># highest-quality writes</span>
+
+<span class="comment"># runaway-spend backstop before any paid provider:</span>
+<span class="kw">sync</span>:
+  <span class="kw">daily_output_token_ceiling</span>: <span class="num">200000</span></pre>
       </div>
 
       <div class="code-panel" data-tab="query" id="panel-query" role="tabpanel" aria-labelledby="tab-query" tabindex="0">
