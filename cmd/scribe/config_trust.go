@@ -79,17 +79,21 @@ const localConfigName = "scribe.local.yaml"
 //   - SecretScan: the credential gate — a pushed disable/allow_paths
 //     change must not weaken what another member's machine commits.
 type sensitiveConfig struct {
-	Team              bool             `json:"team"`
-	Sources           SourcesConfig    `json:"sources"`
-	ClaudeProjectsDir string           `json:"claude_projects_dir"`
-	CodexSessionsDir  string           `json:"codex_sessions_dir"`
-	CcriderDB         string           `json:"ccrider_db"`
-	Capture           CaptureConfig    `json:"capture"`
-	OllamaURL         string           `json:"ollama_url"`
-	BaseURL           string           `json:"base_url"`
-	APIKeyEnv         string           `json:"api_key_env"`
-	CodexMine         bool             `json:"codex_mine"`
-	SecretScan        SecretScanConfig `json:"secret_scan"`
+	Team              bool          `json:"team"`
+	Sources           SourcesConfig `json:"sources"`
+	ClaudeProjectsDir string        `json:"claude_projects_dir"`
+	CodexSessionsDir  string        `json:"codex_sessions_dir"`
+	CcriderDB         string        `json:"ccrider_db"`
+	Capture           CaptureConfig `json:"capture"`
+	// Integrations is a personal ingestion source (pull adapters). Locked for
+	// the same reason as Capture: a pushed change widens what's ingested and
+	// from where. Also hard-off in team mode below.
+	Integrations IntegrationsConfig `json:"integrations"`
+	OllamaURL    string             `json:"ollama_url"`
+	BaseURL      string             `json:"base_url"`
+	APIKeyEnv    string             `json:"api_key_env"`
+	CodexMine    bool               `json:"codex_mine"`
+	SecretScan   SecretScanConfig   `json:"secret_scan"`
 
 	ExtractOllamaURL       string `json:"extract_ollama_url"`
 	DreamOllamaURL         string `json:"dream_ollama_url"`
@@ -154,6 +158,7 @@ func sensitiveFrom(cfg *ScribeConfig) sensitiveConfig {
 		CodexSessionsDir:  cfg.CodexSessionsDir,
 		CcriderDB:         cfg.CcriderDB,
 		Capture:           cfg.Capture,
+		Integrations:      cfg.Integrations,
 		OllamaURL:         cfg.LLM.OllamaURL,
 		BaseURL:           cfg.LLM.BaseURL,
 		APIKeyEnv:         cfg.LLM.APIKeyEnv,
@@ -199,6 +204,7 @@ func (s sensitiveConfig) applyTo(cfg *ScribeConfig) {
 	cfg.CodexSessionsDir = s.CodexSessionsDir
 	cfg.CcriderDB = s.CcriderDB
 	cfg.Capture = s.Capture
+	cfg.Integrations = s.Integrations
 	cfg.LLM.OllamaURL = s.OllamaURL
 	cfg.LLM.BaseURL = s.BaseURL
 	cfg.LLM.APIKeyEnv = s.APIKeyEnv
@@ -341,6 +347,12 @@ func enforceConfigTrust(root string, cfg *ScribeConfig) {
 		// ingestion is strictly a local decision: scribe.local.yaml or
 		// SCRIBE_SELF_CHAT_ID re-enable it after this point.
 		cfg.Capture = CaptureConfig{}
+		// Pull integrations (Pinboard, …) are personal sources for the same
+		// reason: a pushed `integrations.*.enabled: true` must not make every
+		// teammate pull from an account. Re-enable per-person via
+		// scribe.local.yaml. (Tokens live only in user config/env, so this is
+		// belt-and-suspenders — an unconfigured member already no-ops.)
+		cfg.Integrations = nil
 	}
 }
 
@@ -434,6 +446,7 @@ func sensitiveDiff(trusted, current sensitiveConfig) []string {
 		{"codex_sessions_dir", trusted.CodexSessionsDir, current.CodexSessionsDir},
 		{"ccrider_db", trusted.CcriderDB, current.CcriderDB},
 		{"capture", trusted.Capture, current.Capture},
+		{"integrations", trusted.Integrations, current.Integrations},
 		{"llm.ollama_url", trusted.OllamaURL, current.OllamaURL},
 		{"llm.base_url", trusted.BaseURL, current.BaseURL},
 		{"llm.api_key_env", trusted.APIKeyEnv, current.APIKeyEnv},

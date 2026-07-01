@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -145,47 +146,152 @@ func markContextualized(root, rawBase string) {
 	}
 }
 
-// ingestQueue writes a small .url file to output/inbox/ and returns.
-func ingestQueue(root, rawURL, title string, tags []string, domain, fetcher string, dryRun bool) error {
-	inbox := filepath.Join(root, "output", "inbox")
+// queueFields is the content of one output/inbox/*.url entry. Shared by
+// `ingest url` and the pull adapters (source.go) so both agree on the on-disk
+// format that drainOne consumes. Note and Source are the adapter extensions:
+// Note is the user's own annotation (Pinboard `extended`), prepended to the
+// fetched body as a blockquote by drainOne; Source is a provenance tag
+// (e.g. "pinboard") merged into the article's frontmatter tags.
+type queueFields struct {
+	URL      string
+	Title    string
+	Tags     []string
+	Domain   string
+	Fetcher  string
+	Note     string
+	Source   string
+	QueuedAt time.Time
+}
 
-	ts := time.Now()
+func (f *queueFields) applyDefaults() {
+	if f.QueuedAt.IsZero() {
+		f.QueuedAt = time.Now()
+	}
+	if f.Domain == "" {
+		f.Domain = "general"
+	}
+}
+
+// renderQueueEntry serializes a queue entry to the line-based `key: value`
+// format parseQueueEntry reads. Callers apply defaults first.
+func renderQueueEntry(f queueFields) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "url: %s\n", f.URL)
+	if f.Title != "" {
+		fmt.Fprintf(&sb, "title: %s\n", f.Title)
+	}
+	if len(f.Tags) > 0 {
+		fmt.Fprintf(&sb, "tags: %s\n", strings.Join(f.Tags, ", "))
+	}
+	fmt.Fprintf(&sb, "domain: %s\n", f.Domain)
+	if f.Fetcher != "" && f.Fetcher != "auto" {
+		fmt.Fprintf(&sb, "fetcher: %s\n", f.Fetcher)
+	}
+	if f.Source != "" {
+		fmt.Fprintf(&sb, "source: %s\n", f.Source)
+	}
+	if f.Note != "" {
+		// The queue format is line-based, so the note is single-line encoded
+		// (newlines → \n sentinel) and decoded back in drainOne.
+		fmt.Fprintf(&sb, "note: %s\n", encodeQueueNote(f.Note))
+	}
+	fmt.Fprintf(&sb, "queued_at: %s\n", f.QueuedAt.Format(time.RFC3339))
+	return sb.String()
+}
+
+// uniqueQueuePath builds a collision-free inbox path. Bulk adapter pulls queue
+// many entries in the same second, so a numeric suffix disambiguates when the
+// timestamp+slug base already exists on disk.
+func uniqueQueuePath(inbox, rawURL string, ts time.Time) string {
 	stamp := ts.Format("2006-01-02-150405")
 	slug := slugify(rawURL)
 	if len(slug) > 40 {
 		slug = slug[:40]
 	}
-	fname := fmt.Sprintf("%s-%s.url", stamp, slug)
-	path := filepath.Join(inbox, fname)
+	base := stamp + "-" + slug
+	path := filepath.Join(inbox, base+".url")
+	for n := 2; fileExists(path); n++ {
+		path = filepath.Join(inbox, fmt.Sprintf("%s-%d.url", base, n))
+	}
+	return path
+}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "url: %s\n", rawURL)
-	if title != "" {
-		fmt.Fprintf(&sb, "title: %s\n", title)
+// writeQueueEntry atomically writes one queue entry into inbox and returns its
+// path. Temp-then-rename keeps a concurrent `ingest drain` from ever reading a
+// half-written *.url file.
+func writeQueueEntry(inbox string, f queueFields) (string, error) {
+	f.applyDefaults()
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		return "", fmt.Errorf("create inbox: %w", err)
 	}
-	if len(tags) > 0 {
-		fmt.Fprintf(&sb, "tags: %s\n", strings.Join(tags, ", "))
+	path := uniqueQueuePath(inbox, f.URL, f.QueuedAt)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(renderQueueEntry(f)), 0o644); err != nil {
+		return "", fmt.Errorf("write queue entry: %w", err)
 	}
-	fmt.Fprintf(&sb, "domain: %s\n", domain)
-	if fetcher != "" && fetcher != "auto" {
-		fmt.Fprintf(&sb, "fetcher: %s\n", fetcher)
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return "", fmt.Errorf("finalize queue entry: %w", err)
 	}
-	fmt.Fprintf(&sb, "queued_at: %s\n", ts.Format(time.RFC3339))
+	return path, nil
+}
+
+// encodeQueueNote flattens a possibly multi-line note to a single line so it
+// survives the line-based queue format. decodeQueueNote reverses it.
+func encodeQueueNote(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return strings.ReplaceAll(s, "\n", "\\n")
+}
+
+func decodeQueueNote(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				b.WriteByte('\n')
+				i++
+				continue
+			case '\\':
+				b.WriteByte('\\')
+				i++
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// queueNoteBlockquote renders a decoded note as a markdown blockquote so it
+// reads as the user's annotation above the fetched content.
+func queueNoteBlockquote(note string) string {
+	lines := strings.Split(strings.TrimSpace(note), "\n")
+	for i, ln := range lines {
+		lines[i] = strings.TrimRight("> "+ln, " ")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// ingestQueue writes a small .url file to output/inbox/ and returns.
+func ingestQueue(root, rawURL, title string, tags []string, domain, fetcher string, dryRun bool) error {
+	inbox := filepath.Join(root, "output", "inbox")
+	f := queueFields{URL: rawURL, Title: title, Tags: tags, Domain: domain, Fetcher: fetcher}
+	f.applyDefaults()
 
 	if dryRun {
-		fmt.Printf("[dry-run] would queue: %s\n", path)
+		fmt.Printf("[dry-run] would queue: %s\n", uniqueQueuePath(inbox, rawURL, f.QueuedAt))
 		fmt.Println("---")
-		fmt.Println(sb.String())
+		fmt.Println(renderQueueEntry(f))
 		return nil
 	}
 
-	if err := os.MkdirAll(inbox, 0o755); err != nil {
-		return fmt.Errorf("create inbox: %w", err)
+	path, err := writeQueueEntry(inbox, f)
+	if err != nil {
+		return err
 	}
-	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
-		return fmt.Errorf("write queue entry: %w", err)
-	}
-
 	fmt.Printf("queued: %s\n", path)
 	return nil
 }
@@ -457,7 +563,19 @@ func drainOne(root, queuePath string, dryRun bool) error {
 		finalTitle = "Untitled"
 	}
 
-	path, content := buildRawArticle(root, rawURL, finalTitle, res.Body, res.Via, domain, tags)
+	// Adapter extensions: preserve the user's own annotation (note:) as a
+	// leading blockquote, and stamp the provenance tag (source:) into
+	// frontmatter. Both survive a successful fetch (the fetched body alone
+	// would otherwise drop the pull-time context).
+	body := res.Body
+	if note := decodeQueueNote(entry["note"]); strings.TrimSpace(note) != "" {
+		body = queueNoteBlockquote(note) + "\n\n" + body
+	}
+	if src := entry["source"]; src != "" && !slices.Contains(tags, src) {
+		tags = append(tags, src)
+	}
+
+	path, content := buildRawArticle(root, rawURL, finalTitle, body, res.Via, domain, tags)
 
 	if dryRun {
 		logMsg("ingest", "[dry-run] would write %s (via %s, %d bytes)", filepath.Base(path), res.Via, len(content))
