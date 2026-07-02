@@ -610,6 +610,8 @@ scribe sync         # discover → extract → absorb → reindex
 scribe projects     # list discovered projects with status
 scribe projects review       # interactively approve/ignore pending projects
 scribe projects approve --all # approve everything pending
+scribe projects add <path> [--local] [--domain d]  # enroll a repo by hand (no session history needed); --local = this machine only
+scribe projects add --from-sources  # bulk-enroll every sources.include-listed repo (globs expand)
 scribe config diff  # team KBs: show sensitive scribe.yaml keys changed since last trusted
 scribe config trust # team KBs: approve the current sensitive keys
 scribe config update # append commented docs for options added since your scribe.yaml was scaffolded
@@ -620,6 +622,7 @@ scribe triage       # score unprocessed sessions by knowledge density
 scribe capture      # pull links you iMessaged to yourself as bookmarks (macOS only; needs Full Disk Access)
 scribe ingest url <url> --absorb   # queue-less ingest + contextualize + absorb
 scribe absorb <file>         # absorb a local file (md/txt/html) end-to-end
+scribe drop --title "..." --type solution   # author a validated drop file in the CURRENT project (what agents use via the scribe-kb skill)
 scribe contextualize --scope raw|wiki|all   # insert retrieval-context paragraphs
 scribe status       # one-shot KB scoreboard (raw/wiki/backlog) — splits held-by-policy from genuinely-pending
 scribe projects {list,approve,ignore,review}  # approve/ignore discovered projects before they enter the pipeline

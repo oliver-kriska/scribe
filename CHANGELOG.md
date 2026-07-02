@@ -47,6 +47,23 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   no longer blocks another KB's runs or the hourly auto-commit. (follow-ups to
   #25/#26)
 
+### Also unreleased — landed on main after the v0.3.0 tag was cut
+- **Stop-words commit gate** (#25): user-defined words hold (or mask) a document
+  out of the KB at commit time — whole-word case-insensitive by default,
+  `/regex/` opt-in, union of the shared `scribe.yaml` list and a personal
+  never-committed one. Same fail-closed posture as the secret gate.
+- **`scribe projects add <path> [--local] [--domain] [--name]`** (#41/#28):
+  one-step enrollment for repos with no session history, with
+  comment-preserving `scribe.yaml` editing — and the `scribe.local.yaml`
+  merge footgun fixed: local `sources.include`/`exclude` now UNION with the
+  committed list instead of silently replacing it.
+- **doctor/status KB-scoping completed** (#27): cron kb-scope headline,
+  manifest-scoped session backlog, per-collection qmd status.
+- **#26 follow-ups**: per-KB scheduler cadence gating, machine-level
+  `daily_output_token_ceiling` across KBs, multi-KB watcher.
+- Internal: the three `nolint:gocognit` LLM drivers decomposed on top of a
+  scripted stub-provider harness (#9).
+
 ## [0.3.0] — 2026-06-30
 
 The big one: scribe grows from a single-user tool into one a small team can
