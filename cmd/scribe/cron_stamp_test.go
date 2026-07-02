@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -255,6 +256,113 @@ func TestCronInstallSkipsAllHandEdited(t *testing.T) {
 		}
 		if string(got) != renderPlist(job) {
 			t.Errorf("job %s was rewritten despite being unstamped/hand-edited and no --force", job.Name)
+		}
+	}
+}
+
+// TestBootstrapAgentRetriesOnce pins the EIO-race handling: launchctl
+// bootstrap can fail with exit 5 when it races the asynchronous teardown of
+// a KeepAlive instance the preceding bootout is still draining (observed
+// live on the #54 adoption run). bootstrapAgent must retry bootstrap exactly
+// once — and only bootstrap, never a second bootout, which would restart
+// the very teardown it is waiting out.
+func TestBootstrapAgentRetriesOnce(t *testing.T) {
+	origRun, origDelay := runLaunchctl, bootstrapRetryDelay
+	defer func() { runLaunchctl, bootstrapRetryDelay = origRun, origDelay }()
+	bootstrapRetryDelay = 0
+
+	var calls [][]string
+	bootstraps := 0
+	runLaunchctl = func(args ...string) (string, error) {
+		calls = append(calls, args)
+		if args[0] != "bootstrap" {
+			return "", nil
+		}
+		bootstraps++
+		if bootstraps == 1 {
+			return "Bootstrap failed: 5: Input/output error", errors.New("exit status 5")
+		}
+		return "", nil
+	}
+
+	bootstrapAgent("gui/501", "/fake/com.scribe.test.plist", "com.scribe.test")
+
+	want := [][]string{
+		{"bootout", "gui/501/com.scribe.test"},
+		{"bootstrap", "gui/501", "/fake/com.scribe.test.plist"},
+		{"bootstrap", "gui/501", "/fake/com.scribe.test.plist"},
+	}
+	if len(calls) != len(want) {
+		t.Fatalf("launchctl calls = %v, want %v", calls, want)
+	}
+	for i := range want {
+		if strings.Join(calls[i], " ") != strings.Join(want[i], " ") {
+			t.Errorf("call %d = %v, want %v", i, calls[i], want[i])
+		}
+	}
+}
+
+// TestCronInstallLoadsCurrentButUnloadedPlist drives Run() end to end over a
+// LaunchAgents dir where every job's plist is stamped and current but NOT
+// loaded into launchd. Plain install (no --force) must bootstrap every one of
+// them without rewriting a single file — this is exactly the state a failed
+// bootstrap leaves behind, and it is what makes doctor's "plist on disk but
+// not loaded → fix: scribe cron install" line actually true.
+func TestCronInstallLoadsCurrentButUnloadedPlist(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("LaunchAgent install is darwin-only")
+	}
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	kb := t.TempDir() // throwaway on purpose — proves no write is attempted
+	t.Setenv("SCRIBE_KB", kb)
+	if err := os.WriteFile(filepath.Join(kb, "scribe.yaml"), []byte("kb_name: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	agents := filepath.Join(fakeHome, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	binary := resolveScribeBinary()
+	stamped := map[string]string{} // path -> exact bytes written
+	for _, job := range scribeJobs(binary) {
+		content := stampPlist(renderPlist(job))
+		if err := os.WriteFile(plistPath(job.Name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stamped[plistPath(job.Name)] = content
+	}
+
+	origRun := runLaunchctl
+	defer func() { runLaunchctl = origRun }()
+	bootstrapped := map[string]bool{} // plist path -> bootstrap seen
+	runLaunchctl = func(args ...string) (string, error) {
+		switch args[0] {
+		case "print":
+			return "Could not find service", errors.New("exit status 113")
+		case "bootstrap":
+			bootstrapped[args[2]] = true
+		}
+		return "", nil
+	}
+
+	c := &CronInstallCmd{}
+	if err := c.Run(); err != nil {
+		t.Fatalf("install over current-but-unloaded plists: want nil error, got %v", err)
+	}
+
+	for _, job := range scribeJobs(binary) {
+		path := plistPath(job.Name)
+		if !bootstrapped[path] {
+			t.Errorf("job %s: current-but-unloaded plist was not bootstrapped", job.Name)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != stamped[path] {
+			t.Errorf("job %s was rewritten despite being current (only a load was needed)", job.Name)
 		}
 	}
 }

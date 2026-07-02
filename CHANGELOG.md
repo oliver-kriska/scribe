@@ -13,7 +13,10 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   formula's `post_install` runs the new `scribe cron install --if-installed` —
   a silent no-op unless cron was already opted into — so `brew upgrade` picks up
   new or changed scheduled jobs automatically. Existing installs need one
-  `scribe cron install --force` to adopt stamping. (#54)
+  `scribe cron install --force` to adopt stamping. Install also heals load
+  state — a current plist that isn't loaded into launchd gets bootstrapped —
+  and bootstrap retries once to absorb launchd's bootout-teardown race
+  (exit 5), both hit live on the first adoption run. (#54)
 - **`scribe drop`** — validated drop-file authoring CLI. Agents (and humans)
   author well-formed drop files from any project without hand-rolling
   frontmatter; the scribe-kb skill and both handshake templates now point at it,

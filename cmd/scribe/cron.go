@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CronCmd manages macOS LaunchAgents for scribe's scheduled KB jobs.
@@ -475,6 +476,30 @@ func realRunLaunchctl(args ...string) (string, error) {
 	return string(out), err
 }
 
+// bootstrapRetryDelay is how long bootstrapAgent waits before its single
+// retry. Package var so tests can zero it.
+var bootstrapRetryDelay = time.Second
+
+// bootstrapAgent (re)loads one plist into the launchd domain: boot out any
+// existing instance (errors ignored — it may simply not be loaded), then
+// bootstrap. launchctl bootstrap can fail with exit 5 (Input/output error)
+// when it races the asynchronous teardown of a KeepAlive instance the
+// preceding bootout is still draining — observed live on the #54 adoption
+// run — so one short-delay retry absorbs that before we report failure.
+func bootstrapAgent(domain, path, label string) {
+	_, _ = runLaunchctl("bootout", domain+"/"+label)
+	out, err := runLaunchctl("bootstrap", domain, path)
+	if err != nil {
+		time.Sleep(bootstrapRetryDelay)
+		out, err = runLaunchctl("bootstrap", domain, path)
+	}
+	if err != nil {
+		fmt.Printf("  bootstrap failed: %s\n  %s\n", err, strings.TrimSpace(out))
+	} else {
+		fmt.Printf("  loaded into %s\n", domain)
+	}
+}
+
 // renderCrontab emits one crontab(5) line per scheduled invocation for `job`.
 // Returns nil if the job has no Calendar slots (e.g. a KeepAlive watcher) —
 // those should run under systemd/supervisor, not cron.
@@ -736,7 +761,17 @@ func (c *CronInstallCmd) Run() error {
 
 		switch action {
 		case actionSkipUpToDate:
-			fmt.Printf("skip %s (up to date)\n", label)
+			// Content current, but "current" says nothing about launchd:
+			// a prior bootstrap may have failed (see bootstrapAgent's EIO
+			// race), and doctor's "plist on disk but not loaded" fix line
+			// points at plain `cron install` — so install must also heal
+			// load state, not just content.
+			if probeLaunchAgent(domain, label, path) != "loaded" {
+				fmt.Printf("load %s (plist current, was not loaded)\n", label)
+				bootstrapAgent(domain, path, label)
+			} else {
+				fmt.Printf("skip %s (up to date)\n", label)
+			}
 			continue
 		case actionSkipHandEdited:
 			fmt.Printf("skip %s (unstamped or hand-edited; use --force to overwrite)\n", label)
@@ -760,14 +795,7 @@ func (c *CronInstallCmd) Run() error {
 			fmt.Printf("wrote %s\n", path)
 		}
 
-		// Boot out first (ignore errors) then bootstrap.
-		_, _ = runLaunchctl("bootout", domain+"/"+label)
-		out, err := runLaunchctl("bootstrap", domain, path)
-		if err != nil {
-			fmt.Printf("  bootstrap failed: %s\n  %s\n", err, strings.TrimSpace(out))
-		} else {
-			fmt.Printf("  loaded into %s\n", domain)
-		}
+		bootstrapAgent(domain, path, label)
 	}
 
 	fmt.Println()
