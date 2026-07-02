@@ -67,8 +67,10 @@ make check        # test + vet
 | Claude handshake block      | `~/.claude/CLAUDE.md`                       | scribe-managed block between `<!-- scribe:begin -->`/`end` markers; written by `init` |
 | Codex handshake block       | `~/.codex/AGENTS.md`                         | same markers/block as the Claude one; written by `init` so Codex CLI sessions query the KB + write drop files |
 | iMessage chat DB            | `~/Library/Messages/chat.db`                | needs Full Disk Access            |
-| scribe user config          | `~/.config/scribe/config.yaml`              | global defaults                   |
+| scribe user config          | `~/.config/scribe/config.yaml`              | global defaults; `integration_tokens.<name>` holds pull-adapter API tokens (never in a KB's scribe.yaml) |
 | pending sessions queue      | `~/.config/scribe/pending-sessions.txt`     | drained by `sync --sessions`      |
+| pull-adapter state          | `$KB/output/sources/<name>.json`            | per-source cursor + seen set for `scribe pull` (gitignored) |
+| Pinboard API                | `https://api.pinboard.in/v1/`               | `scribe pull pinboard`; token via `SCRIBE_PINBOARD_TOKEN` or `integration_tokens.pinboard` |
 | LaunchAgents                | `~/Library/LaunchAgents/com.scribe.*.plist` | installed by `cron install`       |
 | KB root                     | `$SCRIBE_KB` or `scribe.yaml` in cwd        | every command resolves this first |
 

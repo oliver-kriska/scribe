@@ -320,6 +320,76 @@ triage:
     # ... matching weights for each category
 ```
 
+### Pull integrations (Pinboard)
+
+`scribe pull` fetches bookmarks from external accounts into the ingest queue,
+where the same drain path as `ingest url` fetches → contextualizes → absorbs
+them. Pinboard is the first adapter; the framework is generic, so more can slot
+in later. Adapters only produce URLs — no page content is fetched by `pull`
+itself, so it's deterministic and fast (no LLM).
+
+**1. Get your token.** Grab it from <https://pinboard.in/settings/password> (it's
+`username:HEXTOKEN`, and grants full read+write, so treat it like a password).
+The token is a **secret** — it lives in `~/.config/scribe/config.yaml`
+(`integration_tokens.pinboard`) or the `SCRIBE_PINBOARD_TOKEN` env var, **never**
+the committed `scribe.yaml`:
+
+```yaml
+# ~/.config/scribe/config.yaml (per-machine, gitignored)
+integration_tokens:
+  pinboard: "username:HEXTOKEN"
+```
+
+Sanity-check it (`posts/update` is the cheapest, side-effect-free call):
+
+```sh
+curl -s "https://api.pinboard.in/v1/posts/update?format=json&auth_token=$SCRIBE_PINBOARD_TOKEN"
+# → {"update_time":"2026-07-01T..."}  means auth works
+```
+
+**2. Enable it** in `scribe.yaml` (non-secret knobs only):
+
+```yaml
+integrations:
+  pinboard:
+    enabled: true
+    scope: recent+unread    # recent+unread | unread | all  (by read-state/recency)
+    tags: []                # OR filter: only ingest bookmarks with >=1 of these
+                            # tags (case-insensitive); empty = all
+    public_only: false      # true = skip private bookmarks; default ingests all
+    skip_domains: []        # substring filter, same as capture.skip_domains
+```
+
+- **`scope`** picks the set by read-state/recency: `recent+unread` (default —
+  recent bookmarks plus anything flagged to-read), `unread` (only to-read), or
+  `all` (whole archive).
+- **`tags`** is an independent OR filter: with `tags: [kb, elixir]`, only
+  bookmarks carrying `kb` **or** `elixir` are ingested; empty ingests everything
+  the scope returned. The two compose — `scope: all` + `tags: [kb]` means
+  "every bookmark I ever tagged `kb`".
+- **`public_only`** — an authenticated pull sees your **private** bookmarks too,
+  and by default they're ingested. Set `public_only: true` (or pass
+  `--public-only` for one run) to skip private (non-shared) bookmarks — worth it
+  if this KB might ever be shared or `scribe promote`d, so private links don't
+  ride along.
+
+**3. Run it:**
+
+```sh
+scribe pull --list                    # integrations + status (configured? last pull?)
+scribe pull pinboard -n               # dry-run: show what WOULD be queued, write nothing
+scribe pull pinboard                  # pull the configured scope + tags
+scribe pull pinboard --tag kb --tag elixir   # override the tag filter for this run
+scribe pull pinboard --all-history --max 200 # paced full backfill; re-run until it reports 0 new
+```
+
+Queued URLs land in `output/inbox/` and are fetched → contextualized → absorbed
+by the existing `ingest drain` (every 30 min) — or run `scribe ingest drain` to
+process them now. A cheap `posts/update` probe short-circuits runs when nothing
+changed, so the cron job (`scribe pull`, hourly) is kind to Pinboard's rate
+limits. In a **team** KB, integrations are hard-off from the repo config like
+capture — re-enable per-person in `scribe.local.yaml`.
+
 ### Local-mode — 100% Ollama (free, offline)
 
 As of 0.2.14, **every LLM-driven subcommand can run end-to-end against a local [Ollama](https://ollama.com) server** with zero Anthropic calls. `dream`, `assess`, `deep`, `session-mine`, `relations migrate`, all four absorb passes, and `contextualize` resolve their backend through a single top-level `llm:` block. The Anthropic path stays the default; flipping the whole pipeline to free/offline is one line of yaml.
@@ -504,6 +574,11 @@ llm_api_key: tok-xxxxxxxx          # single key, covers whichever provider llm.p
 # llm_api_keys:                    # OR per-provider, if you route ops to different providers
 #   together: tok-aaaa
 #   groq:     gsk_bbbb
+
+# Pull-adapter API tokens (Pinboard, …). Same rule as the LLM key: lives here,
+# never in a KB's scribe.yaml, so it can't be committed to a shared KB.
+# integration_tokens:
+#   pinboard: "username:HEXTOKEN"  # from pinboard.in/settings/password
 ```
 
 Resolution order is **env var → this file**: a one-off `export GROQ_API_KEY=…` still wins, but with the key in this file nothing needs exporting (this is what makes cron work without touching `~/.zshenv`). `chmod 600` it. The key never goes in a KB's `scribe.yaml`.
@@ -514,6 +589,7 @@ Resolution order is **env var → this file**: a one-off `export GROQ_API_KEY=�
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `SCRIBE_KB`                | Override KB root for one command                                                                                          |
 | `SCRIBE_SELF_CHAT_ID`      | Override `capture.self_chat_handle` (accepts comma-separated values for accounts with phone + Apple-ID email)             |
+| `SCRIBE_PINBOARD_TOKEN`    | Pinboard API token (`username:HEXTOKEN`) for `scribe pull pinboard`; overrides `integration_tokens.pinboard`             |
 | `SCRIBE_SKIP_REINDEX`      | Skip the final `qmd` reindex (useful in tests / CI)                                                                       |
 | `SCRIBE_PROJECT_ROOTS`     | Colon-separated list of parent dirs treated as top-level project roots (default: `Projects:projects:src:code:repos:work`) |
 | `SCRIBE_PASS2_MODE`        | Override `absorb.pass2_mode` (`tools` or `json`) for one run without editing scribe.yaml                                  |
