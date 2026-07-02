@@ -134,9 +134,11 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Codex.LookbackHours": true,
 	"Codex.MinScore":      true,
 
-	"Dream.Mode":       true,
-	"Dream.TimeoutMin": true,
-	"Dream.NumCtx":     true,
+	"Dream.Mode":            true,
+	"Dream.TimeoutMin":      true,
+	"Dream.NumCtx":          true,
+	"Dream.HotMinTouches":   true,
+	"Dream.HotLookbackDays": true,
 
 	"Assess.Mode":   true,
 	"Assess.NumCtx": true,

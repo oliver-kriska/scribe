@@ -39,6 +39,7 @@ That single prompt turns your KB into working memory for every agent session. Wi
 - Sat 01:45: identity-clustering pass — finds alias clusters across people/tools (`lint-identities`).
 - Sat 01:55: auto-apply high-confidence alias clusters (`apply-identities`).
 - Sun 02:00: weekly Dream cycle — a 4-phase structured consolidation.
+- Daily 03:10: hot-domain mini-dream — auto-selects the most-touched domain since the last dream, self-gates when there's nothing to do.
 - Continuous (`KeepAlive`): fsnotify watcher on the ccrider DB for near-real-time session extraction (`scribe watch`).
 
 Nothing demands your attention. You keep working; the KB grows. After two weeks of ordinary Mac use and no manual bookkeeping, the maintainer's personal KB looked like this (Obsidian graph view, 884 files, 45 folders, every node a wikilink in the auto-generated graph):
@@ -623,6 +624,7 @@ scribe contextualize --scope raw|wiki|all   # insert retrieval-context paragraph
 scribe status       # one-shot KB scoreboard (raw/wiki/backlog) — splits held-by-policy from genuinely-pending
 scribe projects {list,approve,ignore,review}  # approve/ignore discovered projects before they enter the pipeline
 scribe dream        # weekly memory consolidation (4-phase)
+scribe dream --hot          # daily mini consolidation of the busiest domain (auto-gates)
 scribe lint         # frontmatter + size + orphan checks (warnings grouped by class; -v per-file, -q errors-only)
 scribe lint --contradictions # LLM pass for factual disagreements across articles
 scribe link         # link orphan articles to contextual hosts via See Also sections

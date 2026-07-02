@@ -1040,6 +1040,7 @@ var freshnessSpecs = []freshnessSpec{
 	{Command: "sync", ArgFlag: "--sessions", Label: "sync (sessions)", MaxGap: 36 * time.Hour, Fix: "scribe sync --sessions"},
 	{Command: "lint", Label: "lint", MaxGap: 48 * time.Hour, Fix: "scribe lint"},
 	{Command: "dream", Label: "dream", MaxGap: 10 * 24 * time.Hour, Fix: "scribe dream"},
+	{Command: "dream", ArgFlag: "--hot", Label: "dream (hot)", MaxGap: 36 * time.Hour, Fix: "scribe dream --hot"},
 	{Command: "capture", Label: "capture", MaxGap: 12 * time.Hour, Fix: "scribe capture --fetch"},
 	{Command: "commit", Label: "commit", MaxGap: 6 * time.Hour, Fix: "scribe commit"},
 	{Command: "ingest drain", Label: "ingest drain", MaxGap: 3 * time.Hour, Fix: "scribe ingest drain"},

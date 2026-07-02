@@ -101,6 +101,13 @@ func scribeJobs(binary string) []cronJob {
 			Schedule: schedSpec{Calendar: []calTime{{Hour: 2, Minute: 0, Weekday: 0}}},
 		},
 		{
+			Name:     "dream-hot",
+			Desc:     "Daily hot-domain mini consolidation (self-gating)",
+			Command:  each("dream --hot"),
+			LogFile:  filepath.Join(logDir, "scribe-dream-hot.log"),
+			Schedule: schedSpec{Calendar: []calTime{{Hour: 3, Minute: 10, Weekday: -1}}},
+		},
+		{
 			Name:     "lint-fix",
 			Desc:     "Weekly frontmatter auto-repair (Sat 1am — before dream)",
 			Command:  each("lint --fix"),

@@ -30,9 +30,9 @@ import (
 // envelope result (or nil envelope if the cycle was a no-op).
 func runDreamOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, today string) error {
 	logTail := dreamReadLogTail(root, 20)
-	inventory := dreamSampleInventory(root, 40)
-	stale := dreamStaleCandidates(root, 60)
-	contradictions := dreamContradictionCandidates(root)
+	inventory := dreamSampleInventory(root, "", 40)
+	stale := dreamStaleCandidates(root, "", 60)
+	contradictions := dreamContradictionCandidates(root, "")
 
 	provider := newLLMProvider(cfg.Dream.Provider, cfg.Dream.Model, cfg.Dream.OllamaURL, root)
 	promptName := promptForProvider("dream", providerNameFor(provider))
@@ -128,12 +128,21 @@ type dreamArticleSample struct {
 // toward recently-updated articles so contradiction triage has fresh
 // claims to look at; ancient articles still show up via the stale
 // list.
-func dreamSampleInventory(root string, maxEntries int) string {
+//
+// domain, when non-empty, restricts the sample to articles whose
+// frontmatter domain matches exactly — used by the hot-domain mini
+// consolidation (dream_hot.go) to scope the orient packet to one
+// domain. Empty string preserves the full-dream behavior of sampling
+// across the whole KB.
+func dreamSampleInventory(root, domain string, maxEntries int) string {
 	var samples []dreamArticleSample
 	_ = walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil || fm == nil {
 			return nil //nolint:nilerr // unparseable frontmatter: skip the article, keep sampling
+		}
+		if domain != "" && fm.Domain != domain {
+			return nil
 		}
 		rel, _ := filepath.Rel(root, path)
 		samples = append(samples, dreamArticleSample{
@@ -168,13 +177,19 @@ func dreamSampleInventory(root string, maxEntries int) string {
 // than `days` ago. Zero-link analysis is intentionally not done here
 // — it would require walking the whole graph; the LLM gets the bare
 // list and decides whether to decay-mark.
-func dreamStaleCandidates(root string, days int) string {
+//
+// domain, when non-empty, restricts candidates to that domain (see
+// dreamSampleInventory's doc comment for the hot-domain rationale).
+func dreamStaleCandidates(root, domain string, days int) string {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	var paths []string
 	_ = walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
 		if err != nil || fm == nil {
 			return nil //nolint:nilerr // unparseable article: skip it, keep walking
+		}
+		if domain != "" && fm.Domain != domain {
+			return nil
 		}
 		updated := stringFromAny(fm.Updated)
 		if updated == "" {
@@ -200,7 +215,11 @@ func dreamStaleCandidates(root string, days int) string {
 // tags or a domain. The LLM does the actual classification work
 // (solid-vs-solid, solid-vs-vague, vague-vs-vague). Go just narrows
 // the search space so the prompt doesn't have to scan everything.
-func dreamContradictionCandidates(root string) string {
+//
+// domain, when non-empty, restricts candidates to that domain — this
+// scopes contradiction pairs to the domain even though they're grouped
+// by tag, since a cross-domain tag collision isn't the hot pass's job.
+func dreamContradictionCandidates(root, domain string) string {
 	type article struct {
 		Path  string
 		Title string
@@ -212,6 +231,9 @@ func dreamContradictionCandidates(root string) string {
 		fm, err := parseFrontmatter(content)
 		if err != nil || fm == nil {
 			return nil //nolint:nilerr // unparseable article: skip it, keep walking
+		}
+		if domain != "" && fm.Domain != domain {
+			return nil
 		}
 		rel, _ := filepath.Rel(root, path)
 		a := article{Path: filepath.ToSlash(rel), Title: fm.Title, Conf: fm.Confidence}

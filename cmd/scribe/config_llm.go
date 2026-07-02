@@ -95,6 +95,17 @@ type DreamConfig struct {
 	// Ollama. Empty → falls through to LLMConfig.NumCtx, then the
 	// orchestrator's own per-op default.
 	NumCtx int `yaml:"num_ctx"`
+	// HotMinTouches is the minimum number of distinct touched articles a
+	// domain must accumulate since the last dream (hot or full) before
+	// `scribe dream --hot` spends an LLM call on it. Below this, the
+	// auto-selected domain is judged to have no meaningful churn and the
+	// command exits 0 without calling the provider. Ignored when --domain
+	// explicitly names a domain.
+	HotMinTouches int `yaml:"hot_min_touches"`
+	// HotLookbackDays caps the git-log churn window when neither a full
+	// nor a hot dream run record exists yet (a brand-new KB), so the very
+	// first hot pass doesn't scan the KB's entire history.
+	HotLookbackDays int `yaml:"hot_lookback_days"`
 }
 
 // AssessConfig and DeepConfig route the project-ingestion commands.
@@ -416,6 +427,12 @@ func applyDreamDefaults(cfg *DreamConfig, llm LLMConfig) {
 	// contradictions). 16384 keeps the conclusion of the inventory from
 	// being truncated.
 	inheritNumCtx(&cfg.NumCtx, llm, 16384)
+	if cfg.HotMinTouches <= 0 {
+		cfg.HotMinTouches = 3
+	}
+	if cfg.HotLookbackDays <= 0 {
+		cfg.HotLookbackDays = 14
+	}
 	cfg.Provider, cfg.Model = coerceProviderModel("dream", cfg.Provider, cfg.Model)
 }
 

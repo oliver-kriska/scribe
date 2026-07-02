@@ -14,6 +14,8 @@ import (
 type DreamCmd struct {
 	DryRun bool   `help:"Show what would happen." name:"dry-run"`
 	Model  string `help:"Claude model to use." default:"sonnet"`
+	Hot    bool   `help:"Run the daily hot-domain mini consolidation instead of the full weekly cycle." name:"hot"`
+	Domain string `help:"Explicit domain override for --hot (skips auto-selection and the churn-threshold gate)." name:"domain"`
 }
 
 func (d *DreamCmd) Run() error {
@@ -26,6 +28,11 @@ func (d *DreamCmd) Run() error {
 	if err := cfg.requireParseable(); err != nil {
 		return err
 	}
+
+	if d.Hot {
+		return runHotDream(root, cfg, d.Domain, d.DryRun)
+	}
+
 	today := time.Now().Format("2006-01-02")
 	preCount := countArticles(root)
 
@@ -108,16 +115,35 @@ func (d *DreamCmd) Run() error {
 		}
 	}
 
-	// Post-dream validation
+	return commitDreamCycle(root, today, "dream", preCount)
+}
+
+// commitDreamCycle runs the shared post-LLM tail for both the full weekly
+// dream and the daily hot pass (dream_hot.go): article-count safety guard,
+// git status check, backlinks/index rebuild, secret-gated commit + push,
+// qmd reindex, hot-cache rewrite. commitMsgPrefix distinguishes the two in
+// the commit message ("dream" vs "dream-hot domain=<d>"); preCount is the
+// article count captured before the LLM step so the safety guard can
+// compute the delta.
+//
+// runStats is merged additively here — never reassigned wholesale — so a
+// caller that already stamped fields into it before calling (runHotDream's
+// mode/hot_domain/hot_domain_touches, or runDreamOrchestrator's
+// mode="orchestrator") keeps those fields in the JSONL row. The original
+// inline version of this code did `runStats = map[string]any{...}`, a bare
+// reassignment that silently discarded whatever the orchestrator had
+// already written — see docs/issue-24-hot-domain-consolidation-plan.md §2.5.
+func commitDreamCycle(root, today, commitMsgPrefix string, preCount int) error {
 	postCount := countArticles(root)
 	diff := postCount - preCount
 	logMsg("dream", "articles: %d -> %d (%+d)", preCount, postCount, diff)
 
-	runStats = map[string]any{
-		"articles_before": preCount,
-		"articles_after":  postCount,
-		"articles_delta":  diff,
+	if runStats == nil {
+		runStats = map[string]any{}
 	}
+	runStats["articles_before"] = preCount
+	runStats["articles_after"] = postCount
+	runStats["articles_delta"] = diff
 
 	if diff < -5 {
 		logMsg("dream", "WARNING: dream deleted more than 5 articles (%d), review before committing", diff)
@@ -133,23 +159,33 @@ func (d *DreamCmd) Run() error {
 	if changes != "" {
 		changedCount := len(strings.Split(strings.TrimSpace(changes), "\n"))
 		runStats["files_changed"] = changedCount
-		commitMsg := fmt.Sprintf("dream: %s (%d files)", today, changedCount)
+		commitMsg := fmt.Sprintf("%s: %s (%d files)", commitMsgPrefix, today, changedCount)
 
 		// Rebuild index and backlinks BEFORE committing so the index is part
 		// of the dream commit. Amending after push rewrites history that's
 		// already on origin and the next push fails non-fast-forward.
-		scribePath, _ := os.Executable()
-		if scribePath == "" {
-			scribePath = "scribe"
-		}
-		scribeBacklinks := exec.Command(scribePath, "backlinks") //nolint:noctx // local scribe self-invocation, fast
-		scribeBacklinks.Dir = root
-		_ = scribeBacklinks.Run()
+		//
+		// Skipped when SCRIBE_SKIP_REINDEX=1 — tests set this because
+		// os.Executable() returns the compiled test binary under `go
+		// test`, and running it with "backlinks"/"index" as argv would
+		// re-enter the whole test suite instead of the production CLI.
+		// Same guard, same rationale, as rebuildIndexAndBacklinks/
+		// rebuildAndReindex in sync.go, which document the identical
+		// hazard for their own self-invocations.
+		if os.Getenv("SCRIBE_SKIP_REINDEX") != "1" {
+			scribePath, _ := os.Executable()
+			if scribePath == "" {
+				scribePath = "scribe"
+			}
+			scribeBacklinks := exec.Command(scribePath, "backlinks") //nolint:noctx // local scribe self-invocation, fast
+			scribeBacklinks.Dir = root
+			_ = scribeBacklinks.Run()
 
-		scribeIndex := exec.Command(scribePath, "index") //nolint:noctx // local scribe self-invocation, fast
-		scribeIndex.Dir = root
-		_ = scribeIndex.Run()
-		logMsg("dream", "index/backlinks rebuilt")
+			scribeIndex := exec.Command(scribePath, "index") //nolint:noctx // local scribe self-invocation, fast
+			scribeIndex.Dir = root
+			_ = scribeIndex.Run()
+			logMsg("dream", "index/backlinks rebuilt")
+		}
 
 		if !gitAddWiki(root) {
 			return errors.New("dream commit skipped: a detected secret could not be held back")
