@@ -312,6 +312,42 @@ func secretValueAllowed(secret []byte, r *secretRule) bool {
 	return false
 }
 
+// maskSecretsInText redacts every credential-shaped substring in s using
+// the exact same secretRules, placeholder/stopword allowlist, and entropy
+// floor as scanContentForSecrets — so a value that would hold a staged
+// article back from committing never resurfaces unmasked in a derived
+// file that regenerates from scratch on every run and has no line of its
+// own to carry a scribe:allow marker (wiki/_index.md's synopsis lines,
+// built by IndexCmd.Run in index.go, are the motivating case — issue #5).
+// Unlike the commit gate, this never holds anything back: every match is
+// replaced in place with defaultRedaction and the call always succeeds,
+// because regeneration must stay unconditional and idempotent.
+//
+// A scribe:allow/gitleaks:allow marker on the source line has no bearing
+// here, even if its literal text ends up inside s: the marker suppresses
+// the commit gate for one line in one file, not every future derivation
+// of that line's text. Honoring it here would resurrect the exact
+// half-state issue #5 rules out.
+func maskSecretsInText(s string, includeGeneric bool) string {
+	if s == "" {
+		return s
+	}
+	b := []byte(s)
+	for i := range secretRules {
+		r := &secretRules[i]
+		if r.Generic && !includeGeneric {
+			continue
+		}
+		b = r.Re.ReplaceAllFunc(b, func(match []byte) []byte {
+			if secretValueAllowed(secretFromMatch(r.Re.FindSubmatch(match), r.Group), r) {
+				return match
+			}
+			return []byte(defaultRedaction)
+		})
+	}
+	return string(b)
+}
+
 // shannonEntropy is bits-per-character entropy, gitleaks-style.
 func shannonEntropy(s string) float64 {
 	if s == "" {

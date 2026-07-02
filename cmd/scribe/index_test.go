@@ -176,6 +176,147 @@ func TestIndexCmdDryRun(t *testing.T) {
 	}
 }
 
+// TestIndexCmdMasksSynopsisSecrets pins issue #5: a credential-shaped
+// string in an article's first sentence must not resurface unmasked in
+// the regenerated wiki/_index.md synopsis line, but only in team mode
+// with the secret gate active — solo KBs and explicitly-disabled gates
+// see today's unmasked behavior, matching holdSecretFiles/findSecretsInKB.
+func TestIndexCmdMasksSynopsisSecrets(t *testing.T) {
+	awsKey := fakeAWSKey()
+
+	tests := []struct {
+		name         string
+		yaml         string
+		sentence     string
+		wantContains []string
+		wantAbsent   []string
+	}{
+		{
+			name:         "team mode masks a real secret",
+			yaml:         "team: true\n",
+			sentence:     "Uses key " + awsKey + " for auth.",
+			wantContains: []string{defaultRedaction},
+			wantAbsent:   []string{awsKey},
+		},
+		{
+			name:         "solo KB (default) leaves it unmasked",
+			yaml:         "domains: [acme]\n",
+			sentence:     "Uses key " + awsKey + " for auth.",
+			wantContains: []string{awsKey},
+		},
+		{
+			name:         "secret_scan.disable leaves it unmasked",
+			yaml:         "team: true\nsecret_scan:\n  disable: true\n",
+			sentence:     "Uses key " + awsKey + " for auth.",
+			wantContains: []string{awsKey},
+		},
+		{
+			name:         "canonical example key stays visible end-to-end",
+			yaml:         "team: true\n",
+			sentence:     "See AKIAIOSFODNN7EXAMPLE in the docs.",
+			wantContains: []string{"AKIAIOSFODNN7EXAMPLE"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte(tt.yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("SCRIBE_KB", root)
+			writeKBFile(t, root, "wiki/a.md",
+				"---\ntitle: \"A Article\"\ntype: solution\ndomain: general\n---\n\n"+tt.sentence+"\n")
+
+			var err error
+			captureLintStdout(t, func() { err = (&IndexCmd{}).Run() })
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(root, "wiki", "_index.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			content := string(data)
+			for _, sub := range tt.wantContains {
+				if !strings.Contains(content, sub) {
+					t.Errorf("missing %q in:\n%s", sub, content)
+				}
+			}
+			for _, sub := range tt.wantAbsent {
+				if strings.Contains(content, sub) {
+					t.Errorf("unexpected %q leaked into:\n%s", sub, content)
+				}
+			}
+		})
+	}
+}
+
+// TestIndexCmdMasksSynopsisSecretsBeforeTruncating pins D5: masking must
+// run on desc before the 80-char truncation, so a raw secret can never
+// be cut mid-value and partially survive into the synopsis.
+func TestIndexCmdMasksSynopsisSecretsBeforeTruncating(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte("team: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SCRIBE_KB", root)
+
+	awsKey := fakeAWSKey()
+	// No ". " in the first 120 chars, and total length is between 80 and
+	// 120, so firstSentence returns the raw line unmodified (its own
+	// truncation only kicks in past 120 chars) — masking then runs on
+	// this full raw desc before index.go's own 80-char truncation.
+	sentence := awsKey + " " + strings.Repeat("x", 79)
+	writeKBFile(t, root, "wiki/a.md",
+		"---\ntitle: \"A Article\"\ntype: solution\ndomain: general\n---\n\n"+sentence+"\n")
+
+	var err error
+	captureLintStdout(t, func() { err = (&IndexCmd{}).Run() })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "wiki", "_index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if strings.Contains(content, awsKey) {
+		t.Fatalf("raw key survived masking+truncation:\n%s", content)
+	}
+	if !strings.Contains(content, defaultRedaction) {
+		t.Fatalf("expected masked marker in:\n%s", content)
+	}
+	found := false
+	for _, line := range strings.Split(content, "\n") {
+		if !strings.HasPrefix(line, "- [[A Article]]") {
+			continue
+		}
+		found = true
+		// Isolate the masked+truncated desc: everything between "-- "
+		// and the trailing "(type, domain)" suffix appended by index.go.
+		desc, ok := strings.CutPrefix(line, "- [[A Article]] -- ")
+		if !ok {
+			t.Fatalf("unexpected synopsis line shape: %q", line)
+		}
+		desc, ok = strings.CutSuffix(desc, " (solution, general)")
+		if !ok {
+			t.Fatalf("unexpected synopsis line shape: %q", line)
+		}
+		if len(desc) > 83 { // 80-char truncation limit + "..." ellipsis
+			t.Errorf("masked+truncated desc too long (%d bytes): %q", len(desc), desc)
+		}
+		if strings.Contains(desc, "[[") {
+			t.Errorf("synopsis desc has a dangling wikilink opener: %q", desc)
+		}
+	}
+	if !found {
+		t.Fatalf("A Article entry missing from:\n%s", content)
+	}
+}
+
 func TestBacklinksCmdRun(t *testing.T) {
 	root := graphTestKB(t)
 

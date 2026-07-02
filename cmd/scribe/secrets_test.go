@@ -107,6 +107,105 @@ func TestGenericRuleIsOptIn(t *testing.T) {
 	}
 }
 
+func TestMaskSecretsInText(t *testing.T) {
+	secondFakeAWSKey := "AKIA" + "QRSTUVWXYZ234567"
+
+	tests := []struct {
+		name           string
+		in             string
+		includeGeneric bool
+		want           string   // exact expected output; empty means "see wantContains/wantAbsent instead"
+		wantContains   []string // substrings that must be present
+		wantAbsent     []string // substrings that must NOT be present
+	}{
+		{
+			name: "empty string",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "plain prose, no secret",
+			in:   "Set up the KB in five minutes.",
+			want: "Set up the KB in five minutes.",
+		},
+		{
+			name:         "real AWS key masked",
+			in:           "the key was " + fakeAWSKey() + " in the env",
+			wantContains: []string{defaultRedaction},
+			wantAbsent:   []string{fakeAWSKey()},
+		},
+		{
+			name:         "GitHub token masked",
+			in:           "export GH_TOKEN=" + fakeGitHubToken(),
+			wantContains: []string{defaultRedaction},
+			wantAbsent:   []string{fakeGitHubToken()},
+		},
+		{
+			name:         "multiple occurrences, same rule, all masked",
+			in:           fakeAWSKey() + " and later " + secondFakeAWSKey,
+			wantAbsent:   []string{fakeAWSKey(), secondFakeAWSKey},
+			wantContains: []string{defaultRedaction},
+		},
+		{
+			name: "canonical AWS doc key stays visible",
+			in:   "use AKIAIOSFODNN7EXAMPLE in docs",
+			want: "use AKIAIOSFODNN7EXAMPLE in docs",
+		},
+		{
+			name: "placeholder URL password stays visible",
+			in:   "postgres://user:xxxx@localhost/db",
+			want: "postgres://user:xxxx@localhost/db",
+		},
+		{
+			name: "generic rule opt-out",
+			in:   `api_key = "x9K2mP8qL5nR3vT7wY1zB6cD4"`,
+			want: `api_key = "x9K2mP8qL5nR3vT7wY1zB6cD4"`,
+		},
+		{
+			name:           "generic rule opt-in",
+			in:             `api_key = "x9K2mP8qL5nR3vT7wY1zB6cD4"`,
+			includeGeneric: true,
+			wantContains:   []string{defaultRedaction},
+			wantAbsent:     []string{"x9K2mP8qL5nR3vT7wY1zB6cD4"},
+		},
+		{
+			// Pins D3: a scribe:allow marker on the line has no bearing
+			// on maskSecretsInText — it is not scanContentForSecrets.
+			name:         "scribe:allow marker text present but NOT honored",
+			in:           "real-looking " + fakeAWSKey() + " <!-- scribe:allow -->",
+			wantContains: []string{defaultRedaction},
+			wantAbsent:   []string{fakeAWSKey()},
+		},
+		{
+			name: "PEM header masked",
+			in:   "-----BEGIN RSA PRIVATE KEY-----",
+			wantAbsent: []string{
+				"-----BEGIN RSA PRIVATE KEY-----",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := maskSecretsInText(tt.in, tt.includeGeneric)
+			if tt.want != "" || tt.in == "" {
+				if got != tt.want {
+					t.Errorf("got %q, want %q", got, tt.want)
+				}
+			}
+			for _, sub := range tt.wantContains {
+				if !strings.Contains(got, sub) {
+					t.Errorf("got %q, want it to contain %q", got, sub)
+				}
+			}
+			for _, sub := range tt.wantAbsent {
+				if strings.Contains(got, sub) {
+					t.Errorf("got %q, want it to NOT contain %q", got, sub)
+				}
+			}
+		})
+	}
+}
+
 func TestShannonEntropy(t *testing.T) {
 	if e := shannonEntropy("aaaa"); e != 0 {
 		t.Errorf("entropy(aaaa) = %f, want 0", e)

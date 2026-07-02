@@ -25,6 +25,10 @@ func (i *IndexCmd) Run() error {
 		return err
 	}
 
+	cfg := loadConfig(root)
+	maskSynopsisSecrets := cfg != nil && cfg.Team && !cfg.SecretScan.Disable
+	includeGenericSecrets := cfg != nil && cfg.SecretScan.Generic
+
 	// Collect articles grouped by directory
 	groups := make(map[string][]articleEntry)
 
@@ -42,6 +46,12 @@ func (i *IndexCmd) Run() error {
 		// Build one-line description from first content line after frontmatter
 		body := extractBody(content)
 		if desc := firstSentence(body); desc != "" {
+			if maskSynopsisSecrets {
+				// Mask before truncating: truncation must only ever see
+				// already-safe text, never a raw credential that could
+				// get cut mid-value.
+				desc = maskSecretsInText(desc, includeGenericSecrets)
+			}
 			// Truncate to reasonable length without slicing through a wikilink.
 			if len(desc) > 80 {
 				desc = truncateOutsideWikilink(desc, 80)
