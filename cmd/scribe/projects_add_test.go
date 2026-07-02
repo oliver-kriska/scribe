@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"slices"
@@ -261,4 +262,193 @@ func mustManifest(t *testing.T, root string) *Manifest {
 		t.Fatal(err)
 	}
 	return m
+}
+
+// --- ProjectsAddCmd --from-sources (bulk enrollment, #28) -----------------
+
+// gitInitDir turns an existing directory into a real git repo. hasGit only
+// checks for a .git directory, but worktreeMainRoot shells out to `git
+// rev-parse`, so fixtures need an actual repo rather than a bare .git stub —
+// mirrors the initTestGitRepo/gitRun convention used elsewhere in this
+// package (see worktree_test.go, sources_test.go).
+func gitInitDir(t *testing.T, dir string) {
+	t.Helper()
+	gitRun(t, dir, "init", "-q")
+	gitRun(t, dir, "config", "user.email", "test@example.com")
+	gitRun(t, dir, "config", "user.name", "Test")
+}
+
+// makeSiblingDir creates parent/name without allocating a fresh TempDir, for
+// glob-pattern tests where multiple candidates must share one parent —
+// unlike makeProjectDir, which gives every project its own temp parent.
+func makeSiblingDir(t *testing.T, parent, name string) string {
+	t.Helper()
+	p := filepath.Join(parent, name)
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestProjectsAdd_FromSources_EnrollsListedRepos(t *testing.T) {
+	repoA := makeProjectDir(t, "repoA")
+	gitInitDir(t, repoA)
+	repoB := makeProjectDir(t, "repoB")
+	gitInitDir(t, repoB)
+
+	root := addKB(t, "sources:\n  include:\n    - "+repoA+"\n    - "+repoB+"\n")
+
+	if err := (&ProjectsAddCmd{FromSources: true}).runFromSources(root); err != nil {
+		t.Fatalf("runFromSources: %v", err)
+	}
+
+	m := mustManifest(t, root)
+	for name, path := range map[string]string{"repoA": repoA, "repoB": repoB} {
+		e, ok := m.Projects[name]
+		if !ok {
+			t.Fatalf("%s not enrolled", name)
+		}
+		if !e.IsApproved() {
+			t.Errorf("%s status = %q, want approved", name, e.Status)
+		}
+		if e.DiscoveredFrom != "manual" {
+			t.Errorf("%s discovered_from = %q, want manual", name, e.DiscoveredFrom)
+		}
+		if !samePath(e.Path, path) {
+			t.Errorf("%s path = %q, want %q", name, e.Path, path)
+		}
+	}
+}
+
+func TestProjectsAdd_FromSources_SkipsNonGitPath(t *testing.T) {
+	repo := makeProjectDir(t, "gitrepo")
+	gitInitDir(t, repo)
+	plain := makeProjectDir(t, "plaindir") // never git-init'd
+
+	root := addKB(t, "sources:\n  include:\n    - "+repo+"\n    - "+plain+"\n")
+
+	out := captureStdout(t, func() error {
+		return (&ProjectsAddCmd{FromSources: true}).runFromSources(root)
+	})
+	if !strings.Contains(out, "not a git repo") {
+		t.Errorf("expected a non-git skip reason in output:\n%s", out)
+	}
+
+	m := mustManifest(t, root)
+	if _, ok := m.Projects["gitrepo"]; !ok {
+		t.Error("gitrepo not enrolled")
+	}
+	if _, ok := m.Projects["plaindir"]; ok {
+		t.Error("plaindir (non-git) must not be bulk-enrolled — single-add's warn-and-continue does not apply to --from-sources")
+	}
+}
+
+func TestProjectsAdd_FromSources_SkipsMissingAndExcluded(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "Projects", "ghost")
+	excluded := makeProjectDir(t, "blocked")
+	gitInitDir(t, excluded)
+
+	root := addKB(t, "sources:\n  include:\n    - "+missing+"\n    - "+excluded+"\n  exclude:\n    - "+excluded+"\n")
+
+	if err := (&ProjectsAddCmd{FromSources: true}).runFromSources(root); err != nil {
+		t.Fatalf("runFromSources: %v", err)
+	}
+
+	m := mustManifest(t, root)
+	if len(m.Projects) != 0 {
+		t.Errorf("Projects = %v, want none enrolled (missing path + excluded path)", m.Projects)
+	}
+}
+
+func TestProjectsAdd_FromSources_AlreadyEnrolledIsIdempotent(t *testing.T) {
+	repoA := makeProjectDir(t, "repoA")
+	gitInitDir(t, repoA)
+	repoB := makeProjectDir(t, "repoB")
+	gitInitDir(t, repoB)
+
+	root := addKB(t, "sources:\n  include:\n    - "+repoA+"\n    - "+repoB+"\n")
+	run := func() error { return (&ProjectsAddCmd{FromSources: true}).runFromSources(root) }
+
+	if err := run(); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	manifestPath := filepath.Join(root, "scripts", "projects.json")
+	before, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := run(); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	after, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("manifest changed on a repeat --from-sources run:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestProjectsAdd_FromSources_EmptyIncludeNoop(t *testing.T) {
+	root := addKB(t, "default_model: sonnet\n")
+
+	out := captureStdout(t, func() error {
+		return (&ProjectsAddCmd{FromSources: true}).runFromSources(root)
+	})
+	if !strings.Contains(out, "allow-all") {
+		t.Errorf("expected the allow-all note in output:\n%s", out)
+	}
+
+	m := mustManifest(t, root)
+	if len(m.Projects) != 0 {
+		t.Errorf("Projects = %v, want none (empty include must not bulk-enroll anything)", m.Projects)
+	}
+}
+
+func TestProjectsAdd_FromSources_ExpandsGlobAndDedupes(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "Projects")
+	clientA := makeSiblingDir(t, parent, "client-a")
+	gitInitDir(t, clientA)
+	clientB := makeSiblingDir(t, parent, "client-b")
+	gitInitDir(t, clientB)
+
+	// The glob and the literal entry both resolve to client-a — it must
+	// enroll once, not twice.
+	root := addKB(t, "sources:\n  include:\n    - "+parent+"/client-*\n    - "+clientA+"\n")
+
+	out := captureStdout(t, func() error {
+		return (&ProjectsAddCmd{FromSources: true}).runFromSources(root)
+	})
+
+	if n := strings.Count(out, "enrolled client-a ->"); n != 1 {
+		t.Errorf("client-a enrolled %d times, want 1 (glob + literal entry must dedupe)\noutput:\n%s", n, out)
+	}
+	if !strings.Contains(out, "from-sources: 2 enrolled/confirmed, 0 skipped") {
+		t.Errorf("summary line missing/wrong:\n%s", out)
+	}
+
+	m := mustManifest(t, root)
+	if _, ok := m.Projects["client-a"]; !ok {
+		t.Error("client-a not enrolled")
+	}
+	if _, ok := m.Projects["client-b"]; !ok {
+		t.Error("client-b not enrolled")
+	}
+}
+
+func TestProjectsAdd_FromSources_RejectsCombinedFlags(t *testing.T) {
+	// lock_dir MUST be isolated off the default /tmp — Run() takes the real
+	// sync lock, and /tmp is the same global namespace a real cron sync
+	// uses (see commit_test.go's commitTestKB for the same footgun).
+	root := addKB(t, "lock_dir: "+t.TempDir()+"\n")
+
+	err := (&ProjectsAddCmd{FromSources: true, Local: true}).Run()
+	if err == nil || !strings.Contains(err.Error(), "--from-sources cannot be combined") {
+		t.Fatalf("err = %v, want a from-sources/--local conflict error", err)
+	}
+
+	if len(mustManifest(t, root).Projects) != 0 {
+		t.Error("rejected flag combination must not touch the manifest")
+	}
 }

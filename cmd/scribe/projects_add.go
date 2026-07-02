@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -21,10 +23,11 @@ import (
 // the approval), discovered_from: manual — the overlap with #28.
 
 type ProjectsAddCmd struct {
-	Path   string `arg:"" help:"Project path to enroll (the repo, not the KB)."`
-	Local  bool   `help:"Widen sources in scribe.local.yaml (this machine only) instead of the committed scribe.yaml."`
-	Domain string `help:"Domain to file the project under (default: resolved from domain_aliases, else general)."`
-	Name   string `help:"Manifest project name (default: derived from the path)."`
+	Path        string `arg:"" optional:"" help:"Project path to enroll (the repo, not the KB). Omit with --from-sources."`
+	Local       bool   `help:"Widen sources in scribe.local.yaml (this machine only) instead of the committed scribe.yaml."`
+	Domain      string `help:"Domain to file the project under (default: resolved from domain_aliases, else general)."`
+	Name        string `help:"Manifest project name (default: derived from the path)."`
+	FromSources bool   `help:"Bulk-enroll every git repo already covered by the effective sources.include. Skips non-git paths (one-line reason each); reuses the single-path enroll logic. Cannot be combined with a path, --local, --domain, or --name."`
 }
 
 func (c *ProjectsAddCmd) Run() error {
@@ -32,7 +35,18 @@ func (c *ProjectsAddCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	return withSyncLock(root, func() error { return c.run(root) })
+	return withSyncLock(root, func() error {
+		if c.FromSources {
+			if c.Path != "" || c.Local || c.Domain != "" || c.Name != "" {
+				return errors.New("--from-sources cannot be combined with a path, --local, --domain, or --name")
+			}
+			return c.runFromSources(root)
+		}
+		if c.Path == "" {
+			return errors.New("pass a project path or --from-sources (see `scribe projects add --help`)")
+		}
+		return c.run(root)
+	})
 }
 
 func (c *ProjectsAddCmd) run(root string) error {
@@ -85,6 +99,61 @@ func (c *ProjectsAddCmd) run(root string) error {
 	}
 
 	return c.enroll(root, enrollPath, worktreeOf)
+}
+
+// runFromSources bulk-enrolls every git repo already covered by the
+// effective (committed ∪ local) sources.include list. It resolves each
+// entry to candidate directories (resolveIncludeEntry) and calls run()
+// unmodified per candidate — run() already turns a missing path, a
+// sources.exclude match, or an inside-the-KB path into a descriptive
+// error, and already no-ops gracefully on an already-enrolled path, so
+// none of that needs duplicating here. The one thing run() does NOT do
+// that bulk mode must: skip a non-git candidate instead of enrolling it
+// with a warning, since a broad include pattern routinely matches
+// non-repo siblings a sweep shouldn't blindly onboard.
+func (c *ProjectsAddCmd) runFromSources(root string) error {
+	cfg := loadConfig(root)
+	if len(cfg.Sources.Include) == 0 {
+		fmt.Println("note: sources.include is empty (allow-all) — nothing to bulk-enroll; use `scribe projects add <path>` for a specific repo")
+		return nil
+	}
+
+	seen := map[string]bool{}
+	var ok, skipped int
+	for _, entry := range cfg.Sources.Include {
+		for _, cand := range resolveIncludeEntry(entry) {
+			if seen[cand] {
+				continue
+			}
+			seen[cand] = true
+			if dirExists(cand) && !hasGit(cand) && worktreeMainRoot(cand) == "" {
+				fmt.Printf("skip %s: not a git repo\n", cand)
+				skipped++
+				continue
+			}
+			if err := (&ProjectsAddCmd{Path: cand}).run(root); err != nil {
+				fmt.Printf("skip %s: %v\n", cand, err)
+				skipped++
+				continue
+			}
+			ok++
+		}
+	}
+	fmt.Printf("from-sources: %d enrolled/confirmed, %d skipped\n", ok, skipped)
+	return nil
+}
+
+// resolveIncludeEntry expands one sources.include entry to concrete
+// directory candidates: a plain path is the candidate itself; a glob
+// (*, ?, [) expands via filepath.Glob. Mirrors the trailing "/**"
+// normalization sourcePatternMatches already applies (sources.go).
+func resolveIncludeEntry(pattern string) []string {
+	p := strings.TrimSuffix(expandHome(strings.TrimSpace(pattern)), "/**")
+	if !strings.ContainsAny(p, "*?[") {
+		return []string{filepath.Clean(p)}
+	}
+	matches, _ := filepath.Glob(p)
+	return matches
 }
 
 // widenSources adds enrollPath to sources.include when needed. The empty-
