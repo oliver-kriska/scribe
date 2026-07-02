@@ -2,6 +2,51 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [Unreleased]
+
+### Added
+- **`scribe drop`** — validated drop-file authoring CLI. Agents (and humans)
+  author well-formed drop files from any project without hand-rolling
+  frontmatter; the scribe-kb skill and both handshake templates now point at it,
+  with hand-written YAML kept as the no-scribe-on-PATH fallback. (#21)
+- **`scribe projects add --from-sources`** enrolls every `sources.include`-listed
+  repo in one pass — globs expand, non-git paths are skipped with a one-line
+  reason. (#28)
+- **Priority lanes for the pending-session queue.** High-signal sessions mine
+  first regardless of arrival order (Hot/Normal lanes inside each size pool);
+  floor-reservation admission plus 7-day aging promotion prevent starvation, and
+  `scribe status` shows the lane split. The queue file gains a 4th column with a
+  back-compat parser for all legacy line shapes — no migration needed. (#22)
+- **`scribe dream --hot`** — daily hot-domain mini consolidation between weekly
+  dreams. Auto-selects the single most-touched domain since the last pass,
+  self-gates on churn / recent-dream / budget so idle days cost nothing, and
+  ships its own scoped prompt pair. Scheduled daily at 03:10. (#24)
+- **KB-first adoption metric.** `scribe sync` measures how often agent sessions
+  query the KB before their first edit (derived from ccrider, marker format
+  pinned against ccrider's own importer source), caches it in run records, and
+  surfaces 7d/30d ratios in `scribe status` and per-machine digest notes —
+  never in the committed team digest. (#23)
+- **Failure traces in extraction prompts.** All 15 extraction templates now ask
+  for approaches that were tried and rejected (and why) plus the conditions
+  under which the chosen fix breaks; a matching KB-wide convention rule ships in
+  the embedded kb-CLAUDE.md. (#42)
+- **Progress heartbeat during long LLM calls** — one stderr line every 30s, so
+  a hung run and a slow run are distinguishable in cron logs. (#19)
+
+### Changed
+- **Project manifest identity is path-keyed** instead of basename-keyed, with
+  automatic, idempotent in-place migration on first load. Two checkouts sharing
+  a basename no longer collide; worktrees still fold into their main checkout;
+  same-basename projects get unique display names. (#8)
+
+### Fixed
+- Regenerated `_index.md` synopsis lines mask credential-shaped strings in
+  team KBs, so a reindex can never resurface a value the commit gate held. (#5)
+- `scribe doctor` now surfaces held stop-word files (previously only visible
+  via `git status`), and run locks are scoped per-KB — an unrelated KB's sync
+  no longer blocks another KB's runs or the hourly auto-commit. (follow-ups to
+  #25/#26)
+
 ## [0.3.0] — 2026-06-30
 
 The big one: scribe grows from a single-user tool into one a small team can
