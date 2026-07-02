@@ -28,7 +28,7 @@ func commitRun(root string) error {
 	// probe them. The old probe-and-release left a TOCTOU window where a
 	// cron sync could start mid-commit and race the index (the exact
 	// scenario that makes the secret gate's unstage fail).
-	release, busy, err := holdLocks(cfg.LockDir, lockNames)
+	release, busy, err := holdLocks(cfg.LockDir, lockNames, root)
 	if err != nil {
 		return fmt.Errorf("acquire process locks: %w", err)
 	}

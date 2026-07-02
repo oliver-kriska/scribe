@@ -398,7 +398,7 @@ func TestDoctorWarnsOnWorktreeProjectEntry(t *testing.T) {
 	}
 
 	var found *check
-	for _, c := range checkState(kbRoot) {
+	for _, c := range checkState(kbRoot, loadConfig(kbRoot)) {
 		if c.Name == "worktree-projects" {
 			found = &c
 			break

@@ -50,7 +50,7 @@ func (d *DreamCmd) Run() error {
 
 	// Hold the dream lock for the whole cycle so commit.go and a second
 	// scribe invocation can see that dream is in progress.
-	lockPath := lockPathFor(cfg.LockDir, "dream")
+	lockPath := lockPathFor(cfg.LockDir, "dream", root)
 	lf, ok, lerr := acquireLock(lockPath)
 	if lerr != nil {
 		return fmt.Errorf("lock %s: %w", lockPath, lerr)

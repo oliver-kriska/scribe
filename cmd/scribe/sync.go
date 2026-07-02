@@ -86,7 +86,7 @@ func (s *SyncCmd) Run() error {
 	// Advisory lock held for the whole sync. commit.go and a second concurrent
 	// sync read this to decide whether to back off.
 	if !s.DryRun {
-		lockPath := lockPathFor(cfg.LockDir, "sync")
+		lockPath := lockPathFor(cfg.LockDir, "sync", root)
 		lf, ok, lerr := acquireLock(lockPath)
 		if lerr != nil {
 			return fmt.Errorf("lock %s: %w", lockPath, lerr)

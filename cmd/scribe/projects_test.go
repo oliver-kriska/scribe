@@ -165,7 +165,7 @@ func TestDoctorWarnsOnPendingProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	checks := checkState(root)
+	checks := checkState(root, loadConfig(root))
 	found := false
 	for _, ck := range checks {
 		if ck.Name == "pending-projects" {

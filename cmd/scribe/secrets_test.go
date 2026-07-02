@@ -473,7 +473,7 @@ func TestDoctorWarnsOnSecretsTeamOnly(t *testing.T) {
 	writeKBFile(t, root, "wiki/leaky.md", "---\ntitle: Leaky\n---\n\nkey: "+token+"\n")
 
 	// Solo KB: no secrets check at all.
-	for _, c := range checkState(root) {
+	for _, c := range checkState(root, loadConfig(root)) {
 		if c.Name == "secrets-in-articles" {
 			t.Fatalf("solo KB got secrets check: %+v", c)
 		}
@@ -482,7 +482,7 @@ func TestDoctorWarnsOnSecretsTeamOnly(t *testing.T) {
 	// Team KB: WARN, naming rule + location but NEVER the value.
 	writeKBFile(t, root, "scribe.yaml", "team: true\n")
 	var found *check
-	for _, c := range checkState(root) {
+	for _, c := range checkState(root, loadConfig(root)) {
 		if c.Name == "secrets-in-articles" {
 			found = &c
 			break

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -300,6 +301,63 @@ func restageMasked(root, rel string, content []byte) bool {
 		return false
 	}
 	return true
+}
+
+// findHeldStopWordsInKB scans markdown for doctor the same way
+// findSecretsInKB (secrets.go:444) does for secrets. The stop-words commit
+// gate holds matching files back from the commit (holdStopWordFiles above),
+// but that hold previously left no persistent, doctor-visible record — only
+// a transient sync-log "STOPWORD HELD" line at hold time. This reports
+// every markdown file that currently matches a hold rule: files still
+// dirty in the working tree because the gate held them, AND cleanly
+// committed articles that match a hold word added to the config after they
+// landed. Mask-only matches are not reported — masking sanitizes in place
+// and the file still commits, so nothing about those stays invisible.
+func findHeldStopWordsInKB(root string, cfg *ScribeConfig) []string {
+	hold, _, _ := stopWordRules(cfg)
+	if len(hold) == 0 {
+		return nil
+	}
+	var findings []string
+	seen := map[string]bool{}
+	record := func(path string, content []byte) error {
+		rel := relPath(root, path)
+		if seen[rel] {
+			return nil
+		}
+		seen[rel] = true
+		if dec := applyStopWords(content, hold, nil, ""); dec.hold {
+			findings = append(findings, fmt.Sprintf("%s:%d [%s]", rel, dec.line, dec.label))
+		}
+		return nil
+	}
+	if hasGit(root) {
+		if out, err := runCmdRaw(root, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.md"); err == nil {
+			for rel := range strings.SplitSeq(string(out), "\x00") {
+				if rel == "" {
+					continue
+				}
+				content, rerr := os.ReadFile(filepath.Join(root, rel))
+				if rerr != nil {
+					continue
+				}
+				_ = record(filepath.Join(root, rel), content)
+			}
+		}
+	}
+	_ = walkAllMarkdown(root, record)
+	rawDir := filepath.Join(root, "raw")
+	_ = filepath.Walk(rawDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
+			return nil //nolint:nilerr // skip unreadable, continue walk
+		}
+		content, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return nil //nolint:nilerr // skip unreadable, continue walk
+		}
+		return record(path, content)
+	})
+	return findings
 }
 
 // commitGate runs every staged-markdown gate before a commit: the

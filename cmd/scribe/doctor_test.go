@@ -247,7 +247,7 @@ func TestCheckState_Parsers(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "wiki", "_index.md"), "# Index\n\n- item\n")
 	mustWrite(t, filepath.Join(root, "log.md"), "## 2026-04-10 init\n")
 
-	results := checkState(root)
+	results := checkState(root, loadConfig(root))
 
 	findStatus := func(name string) checkStatus {
 		for _, ck := range results {
@@ -298,7 +298,7 @@ func TestCheckState_FlagsKBAsProject(t *testing.T) {
 	manifest := fmt.Sprintf(`{"projects":{"some-kb":{"path":%q,"domain":"general"},"plain-proj":{"path":%q,"domain":"general"}},"domain_aliases":{},"ignored_paths":[]}`, kbProject, plain)
 	mustWrite(t, filepath.Join(root, "scripts", "projects.json"), manifest)
 
-	results := checkState(root)
+	results := checkState(root, loadConfig(root))
 
 	var found *check
 	for i := range results {
@@ -393,7 +393,7 @@ func TestCheckState_FlagsPlaceholderArtifacts(t *testing.T) {
 	mustMkdir(t, filepath.Join(root, "projects", "{{DOMAIN}}"))
 	mustWrite(t, filepath.Join(root, "projects", "{{DOMAIN}}", "scribe_analysis.md"), "leaked")
 
-	results := checkState(root)
+	results := checkState(root, loadConfig(root))
 
 	var found *check
 	for i := range results {
@@ -410,6 +410,41 @@ func TestCheckState_FlagsPlaceholderArtifacts(t *testing.T) {
 	}
 	if !strings.Contains(found.Detail, "{{DOMAIN}}") {
 		t.Errorf("detail should name the offending path, got %q", found.Detail)
+	}
+}
+
+// TestCheckState_StopwordHeldSurfaced asserts doctor surfaces a stop-word
+// hold match (gap 1): previously, a file the commit gate held back (or an
+// already-committed article matching a hold word added later) left no
+// trace beyond a transient sync-log "STOPWORD HELD" line — doctor must now
+// report it so it doesn't vanish invisibly.
+func TestCheckState_StopwordHeldSurfaced(t *testing.T) {
+	seedStopWords(t, "")
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "scripts"))
+	mustMkdir(t, filepath.Join(root, "wiki"))
+	mustWrite(t, filepath.Join(root, "scripts", "projects.json"),
+		`{"projects":{},"domain_aliases":{},"ignored_paths":[]}`)
+	mustWrite(t, filepath.Join(root, "wiki", "held.md"), "the Project Falcon spec\n")
+	mustWrite(t, filepath.Join(root, "scribe.yaml"), "stop_words:\n  hold:\n    - Project Falcon\n")
+
+	results := checkState(root, loadConfig(root))
+
+	var found *check
+	for i := range results {
+		if results[i].Name == "stopword-held-articles" {
+			found = &results[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("doctor did not flag the stop-word hold")
+	}
+	if found.Status != statusWarn {
+		t.Errorf("status = %q, want warn", found.Status)
+	}
+	if !strings.Contains(found.Detail, "wiki/held.md:1") {
+		t.Errorf("detail should point at wiki/held.md:1, got %q", found.Detail)
 	}
 }
 

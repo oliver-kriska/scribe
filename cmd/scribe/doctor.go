@@ -76,7 +76,7 @@ func (c *DoctorCmd) Run() error {
 		case "cron":
 			all = append(all, checkCron(root)...)
 		case "state":
-			all = append(all, checkState(root)...)
+			all = append(all, checkState(root, cfg)...)
 		case "freshness":
 			all = append(all, checkFreshness(root, time.Now())...)
 		case "errors":
@@ -809,7 +809,7 @@ func foreignScribeAgents(agentsDir, binary, root string, own map[string]bool) []
 
 // ---- State files ----
 
-func checkState(root string) []check {
+func checkState(root string, cfg *ScribeConfig) []check {
 	var out []check
 
 	if m, err := loadManifest(root); err == nil {
@@ -908,6 +908,21 @@ func checkState(root string) []check {
 				Fix:    "rewrite the line (rotate the credential if real), or add 'scribe:allow' on the line for placeholders",
 			})
 		}
+	}
+
+	// Stop-words hold scan: unlike the secret gate above, the stop-words
+	// gate applies to solo KBs too (stopwords.go), so this check is
+	// unconditional.
+	if findings := findHeldStopWordsInKB(root, cfg); len(findings) > 0 {
+		shown := findings
+		if len(shown) > 5 {
+			shown = append(append([]string{}, shown[:5]...), "…")
+		}
+		out = append(out, check{
+			Section: "state", Name: "stopword-held-articles", Status: statusWarn,
+			Detail: fmt.Sprintf("%d article(s) still held back by the stop-words gate: %s", len(findings), strings.Join(shown, ", ")),
+			Fix:    "remove the held word, add 'scribe:allow' on the line, or delete the file if it shouldn't exist",
+		})
 	}
 
 	// Unresolved merge-conflict markers in articles — the hazard of team

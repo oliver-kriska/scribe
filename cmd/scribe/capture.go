@@ -62,7 +62,7 @@ func (c *CaptureCmd) Run() error {
 	cfg := loadConfig(root)
 
 	if !c.DryRun {
-		lockPath := lockPathFor(cfg.LockDir, "capture-imessage")
+		lockPath := lockPathFor(cfg.LockDir, "capture-imessage", root)
 		lf, ok, err := acquireLock(lockPath)
 		if err != nil {
 			return fmt.Errorf("lock %s: %w", lockPath, err)

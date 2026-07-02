@@ -98,7 +98,7 @@ func TestDoctorWarnsOnConflictMarkers(t *testing.T) {
 	writeKBFile(t, root, "wiki/broken.md", "# Broken\n<<<<<<< HEAD\nours\n>>>>>>> theirs\n")
 
 	var found *check
-	for _, c := range checkState(root) {
+	for _, c := range checkState(root, loadConfig(root)) {
 		if c.Name == "conflict-markers" {
 			found = &c
 			break
@@ -119,7 +119,7 @@ func TestDoctorNoConflictMarkerCheckWhenClean(t *testing.T) {
 	root := t.TempDir()
 	writeKBFile(t, root, "wiki/clean.md", "# Clean\n\nbody\n")
 
-	for _, c := range checkState(root) {
+	for _, c := range checkState(root, loadConfig(root)) {
 		if c.Name == "conflict-markers" {
 			t.Fatalf("clean KB flagged: %+v", c)
 		}

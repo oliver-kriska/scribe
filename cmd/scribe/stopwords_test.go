@@ -251,3 +251,67 @@ func TestHoldStopWordFiles_AllowMarkerCommits(t *testing.T) {
 		t.Error("scribe:allow line was held anyway")
 	}
 }
+
+// --- findHeldStopWordsInKB (doctor visibility, gap 1) ---------------------
+
+func TestFindHeldStopWordsInKB_HoldOnly(t *testing.T) {
+	seedStopWords(t, "")
+	repo := initTestGitRepo(t, "Doctor Tester")
+	writeKBFile(t, repo, "wiki/held.md", "the Project Falcon spec\n")
+	writeKBFile(t, repo, "wiki/masked.md", "built for AcmeCorp last year\n")
+	gitRun(t, repo, "add", "wiki")
+
+	cfg := &ScribeConfig{StopWords: StopWordsConfig{Hold: []string{"Project Falcon"}, Mask: []string{"AcmeCorp"}}}
+	findings := findHeldStopWordsInKB(repo, cfg)
+	joined := strings.Join(findings, "\n")
+	if !strings.Contains(joined, "wiki/held.md:1 [Project Falcon]") {
+		t.Errorf("hold-word file not reported: %v", findings)
+	}
+	if strings.Contains(joined, "masked.md") {
+		t.Errorf("mask-only file should not be reported (D2): %v", findings)
+	}
+}
+
+func TestFindHeldStopWordsInKB_MatchesGateScope(t *testing.T) {
+	seedStopWords(t, "")
+	repo := initTestGitRepo(t, "Doctor Tester")
+	writeKBFile(t, repo, "notes/scratch.md", "the Project Falcon spec\n")
+	writeKBFile(t, repo, "wiki/leaky.md", "the Project Falcon spec\n")
+	writeKBFile(t, repo, ".gitignore", "output/\n")
+	writeKBFile(t, repo, "output/ignored.md", "the Project Falcon spec\n")
+
+	cfg := &ScribeConfig{StopWords: StopWordsConfig{Hold: []string{"Project Falcon"}}}
+	findings := findHeldStopWordsInKB(repo, cfg)
+	joined := strings.Join(findings, "\n")
+	if !strings.Contains(joined, "notes/scratch.md:1") {
+		t.Errorf("markdown outside wiki/raw not scanned: %v", findings)
+	}
+	if !strings.Contains(joined, "wiki/leaky.md:1") {
+		t.Errorf("wiki markdown not scanned: %v", findings)
+	}
+	if strings.Contains(joined, "output/ignored.md") {
+		t.Errorf("gitignored file scanned: %v", findings)
+	}
+}
+
+func TestFindHeldStopWordsInKB_EmptyConfigNoop(t *testing.T) {
+	seedStopWords(t, "")
+	repo := initTestGitRepo(t, "Doctor Tester")
+	writeKBFile(t, repo, "wiki/x.md", "ordinary content\n")
+
+	if findings := findHeldStopWordsInKB(repo, &ScribeConfig{}); findings != nil {
+		t.Errorf("empty config should short-circuit to nil, got: %v", findings)
+	}
+}
+
+func TestFindHeldStopWordsInKB_PersonalConfigUnion(t *testing.T) {
+	// The hold word lives ONLY in the personal config, not scribe.yaml.
+	seedStopWords(t, "stop_words:\n  hold:\n    - MyPrivateName\n")
+	repo := initTestGitRepo(t, "Doctor Tester")
+	writeKBFile(t, repo, "wiki/p.md", "MyPrivateName appears here\n")
+
+	findings := findHeldStopWordsInKB(repo, &ScribeConfig{}) // shared list empty
+	if !slices.Contains(findings, "wiki/p.md:1 [MyPrivateName]") {
+		t.Errorf("personal-config hold word not surfaced: %v", findings)
+	}
+}

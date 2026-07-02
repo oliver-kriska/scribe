@@ -84,7 +84,7 @@ type ProjectsApproveCmd struct {
 // or a sync's collected research vanishes). Sync probe-acquires the
 // same lock and skips its run when busy, so holding it here is safe.
 func withSyncLock(root string, fn func() error) error {
-	err := withLock(loadConfig(root).LockDir, "sync", fn)
+	err := withLock(loadConfig(root).LockDir, "sync", root, fn)
 	if errors.Is(err, errLockBusy) {
 		return errors.New("a sync is running (lock busy) — retry in a moment")
 	}
