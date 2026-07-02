@@ -253,7 +253,7 @@ func (w *WatchCmd) scan(roots []string, dbPath string) {
 			continue
 		}
 
-		if err := appendPending(pendingFile, c.id, score); err != nil {
+		if err := appendPending(pendingFile, c.id, score, c.msgs); err != nil {
 			logMsg("watch", "append pending: %v", err)
 			continue
 		}
@@ -284,9 +284,11 @@ func processedByAllKBs(sets []map[string]bool, id string) bool {
 }
 
 // appendPending writes one entry to the pending-sessions.txt file, creating
-// the parent directory if needed. Format matches the SessionEnd hook so
-// sync.go reads both writers uniformly.
-func appendPending(path, sessionID string, score int) error {
+// the parent directory if needed. Format matches the SessionEnd hook (4
+// columns: sessionID, score, msgCount, ISO8601-UTC — see
+// docs/issue-22-priority-lanes-plan.md §2.2) so sync.go reads both writers
+// uniformly.
+func appendPending(path, sessionID string, score, msgCount int) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -295,6 +297,6 @@ func appendPending(path, sessionID string, score int) error {
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s\t%d\t%s\n", sessionID, score, time.Now().UTC().Format(time.RFC3339))
+	_, err = fmt.Fprintf(f, "%s\t%d\t%d\t%s\n", sessionID, score, msgCount, time.Now().UTC().Format(time.RFC3339))
 	return err
 }

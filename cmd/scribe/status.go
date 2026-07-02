@@ -468,7 +468,13 @@ func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 		})
 	}
 
-	if len(rows) == 0 {
+	// Session queue (hook/watch) lane breakdown — undrained peek only,
+	// exactly like the --dry-run peek. Mirrors the guard pattern already
+	// used for the sessions row above (issue #22).
+	hot, normalLane, aged, queueOK := pendingQueueSummary(cfg.PriorityLanes)
+	hasQueue := queueOK && hot+normalLane > 0
+
+	if len(rows) == 0 && !hasQueue {
 		return
 	}
 	fmt.Fprintln(w)
@@ -484,6 +490,37 @@ func renderBacklog(w io.Writer, root string, cfg *ScribeConfig) {
 		parts = append(parts, fmt.Sprintf("%d pending", r.todo))
 		fmt.Fprintf(w, "    %-22s %s\n", r.label, strings.Join(parts, ", "))
 	}
+	if hasQueue {
+		agedNote := ""
+		if aged > 0 {
+			agedNote = fmt.Sprintf(" (%d aged→hot)", aged)
+		}
+		fmt.Fprintf(w, "    %-22s %d hot, %d normal%s\n", "session queue (hooked):", hot, normalLane, agedNote)
+	}
+}
+
+// pendingQueueSummary classifies the current (undrained) hook/watch
+// queue into Hot/Normal for `scribe status` visibility (issue #22).
+// Peek-only — never consumes the queue. ok=false when the queue file
+// doesn't exist (nothing to report, not an error).
+func pendingQueueSummary(cfg PriorityLanesConfig) (hot, normal, aged int, ok bool) {
+	entries := peekPendingEntries()
+	if entries == nil {
+		return 0, 0, 0, false
+	}
+	now := time.Now()
+	for _, e := range entries {
+		isAged := e.LegacyUnknownAge || (e.HasEnqueuedAt && now.Sub(e.EnqueuedAt) >= time.Duration(cfg.AgeDays)*24*time.Hour)
+		if e.Score >= cfg.HotThreshold || isAged {
+			hot++
+			if isAged && e.Score < cfg.HotThreshold {
+				aged++
+			}
+		} else {
+			normal++
+		}
+	}
+	return hot, normal, aged, true
 }
 
 // countScopedPendingSessions counts ccrider sessions THIS KB would mine

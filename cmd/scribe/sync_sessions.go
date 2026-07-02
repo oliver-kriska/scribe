@@ -5,10 +5,13 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	gosync "sync"
@@ -304,6 +307,37 @@ func (s *SyncCmd) triageSessionIDs(top int, extraArgs ...string) []string {
 	return ids
 }
 
+// triageSessionsScored calls `scribe triage --json` (not --ids) so the
+// result carries score + message count, the two signals priority-lane
+// classification and size-pool partitioning need. Mirrors
+// triageSessionIDs exactly except for the --json flag and the parse.
+func (s *SyncCmd) triageSessionsScored(top int, extraArgs ...string) []pendingEntry {
+	scribeExe, _ := os.Executable()
+	if scribeExe == "" {
+		scribeExe = "scribe"
+	}
+	args := make([]string, 0, 7+len(extraArgs))
+	args = append(args, "triage", "--json", "--top", strconv.Itoa(top), "--sort", s.SessionSort)
+	args = append(args, extraArgs...)
+	out, err := runCmdErr("", scribeExe, args...)
+	if err != nil {
+		return nil
+	}
+	var rows []triageResult
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		return nil
+	}
+	entries := make([]pendingEntry, 0, len(rows))
+	for _, r := range rows {
+		entries = append(entries, pendingEntry{
+			ID: r.SessionID, Score: r.Score, HasScore: true, MsgCount: r.Msgs,
+			// No queue history for a fresh triage discovery — sorts as
+			// "now" in the intra-lane tiebreak (see sortWithinLane).
+		})
+	}
+	return entries
+}
+
 // sessionResult captures the outcome of a single session extraction.
 type sessionResult struct {
 	sessionID   string
@@ -543,6 +577,202 @@ func (s *SyncCmd) largeSessionBudget() int {
 	return max(1, s.SessionsMax/3)
 }
 
+// backfillMsgCounts fills MsgCount for entries whose queue line didn't
+// carry one (the 3-column legacy timestamp shape, or bare-ID lines) via
+// one ccrider lookup per unknown entry — cheap and rare (only exists
+// for leftovers queued before this upgrade shipped; see
+// docs/issue-22-priority-lanes-plan.md §2.2). On DB-open or per-row
+// lookup failure, MsgCount stays -1, which partitionBySize treats as
+// "normal" — fail open toward the cheaper, more-parallel pool rather
+// than the expensive serial one.
+func backfillMsgCounts(dbPath string, entries []pendingEntry) []pendingEntry {
+	needsLookup := false
+	for _, e := range entries {
+		if e.MsgCount == -1 {
+			needsLookup = true
+			break
+		}
+	}
+	if !needsLookup {
+		return entries
+	}
+	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	if err != nil {
+		return entries
+	}
+	defer db.Close()
+	for i := range entries {
+		if entries[i].MsgCount != -1 {
+			continue
+		}
+		if n, ok := queryMessageCount(db, entries[i].ID); ok {
+			entries[i].MsgCount = n
+		}
+	}
+	return entries
+}
+
+// partitionBySize splits entries into the normal (<=300 msgs, or
+// unknown — fail open) and large (>300 msgs) size pools that carry
+// largeSessionBudget's wall-clock safety cap forward (see
+// docs/issue-22-priority-lanes-plan.md §2.3).
+func partitionBySize(entries []pendingEntry) (normal, large []pendingEntry) {
+	for _, e := range entries {
+		if e.MsgCount > 300 {
+			large = append(large, e)
+		} else {
+			normal = append(normal, e)
+		}
+	}
+	return normal, large
+}
+
+// splitBudgetByLane reserves floor(budget * normalRatio), rounded to the
+// nearest integer, for the Normal lane, so Normal always gets *some* slots
+// on a run whose budget is nonzero — never zero slots just because Hot had
+// enough candidates to fill the whole run. Ties round up (0.5 -> 1) so a
+// budget of 1 or 2 with a nonzero ratio still occasionally favors Normal
+// rather than deterministically starving it every single run.
+func splitBudgetByLane(budget int, normalRatio float64) (hotSlots, normalSlots int) {
+	normalSlots = int(math.Round(float64(budget) * normalRatio))
+	if normalSlots > budget {
+		normalSlots = budget
+	}
+	return budget - normalSlots, normalSlots
+}
+
+// admitByLaneFloor returns up to `budget` entries, reserving normalSlots
+// for the Normal lane per splitBudgetByLane, backfilling any shortfall
+// from whichever lane still has spare candidates. Input slices must
+// already be sorted highest-priority-first (see sortWithinLane).
+func admitByLaneFloor(hot, normal []pendingEntry, budget int, normalRatio float64) []pendingEntry {
+	hotSlots, normalSlots := splitBudgetByLane(budget, normalRatio)
+	admitted := make([]pendingEntry, 0, budget)
+	hi, ni := 0, 0
+	for hi < len(hot) && hi < hotSlots {
+		admitted = append(admitted, hot[hi])
+		hi++
+	}
+	for ni < len(normal) && ni < normalSlots {
+		admitted = append(admitted, normal[ni])
+		ni++
+	}
+	// Backfill leftover budget: Hot's unused overflow first, then Normal's.
+	for len(admitted) < budget && hi < len(hot) {
+		admitted = append(admitted, hot[hi])
+		hi++
+	}
+	for len(admitted) < budget && ni < len(normal) {
+		admitted = append(admitted, normal[ni])
+		ni++
+	}
+	return admitted
+}
+
+// classifyLanes buckets candidates into Hot/Normal. An entry is forced
+// into Hot if its own score clears the bar OR it has been waiting long
+// enough that it should stop waiting on score alone (age promotion) OR
+// its age is entirely unknown (the single-column legacy queue format —
+// treated as maximally old so any leftover from before this upgrade
+// clears on the very next drain instead of silently rotting forever).
+func classifyLanes(entries []pendingEntry, cfg PriorityLanesConfig, now time.Time) (hot, normal []pendingEntry) {
+	for _, e := range entries {
+		forceHot := e.Score >= cfg.HotThreshold || e.LegacyUnknownAge ||
+			(e.HasEnqueuedAt && now.Sub(e.EnqueuedAt) >= time.Duration(cfg.AgeDays)*24*time.Hour)
+		if forceHot {
+			hot = append(hot, e)
+		} else {
+			normal = append(normal, e)
+		}
+	}
+	sortWithinLane(hot)
+	sortWithinLane(normal)
+	return hot, normal
+}
+
+// mergeCandidates unions pending-queue and live-triage candidates for
+// one size pool, deduped by ID. The pending-queue entry wins a
+// collision: it carries real EnqueuedAt/Score history the triage
+// rediscovery of the same ID doesn't have (see
+// docs/issue-22-priority-lanes-plan.md §2.5).
+func mergeCandidates(pending, triaged []pendingEntry) []pendingEntry {
+	seen := make(map[string]bool, len(pending)+len(triaged))
+	out := make([]pendingEntry, 0, len(pending)+len(triaged))
+	for _, e := range pending {
+		if !seen[e.ID] {
+			seen[e.ID] = true
+			out = append(out, e)
+		}
+	}
+	for _, e := range triaged {
+		if !seen[e.ID] {
+			seen[e.ID] = true
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// sortWithinLane orders a classified lane for processing: score desc,
+// then EnqueuedAt asc (oldest first) as the tiebreak. LegacyUnknownAge
+// sorts as oldest (epoch); an entry with no queue history at all
+// (fresh triage discovery) sorts as newest. See
+// docs/issue-22-priority-lanes-plan.md §2.4.
+func sortWithinLane(entries []pendingEntry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].Score != entries[j].Score {
+			return entries[i].Score > entries[j].Score
+		}
+		return entryAge(entries[i]).Before(entryAge(entries[j]))
+	})
+}
+
+// entryAge returns a sortable proxy for "how long has this been
+// waiting": the real timestamp when known, epoch (oldest) for the
+// legacy bare-ID shape, or "now" (newest) when there's no queue
+// history to speak of.
+func entryAge(e pendingEntry) time.Time {
+	switch {
+	case e.LegacyUnknownAge:
+		return time.Time{}
+	case e.HasEnqueuedAt:
+		return e.EnqueuedAt
+	default:
+		return time.Now()
+	}
+}
+
+// admitForPool runs one size pool's full pipeline: merge pending +
+// live-triage candidates, classify into Hot/Normal, admit up to
+// budget by floor-reservation, and return the final processing-order
+// ID list. scopeFilter is preFilterSessions for the normal pool or
+// filterSessionsByScope for the large pool — kept as a parameter so
+// each pool's existing scope-gate call (with its existing side
+// effects, e.g. preFilterSessions marking skipped IDs processed) is
+// untouched; only the ORDERING feeding into it changes.
+func admitForPool(pending, triaged []pendingEntry, budget int, cfg PriorityLanesConfig, scopeFilterIDs func([]string) []string) []string {
+	merged := mergeCandidates(pending, triaged)
+	ids := make([]string, len(merged))
+	byID := make(map[string]pendingEntry, len(merged))
+	for i, e := range merged {
+		ids[i] = e.ID
+		byID[e.ID] = e
+	}
+	kept := scopeFilterIDs(ids)
+	filtered := make([]pendingEntry, 0, len(kept))
+	for _, id := range kept {
+		filtered = append(filtered, byID[id])
+	}
+	hot, normal := classifyLanes(filtered, cfg, time.Now())
+	admitted := admitByLaneFloor(hot, normal, budget, 0.3)
+	sortWithinLane(admitted)
+	out := make([]string, len(admitted))
+	for i, e := range admitted {
+		out[i] = e.ID
+	}
+	return out
+}
+
 // mineSessions runs session mining: triage via FTS5 then extract via LLM.
 // Two passes: normal sessions (<=300 msgs, batches of 3) then large sessions (>300 msgs, one at a time).
 func (s *SyncCmd) mineSessions(root string) (int, error) {
@@ -553,13 +783,19 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 		logMsg("sync", "ccrider sync: %s", lastLine(out))
 	}
 
+	// Loaded early: the dry-run peek below needs cfg.PriorityLanes for the
+	// hot/normal classification preview, same as the main path needs it
+	// before size partitioning.
+	cfg := loadConfig(root)
+
 	if s.DryRun {
 		// Peek at the hook queue without clearing it. Lets `sync --dry-run`
 		// show the near-real-time capture pipeline is working without
 		// actually consuming the queue (that belongs to the real sync run).
-		if peeked := peekPendingSessions(); len(peeked) > 0 {
-			logMsg("sync", "DRY RUN -- hook queue: %d pending session(s): %s",
-				len(peeked), strings.Join(peeked, ", "))
+		if peeked := peekPendingEntries(); len(peeked) > 0 {
+			hot, normal := classifyLanes(peeked, cfg.PriorityLanes, time.Now())
+			logMsg("sync", "DRY RUN -- hook queue: %d pending session(s), %d hot / %d normal",
+				len(peeked), len(hot), len(normal))
 		}
 		logMsg("sync", "DRY RUN -- triage results:")
 		scribeExe, _ := os.Executable()
@@ -583,16 +819,18 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 
 	totalMined := 0
 
-	// Drain the hook queue first. The SessionEnd hook (see hook.go) drops
-	// high-value session IDs here as they happen, so draining before the
-	// normal triage gives those sessions priority over whatever the FTS5
-	// scorer would surface next. Already-processed pending IDs are filtered
-	// out below; the file itself is cleared on read so IDs are not reused.
-	pendingIDs, err := readAndClearPendingSessions()
+	// Drain the hook queue first. The SessionEnd hook (see hook.go) and the
+	// watch daemon (watch.go) drop high-value session IDs here as they
+	// happen; draining before triage lets those entries compete for
+	// priority-lane admission alongside fresh triage picks (issue #22) —
+	// arrival order alone no longer decides what mines first. Already-
+	// processed pending entries are filtered out below; the file itself is
+	// cleared on read so entries are not reused.
+	pendingEntries, err := readAndClearPendingEntries()
 	if err != nil {
 		logMsg("sync", "pending queue read error (continuing): %v", err)
 	}
-	if len(pendingIDs) > 0 {
+	if len(pendingEntries) > 0 {
 		// Drop anything already extracted before. A hook might enqueue a
 		// session that a previous sync already absorbed — don't waste a
 		// slot on it.
@@ -600,82 +838,57 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 		for _, id := range loadProcessedSessionIDs(filepath.Join(root, "wiki", "_sessions_log.json")) {
 			processedSet[id] = true
 		}
-		filtered := pendingIDs[:0]
-		for _, id := range pendingIDs {
-			if !processedSet[id] {
-				filtered = append(filtered, id)
+		filtered := pendingEntries[:0]
+		for _, e := range pendingEntries {
+			if !processedSet[e.ID] {
+				filtered = append(filtered, e)
 			}
 		}
-		pendingIDs = filtered
-		if len(pendingIDs) > 0 {
-			logMsg("sync", "hook queue: %d pending session(s) to prioritize", len(pendingIDs))
+		pendingEntries = filtered
+		if len(pendingEntries) > 0 {
+			logMsg("sync", "hook queue: %d pending session(s) to prioritize", len(pendingEntries))
 		}
 	}
+
+	pendingEntries = backfillMsgCounts(cfg.CcriderDB, pendingEntries)
+	pendingNormal, pendingLarge := partitionBySize(pendingEntries)
 
 	// Pass 1: Normal sessions (<=300 messages) — batches of 3, 10min timeout.
 	// Over-fetch 3x the budget: the pre-filter below drops KB, pending-
 	// project, and mechanical sessions AFTER triage, so trimming to the
 	// budget first would let a noisy unapproved project's sessions occupy
 	// every slot and starve approved projects indefinitely (they rank
-	// N+1 forever). The trim to SessionsMax happens after the filter.
-	normalIDs := s.triageSessionIDs(s.SessionsMax*3, "--message-limit", "300")
-
-	// Merge pending IDs ahead of triage picks so high-value sessions
-	// jump the queue.
-	if len(pendingIDs) > 0 {
-		seen := make(map[string]bool, len(pendingIDs)+len(normalIDs))
-		merged := make([]string, 0, len(pendingIDs)+len(normalIDs))
-		for _, id := range pendingIDs {
-			if !seen[id] {
-				seen[id] = true
-				merged = append(merged, id)
-			}
-		}
-		for _, id := range normalIDs {
-			if !seen[id] {
-				seen[id] = true
-				merged = append(merged, id)
-			}
-		}
-		normalIDs = merged
-	}
-
-	// Pre-filter: skip mechanical sessions with too few user messages or content.
-	cfg := loadConfig(root)
-	if len(normalIDs) > 0 {
-		kept, skipped := preFilterSessions(root, cfg.CcriderDB, normalIDs)
-		if len(skipped) > 0 {
-			logMsg("sync", "pre-filter: skipped %d mechanical sessions (<%d user msgs or <500 chars)", len(skipped), 3)
-			// Mark skipped sessions so they're not re-triaged.
-			sessionsLog := filepath.Join(root, "wiki", "_sessions_log.json")
-			if err := updateJSONFile(sessionsLog, func(data map[string]any) {
-				processed, _ := data["processed"].(map[string]any)
-				if processed == nil {
-					processed = make(map[string]any)
-					data["processed"] = processed
-				}
-				for _, sid := range skipped {
-					processed[sid] = map[string]any{
-						"extracted": time.Now().UTC().Format(time.RFC3339),
-						"skipped":   true,
-						"reason":    "mechanical (low user messages or content)",
+	// N+1 forever). Priority-lane admission (admitForPool) handles the
+	// trim to SessionsMax internally, after the filter below runs.
+	triagedNormal := s.triageSessionsScored(s.SessionsMax*3, "--message-limit", "300")
+	normalIDs := admitForPool(pendingNormal, triagedNormal, s.SessionsMax, cfg.PriorityLanes,
+		func(ids []string) []string {
+			kept, skipped := preFilterSessions(root, cfg.CcriderDB, ids)
+			if len(skipped) > 0 {
+				logMsg("sync", "pre-filter: skipped %d mechanical sessions (<%d user msgs or <500 chars)", len(skipped), 3)
+				// Mark skipped sessions so they're not re-triaged.
+				if err := updateJSONFile(sessionsLog, func(data map[string]any) {
+					processed, _ := data["processed"].(map[string]any)
+					if processed == nil {
+						processed = make(map[string]any)
+						data["processed"] = processed
 					}
+					for _, sid := range skipped {
+						processed[sid] = map[string]any{
+							"extracted": time.Now().UTC().Format(time.RFC3339),
+							"skipped":   true,
+							"reason":    "mechanical (low user messages or content)",
+						}
+					}
+				}); err != nil {
+					logMsg("sync", "warn: could not update _sessions_log.json: %v", err)
 				}
-			}); err != nil {
-				logMsg("sync", "warn: could not update _sessions_log.json: %v", err)
 			}
-		}
-		normalIDs = kept
-	}
-
-	// Trim to the slot budget AFTER filtering, so dropped sessions never
-	// consume extraction slots and the parallel extractor stays bounded.
-	if len(normalIDs) > s.SessionsMax {
-		normalIDs = normalIDs[:s.SessionsMax]
-	}
+			return kept
+		})
 
 	if len(normalIDs) > 0 {
-		logMsg("sync", "triage found %d normal sessions (<=300 msgs)", len(normalIDs))
+		logMsg("sync", "priority lanes found %d normal sessions (<=300 msgs)", len(normalIDs))
 		mined, rateLimited := s.mineSessionBatches(root, normalIDs, cfg.Sync.ParallelExtractions, 10*time.Minute, "session-extract.md", "session")
 		totalMined += mined
 		if rateLimited {
@@ -690,13 +903,15 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 
 	// Pass 2: Large sessions (>300 messages) — one at a time, 20min timeout.
 	if largeMax := s.largeSessionBudget(); largeMax > 0 {
-		largeIDs := s.triageSessionIDs(largeMax, "--min-messages", "301")
-		// The large lane bypasses preFilterSessions (large sessions are
-		// exempt from the mechanical/thin gate), so the scope guard must be
-		// re-applied here or ignored/source-excluded projects leak in.
-		largeIDs = filterSessionsByScope(root, cfg.CcriderDB, largeIDs)
+		// Over-fetch 3x like the normal pool, matching sync_sessions.go's
+		// normal-pool over-fetch rationale — otherwise the 70/30 split
+		// silently collapses to 100% Normal whenever Hot's candidate pool
+		// is thin (see docs/issue-22-priority-lanes-plan.md §3.5).
+		triagedLarge := s.triageSessionsScored(largeMax*3, "--min-messages", "301")
+		largeIDs := admitForPool(pendingLarge, triagedLarge, largeMax, cfg.PriorityLanes,
+			func(ids []string) []string { return filterSessionsByScope(root, cfg.CcriderDB, ids) })
 		if len(largeIDs) > 0 {
-			logMsg("sync", "triage found %d large sessions (>300 msgs)", len(largeIDs))
+			logMsg("sync", "priority lanes found %d large sessions (>300 msgs)", len(largeIDs))
 			mined, _ := s.mineSessionBatches(root, largeIDs, 1, 20*time.Minute, "session-extract-large.md", "large-session")
 			totalMined += mined
 		}

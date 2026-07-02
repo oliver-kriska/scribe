@@ -124,6 +124,27 @@ func (t *TriageCmd) runStats(db *sql.DB, excludeIDs []string) error {
 	return nil
 }
 
+// triageResult is one row of `scribe triage --json` output. Shared with
+// sync_sessions.go's triageSessionsScored, which decodes the same JSON
+// shape when pulling live-triage candidates into the priority-lane
+// admission path (issue #22) — one struct, one set of JSON tags, no
+// drift between the two call sites.
+type triageResult struct {
+	SessionID string  `json:"session_id"`
+	Project   string  `json:"project"`
+	Msgs      int     `json:"msgs"`
+	Score     int     `json:"total_score"`
+	Dec       int     `json:"dec"`
+	Arch      int     `json:"arch"`
+	Res       int     `json:"res"`
+	Learn     int     `json:"learn"`
+	Eval      int     `json:"eval"`
+	Deep      int     `json:"deep"`
+	Date      string  `json:"date"`
+	Hours     float64 `json:"hours"`
+	Summary   string  `json:"summary"`
+}
+
 func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error {
 	excludeClause := buildExcludeClause(excludeIDs)
 	projectClause := buildProjectClause(t.Project)
@@ -175,25 +196,9 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 	}
 	defer rows.Close()
 
-	type result struct {
-		SessionID string  `json:"session_id"`
-		Project   string  `json:"project"`
-		Msgs      int     `json:"msgs"`
-		Score     int     `json:"total_score"`
-		Dec       int     `json:"dec"`
-		Arch      int     `json:"arch"`
-		Res       int     `json:"res"`
-		Learn     int     `json:"learn"`
-		Eval      int     `json:"eval"`
-		Deep      int     `json:"deep"`
-		Date      string  `json:"date"`
-		Hours     float64 `json:"hours"`
-		Summary   string  `json:"summary"`
-	}
-
-	var results []result
+	var results []triageResult
 	for rows.Next() {
-		var r result
+		var r triageResult
 		var date, summary sql.NullString
 		var hours sql.NullFloat64
 		err := rows.Scan(&r.SessionID, &r.Project, &r.Msgs, &r.Score,

@@ -111,18 +111,21 @@ type ScribeConfig struct {
 	// Ollama with a single `llm.provider: ollama` line in scribe.yaml.
 	// Defaults: provider=anthropic, model="" (each op picks its own
 	// sensible default — haiku for cheap passes, sonnet for prose).
-	LLM         LLMConfig         `yaml:"llm"`
-	Sync        SyncConfig        `yaml:"sync"`
-	Deep        DeepConfig        `yaml:"deep"`
-	Capture     CaptureConfig     `yaml:"capture"`
-	Triage      TriageConfig      `yaml:"triage"`
-	Absorb      AbsorbConfig      `yaml:"absorb"`
-	Ingest      IngestConfig      `yaml:"ingest"`
-	Identities  IdentitiesConfig  `yaml:"identities"`
-	Relations   RelationsConfig   `yaml:"relations"`
-	SessionMine SessionMineConfig `yaml:"session_mine"`
-	Codex       CodexConfig       `yaml:"codex"`
-	Dream       DreamConfig       `yaml:"dream"`
+	LLM     LLMConfig     `yaml:"llm"`
+	Sync    SyncConfig    `yaml:"sync"`
+	Deep    DeepConfig    `yaml:"deep"`
+	Capture CaptureConfig `yaml:"capture"`
+	Triage  TriageConfig  `yaml:"triage"`
+	// PriorityLanes tunes how sync drains pending-sessions.txt (issue
+	// #22) — see PriorityLanesConfig.
+	PriorityLanes PriorityLanesConfig `yaml:"priority_lanes"`
+	Absorb        AbsorbConfig        `yaml:"absorb"`
+	Ingest        IngestConfig        `yaml:"ingest"`
+	Identities    IdentitiesConfig    `yaml:"identities"`
+	Relations     RelationsConfig     `yaml:"relations"`
+	SessionMine   SessionMineConfig   `yaml:"session_mine"`
+	Codex         CodexConfig         `yaml:"codex"`
+	Dream         DreamConfig         `yaml:"dream"`
 	// Subscriptions surface teammates' incoming articles after each
 	// pull — domains/tags this user cares about, typically set in the
 	// gitignored scribe.local.yaml so each member subscribes
@@ -450,6 +453,30 @@ func (t TriageConfig) Resolve() (keywords map[string]string, weights map[string]
 	return keywords, weights
 }
 
+// PriorityLanesConfig tunes how sync drains pending-sessions.txt (issue
+// #22). An entry scoring at or above HotThreshold admits before Normal-
+// lane entries; AgeDays promotes a stale Normal entry into Hot so a
+// queue that's perpetually fed high scorers can't starve an old
+// low-scorer forever. See docs/issue-22-priority-lanes-plan.md.
+type PriorityLanesConfig struct {
+	HotThreshold int `yaml:"hot_threshold"`
+	AgeDays      int `yaml:"age_days"`
+}
+
+// applyPriorityLanesDefaults fills PriorityLanesConfig. 90 sits well
+// above the hook's own MinScore default (50, hook.go) — Hot means
+// "clearly high value", not merely "cleared the queue bar". AgeDays=7
+// is the starvation backstop: a Normal entry waits at most a week
+// before it's promoted regardless of score.
+func applyPriorityLanesDefaults(cfg *PriorityLanesConfig) {
+	if cfg.HotThreshold <= 0 {
+		cfg.HotThreshold = 90
+	}
+	if cfg.AgeDays <= 0 {
+		cfg.AgeDays = 7
+	}
+}
+
 // CaptureConfig holds settings for `scribe capture` (iMessage self-chat).
 type CaptureConfig struct {
 	// SelfChatHandle is the legacy singular form. Still honored, but new
@@ -632,6 +659,7 @@ func loadConfig(root string) *ScribeConfig {
 		applyExtractDefaults(&cfg.Extract, cfg.LLM)
 		applyMetaDefaults(&cfg.Meta)
 		applyCodexDefaults(&cfg.Codex)
+		applyPriorityLanesDefaults(&cfg.PriorityLanes)
 		return cfg
 	}
 	// loadConfig used to swallow yaml.Unmarshal errors silently, which
@@ -675,6 +703,7 @@ func loadConfig(root string) *ScribeConfig {
 	applyExtractDefaults(&cfg.Extract, cfg.LLM)
 	applyMetaDefaults(&cfg.Meta)
 	applyCodexDefaults(&cfg.Codex)
+	applyPriorityLanesDefaults(&cfg.PriorityLanes)
 
 	// loadConfig is pure: it never writes scribe.yaml. The first-use
 	// `absorb:` backfill moved to maybeBackfillAbsorbBlock, invoked only

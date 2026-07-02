@@ -349,3 +349,12 @@ triage:
     evaluation: 2
     deep_work: 1
     code_pattern: 1
+
+# Priority lanes for the pending-session queue (scored, not FIFO). A
+# session scoring at or above hot_threshold mines before Normal-lane
+# sessions; age_days promotes a stale Normal entry into Hot so it can't
+# be starved forever by a steady stream of higher scorers. Defaults
+# below match the built-in fallback — uncomment only to tune.
+# priority_lanes:
+#   hot_threshold: 90              # default: 90
+#   age_days: 7                    # default: 7

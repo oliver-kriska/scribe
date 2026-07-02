@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestStrictnessHoldsFile pins the shared hold-classification rule used by
@@ -191,6 +192,75 @@ func TestRenderBacklogHeldSplit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRenderBacklogSessionQueueRow covers the priority-lane queue summary
+// row (issue #22): printed only when the hook/watch queue has entries,
+// classified into hot/normal/aged the same way pendingQueueSummary does,
+// and folded into the SAME "backlog (run `scribe sync`...)" block as the
+// other rows rather than a second header.
+func TestRenderBacklogSessionQueueRow(t *testing.T) {
+	writeQueue := func(t *testing.T, content string) {
+		t.Helper()
+		xdg := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", xdg)
+		scribeDir := filepath.Join(xdg, "scribe")
+		if err := os.MkdirAll(scribeDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(scribeDir, "pending-sessions.txt"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("no queue file: no row, no header forced", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		fixture := statusBacklogFixture{strictness: "medium", maxExtract: 100}
+		root, cfg := fixture.build(t)
+		var buf bytes.Buffer
+		renderBacklog(&buf, root, cfg)
+		if buf.Len() != 0 {
+			t.Errorf("expected no backlog output at all, got:\n%s", buf.String())
+		}
+	})
+
+	t.Run("queue entries print under the shared backlog header", func(t *testing.T) {
+		now := time.Now().UTC()
+		fresh := now.Add(-1 * time.Hour).Format(time.RFC3339)
+		aged := now.Add(-10 * 24 * time.Hour).Format(time.RFC3339) // > default AgeDays=7
+		content := "s-hot\t95\t50\t" + fresh + "\n" +
+			"s-normal\t40\t50\t" + fresh + "\n" +
+			"s-aged\t40\t50\t" + aged + "\n"
+		writeQueue(t, content)
+
+		fixture := statusBacklogFixture{strictness: "medium", maxExtract: 100}
+		root, cfg := fixture.build(t)
+		var buf bytes.Buffer
+		renderBacklog(&buf, root, cfg)
+		lines := normalizeLines(buf.String())
+		if !containsLine(lines, "backlog (run `scribe sync` to process):") {
+			t.Errorf("missing shared backlog header:\n%s", buf.String())
+		}
+		want := "session queue (hooked): 2 hot, 1 normal (1 aged→hot)"
+		if !containsLine(lines, want) {
+			t.Errorf("missing line %q\ngot:\n%s", want, buf.String())
+		}
+	})
+
+	t.Run("queue-only backlog (no other rows) still prints the header", func(t *testing.T) {
+		writeQueue(t, "s-hot\t95\t50\t"+time.Now().UTC().Format(time.RFC3339)+"\n")
+		fixture := statusBacklogFixture{strictness: "medium", maxExtract: 100}
+		root, cfg := fixture.build(t)
+		var buf bytes.Buffer
+		renderBacklog(&buf, root, cfg)
+		lines := normalizeLines(buf.String())
+		if !containsLine(lines, "backlog (run `scribe sync` to process):") {
+			t.Errorf("missing shared backlog header when only the queue row has content:\n%s", buf.String())
+		}
+		if !containsLine(lines, "session queue (hooked): 1 hot, 0 normal") {
+			t.Errorf("missing queue row:\n%s", buf.String())
+		}
+	})
 }
 
 // normalizeLines collapses each non-empty output line's whitespace to

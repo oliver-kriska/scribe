@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestCountScopedPendingSessions verifies the backlog counts only sessions
@@ -66,6 +67,83 @@ func TestCountScopedPendingSessions_ZeroApproved(t *testing.T) {
 	if got != 0 {
 		t.Errorf("pending = %d, want 0 — a KB with no approved projects owns no sessions", got)
 	}
+}
+
+// TestPendingQueueSummary covers pendingQueueSummary's Hot/Normal/aged
+// classification for `scribe status` (issue #22): missing queue file
+// reports ok=false, an empty file reports ok=true with zero counts, and a
+// mix of Hot/Normal/aged entries lands in the right buckets.
+func TestPendingQueueSummary(t *testing.T) {
+	cfg := PriorityLanesConfig{HotThreshold: 90, AgeDays: 7}
+
+	t.Run("missing queue file", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		hot, normal, aged, ok := pendingQueueSummary(cfg)
+		if ok {
+			t.Errorf("ok = true for a missing queue file, want false")
+		}
+		if hot != 0 || normal != 0 || aged != 0 {
+			t.Errorf("counts = (%d, %d, %d), want zeros", hot, normal, aged)
+		}
+	})
+
+	t.Run("empty queue file reads the same as a missing one", func(t *testing.T) {
+		// scanPendingEntries returns a nil slice when it finds zero lines
+		// (an empty `var out []pendingEntry`, never appended to), which is
+		// indistinguishable from peekPendingEntries' os.Open-failed nil —
+		// so an existing-but-empty file and a missing file both read as
+		// ok=false here. Harmless at the status.go call site either way:
+		// it only ever prints when ok && hot+normal>0, so both cases
+		// suppress the row identically.
+		xdg := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", xdg)
+		scribeDir := filepath.Join(xdg, "scribe")
+		if err := os.MkdirAll(scribeDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(scribeDir, "pending-sessions.txt"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		hot, normal, aged, ok := pendingQueueSummary(cfg)
+		if ok {
+			t.Error("ok = true for an empty file — scanPendingEntries returns nil on zero lines, same as a missing file")
+		}
+		if hot != 0 || normal != 0 || aged != 0 {
+			t.Errorf("counts = (%d, %d, %d), want zeros", hot, normal, aged)
+		}
+	})
+
+	t.Run("mixed hot/normal/aged entries", func(t *testing.T) {
+		xdg := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", xdg)
+		scribeDir := filepath.Join(xdg, "scribe")
+		if err := os.MkdirAll(scribeDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		agedTS := now.Add(-10 * 24 * time.Hour).Format(time.RFC3339) // > AgeDays=7
+		freshTS := now.Add(-1 * time.Hour).Format(time.RFC3339)
+		content := "s-hot\t95\t50\t" + freshTS + "\n" + // score-hot
+			"s-normal\t40\t50\t" + freshTS + "\n" + // normal, fresh
+			"s-aged\t40\t50\t" + agedTS + "\n" + // aged into hot
+			"s-legacy\n" // bare-ID legacy shape: LegacyUnknownAge -> hot, counts as aged too
+		if err := os.WriteFile(filepath.Join(scribeDir, "pending-sessions.txt"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		hot, normal, aged, ok := pendingQueueSummary(cfg)
+		if !ok {
+			t.Fatal("ok = false")
+		}
+		if hot != 3 {
+			t.Errorf("hot = %d, want 3 (s-hot, s-aged, s-legacy)", hot)
+		}
+		if normal != 1 {
+			t.Errorf("normal = %d, want 1 (s-normal)", normal)
+		}
+		if aged != 2 {
+			t.Errorf("aged = %d, want 2 (s-aged, s-legacy — both promoted by age, not by score)", aged)
+		}
+	})
 }
 
 // writeStatusManifest writes scripts/projects.json for a test KB.

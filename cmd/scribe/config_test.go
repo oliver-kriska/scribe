@@ -156,6 +156,47 @@ func TestLoadConfigParseFailureIsRecorded(t *testing.T) {
 	}
 }
 
+// TestApplyPriorityLanesDefaults pins PriorityLanesConfig's defaulting
+// contract (issue #22): zero/negative values fall back to 90/7; explicit
+// non-zero values pass through untouched, independently per field.
+func TestApplyPriorityLanesDefaults(t *testing.T) {
+	cases := []struct {
+		name string
+		in   PriorityLanesConfig
+		want PriorityLanesConfig
+	}{
+		{"zero value", PriorityLanesConfig{}, PriorityLanesConfig{HotThreshold: 90, AgeDays: 7}},
+		{"only HotThreshold set", PriorityLanesConfig{HotThreshold: 80}, PriorityLanesConfig{HotThreshold: 80, AgeDays: 7}},
+		{"only AgeDays set", PriorityLanesConfig{AgeDays: 14}, PriorityLanesConfig{HotThreshold: 90, AgeDays: 14}},
+		{"fully set passes through", PriorityLanesConfig{HotThreshold: 75, AgeDays: 3}, PriorityLanesConfig{HotThreshold: 75, AgeDays: 3}},
+		{"negative values fall back to defaults", PriorityLanesConfig{HotThreshold: -1, AgeDays: -5}, PriorityLanesConfig{HotThreshold: 90, AgeDays: 7}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := tc.in
+			applyPriorityLanesDefaults(&cfg)
+			if cfg != tc.want {
+				t.Errorf("applyPriorityLanesDefaults(%+v) = %+v, want %+v", tc.in, cfg, tc.want)
+			}
+		})
+	}
+}
+
+// TestLoadConfigPriorityLanesDefaults confirms loadConfig fills a missing
+// `priority_lanes:` block with the built-in 90/7 defaults, mirroring
+// TestAbsorbConfigDefaults's pattern for a fresh KB with no override.
+func TestLoadConfigPriorityLanesDefaults(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "scribe.yaml"), []byte("owner_name: Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(tmp)
+	want := PriorityLanesConfig{HotThreshold: 90, AgeDays: 7}
+	if cfg.PriorityLanes != want {
+		t.Errorf("PriorityLanes = %+v, want %+v", cfg.PriorityLanes, want)
+	}
+}
+
 // TestForceNonAnthropicMode pins the coercion contract: an unset mode
 // coerces SILENTLY (warning about overriding a code default printed 6
 // noise lines per command on ollama-routed KBs), an explicit mode still

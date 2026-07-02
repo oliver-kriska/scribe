@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -151,8 +152,9 @@ func (c *SessionEndHookCmd) Run() error {
 	}
 
 	// 9. Append to pending-sessions.txt. Format:
-	//    sessionID<TAB>score<TAB>ISO8601-UTC
-	//    The extra columns are informational; sync.go only reads column 1.
+	//    sessionID<TAB>score<TAB>msgCount<TAB>ISO8601-UTC
+	//    sync.go reads all four columns for priority-lane classification
+	//    (issue #22) — see parsePendingEntry.
 	if err := os.MkdirAll(filepath.Dir(pendingFile), 0o755); err != nil {
 		return c.skip("mkdir pending dir: %v", err)
 	}
@@ -161,7 +163,7 @@ func (c *SessionEndHookCmd) Run() error {
 		return c.skip("open pending file: %v", err)
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "%s\t%d\t%s\n", sessionID, score, time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(f, "%s\t%d\t%d\t%s\n", sessionID, score, msgCount, time.Now().UTC().Format(time.RFC3339))
 
 	if c.Verbose {
 		fmt.Fprintf(os.Stderr, "scribe hook: queued %s (score %d, msgs %d)\n", sessionID, score, msgCount)
@@ -330,17 +332,74 @@ func pendingSessionsFile() string {
 	return filepath.Join(os.Getenv("HOME"), ".config", "scribe", "pending-sessions.txt")
 }
 
-// parsePendingLine returns the session ID from a "<id>\t<score>\t<ts>" line.
-// Blank or malformed lines return "".
-func parsePendingLine(line string) string {
+// pendingEntry is one parsed line from pending-sessions.txt. Producers
+// (hook.go, watch.go) always write the current 4-column format;
+// consumers must tolerate the 3 legacy shapes documented in
+// parsePendingEntry. HasScore/MsgCount==-1/HasEnqueuedAt/
+// LegacyUnknownAge record exactly what was actually present on the
+// line so lane classification (sync_sessions.go) can apply the right
+// fallback instead of guessing from a zero value.
+type pendingEntry struct {
+	ID               string
+	Score            int
+	HasScore         bool
+	MsgCount         int // -1 = unknown, backfilled later from ccrider
+	EnqueuedAt       time.Time
+	HasEnqueuedAt    bool
+	LegacyUnknownAge bool // true only for the bare single-column legacy line
+}
+
+// parsePendingEntry parses one pending-sessions.txt line per the format
+// table in docs/issue-22-priority-lanes-plan.md §2.2. Returns ok=false
+// for a blank line.
+func parsePendingEntry(line string) (pendingEntry, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
+		return pendingEntry{}, false
+	}
+	fields := strings.Split(line, "\t")
+	e := pendingEntry{ID: fields[0], MsgCount: -1}
+	switch {
+	case len(fields) >= 4:
+		if v, err := strconv.Atoi(fields[1]); err == nil {
+			e.Score, e.HasScore = v, true
+		}
+		if v, err := strconv.Atoi(fields[2]); err == nil {
+			e.MsgCount = v
+		}
+		if t, err := time.Parse(time.RFC3339, fields[3]); err == nil {
+			e.EnqueuedAt, e.HasEnqueuedAt = t, true
+		}
+	case len(fields) == 3:
+		if v, err := strconv.Atoi(fields[1]); err == nil {
+			e.Score, e.HasScore = v, true
+		}
+		if v, err := strconv.Atoi(fields[2]); err == nil {
+			// 3-column shape with an int in field[2]: msgCount, no timestamp.
+			e.MsgCount = v
+		} else if t, err := time.Parse(time.RFC3339, fields[2]); err == nil {
+			// 3-column legacy shape (current production format): id, score, timestamp.
+			e.EnqueuedAt, e.HasEnqueuedAt = t, true
+		}
+	case len(fields) == 2:
+		if v, err := strconv.Atoi(fields[1]); err == nil {
+			e.Score, e.HasScore = v, true
+		}
+	default: // len(fields) == 1: bare ID, oldest legacy shape
+		e.LegacyUnknownAge = true
+	}
+	return e, true
+}
+
+// parsePendingLine returns just the session ID — the subset every
+// pre-existing caller (pendingContainsID, dedup loops) needs. Kept as a
+// thin wrapper so those callers and their tests are untouched.
+func parsePendingLine(line string) string {
+	e, ok := parsePendingEntry(line)
+	if !ok {
 		return ""
 	}
-	if tab := strings.IndexByte(line, '\t'); tab > 0 {
-		return line[:tab]
-	}
-	return line
+	return e.ID
 }
 
 // pendingContainsID scans the pending file for a line whose first
@@ -373,40 +432,64 @@ func isSessionProcessed(sessionsLog, sessionID string) bool {
 	return slices.Contains(loadProcessedSessionIDs(sessionsLog), sessionID)
 }
 
-// peekPendingSessions reads the pending-sessions file without clearing it.
-// Used by `sync --dry-run` for observability. Returns nil on any error.
-func peekPendingSessions() []string {
+// scanPendingEntries reads f line by line, returning unique entries in
+// file order (first occurrence of a given ID wins — matches the
+// existing dedup semantics of peekPendingSessions/readAndClearPendingSessions).
+func scanPendingEntries(f *os.File) ([]pendingEntry, error) {
+	var out []pendingEntry
+	seen := make(map[string]bool)
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		e, ok := parsePendingEntry(sc.Text())
+		if !ok || e.ID == "" || seen[e.ID] {
+			continue
+		}
+		seen[e.ID] = true
+		out = append(out, e)
+	}
+	return out, sc.Err()
+}
+
+// peekPendingEntries is peekPendingSessions but returns full entries
+// (score/msgCount/age) instead of bare IDs, for lane-aware callers
+// (mineSessions dry-run, status.go's queue summary). Non-consuming.
+func peekPendingEntries() []pendingEntry {
 	path := pendingSessionsFile()
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
-	var ids []string
-	seen := make(map[string]bool)
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		id := parsePendingLine(sc.Text())
-		if id != "" && !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
-		}
-	}
-	if err := sc.Err(); err != nil {
+	entries, err := scanPendingEntries(f)
+	if err != nil {
 		logMsg("sync", "peek pending queue: %v", err)
 		return nil
+	}
+	return entries
+}
+
+// peekPendingSessions reads the pending-sessions file without clearing it.
+// Used by `sync --dry-run` for observability. Returns nil on any error.
+func peekPendingSessions() []string {
+	entries := peekPendingEntries()
+	if entries == nil {
+		return nil
+	}
+	ids := make([]string, len(entries))
+	for i, e := range entries {
+		ids[i] = e.ID
 	}
 	return ids
 }
 
-// readAndClearPendingSessions is called by sync.go to drain the hook queue.
+// readAndClearPendingEntries is called by sync.go to drain the hook queue.
 //
 // Atomic rename prevents a race: if we read-then-delete, an appender running
 // between the last scanner read and the unlink loses its write (the append
 // opens O_APPEND, writes, closes — then the reader unlinks the inode and
 // a subsequent drain never sees it). Rename claims the current file as ours;
 // any concurrent appender creates a fresh file that the next drain picks up.
-func readAndClearPendingSessions() ([]string, error) {
+func readAndClearPendingEntries() ([]pendingEntry, error) {
 	path := pendingSessionsFile()
 	claim := path + ".reading"
 
@@ -427,17 +510,7 @@ func readAndClearPendingSessions() ([]string, error) {
 		}
 		return nil, fmt.Errorf("open pending file: %w", err)
 	}
-	var ids []string
-	seen := make(map[string]bool)
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		id := parsePendingLine(sc.Text())
-		if id != "" && !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
-		}
-	}
-	scanErr := sc.Err()
+	entries, scanErr := scanPendingEntries(f)
 	f.Close()
 	if scanErr != nil {
 		// Do NOT remove the claim file: a truncated read followed by
@@ -447,7 +520,26 @@ func readAndClearPendingSessions() ([]string, error) {
 	}
 
 	if err := os.Remove(claim); err != nil && !os.IsNotExist(err) {
-		return ids, fmt.Errorf("clear pending file: %w", err)
+		return entries, fmt.Errorf("clear pending file: %w", err)
+	}
+	return entries, nil
+}
+
+// readAndClearPendingSessions is the []string-returning wrapper over
+// readAndClearPendingEntries — kept so callers that only need IDs (and
+// TestPeekAndDrainPendingSessions, which pins this exact contract) don't
+// need to change.
+func readAndClearPendingSessions() ([]string, error) {
+	entries, err := readAndClearPendingEntries()
+	if err != nil {
+		return nil, err
+	}
+	if entries == nil {
+		return nil, nil
+	}
+	ids := make([]string, len(entries))
+	for i, e := range entries {
+		ids[i] = e.ID
 	}
 	return ids, nil
 }

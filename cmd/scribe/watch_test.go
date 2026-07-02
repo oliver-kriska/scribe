@@ -16,10 +16,10 @@ func TestAppendPending(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "pending-sessions.txt")
 
-	if err := appendPending(path, "sess-alpha", 120); err != nil {
+	if err := appendPending(path, "sess-alpha", 120, 42); err != nil {
 		t.Fatalf("first append: %v", err)
 	}
-	if err := appendPending(path, "sess-beta", 85); err != nil {
+	if err := appendPending(path, "sess-beta", 85, 17); err != nil {
 		t.Fatalf("second append: %v", err)
 	}
 
@@ -32,17 +32,17 @@ func TestAppendPending(t *testing.T) {
 		t.Fatalf("expected 2 lines, got %d: %q", len(lines), string(data))
 	}
 
-	// Each line: sessionID<TAB>score<TAB>iso8601
+	// Each line: sessionID<TAB>score<TAB>msgCount<TAB>iso8601
 	for i, line := range lines {
 		parts := strings.Split(line, "\t")
-		if len(parts) != 3 {
-			t.Errorf("line %d has %d tab-separated fields, want 3: %q", i, len(parts), line)
+		if len(parts) != 4 {
+			t.Errorf("line %d has %d tab-separated fields, want 4: %q", i, len(parts), line)
 		}
 	}
-	if !strings.HasPrefix(lines[0], "sess-alpha\t120\t") {
+	if !strings.HasPrefix(lines[0], "sess-alpha\t120\t42\t") {
 		t.Errorf("first line malformed: %q", lines[0])
 	}
-	if !strings.HasPrefix(lines[1], "sess-beta\t85\t") {
+	if !strings.HasPrefix(lines[1], "sess-beta\t85\t17\t") {
 		t.Errorf("second line malformed: %q", lines[1])
 	}
 }
@@ -54,7 +54,7 @@ func TestAppendPendingReaderCompat(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "pending-sessions.txt")
 
-	if err := appendPending(path, "sess-gamma", 200); err != nil {
+	if err := appendPending(path, "sess-gamma", 200, 33); err != nil {
 		t.Fatal(err)
 	}
 	if !pendingContainsID(path, "sess-gamma") {

@@ -77,6 +77,13 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Triage.Keywords": true,
 	"Triage.Weights":  true,
 
+	// Priority-lane scheduling (issue #22): which already-queued/triaged
+	// sessions mine first and how long a Normal entry waits before aging
+	// into Hot. Pure ordering/scheduling tuning — it cannot widen what's
+	// ingested, redirect data, or weaken a gate.
+	"PriorityLanes.HotThreshold": true,
+	"PriorityLanes.AgeDays":      true,
+
 	// Absorb pipeline tuning (URL + provider + model leaves are locked;
 	// these shape chunking/threshold/timeouts only).
 	"Absorb.BriefThresholdWords":      true,
