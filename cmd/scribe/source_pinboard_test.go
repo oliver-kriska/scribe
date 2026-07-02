@@ -57,6 +57,7 @@ func TestPinboardToItem(t *testing.T) {
 		Tags:        "go  rust   elixir",
 		Time:        "2026-06-01T12:00:00Z",
 		ToRead:      "yes",
+		Shared:      "no",
 		Hash:        "abc123",
 	}
 	it, ok := post.toItem()
@@ -77,6 +78,9 @@ func TestPinboardToItem(t *testing.T) {
 	}
 	if !it.Unread {
 		t.Error("Unread = false, want true for toread=yes")
+	}
+	if !it.Private {
+		t.Error("Private = false, want true for shared=no")
 	}
 	if it.ID != "abc123" {
 		t.Errorf("ID = %q, want the hash", it.ID)

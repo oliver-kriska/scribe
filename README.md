@@ -356,6 +356,7 @@ integrations:
     scope: recent+unread    # recent+unread | unread | all  (by read-state/recency)
     tags: []                # OR filter: only ingest bookmarks with >=1 of these
                             # tags (case-insensitive); empty = all
+    public_only: false      # true = skip private bookmarks; default ingests all
     skip_domains: []        # substring filter, same as capture.skip_domains
 ```
 
@@ -366,6 +367,11 @@ integrations:
   bookmarks carrying `kb` **or** `elixir` are ingested; empty ingests everything
   the scope returned. The two compose — `scope: all` + `tags: [kb]` means
   "every bookmark I ever tagged `kb`".
+- **`public_only`** — an authenticated pull sees your **private** bookmarks too,
+  and by default they're ingested. Set `public_only: true` (or pass
+  `--public-only` for one run) to skip private (non-shared) bookmarks — worth it
+  if this KB might ever be shared or `scribe promote`d, so private links don't
+  ride along.
 
 **3. Run it:**
 
