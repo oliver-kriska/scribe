@@ -1,6 +1,7 @@
 -- Minimal ccrider sessions.db fixture schema for tests.
 -- Mirrors only the columns scribe actually queries (sessions.go,
--- sync_sessions.go, hook.go, triage.go). Never point tests at the real
+-- sync_sessions.go, hook.go, triage.go, session_transcript.go,
+-- adoption.go). Never point tests at the real
 -- ~/.config/ccrider/sessions.db.
 CREATE TABLE sessions (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,7 +21,18 @@ CREATE TABLE messages (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id   INTEGER REFERENCES sessions(id),
     type         TEXT,
-    text_content TEXT
+    text_content TEXT,
+    -- content mirrors ccrider's raw tool-payload column (the verbatim
+    -- "message" JSON from the source JSONL line — see
+    -- session_transcript.go and adoption.go for what scribe reads out
+    -- of it). Additive: existing INSERT INTO messages (session_id,
+    -- type, text_content) calls keep working unchanged, defaulting to
+    -- NULL, and every query touching this column already uses COALESCE.
+    content      TEXT,
+    -- sequence mirrors ccrider's per-session monotonic ordinal.
+    -- Defaults to 0 so pre-existing fixture inserts that don't set it
+    -- still sort deterministically (ORDER BY sequence ASC, id ASC).
+    sequence     INTEGER DEFAULT 0
 );
 
 -- External-content FTS5 tables; tests insert rows manually with

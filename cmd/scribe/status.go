@@ -122,6 +122,16 @@ func renderStatus(w io.Writer, root string) error {
 		fmt.Fprintf(w, "  last sync:        %s\n", last)
 	}
 
+	// --- KB-first adoption (issue #23) — cached at sync time, read-only here ---
+	if snaps, ok := loadLatestAdoptionStats(root); ok {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  KB-first adoption (queried KB before first edit):")
+		for _, s := range snaps {
+			fmt.Fprintf(w, "    %2dd: %5.0f%%  (%d/%d decision sessions)\n",
+				s.Days, s.Ratio*100, s.Numerator, s.Denominator)
+		}
+	}
+
 	// --- qmd collection (this KB) ---
 	fmt.Fprintln(w)
 	if detail, ok := qmdCollectionStatus(root); ok {
@@ -204,9 +214,11 @@ func pingOllamaFast(baseURL string) error {
 	return err
 }
 
-// lastSyncSummary finds the most recent JSONL entry in output/runs/ whose
-// command is "sync" and returns a one-line summary.
-func lastSyncSummary(runsDir string) string {
+// newestSyncRunLine returns the most recent JSONL line in runsDir whose
+// command is "sync", or "" if none exists. Extracted from lastSyncSummary
+// so status and digest can both read cached sync-time computations (e.g.
+// the adoption metric, issue #23 plan D7) without re-querying ccrider.
+func newestSyncRunLine(runsDir string) string {
 	entries, err := os.ReadDir(runsDir)
 	if err != nil {
 		return ""
@@ -231,13 +243,66 @@ func lastSyncSummary(runsDir string) string {
 	// Walk lines backward to find the most recent sync entry.
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		line := lines[i]
-		if strings.Contains(line, `"command":"sync"`) {
-			// Parse just enough to pull timestamp + key counters.
-			return formatRunLine(line)
+		if strings.Contains(lines[i], `"command":"sync"`) {
+			return lines[i]
 		}
 	}
 	return ""
+}
+
+// lastSyncSummary finds the most recent JSONL entry in output/runs/ whose
+// command is "sync" and returns a one-line summary.
+func lastSyncSummary(runsDir string) string {
+	line := newestSyncRunLine(runsDir)
+	if line == "" {
+		return ""
+	}
+	return formatRunLine(line)
+}
+
+// adoptionSnapshot is one window's cached KB-first ratio, read back from
+// the run record `sync` wrote (issue #23 plan D7 — computed once at sync
+// time, never recomputed here).
+type adoptionSnapshot struct {
+	Days        int
+	Ratio       float64
+	Numerator   int
+	Denominator int
+}
+
+// loadLatestAdoptionStats reads the adoption_kb_first_* fields from the
+// most recent sync run record. ok=false when no sync has run this
+// feature yet (fresh KB, or a KB whose last sync predates this feature
+// or had no ccrider DB available) — callers must render nothing in that
+// case rather than a misleading zero.
+func loadLatestAdoptionStats(root string) ([]adoptionSnapshot, bool) {
+	runsDir := filepath.Join(root, "output", "runs")
+	line := newestSyncRunLine(runsDir)
+	if line == "" {
+		return nil, false
+	}
+	var out []adoptionSnapshot
+	for _, days := range []int{7, 30} {
+		prefix := fmt.Sprintf("adoption_kb_first_%dd", days)
+		den := extractJSONField(line, prefix+"_den")
+		if den == "" {
+			continue // this window wasn't computed on that run (e.g. old record)
+		}
+		ratio := extractJSONField(line, prefix+"_ratio")
+		num := extractJSONField(line, prefix+"_num")
+		snap := adoptionSnapshot{Days: days}
+		// Best-effort parse of a value this same code wrote — errors are
+		// impossible in practice (extractJSONField already validated the
+		// substring shape); a failed parse just leaves the zero value.
+		_, _ = fmt.Sscanf(ratio, "%f", &snap.Ratio)
+		_, _ = fmt.Sscanf(num, "%d", &snap.Numerator)
+		_, _ = fmt.Sscanf(den, "%d", &snap.Denominator)
+		out = append(out, snap)
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
 }
 
 // formatRunLine extracts ts + status + key stats from a JSONL run record.

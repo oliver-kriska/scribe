@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -169,12 +170,24 @@ func (s *SyncCmd) Run() error {
 		writeHotMDQuiet(root)
 	}
 
+	// Adoption metric (#23): read-only ccrider scan, computed on every
+	// non-dry-run sync (not gated behind --sessions) so `status`/`digest`
+	// stay fresh without recomputing it themselves. See adoption.go and
+	// docs/issue-23-adoption-metric-plan.md D7.
+	adoptionFields := map[string]any{}
+	if !s.DryRun {
+		if results, err := computeAdoptionMetrics(root, cfg); err == nil {
+			adoptionFields = adoptionRunStatsFields(results)
+		}
+	}
+
 	runStats = map[string]any{
 		"discovered": counters.discovered,
 		"extracted":  counters.extracted,
 		"sessions":   counters.sessionsScanned,
 		"absorbed":   counters.absorbed,
 	}
+	maps.Copy(runStats, adoptionFields)
 
 	logMsg("sync", "done (discovered: %d, extracted: %d, sessions: %d, absorbed: %d)",
 		counters.discovered, counters.extracted, counters.sessionsScanned, counters.absorbed)

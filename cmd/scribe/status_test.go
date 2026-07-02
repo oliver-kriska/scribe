@@ -263,6 +263,136 @@ func TestRenderBacklogSessionQueueRow(t *testing.T) {
 	})
 }
 
+// writeSyncRunRecord writes a single-line JSONL run record for `sync` into
+// output/runs/<today>.jsonl, with the given extra fields merged in (mirrors
+// the shape writeRunRecord produces). Used to test the adoption-metric
+// read-back path (loadLatestAdoptionStats / newestSyncRunLine) without
+// running a real sync.
+func writeSyncRunRecord(t *testing.T, root string, extra map[string]any) {
+	t.Helper()
+	runsDir := filepath.Join(root, "output", "runs")
+	if err := os.MkdirAll(runsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record := map[string]any{
+		"command":   "sync",
+		"status":    "ok",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+	for k, v := range extra {
+		record[k] = v
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dayFile := filepath.Join(runsDir, time.Now().UTC().Format("2006-01-02")+".jsonl")
+	f, err := os.OpenFile(dayFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := fmt.Fprintln(f, string(data)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLoadLatestAdoptionStats covers the issue #23 read-back path: status
+// and digest must read the adoption ratio cached by the last `sync` run
+// record, never recompute it, and must render nothing (ok=false) when the
+// data isn't there — a missing runs dir, or an old record from before this
+// feature shipped — rather than claiming a misleading zero.
+func TestLoadLatestAdoptionStats(t *testing.T) {
+	t.Run("no output/runs directory at all", func(t *testing.T) {
+		root := t.TempDir()
+		snaps, ok := loadLatestAdoptionStats(root)
+		if ok {
+			t.Errorf("ok = true with no runs dir, want false; snaps=%v", snaps)
+		}
+	})
+
+	t.Run("sync record predates this feature (no adoption keys)", func(t *testing.T) {
+		root := t.TempDir()
+		writeSyncRunRecord(t, root, map[string]any{"extracted": 3, "absorbed": 1})
+		snaps, ok := loadLatestAdoptionStats(root)
+		if ok {
+			t.Errorf("ok = true for a pre-feature record, want false; snaps=%v", snaps)
+		}
+	})
+
+	t.Run("both windows present, parsed correctly", func(t *testing.T) {
+		root := t.TempDir()
+		writeSyncRunRecord(t, root, map[string]any{
+			"adoption_kb_first_7d_ratio":  0.625,
+			"adoption_kb_first_7d_num":    5,
+			"adoption_kb_first_7d_den":    8,
+			"adoption_kb_first_30d_ratio": 0.4,
+			"adoption_kb_first_30d_num":   4,
+			"adoption_kb_first_30d_den":   10,
+		})
+		snaps, ok := loadLatestAdoptionStats(root)
+		if !ok {
+			t.Fatal("ok = false, want true")
+		}
+		if len(snaps) != 2 {
+			t.Fatalf("snaps = %v, want 2 entries", snaps)
+		}
+		byDays := map[int]adoptionSnapshot{}
+		for _, s := range snaps {
+			byDays[s.Days] = s
+		}
+		if s := byDays[7]; s.Ratio != 0.625 || s.Numerator != 5 || s.Denominator != 8 {
+			t.Errorf("7d snapshot = %+v, want ratio=0.625 num=5 den=8", s)
+		}
+		if s := byDays[30]; s.Ratio != 0.4 || s.Numerator != 4 || s.Denominator != 10 {
+			t.Errorf("30d snapshot = %+v, want ratio=0.4 num=4 den=10", s)
+		}
+	})
+}
+
+// TestRenderStatusAdoptionBlock asserts the "KB-first adoption" block
+// appears in `scribe status` output exactly when loadLatestAdoptionStats
+// has data, formatted as a percentage (verifies the %5.0f%% * 100 math).
+func TestRenderStatusAdoptionBlock(t *testing.T) {
+	t.Run("no sync record — block absent", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte("domains: [acme]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := renderStatus(&buf, root); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(buf.String(), "KB-first adoption") {
+			t.Errorf("adoption block present with no sync record:\n%s", buf.String())
+		}
+	})
+
+	t.Run("sync record present — block renders as a percentage", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte("domains: [acme]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		writeSyncRunRecord(t, root, map[string]any{
+			"adoption_kb_first_7d_ratio": 0.625,
+			"adoption_kb_first_7d_num":   5,
+			"adoption_kb_first_7d_den":   8,
+		})
+		var buf bytes.Buffer
+		if err := renderStatus(&buf, root); err != nil {
+			t.Fatal(err)
+		}
+		lines := normalizeLines(buf.String())
+		if !containsLine(lines, "KB-first adoption (queried KB before first edit):") {
+			t.Errorf("missing adoption header:\n%s", buf.String())
+		}
+		want := "7d: 62% (5/8 decision sessions)"
+		if !containsLine(lines, want) {
+			t.Errorf("missing line %q\ngot:\n%s", want, buf.String())
+		}
+	})
+}
+
 // normalizeLines collapses each non-empty output line's whitespace to
 // single spaces so assertions don't encode the %-22s column padding.
 func normalizeLines(out string) []string {

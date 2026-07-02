@@ -75,6 +75,17 @@ func digestLocalNotes(root string) []string {
 	if entries, err := readStalenessLedger(root); err == nil && len(entries) > 0 {
 		notes = append(notes, fmt.Sprintf("%d stale article(s) — `scribe stale list`", len(entries)))
 	}
+	// KB-first adoption (issue #23): computed from this machine's local
+	// ccrider DB at sync time (never committed — see the digestLocalNotes
+	// doc comment above), so it belongs here, not in buildDigest's
+	// committed markdown.
+	if snaps, ok := loadLatestAdoptionStats(root); ok {
+		for _, s := range snaps {
+			notes = append(notes, fmt.Sprintf(
+				"KB-first adoption (%dd): %.0f%% (%d/%d decision sessions) — `scribe status` for detail",
+				s.Days, s.Ratio*100, s.Numerator, s.Denominator))
+		}
+	}
 	return notes
 }
 

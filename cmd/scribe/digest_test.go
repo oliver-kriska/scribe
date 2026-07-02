@@ -177,6 +177,35 @@ func TestDigestExcludesMachineLocalLedgers(t *testing.T) {
 	}
 }
 
+// TestDigestExcludesAdoptionMetric is the D6 regression test for issue
+// #23: the KB-first adoption ratio is computed from THIS machine's local
+// ccrider DB, so — same rule as the staleness/contradiction ledgers above
+// — it must surface only as a machine-local note (digestLocalNotes), and
+// never inside the committed wiki/_digest.md markdown buildDigest writes.
+func TestDigestExcludesAdoptionMetric(t *testing.T) {
+	root := initTestGitRepo(t, "Alice")
+	writeKBFile(t, root, "wiki/good.md", "---\ntitle: Good\n---\n\nbody\n")
+	gitRun(t, root, "add", ".")
+	gitRun(t, root, "commit", "-q", "-m", "seed")
+
+	writeSyncRunRecord(t, root, map[string]any{
+		"adoption_kb_first_7d_ratio": 0.5,
+		"adoption_kb_first_7d_num":   1,
+		"adoption_kb_first_7d_den":   2,
+	})
+
+	out := buildDigest(root, &ScribeConfig{}, 7)
+	if strings.Contains(out, "KB-first adoption") {
+		t.Errorf("committed digest leaked the machine-local adoption metric:\n%s", out)
+	}
+
+	notes := strings.Join(digestLocalNotes(root), "\n")
+	want := "KB-first adoption (7d): 50% (1/2 decision sessions) — `scribe status` for detail"
+	if !strings.Contains(notes, want) {
+		t.Errorf("local notes missing %q, got:\n%s", want, notes)
+	}
+}
+
 func TestWriteDigestFile(t *testing.T) {
 	root := initTestGitRepo(t, "Alice")
 	if err := os.MkdirAll(filepath.Join(root, "wiki"), 0o755); err != nil {
