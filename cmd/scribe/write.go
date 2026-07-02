@@ -270,25 +270,31 @@ func joinQuoted(items []string) string {
 	return strings.Join(out, ", ")
 }
 
-// readBody resolves the --body flag: "-" = stdin, "file:path" = read file,
-// anything else = treat as inline literal.
-func (w *WriteCmd) readBody() (string, error) {
-	if w.Body == "-" {
+// readBodySource resolves a --body flag value shared by scribe write and
+// scribe drop: "-" = stdin, "file:path" = read file, anything else = inline
+// literal.
+func readBodySource(spec string) (string, error) {
+	if spec == "-" {
 		data, err := io.ReadAll(bufio.NewReader(os.Stdin))
 		if err != nil {
 			return "", err
 		}
 		return string(data), nil
 	}
-	if after, ok := strings.CutPrefix(w.Body, "file:"); ok {
-		path := after
-		data, err := os.ReadFile(path)
+	if after, ok := strings.CutPrefix(spec, "file:"); ok {
+		data, err := os.ReadFile(after)
 		if err != nil {
 			return "", err
 		}
 		return string(data), nil
 	}
-	return w.Body, nil
+	return spec, nil
+}
+
+// readBody resolves the --body flag: "-" = stdin, "file:path" = read file,
+// anything else = treat as inline literal.
+func (w *WriteCmd) readBody() (string, error) {
+	return readBodySource(w.Body)
 }
 
 // reindex runs scribe index + scribe backlinks after a successful write.

@@ -22,20 +22,11 @@
 
 **What "found nothing useful" means.** If a proactive search returns no relevant hits, report the gap: "The KB doesn't cover this yet — if the answer turns out to be reusable, it's a good candidate for a drop file."
 
-**How to contribute from other projects — drop files.** When a session in a non-KB project produces reusable knowledge, write a drop file to `.claude/{{.KBName}}/YYYY-MM-DD-{slug}.md` in the current project root with this frontmatter:
+**How to contribute from other projects — drop files.** When a session in a non-KB project produces reusable knowledge, run:
 
-```yaml
----
-{{.KBName}}: true
-action: create | update | append
-title: "Article Title"
-type: project | tool | person | decision | pattern | solution | research
-domain: {{.DomainsPipe}}
-tags: [tag1, tag2]
----
-```
+`scribe drop --title "..." --type <project|tool|person|decision|pattern|solution|research|idea> --domain {{.DomainsPipe}} --tags a,b --body file:<scratch-file>`
 
-`scribe sync` running on cron in the KB will absorb these automatically. For rolling insights that belong to a specific project's memory, add `rolling_target: learnings` or `rolling_target: decisions-log` to the frontmatter. Tell {{.OwnerName}} what you filed and why — don't fabricate drop files for trivial facts.
+This validates the frontmatter and writes to `.claude/{{.KBName}}/YYYY-MM-DD-{slug}.md` in the current project. If `scribe` isn't on PATH, write that file directly — schema in `.claude/skills/scribe-kb/references/DROP_FILES.md` if the skill is installed, or ask {{.OwnerName}}. Add `--rolling-target learnings` or `--rolling-target decisions-log` when the insight belongs to a specific project's memory log. `scribe sync` running on cron in the KB will absorb these automatically. Tell {{.OwnerName}} what you filed and why — don't fabricate drop files for trivial facts.
 
 ## Storage boundaries
 

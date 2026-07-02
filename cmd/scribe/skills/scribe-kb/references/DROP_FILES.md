@@ -17,7 +17,21 @@ This keeps two boundaries clean:
 
 `YYYY-MM-DD-{slug}.md` is the standard scribe drop-file naming. Slug should be a hyphenated lowercase phrase summarizing the article.
 
-## Required frontmatter
+## Authoring: use `scribe drop`
+
+The primary way to file a drop file is the `scribe drop` CLI — it validates `--type` and (when a KB resolves) `--domain` against the same closed sets the daemon enforces elsewhere, derives the `YYYY-MM-DD-{slug}.md` filename, and writes the frontmatter for you:
+
+```sh
+scribe drop --title "PgBouncer Transaction Mode Pool Sizing" \
+  --type pattern --domain general --tags postgres,pgbouncer,connection-pooling \
+  --body file:/tmp/pgbouncer-notes.md
+```
+
+`--body` takes the same three forms as `scribe write`: `file:<path>` (recommended for agents — write the article to a scratch file first, then point `--body` at it), `-` for stdin (works well with a heredoc: `scribe drop --title ... --body - <<'EOF' ... EOF`, but a bare `-` with nothing piped will hang waiting for EOF — prefer `file:<path>` when in doubt), or an inline string for short bodies.
+
+`scribe drop` resolves `<kb_name>` the same way every other scribe command resolves the KB (`-C` / `SCRIBE_KB` / cwd-walk / the machine's default KB), so in the common single-KB case you don't need to pass anything KB-specific. If no KB can be resolved, pass `--kb-name <name>` explicitly. Run `scribe drop --help` for the full flag list (`--action`, `--rolling-target`, `--slug`, `--date`, `--force`, `--dry-run`).
+
+If `scribe` isn't on PATH, write the file directly with this exact schema:
 
 ```yaml
 ---
@@ -40,7 +54,16 @@ The first key is the **kb-name marker**. If the user's KB is called `scriptorium
 
 ## Optional fields for rolling-target appends
 
-When an insight belongs to a specific project's append-only log:
+When an insight belongs to a specific project's append-only log, use `--action append --rolling-target learnings` (or `decisions-log`):
+
+```sh
+scribe drop --title "Postgres TS Vectors Full-Text Search" \
+  --type project --domain enaia --tags postgres \
+  --action append --rolling-target learnings \
+  --body file:/tmp/toast-scan-note.md
+```
+
+Which is equivalent to hand-writing:
 
 ```yaml
 ---
@@ -58,7 +81,7 @@ tags: [postgres]
 (your appended entry here)
 ```
 
-`rolling_target: learnings` appends to `projects/<project>/learnings.md` instead of writing a new article. Same for `decisions-log`. This is how cross-project sessions feed per-project memory without creating new article files.
+`rolling_target: learnings` appends to `projects/<project>/learnings.md` instead of writing a new article. Same for `decisions-log`. This is how cross-project sessions feed per-project memory without creating new article files. `scribe drop` requires `--action append` whenever `--rolling-target` is set — it refuses `create`/`update` combined with a rolling target.
 
 ## Body content
 
@@ -71,9 +94,15 @@ After the closing `---`, write the actual article content. Keep it self-containe
 
 ## A complete worked example
 
-Suppose you're working in `~/Projects/myapp` and you've just figured out a non-obvious pattern for Postgres connection pooling. The user's KB is named `scriptorium`. Write:
+Suppose you're working in `~/Projects/myapp` and you've just figured out a non-obvious pattern for Postgres connection pooling. The user's KB is named `scriptorium`. Run:
 
-`~/Projects/myapp/.claude/scriptorium/2026-05-07-postgres-pool-pgbouncer-transaction-mode.md`:
+```sh
+scribe drop --title "PgBouncer Transaction Mode Pool Sizing" \
+  --type pattern --domain general --tags postgres,pgbouncer,connection-pooling \
+  --body file:/tmp/pgbouncer-notes.md
+```
+
+That produces `~/Projects/myapp/.claude/scriptorium/2026-05-07-postgres-pool-pgbouncer-transaction-mode.md` — the same file you'd get by hand-writing it directly (shown here for reference, and useful if you're auditing what `scribe drop` generated):
 
 ```markdown
 ---

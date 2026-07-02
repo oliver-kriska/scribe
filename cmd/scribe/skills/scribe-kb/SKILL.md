@@ -26,7 +26,7 @@ Trigger on any of:
 | Read a specific article | Read tool with the absolute path |
 | Read a section | `scribe sections get <article> <id>` (Phase 5A) |
 | Write a new wiki article | Edit/Write tool — see references/FRONTMATTER.md |
-| File a drop from another project | Write to `.claude/<kb_name>/YYYY-MM-DD-{slug}.md` — see references/DROP_FILES.md |
+| File a drop from another project | `scribe drop --title ... --type ... --domain ...` — see references/DROP_FILES.md |
 | Validate frontmatter before commit | `scribe validate <file>` or `scribe lint --changed` |
 | List sections in an article | `scribe sections list <article>` |
 
@@ -35,7 +35,7 @@ Trigger on any of:
 When you produce reusable knowledge in a non-KB project that should travel to the user's KB, write a drop file:
 
 1. **Pick a path:** `.claude/<kb_name>/YYYY-MM-DD-{slug}.md` in the current project root. `<kb_name>` is the value the user has used in their CLAUDE.md (often `scriptorium`).
-2. **Write the frontmatter** — see references/DROP_FILES.md for the exact required keys (`scriptorium: true`, `action`, `title`, `type`, `domain`, `tags`).
+2. **Run `scribe drop`** with the required flags (`--title`, `--type`, `--domain`, `--body`) — or hand-write the frontmatter per references/DROP_FILES.md (`scriptorium: true`, `action`, `title`, `type`, `domain`, `tags`) if `scribe` isn't installed.
 3. **Write the body** — what's reusable, what would teach a future session this insight in 30 seconds.
 4. **Tell the user** what you filed and why. Don't fabricate drop files for trivial facts.
 

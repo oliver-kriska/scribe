@@ -36,6 +36,7 @@ type CLI struct {
 
 	// Content — getting knowledge into the KB.
 	Write         WriteCmd         `cmd:"" group:"content" help:"Create an article or append to rolling memory (CLI write surface for skills)."`
+	Drop          DropCmd          `cmd:"" group:"content" help:"Author a validated drop file for the current project's KB handoff directory."`
 	Ingest        IngestCmd        `cmd:"" group:"content" help:"Ingest a URL into raw/articles/ (queue or synchronous)."`
 	Absorb        AbsorbCmd        `cmd:"" group:"content" help:"Absorb a local file (md/txt/html) into the KB end-to-end: ingest → contextualize → absorb."`
 	Capture       CaptureCmd       `cmd:"" group:"content" help:"Capture iMessage self-chat URLs/notes into raw/articles/."`
