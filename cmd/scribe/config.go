@@ -524,6 +524,11 @@ type IntegrationConfig struct {
 	// returns. Orthogonal to Scope — e.g. scope: all + tags: [kb] means
 	// "every bookmark I ever tagged kb".
 	Tags []string `yaml:"tags"`
+	// PublicOnly, when true, skips private (non-shared) bookmarks so only
+	// public ones reach the KB. Default false ingests everything, since an
+	// authenticated pull sees private bookmarks too. Useful when the KB may
+	// be shared/promoted and private bookmarks shouldn't ride along.
+	PublicOnly bool `yaml:"public_only"`
 	// SkipDomains drops queued URLs containing any of these substrings —
 	// the same substring filter as capture.skip_domains.
 	SkipDomains []string `yaml:"skip_domains"`
