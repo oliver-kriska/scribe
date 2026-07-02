@@ -105,8 +105,8 @@ Run the whole pipeline on local Ollama for $0, point it at a hosted OpenAI-compa
 Real numbers, same week, same machine, names anonymized:
 
 - **$0 — local · Ollama.** Per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, and session-mine all run against a local Ollama server. `ollama ps` shows the work; there is no `claude -p` callsite in a normal local `scribe sync`.
-- **$0.34 — hosted · Together.** The same body of work routed to a hosted OpenAI-compatible endpoint (Qwen3-235B) for comparable output.
-- **$103.91 — Anthropic · 7 days.** The Anthropic path (Sonnet + Haiku) over the team KB for the same period.
+- **$0.34 — hosted · Together.** Part of the week's work routed to a hosted OpenAI-compatible endpoint (Qwen3-235B). It handled a smaller volume than the Anthropic path, so read it as what that path billed, not a like-for-like race.
+- **$103.57 — Anthropic · 7 days.** The Anthropic path (Sonnet + Haiku) for the same period. The all-provider total for the week is $103.91, once the $0.34 Together run is added.
 
 ```
 scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
@@ -121,9 +121,10 @@ By KB:
   team-kb     1,732   7,020,329     2,211,137   $102.96
   personal-kb 1,599   9,204,002     1,209,417     $0.95
 
-usd = measured spend from token data. One API key usually bills every KB
-on a machine, so `scribe cost` aggregates them by default and reconciles
-to the provider dashboard.
+usd = provider-billed spend incl. cache-write & cache-read; the in-tokens
+column is uncached input only, so usd exceeds an in/out list estimate. One
+API key usually bills every KB on a machine, so `scribe cost` aggregates
+them by default and reconciles to the provider dashboard.
 ```
 
 Configure the whole pipeline with one `llm` block. Local mode:
@@ -250,7 +251,7 @@ No — and that's the point. A second brain is notes *you* read, connect, and th
 No. Every LLM op in scribe — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining `claude -p` callsite in a normal `scribe sync`. A single line in `scribe.yaml` flips the whole pipeline: `llm.provider: ollama`. Per-op overrides still work if you want to keep some passes on Anthropic or a hosted API.
 
 **What does it cost to run?**
-Zero on the local-mode path (Ollama) for the entire pipeline. On a hosted OpenAI-compatible API, a full week of work ran ~$0.34 (Together); on the Anthropic path the same week was ~$103.91. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. `scribe cost` reconciles every token to the cent across providers and KBs.
+Zero on the local-mode path (Ollama) for the entire pipeline. On a hosted OpenAI-compatible API, a full week of work ran ~$0.34 (Together); on the Anthropic path the same week was ~$103.57 ($103.91 across all three paths). The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. `scribe cost` reconciles every token to the cent across providers and KBs.
 
 **Can a team share one KB safely?**
 Yes. A small team points every machine at one git-backed KB. A trust layer treats shared `scribe.yaml` as untrusted by default (config that repoints inference or widens ingest paths reverts until approved); a deterministic secret-scan gate holds credentials back before they hit shared git history; `allowed_remotes` keeps a teammate's unrelated or client repo out; `scribe promote` moves curated pages over with provenance; and a committed leader lease elects the single machine that runs the weekly consolidation — no server, no etcd.

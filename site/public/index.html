@@ -2940,7 +2940,7 @@ advisory locks table-ambiguous under load.
       <div class="cost__figures" role="group" aria-label="One week of inference on the same machine, priced three ways">
         <div class="cost__fig cost__fig--free">$0<small>local · ollama</small></div>
         <div class="cost__fig">$0.34<small>hosted · together</small></div>
-        <div class="cost__fig cost__fig--paid">$103.91<small>anthropic · 7 days</small></div>
+        <div class="cost__fig cost__fig--paid">$103.57<small>anthropic · 7 days</small></div>
       </div>
 
       <div class="terminal" aria-label="scribe cost — example output">
@@ -2978,10 +2978,11 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
   personal-kb  1,599  9,204,002   1,209,417    $0.95
 
   Coverage: 3175/3331 calls had token data; the other 156 add ~$0.62 estimated, not shown above.
-  usd = measured spend from token data.  cancl = sibling-canceled (rate-limit cascade).  tmout = ctx.DeadlineExceeded.</pre>
+  usd = provider-billed spend incl. cache-write & cache-read; in is uncached input, so usd exceeds an in/out list estimate.
+  cancl = sibling-canceled (rate-limit cascade).  tmout = ctx.DeadlineExceeded.</pre>
       </div>
       <p class="scroll-hint" aria-hidden="true">↔ swipe the table for the full per-model breakdown</p>
-      <p class="cost__caption">Real output, names anonymized. Same week, same machine: the Anthropic path cost $103 on the team KB; the hosted Together run did comparable work for <strong>$0.34</strong>; the local Ollama models cost nothing. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
+      <p class="cost__caption">Real output, names anonymized. Same machine, same week, three provider paths: Anthropic billed <strong>$103.57</strong>, the hosted Together path <strong>$0.34</strong>, the local Ollama models nothing. The paths handled different volumes (routing is per-op in <code>scribe.yaml</code>), so read each as what it actually billed, not a like-for-like race. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
 
       <div class="cost__local">
         <span class="local__pill">100% Ollama</span>
