@@ -65,16 +65,8 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 			continue
 		}
 
-		pname := projectName(decoded)
-		if existing, exists := manifest.Projects[pname]; exists {
-			// Manifest keys are basename-derived, so a DIFFERENT repo can
-			// land on an existing key (~/src/api vs ~/work/api). The
-			// shadowed repo can never enroll under this name — say so
-			// instead of silently treating it as "already known".
-			if existing != nil && !samePath(existing.Path, decoded) {
-				logMsg("sync", " name collision: %s (at %s) is shadowed by existing project %q at %s — rename one directory or `scribe projects ignore` the other", pname, decoded, pname, existing.Path)
-				continue
-			}
+		canon := canonicalizePath(decoded)
+		if existing, exists := manifest.Projects[canon]; exists {
 			// Project already known. If it was previously surfaced via
 			// Codex only, record that Claude has now seen it too (so
 			// `discovered_from` promotes to "both") and persist.
@@ -91,6 +83,7 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 
 		domain := manifest.resolveDomain(decoded)
 		status := discoveryStatus(cfg)
+		pname := manifest.uniqueName(projectName(decoded), decoded)
 		logMsg("sync", " DISCOVERED%s: %s -> %s (domain: %s)", pendingTag(status), pname, decoded, domain)
 		discovered++
 
@@ -98,8 +91,9 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 			continue
 		}
 
-		manifest.Projects[pname] = &ProjectEntry{
-			Path:           decoded,
+		manifest.Projects[canon] = &ProjectEntry{
+			Path:           canon,
+			Name:           pname,
 			Domain:         domain,
 			DiscoveredFrom: "claude",
 			Status:         status,
@@ -143,28 +137,22 @@ func (s *SyncCmd) foldWorktree(root string, manifest *Manifest, cfg *ScribeConfi
 	if top := runCmd(worktree, "git", "rev-parse", "--show-toplevel"); top != "" {
 		worktree = top
 	}
+	worktreeCanon := canonicalizePath(worktree)
+	mainCanon := canonicalizePath(main)
+
 	// A pre-existing entry for the worktree itself (enrolled before
 	// folding existed) keeps working until the user ignores it — doctor
 	// flags those. Don't also record it on the main entry, or its drops
 	// would be collected twice.
-	if wEntry, ok := manifest.Projects[projectName(worktree)]; ok && wEntry != nil && samePath(wEntry.Path, worktree) {
+	if _, ok := manifest.Projects[worktreeCanon]; ok {
 		return 0, false
 	}
-	mname := projectName(main)
-	if existing, ok := manifest.Projects[mname]; ok {
-		// Basename collision: ~/src/api and ~/work/api both name "api".
-		// Folding this repo's worktree onto the OTHER repo's entry would
-		// route its drops and research under the wrong project — and
-		// falling through to the create branch would overwrite that
-		// entry. Leave it alone, loudly.
-		if !samePath(existing.Path, main) {
-			logMsg("sync", " worktree %s: main %s collides with existing project %q at %s — not folding", worktree, main, mname, existing.Path)
-			return 0, false
-		}
+
+	if existing, ok := manifest.Projects[mainCanon]; ok {
 		if s.DryRun || !existing.recordWorktree(worktree) {
 			return 0, false
 		}
-		logMsg("sync", " [%s] %s — recorded for drop/research collection", mname, describeWorktreeFold(worktree, main))
+		logMsg("sync", " [%s] %s — recorded for drop/research collection", existing.Name, describeWorktreeFold(worktree, main))
 		if err := manifest.save(); err != nil {
 			logMsg("sync", "manifest save failed: %v", err)
 		}
@@ -176,12 +164,14 @@ func (s *SyncCmd) foldWorktree(root string, manifest *Manifest, cfg *ScribeConfi
 	}
 	domain := manifest.resolveDomain(main)
 	status := discoveryStatus(cfg)
+	mname := manifest.uniqueName(projectName(main), main)
 	logMsg("sync", " DISCOVERED (via %s worktree)%s: %s -> %s (domain: %s)", source, pendingTag(status), mname, main, domain)
 	if s.DryRun {
 		return 1, true
 	}
-	manifest.Projects[mname] = &ProjectEntry{
-		Path:           main,
+	manifest.Projects[mainCanon] = &ProjectEntry{
+		Path:           mainCanon,
+		Name:           mname,
 		Domain:         domain,
 		DiscoveredFrom: source,
 		Status:         status,
@@ -287,10 +277,16 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 	totalDrops := 0
 	kb := kbName(root)
 
-	for pname, entry := range manifest.Projects {
+	// pname comes from entry.Name, NOT the manifest map key: the key is
+	// now a canonical filesystem path (see manifest.go), and staging dir
+	// / log lines must stay short display names — mirrors the same
+	// "never leak the path key into KB naming" rule extractProject's
+	// pname parameter follows (sync_extract.go).
+	for _, entry := range manifest.Projects {
 		if !entry.IsApproved() {
 			continue
 		}
+		pname := entry.Name
 		unprocessed := unprocessedDropFiles(kb, entry)
 		if len(unprocessed) == 0 {
 			continue
@@ -458,10 +454,13 @@ func (s *SyncCmd) collectOneResearchFile(f researchFile, destDir, domain, pname 
 func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 	total := 0
 
-	for pname, entry := range manifest.Projects {
+	// pname comes from entry.Name — see the matching comment in
+	// collectDropFiles above.
+	for _, entry := range manifest.Projects {
 		if !entry.IsApproved() {
 			continue
 		}
+		pname := entry.Name
 		// Scan the main checkout plus recorded worktrees — research
 		// written in a worktree can be branch-specific and worth
 		// keeping even though extraction only runs on the main path.

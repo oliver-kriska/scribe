@@ -198,18 +198,18 @@ func (c *ProjectsAddCmd) widenSources(root string, cfg *ScribeConfig, enrollPath
 
 // enroll writes (or updates) the manifest entry for enrollPath as an
 // approved, manually-added project. A pre-existing entry for the same path
-// is approved-if-pending and gets the folded worktree recorded; a name that
-// already maps to a DIFFERENT path is a hard error (pass --name).
+// is approved-if-pending and gets the folded worktree recorded (and
+// relabeled if --name was passed); a genuinely new path is created with an
+// auto-disambiguated Name when it collides with an existing display name —
+// two different paths can never collide on the map key, so there is no
+// hard "name already maps to a different path" error anymore.
 func (c *ProjectsAddCmd) enroll(root, enrollPath, worktreeOf string) error {
 	manifest, err := loadManifest(root)
 	if err != nil {
 		return err
 	}
 
-	pname := c.Name
-	if pname == "" {
-		pname = projectName(enrollPath)
-	}
+	canon := canonicalizePath(enrollPath)
 	domain := c.Domain
 	if domain == "" {
 		domain = manifest.resolveDomain(enrollPath)
@@ -218,15 +218,16 @@ func (c *ProjectsAddCmd) enroll(root, enrollPath, worktreeOf string) error {
 	// An explicit add overrides a prior `projects ignore`.
 	manifest.unignorePath(enrollPath)
 
-	if existing, ok := manifest.Projects[pname]; ok && existing != nil {
-		if !samePath(existing.Path, enrollPath) {
-			return fmt.Errorf("project name %q already maps to %s — pass --name to enroll %s under a different name", pname, existing.Path, enrollPath)
-		}
+	if existing, ok := manifest.Projects[canon]; ok && existing != nil {
 		changed := false
 		if !existing.IsApproved() {
 			existing.Status = statusApproved
-			ensureRepoYAML(root, existing.Path, pname, existing.Domain)
-			fmt.Printf("approved existing project %s\n", pname)
+			ensureRepoYAML(root, existing.Path, existing.Name, existing.Domain)
+			fmt.Printf("approved existing project %s\n", existing.Name)
+			changed = true
+		}
+		if c.Name != "" && c.Name != existing.Name {
+			existing.Name = manifest.uniqueName(c.Name, existing.Path)
 			changed = true
 		}
 		if worktreeOf != "" && existing.recordWorktree(worktreeOf) {
@@ -234,14 +235,21 @@ func (c *ProjectsAddCmd) enroll(root, enrollPath, worktreeOf string) error {
 			changed = true
 		}
 		if !changed {
-			fmt.Printf("%s already enrolled (%s)\n", pname, existing.Path)
+			fmt.Printf("%s already enrolled (%s)\n", existing.Name, existing.Path)
 			return nil
 		}
 		return manifest.save()
 	}
 
+	pname := c.Name
+	if pname == "" {
+		pname = projectName(enrollPath)
+	}
+	pname = manifest.uniqueName(pname, enrollPath)
+
 	entry := &ProjectEntry{
-		Path:           enrollPath,
+		Path:           canon,
+		Name:           pname,
 		Domain:         domain,
 		DiscoveredFrom: "manual",
 		Status:         statusApproved,
@@ -249,7 +257,7 @@ func (c *ProjectsAddCmd) enroll(root, enrollPath, worktreeOf string) error {
 	if worktreeOf != "" {
 		entry.Worktrees = []string{worktreeOf}
 	}
-	manifest.Projects[pname] = entry
+	manifest.Projects[canon] = entry
 	if err := manifest.save(); err != nil {
 		return err
 	}

@@ -230,13 +230,20 @@ func (s *SyncCmd) pullPhase(root string, cfg *ScribeConfig) (pulledRemote, pulle
 // printProjectNames lists manifest projects for --discover, pending
 // ones marked.
 func printProjectNames(manifest *Manifest) {
-	names := make([]string, 0, len(manifest.Projects))
-	for name := range manifest.Projects {
-		names = append(names, name)
+	type row struct {
+		name     string
+		approved bool
 	}
-	sort.Strings(names)
-	for _, name := range names {
-		if !manifest.Projects[name].IsApproved() {
+	rows := make([]row, 0, len(manifest.Projects))
+	for _, e := range manifest.Projects {
+		if e != nil {
+			rows = append(rows, row{e.Name, e.IsApproved()})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
+	for _, r := range rows {
+		name := r.name
+		if !r.approved {
 			name += " (pending)"
 		}
 		fmt.Println(name)
@@ -369,12 +376,12 @@ func (s *SyncCmd) commitPhase(root string, counters syncCounters) {
 
 // showChanged prints changed files for a project and exits.
 func (s *SyncCmd) showChanged(manifest *Manifest) error {
-	entry, ok := manifest.Projects[s.Changed]
-	if !ok {
+	entry, err := manifest.resolve(s.Changed)
+	if err != nil {
 		return fmt.Errorf("project %q not in manifest — run --discover first", s.Changed)
 	}
 
-	fmt.Printf("Changed files in %s since %s:\n", s.Changed, coalesce(entry.LastExtracted, "never"))
+	fmt.Printf("Changed files in %s since %s:\n", entry.Name, coalesce(entry.LastExtracted, "never"))
 
 	patterns := []string{"*.md", "*.txt", "*.exs", "*.ex"}
 	files := gitChangedFiles(entry.Path, entry.LastSHA, patterns)

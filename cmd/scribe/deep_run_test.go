@@ -70,16 +70,18 @@ deep_ingest:
 	return root, proj
 }
 
-// reloadProject re-reads the manifest and returns the acme entry.
+// reloadProject re-reads the manifest and returns the acme entry, resolved
+// by its display Name — the manifest map key is now a canonical path (see
+// manifest.go), not the legacy "acme" string these fixtures seed.
 func reloadProject(t *testing.T, root string) *ProjectEntry {
 	t.Helper()
 	m, err := loadManifest(root)
 	if err != nil {
 		t.Fatalf("reload manifest: %v", err)
 	}
-	e, ok := m.Projects["acme"]
-	if !ok {
-		t.Fatal("acme missing from manifest after run")
+	e, err := m.resolve("acme")
+	if err != nil {
+		t.Fatalf("acme missing from manifest after run: %v", err)
 	}
 	return e
 }
@@ -306,15 +308,18 @@ func TestDeepRun_DryRun(t *testing.T) {
 // extracted_dirs are skipped, and batch-max caps how many new dirs one
 // run takes on — the remainder waits for the next run.
 func TestDeepRun_SkipsExtractedAndHonorsBatchMax(t *testing.T) {
-	root, proj := deepKB(t, "envelope", "alphadocs", "betadocs", "gammadocs")
+	root, _ := deepKB(t, "envelope", "alphadocs", "betadocs", "gammadocs")
 
 	// Pre-seed alphadocs as already extracted.
 	m, err := loadManifest(root)
 	if err != nil {
 		t.Fatalf("load manifest: %v", err)
 	}
-	m.Projects["acme"].ExtractedDirs = "alphadocs"
-	m.Projects["acme"].Path = proj
+	entry, err := m.resolve("acme")
+	if err != nil {
+		t.Fatalf("acme missing from manifest: %v", err)
+	}
+	entry.ExtractedDirs = "alphadocs"
 	if err := m.save(); err != nil {
 		t.Fatalf("save manifest: %v", err)
 	}

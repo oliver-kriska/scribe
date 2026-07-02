@@ -41,16 +41,20 @@ func (c *ProjectsListCmd) Run() error {
 		return err
 	}
 
-	names := make([]string, 0, len(manifest.Projects))
-	for name := range manifest.Projects {
-		names = append(names, name)
+	type projectRow struct {
+		key string
+		e   *ProjectEntry
 	}
-	sort.Strings(names)
+	rows := make([]projectRow, 0, len(manifest.Projects))
+	for key, e := range manifest.Projects {
+		rows = append(rows, projectRow{key, e})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].e.Name < rows[j].e.Name })
 
 	tw := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
 	shown := 0
-	for _, name := range names {
-		e := manifest.Projects[name]
+	for _, r := range rows {
+		e := r.e
 		status := statusApproved
 		if !e.IsApproved() {
 			status = e.Status
@@ -58,7 +62,7 @@ func (c *ProjectsListCmd) Run() error {
 		if c.Pending && status != statusPending {
 			continue
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", status, name, e.Domain, e.Path)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", status, e.Name, e.Domain, e.Path)
 		shown++
 	}
 	tw.Flush()
@@ -105,37 +109,47 @@ func (c *ProjectsApproveCmd) run(root string) error {
 		return err
 	}
 
-	names := c.Names
+	keys := c.Names
 	if c.All {
-		names = manifest.pendingProjects()
+		keys = manifest.pendingProjects() // already canonical-path keys, sorted by Name
+	} else {
+		resolved := make([]string, 0, len(keys))
+		for _, arg := range keys {
+			e, err := manifest.resolve(arg)
+			if err != nil {
+				return err
+			}
+			resolved = append(resolved, e.Path)
+		}
+		keys = resolved
 	}
-	if len(names) == 0 {
+	if len(keys) == 0 {
 		return errors.New("nothing to approve — pass project name(s) or --all (see `scribe projects list --pending`)")
 	}
 
-	for _, name := range names {
-		if err := approveProject(root, manifest, name); err != nil {
+	for _, key := range keys {
+		if err := approveProject(root, manifest, key); err != nil {
 			return err
 		}
-		fmt.Printf("approved %s\n", name)
+		fmt.Printf("approved %s\n", manifest.Projects[key].Name)
 	}
 	return manifest.save()
 }
 
 // approveProject flips one project to approved and performs the
-// enrollment side effects discovery deferred (the KB .repo.yaml).
-// The caller saves the manifest — batched so a multi-name approve
-// doesn't rewrite the file N times.
-func approveProject(root string, manifest *Manifest, name string) error {
-	e, ok := manifest.Projects[name]
+// enrollment side effects discovery deferred (the KB .repo.yaml). key is a
+// manifest map key (canonical path). The caller saves the manifest —
+// batched so a multi-name approve doesn't rewrite the file N times.
+func approveProject(root string, manifest *Manifest, key string) error {
+	e, ok := manifest.Projects[key]
 	if !ok {
-		return fmt.Errorf("project %q not in manifest (see `scribe projects list`)", name)
+		return fmt.Errorf("project %q not in manifest (see `scribe projects list`)", key)
 	}
 	if e.IsApproved() {
 		return nil
 	}
 	e.Status = statusApproved
-	ensureRepoYAML(root, e.Path, name, e.Domain)
+	ensureRepoYAML(root, e.Path, e.Name, e.Domain)
 	return nil
 }
 
@@ -157,13 +171,14 @@ func (c *ProjectsIgnoreCmd) run(root string) error {
 		return err
 	}
 
-	for _, name := range c.Names {
-		if _, ok := manifest.Projects[name]; !ok {
-			return fmt.Errorf("project %q not in manifest (see `scribe projects list`)", name)
+	for _, arg := range c.Names {
+		e, err := manifest.resolve(arg)
+		if err != nil {
+			return err
 		}
-		manifest.ignoreProject(name)
-		fmt.Printf("ignored %s (path blocked from re-discovery)\n", name)
-		printOrphanedArticlesHint(root, name)
+		manifest.ignoreProject(e.Path)
+		fmt.Printf("ignored %s (path blocked from re-discovery)\n", e.Name)
+		printOrphanedArticlesHint(root, e.Name)
 	}
 	return manifest.save()
 }
@@ -222,10 +237,10 @@ func (c *ProjectsReviewCmd) run(root string) error {
 	reader := bufio.NewReader(os.Stdin)
 	approved, ignored := 0, 0
 loop:
-	for i, name := range pending {
-		e := manifest.Projects[name]
+	for i, key := range pending {
+		e := manifest.Projects[key]
 		fmt.Printf("\n[%d/%d] %s\n  path:   %s\n  domain: %s\n  via:    %s\n",
-			i+1, len(pending), name, e.Path, e.Domain, e.DiscoveredSource())
+			i+1, len(pending), e.Name, e.Path, e.Domain, e.DiscoveredSource())
 		for {
 			fmt.Print("  [a]pprove / [i]gnore / [s]kip / [q]uit: ")
 			line, err := reader.ReadString('\n')
@@ -234,13 +249,13 @@ loop:
 			}
 			switch strings.ToLower(strings.TrimSpace(line)) {
 			case "a", "approve":
-				if err := approveProject(root, manifest, name); err != nil {
+				if err := approveProject(root, manifest, key); err != nil {
 					return err
 				}
 				approved++
 			case "i", "ignore":
-				manifest.ignoreProject(name)
-				printOrphanedArticlesHint(root, name)
+				manifest.ignoreProject(key)
+				printOrphanedArticlesHint(root, e.Name)
 				ignored++
 			case "s", "skip", "":
 				// leave pending

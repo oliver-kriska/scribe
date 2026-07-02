@@ -155,7 +155,7 @@ func TestProjectsAdd_EnrollsApprovedAndWidensInclude(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, ok := m.Projects["newrepo"]
+	e, ok := entryByName(m, "newrepo")
 	if !ok {
 		t.Fatal("newrepo not enrolled")
 	}
@@ -189,7 +189,7 @@ func TestProjectsAdd_EmptyIncludeNotNarrowed(t *testing.T) {
 	if len(cfg.Sources.Include) != 0 {
 		t.Errorf("include = %v, want empty (allow-all must not be narrowed)", cfg.Sources.Include)
 	}
-	if _, ok := mustManifest(t, root).Projects["anyrepo"]; !ok {
+	if _, ok := entryByName(mustManifest(t, root), "anyrepo"); !ok {
 		t.Error("anyrepo not enrolled")
 	}
 }
@@ -241,17 +241,81 @@ func TestProjectsAdd_MissingPathErrors(t *testing.T) {
 	}
 }
 
-func TestProjectsAdd_NameCollisionErrors(t *testing.T) {
+// TestProjectsAdd_SameBasenameGetsUniqueName replaces the old
+// TestProjectsAdd_NameCollisionErrors: under path-keyed identity two
+// different real directories can never collide on the manifest map key
+// (it's a canonical path now, not the derived basename), so enrolling a
+// second same-basename repo succeeds with an auto-disambiguated Name
+// instead of erroring.
+func TestProjectsAdd_SameBasenameGetsUniqueName(t *testing.T) {
 	root := addKB(t, "default_model: sonnet\n")
 	a := makeProjectDir(t, "dup")
 	if err := (&ProjectsAddCmd{Path: a}).run(root); err != nil {
 		t.Fatalf("first add: %v", err)
 	}
-	// A different path deriving the same name must be rejected.
+	// A different path deriving the same basename must still enroll.
 	b := makeProjectDir(t, "dup")
-	err := (&ProjectsAddCmd{Path: b}).run(root)
-	if err == nil || !strings.Contains(err.Error(), "already maps to") {
-		t.Fatalf("err = %v, want a name-collision error", err)
+	if err := (&ProjectsAddCmd{Path: b}).run(root); err != nil {
+		t.Fatalf("second add (same basename, different path): %v", err)
+	}
+
+	m := mustManifest(t, root)
+	if len(m.Projects) != 2 {
+		t.Fatalf("Projects = %v, want 2 entries", m.Projects)
+	}
+	eA, okA := entryByName(m, "dup")
+	if !okA {
+		t.Fatal("first entry (Name=dup) missing")
+	}
+	if !samePath(eA.Path, a) {
+		t.Errorf("first entry path = %q, want %q", eA.Path, a)
+	}
+	// The second entry must have a DIFFERENT Name, and its path must be b.
+	var eB *ProjectEntry
+	for _, e := range m.Projects {
+		if e != eA {
+			eB = e
+		}
+	}
+	if eB == nil {
+		t.Fatal("second entry missing")
+	}
+	if eB.Name == eA.Name {
+		t.Errorf("second entry Name %q collides with first — uniqueName should have disambiguated", eB.Name)
+	}
+	if !samePath(eB.Path, b) {
+		t.Errorf("second entry path = %q, want %q", eB.Path, b)
+	}
+}
+
+// TestProjectsAdd_RenameViaName: re-running `projects add` on an
+// already-enrolled path with a different --name relabels the existing
+// entry in place (same canonical-path key, new Name) — --name is a pure
+// relabel now, not an identity conflict.
+func TestProjectsAdd_RenameViaName(t *testing.T) {
+	root := addKB(t, "default_model: sonnet\n")
+	proj := makeProjectDir(t, "orig-name")
+
+	if err := (&ProjectsAddCmd{Path: proj}).run(root); err != nil {
+		t.Fatalf("first add: %v", err)
+	}
+	if err := (&ProjectsAddCmd{Path: proj, Name: "custom"}).run(root); err != nil {
+		t.Fatalf("rename add: %v", err)
+	}
+
+	m := mustManifest(t, root)
+	if len(m.Projects) != 1 {
+		t.Fatalf("Projects = %v, want 1 entry (rename must not create a second)", m.Projects)
+	}
+	e, ok := entryByName(m, "custom")
+	if !ok {
+		t.Fatalf("no entry named custom; projects = %v", m.Projects)
+	}
+	if !samePath(e.Path, proj) {
+		t.Errorf("path = %q, want %q", e.Path, proj)
+	}
+	if _, stillOldName := entryByName(m, "orig-name"); stillOldName {
+		t.Error("old name still present after rename")
 	}
 }
 
@@ -262,6 +326,19 @@ func mustManifest(t *testing.T, root string) *Manifest {
 		t.Fatal(err)
 	}
 	return m
+}
+
+// entryByName finds a manifest entry by its display Name. Tests written
+// before path-keyed identity assumed the map key WAS the display name;
+// this helper keeps them readable now that the map key is a canonical
+// path (see manifest.go).
+func entryByName(m *Manifest, name string) (*ProjectEntry, bool) {
+	for _, e := range m.Projects {
+		if e != nil && e.Name == name {
+			return e, true
+		}
+	}
+	return nil, false
 }
 
 // --- ProjectsAddCmd --from-sources (bulk enrollment, #28) -----------------
@@ -304,7 +381,7 @@ func TestProjectsAdd_FromSources_EnrollsListedRepos(t *testing.T) {
 
 	m := mustManifest(t, root)
 	for name, path := range map[string]string{"repoA": repoA, "repoB": repoB} {
-		e, ok := m.Projects[name]
+		e, ok := entryByName(m, name)
 		if !ok {
 			t.Fatalf("%s not enrolled", name)
 		}
@@ -335,10 +412,10 @@ func TestProjectsAdd_FromSources_SkipsNonGitPath(t *testing.T) {
 	}
 
 	m := mustManifest(t, root)
-	if _, ok := m.Projects["gitrepo"]; !ok {
+	if _, ok := entryByName(m, "gitrepo"); !ok {
 		t.Error("gitrepo not enrolled")
 	}
-	if _, ok := m.Projects["plaindir"]; ok {
+	if _, ok := entryByName(m, "plaindir"); ok {
 		t.Error("plaindir (non-git) must not be bulk-enrolled — single-add's warn-and-continue does not apply to --from-sources")
 	}
 }
@@ -429,10 +506,10 @@ func TestProjectsAdd_FromSources_ExpandsGlobAndDedupes(t *testing.T) {
 	}
 
 	m := mustManifest(t, root)
-	if _, ok := m.Projects["client-a"]; !ok {
+	if _, ok := entryByName(m, "client-a"); !ok {
 		t.Error("client-a not enrolled")
 	}
-	if _, ok := m.Projects["client-b"]; !ok {
+	if _, ok := entryByName(m, "client-b"); !ok {
 		t.Error("client-b not enrolled")
 	}
 }

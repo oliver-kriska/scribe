@@ -73,13 +73,21 @@ func samePath(a, b string) bool {
 
 // recordWorktree folds a discovered worktree path into the main
 // project's manifest entry. Returns true when the entry changed (caller
-// saves). Idempotent; never records the main path itself.
+// saves). Idempotent; never records the main path itself. Comparisons are
+// symlink-tolerant (canonicalizePath) so the same real worktree spelled
+// two different ways (macOS /var vs /private/var) doesn't get recorded
+// twice; the raw path is what's stored — collectionPaths only needs a
+// valid, dirExists-checked directory, not a canonical one.
 func (e *ProjectEntry) recordWorktree(path string) bool {
-	if e == nil || path == "" || path == e.Path {
+	if e == nil || path == "" {
+		return false
+	}
+	canon := canonicalizePath(path)
+	if canon == canonicalizePath(e.Path) {
 		return false
 	}
 	for _, w := range e.Worktrees {
-		if w == path {
+		if canonicalizePath(w) == canon {
 			return false
 		}
 	}

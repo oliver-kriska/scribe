@@ -308,13 +308,8 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 			return
 		}
 
-		pname := projectName(cwd)
-		if existing, exists := manifest.Projects[pname]; exists {
-			// Basename collision — see the matching guard in discover().
-			if existing != nil && !samePath(existing.Path, cwd) {
-				logMsg("sync", " name collision: %s (at %s) is shadowed by existing project %q at %s — rename one directory or `scribe projects ignore` the other", pname, cwd, pname, existing.Path)
-				return
-			}
+		canon := canonicalizePath(cwd)
+		if existing, exists := manifest.Projects[canon]; exists {
 			// Already in manifest — promote DiscoveredFrom if Claude
 			// surfaced it first, otherwise leave alone.
 			if existing.DiscoveredSource() != "codex" && existing.DiscoveredSource() != "both" {
@@ -330,6 +325,7 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 
 		domain := manifest.resolveDomain(cwd)
 		status := discoveryStatus(cfg)
+		pname := manifest.uniqueName(projectName(cwd), cwd)
 		logMsg("sync", " DISCOVERED (codex)%s: %s -> %s (domain: %s)", pendingTag(status), pname, cwd, domain)
 		discovered++
 
@@ -337,8 +333,9 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 			return
 		}
 
-		manifest.Projects[pname] = &ProjectEntry{
-			Path:           cwd,
+		manifest.Projects[canon] = &ProjectEntry{
+			Path:           canon,
+			Name:           pname,
 			Domain:         domain,
 			DiscoveredFrom: "codex",
 			Status:         status,

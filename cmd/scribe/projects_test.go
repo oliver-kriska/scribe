@@ -28,13 +28,15 @@ func TestProjectEntryIsApproved(t *testing.T) {
 }
 
 func TestPendingProjectsSorted(t *testing.T) {
+	// pendingProjects returns manifest keys (canonical paths), sorted by
+	// each entry's Name — not by the key itself.
 	m := &Manifest{Projects: map[string]*ProjectEntry{
-		"zeta":  {Path: "/z", Status: statusPending},
-		"alpha": {Path: "/a", Status: statusPending},
-		"mid":   {Path: "/m"}, // approved — excluded
+		"/z": {Path: "/z", Name: "zeta", Status: statusPending},
+		"/a": {Path: "/a", Name: "alpha", Status: statusPending},
+		"/m": {Path: "/m", Name: "mid"}, // approved — excluded
 	}}
 	got := m.pendingProjects()
-	want := []string{"alpha", "zeta"}
+	want := []string{"/a", "/z"}
 	if !slices.Equal(got, want) {
 		t.Errorf("pendingProjects() = %v, want %v", got, want)
 	}
@@ -79,18 +81,19 @@ func TestProjectsNeedingExtractionSkipsPending(t *testing.T) {
 	pendingDir := t.TempDir()
 	s := &SyncCmd{}
 	m := &Manifest{Projects: map[string]*ProjectEntry{
-		"approved-proj": {Path: approvedDir},
-		"pending-proj":  {Path: pendingDir, Status: statusPending},
+		approvedDir: {Path: approvedDir, Name: "approved-proj"},
+		pendingDir:  {Path: pendingDir, Name: "pending-proj", Status: statusPending},
 	}}
 	got := s.projectsNeedingExtraction(t.TempDir(), m)
-	if !slices.Contains(got, "approved-proj") {
+	if !slices.Contains(got, approvedDir) {
 		t.Errorf("approved project missing from %v", got)
 	}
-	if slices.Contains(got, "pending-proj") {
+	if slices.Contains(got, pendingDir) {
 		t.Errorf("pending project should be skipped, got %v", got)
 	}
 
-	// Explicit --extract on a pending project must not extract either.
+	// Explicit --extract on a pending project (by Name) must not extract
+	// either.
 	s.Extract = "pending-proj"
 	if got := s.projectsNeedingExtraction(t.TempDir(), m); len(got) != 0 {
 		t.Errorf("--extract on pending project returned %v, want none", got)
@@ -101,7 +104,7 @@ func TestApproveProjectCreatesRepoYAML(t *testing.T) {
 	root := t.TempDir()
 	projDir := t.TempDir()
 	m := &Manifest{Projects: map[string]*ProjectEntry{
-		"myproj": {Path: projDir, Domain: "general", Status: statusPending},
+		"myproj": {Path: projDir, Name: "myproj", Domain: "general", Status: statusPending},
 	}}
 
 	if err := approveProject(root, m, "myproj"); err != nil {
@@ -197,10 +200,14 @@ func TestManifestStatusRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.Projects["legacy"].IsApproved() {
+	// Legacy fixture is basename-keyed; migration re-keys by canonical
+	// path and inherits the old key as Name.
+	legacyKey := canonicalizePath("/p/legacy")
+	newKey := canonicalizePath("/p/new")
+	if !m.Projects[legacyKey].IsApproved() {
 		t.Error("legacy entry without status must read as approved")
 	}
-	if m.Projects["new"].IsApproved() {
+	if m.Projects[newKey].IsApproved() {
 		t.Error("pending entry must not read as approved")
 	}
 
@@ -217,10 +224,93 @@ func TestManifestStatusRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if _, has := decoded.Projects["legacy"]["status"]; has {
+	if _, has := decoded.Projects[legacyKey]["status"]; has {
 		t.Error("legacy entry gained a status field on round-trip (omitempty broken)")
 	}
-	if got := decoded.Projects["new"]["status"]; got != "pending" {
+	if got := decoded.Projects[newKey]["status"]; got != "pending" {
 		t.Errorf("pending status lost on round-trip: %v", got)
+	}
+}
+
+// TestProjectsApprove_ByNameAndByPath: `scribe projects approve` accepts
+// either a project's short display Name or its full filesystem path — both
+// route through manifest.resolve to the same entry.
+func TestProjectsApprove_ByNameAndByPath(t *testing.T) {
+	byName := func(t *testing.T) (root, projDir string) {
+		t.Helper()
+		root = t.TempDir()
+		projDir = t.TempDir()
+		m := &Manifest{
+			Projects: map[string]*ProjectEntry{
+				canonicalizePath(projDir): {Path: canonicalizePath(projDir), Name: "myproj", Domain: "general", Status: statusPending},
+			},
+			path: filepath.Join(root, "scripts", "projects.json"),
+		}
+		if err := m.save(); err != nil {
+			t.Fatal(err)
+		}
+		return root, projDir
+	}
+
+	t.Run("by name", func(t *testing.T) {
+		root, _ := byName(t)
+		if err := (&ProjectsApproveCmd{Names: []string{"myproj"}}).run(root); err != nil {
+			t.Fatalf("approve by name: %v", err)
+		}
+		m, err := loadManifest(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, ok := entryByName(m, "myproj")
+		if !ok || !e.IsApproved() {
+			t.Errorf("entry not approved after approve-by-name: %+v", e)
+		}
+	})
+
+	t.Run("by path", func(t *testing.T) {
+		root, projDir := byName(t)
+		if err := (&ProjectsApproveCmd{Names: []string{projDir}}).run(root); err != nil {
+			t.Fatalf("approve by path: %v", err)
+		}
+		m, err := loadManifest(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, ok := entryByName(m, "myproj")
+		if !ok || !e.IsApproved() {
+			t.Errorf("entry not approved after approve-by-path: %+v", e)
+		}
+	})
+}
+
+// TestProjectsList_SortsByName drives the real ProjectsListCmd.Run(): list
+// output must follow each entry's Name, not its canonical-path map key —
+// a key that sorts differently than its Name (a deep nested path vs. a
+// short alphabetically-later Name) must still print in Name order.
+func TestProjectsList_SortsByName(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte("default_model: sonnet\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manifest{
+		Projects: map[string]*ProjectEntry{
+			"/zzzz/deep/nested/path": {Path: "/zzzz/deep/nested/path", Name: "alpha", Domain: "general"},
+			"/a":                     {Path: "/a", Name: "zulu", Domain: "general"},
+		},
+		path: filepath.Join(root, "scripts", "projects.json"),
+	}
+	if err := m.save(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SCRIBE_KB", root)
+
+	out := captureStdout(t, func() error { return (&ProjectsListCmd{}).Run() })
+	alphaIdx := strings.Index(out, "alpha")
+	zuluIdx := strings.Index(out, "zulu")
+	if alphaIdx < 0 || zuluIdx < 0 {
+		t.Fatalf("list output missing an entry:\n%s", out)
+	}
+	if alphaIdx > zuluIdx {
+		t.Errorf("list output not sorted by Name (alpha should precede zulu):\n%s", out)
 	}
 }

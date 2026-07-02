@@ -343,12 +343,76 @@ func TestDiscoverCodex_PromotesClaudeOnlyToBoth(t *testing.T) {
 	if _, err := s.discoverCodex(kbRoot, manifest, cfg); err != nil {
 		t.Fatalf("discoverCodex: %v", err)
 	}
-	entry := manifest.Projects[pname]
-	if entry == nil {
-		t.Fatalf("project %q gone from manifest after discovery", pname)
+	// Manifest.Projects is now keyed by canonical path (see manifest.go),
+	// not the legacy projectName-derived string seeded above — resolve by
+	// Name (which migration inherited 1:1 from the old key) instead.
+	entry, err := manifest.resolve(pname)
+	if err != nil {
+		t.Fatalf("project %q gone from manifest after discovery: %v", pname, err)
 	}
 	if entry.DiscoveredFrom != "both" {
 		t.Errorf("DiscoveredFrom = %q, want %q", entry.DiscoveredFrom, "both")
+	}
+}
+
+// TestDiscoverCodex_SameBasenameBothEnroll is the basename-collision
+// regression this plan fixes: two Codex-discovered cwds under different
+// parent roots that derive the SAME projectName basename must both enroll
+// as distinct manifest entries (auto-disambiguated Name), not have the
+// second one refused/shadowed the way pre-#8 discovery did.
+func TestDiscoverCodex_SameBasenameBothEnroll(t *testing.T) {
+	tmp := t.TempDir()
+	sessionsRoot := filepath.Join(tmp, "sessions")
+
+	rootA := filepath.Join(tmp, "org-a", "Projects")
+	rootB := filepath.Join(tmp, "org-b", "Projects")
+	t.Setenv("SCRIBE_PROJECT_ROOTS", filepath.Base(rootA))
+	projectRoots = defaultProjectRoots()
+
+	cwdA := makeProjectWithMarkdown(t, rootA, "api")
+	cwdB := makeProjectWithMarkdown(t, rootB, "api")
+
+	writeCodexRollout(t, sessionsRoot, "2026", "02", "07", "id-a", cwdA)
+	writeCodexRollout(t, sessionsRoot, "2026", "02", "08", "id-b", cwdB)
+
+	kbRoot := filepath.Join(tmp, "kb")
+	if err := os.MkdirAll(filepath.Join(kbRoot, "scripts"), 0o755); err != nil {
+		t.Fatalf("mkdir kb: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(kbRoot, "projects"), 0o755); err != nil {
+		t.Fatalf("mkdir kb/projects: %v", err)
+	}
+	manifestPath := filepath.Join(kbRoot, "scripts", "projects.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"projects":{},"domain_aliases":{},"ignored_paths":[]}`), 0o644); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+	manifest, err := loadManifest(kbRoot)
+	if err != nil {
+		t.Fatalf("loadManifest: %v", err)
+	}
+	if manifest.isIgnored(cwdA) {
+		t.Skipf("temp dir %q is treated as ignored on this platform; cannot exercise discoverCodex here", cwdA)
+	}
+
+	cfg := &ScribeConfig{CodexSessionsDir: sessionsRoot}
+	s := &SyncCmd{}
+	got, err := s.discoverCodex(kbRoot, manifest, cfg)
+	if err != nil {
+		t.Fatalf("discoverCodex: %v", err)
+	}
+	if got != 2 {
+		t.Fatalf("discovered = %d, want 2 (both same-basename repos enroll)", got)
+	}
+	if len(manifest.Projects) != 2 {
+		t.Fatalf("manifest projects = %d, want 2: %v", len(manifest.Projects), manifest.Projects)
+	}
+
+	names := make([]string, 0, len(manifest.Projects))
+	for _, e := range manifest.Projects {
+		names = append(names, e.Name)
+	}
+	if names[0] == names[1] {
+		t.Errorf("both entries share Name %q — uniqueName should have disambiguated", names[0])
 	}
 }
 

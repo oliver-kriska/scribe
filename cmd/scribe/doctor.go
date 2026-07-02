@@ -820,7 +820,10 @@ func checkState(root string, cfg *ScribeConfig) []check {
 		// Pending projects are invisible on cron runs (the sync hint only
 		// lands in a log nobody tails) — doctor is where they must surface.
 		if pending := m.pendingProjects(); len(pending) > 0 {
-			names := pending
+			names := make([]string, len(pending))
+			for i, key := range pending {
+				names[i] = m.Projects[key].Name
+			}
 			if len(names) > 5 {
 				names = append(append([]string{}, names[:5]...), "…")
 			}
@@ -836,9 +839,9 @@ func checkState(root string, cfg *ScribeConfig) []check {
 		// but the duplicates already on disk need a manual sweep — surface
 		// the offending entries so the user knows where to look.
 		var kbProjects []string
-		for pname, entry := range m.Projects {
+		for _, entry := range m.Projects {
 			if entry != nil && withinScribeKB(entry.Path) {
-				kbProjects = append(kbProjects, pname)
+				kbProjects = append(kbProjects, entry.Name)
 			}
 		}
 		if len(kbProjects) > 0 {
@@ -855,12 +858,12 @@ func checkState(root string, cfg *ScribeConfig) []check {
 		// (one project per ticket branch). New discoveries fold
 		// automatically; existing entries need a manual ignore.
 		var worktreeProjects []string
-		for pname, entry := range m.Projects {
+		for _, entry := range m.Projects {
 			if entry == nil || !dirExists(entry.Path) {
 				continue
 			}
 			if main := worktreeMainRoot(entry.Path); main != "" {
-				worktreeProjects = append(worktreeProjects, fmt.Sprintf("%s (worktree of %s)", pname, main))
+				worktreeProjects = append(worktreeProjects, fmt.Sprintf("%s (worktree of %s)", entry.Name, main))
 			}
 		}
 		if len(worktreeProjects) > 0 {

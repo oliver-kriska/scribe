@@ -70,13 +70,19 @@ func (a *AssessCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
-	entry, ok := manifest.Projects[a.Project]
-	if !ok {
+	entry, err := manifest.resolve(a.Project)
+	if err != nil {
 		return fmt.Errorf("project %q not in manifest — run 'scribe sync --discover' first", a.Project)
 	}
 	if _, err := os.Stat(entry.Path); err != nil {
 		return fmt.Errorf("project path %s not accessible: %w", entry.Path, err)
 	}
+	// a.Project may be a CLI-typed Name OR a full path (manifest.resolve
+	// accepts both — see manifest.go). Every downstream use below is a
+	// DISPLAY use (prompt vars, output dir naming, projects/<name>/ wiki
+	// dir, commit-ish log lines) and must stay the short display label —
+	// never the raw argument, which could be a filesystem path.
+	a.Project = entry.Name
 
 	today := time.Now().Format("2006-01-02")
 

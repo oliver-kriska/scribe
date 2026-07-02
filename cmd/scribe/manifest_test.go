@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -281,8 +283,18 @@ func TestLoadManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Projects["scriptorium"].LastSHA != "abc123" {
-		t.Errorf("last_sha = %q", m.Projects["scriptorium"].LastSHA)
+	// Legacy fixture is basename-keyed ("scriptorium"); loadManifest
+	// migrates it in-memory to a canonical-path key, inheriting the old
+	// key as Name (see migrateToPathKeys).
+	entry := m.Projects[canonicalizePath("/Users/x/Projects/scriptorium")]
+	if entry == nil {
+		t.Fatalf("entry not found after migration; projects = %v", m.Projects)
+	}
+	if entry.Name != "scriptorium" {
+		t.Errorf("Name = %q, want scriptorium (inherited from legacy key)", entry.Name)
+	}
+	if entry.LastSHA != "abc123" {
+		t.Errorf("last_sha = %q", entry.LastSHA)
 	}
 	if m.DomainAliases["scriptorium"] != "personal" {
 		t.Errorf("alias missing: %v", m.DomainAliases)
@@ -457,5 +469,438 @@ func TestReadClaudeCwd_SkipsCwdlessLeadingLine(t *testing.T) {
 	}
 	if got := readClaudeCwd(path); got != "/Users/x/Projects/p" {
 		t.Errorf("got %q, want cwd from the second line", got)
+	}
+}
+
+// ---------------------------------------------------------------------
+// Issue #8 — path-keyed manifest identity: canonicalizePath, migration,
+// resolve, uniqueName.
+// ---------------------------------------------------------------------
+
+// TestCanonicalizePath covers the four cases the doc comment promises: a
+// real directory (resolved through EvalSymlinks), a directory reached
+// through a symlinked ancestor (the macOS /var vs /private/var case,
+// reproduced here with an explicit symlink so the test doesn't depend on
+// real system paths), a non-existent directory (falls back to the cleaned
+// absolute path rather than ""), and relative / "~"-prefixed input (always
+// resolves to an absolute path).
+func TestCanonicalizePath(t *testing.T) {
+	realDir := t.TempDir()
+	if got := canonicalizePath(realDir); got != realDir {
+		// t.TempDir() itself may already be behind a symlink on some
+		// platforms (macOS): canonicalizePath must fully resolve it, so
+		// compare against the OS's own resolution rather than the raw
+		// TempDir() string.
+		want, err := filepath.EvalSymlinks(realDir)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(%s): %v", realDir, err)
+		}
+		if got != want {
+			t.Errorf("real dir: got %q, want %q", got, want)
+		}
+	}
+
+	// Symlinked ancestor: linkParent -> realParent, and we canonicalize a
+	// path THROUGH the symlink. Both spellings must resolve identically.
+	realParent := t.TempDir()
+	realChild := filepath.Join(realParent, "child")
+	if err := os.MkdirAll(realChild, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkParent := filepath.Join(t.TempDir(), "linked-ancestor")
+	if err := os.Symlink(realParent, linkParent); err != nil {
+		t.Skipf("symlink not supported on this platform/filesystem: %v", err)
+	}
+	throughLink := filepath.Join(linkParent, "child")
+	if got, want := canonicalizePath(throughLink), canonicalizePath(realChild); got != want {
+		t.Errorf("symlinked ancestor: got %q, want %q (same real dir)", got, want)
+	}
+
+	// Non-existent directory: EvalSymlinks fails, so canonicalizePath must
+	// fall back to the cleaned absolute path instead of "".
+	gone := filepath.Join(t.TempDir(), "does-not-exist", "nested")
+	got := canonicalizePath(gone)
+	if got == "" {
+		t.Error("non-existent path canonicalized to empty string, want fallback to cleaned abs path")
+	}
+	if !filepath.IsAbs(got) {
+		t.Errorf("non-existent path result %q is not absolute", got)
+	}
+	if got != filepath.Clean(gone) {
+		t.Errorf("non-existent path = %q, want cleaned abs fallback %q", got, filepath.Clean(gone))
+	}
+
+	// Relative + "~"-prefixed input always resolves to an absolute path.
+	if got := canonicalizePath("."); !filepath.IsAbs(got) {
+		t.Errorf("relative input %q not resolved to absolute", got)
+	}
+	home := os.Getenv("HOME")
+	if home != "" {
+		if got := canonicalizePath("~"); got != canonicalizePath(home) {
+			t.Errorf("~ = %q, want %q", got, canonicalizePath(home))
+		}
+	}
+}
+
+// legacyManifestJSON builds a basename-keyed (pre-#8) manifest fixture:
+// no manifest_version key, no name field on entries — the exact shape a
+// pre-upgrade scripts/projects.json has on disk.
+func legacyManifestJSON(t *testing.T, entries map[string]*ProjectEntry) string {
+	t.Helper()
+	var sb strings.Builder
+	sb.WriteString(`{"projects":{`)
+	first := true
+	for name, e := range entries {
+		if !first {
+			sb.WriteString(",")
+		}
+		first = false
+		fmt.Fprintf(&sb, "%q:{\"path\":%q,\"domain\":%q,\"last_sha\":%q,\"last_extracted\":%q}",
+			name, e.Path, e.Domain, e.LastSHA, e.LastExtracted)
+	}
+	sb.WriteString(`},"domain_aliases":{},"ignored_paths":[]}`)
+	return sb.String()
+}
+
+// writeManifestFile writes content to <root>/scripts/projects.json,
+// creating the scripts/ dir as needed, and returns the file path.
+func writeManifestFile(t *testing.T, root, content string) string {
+	t.Helper()
+	dir := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "projects.json")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestManifestMigrateToPathKeys_Basic loads a legacy basename-keyed
+// manifest fixture and checks the in-memory result: re-keyed by canonical
+// path, Name inherited 1:1 from the old key, version bumped.
+func TestManifestMigrateToPathKeys_Basic(t *testing.T) {
+	root := t.TempDir()
+	proj := t.TempDir()
+	content := legacyManifestJSON(t, map[string]*ProjectEntry{
+		"scriptorium": {Path: proj, Domain: "personal", LastSHA: "abc123"},
+	})
+	writeManifestFile(t, root, content)
+
+	m, err := loadManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.ManifestVersion != manifestPathKeyedVersion {
+		t.Errorf("ManifestVersion = %d, want %d", m.ManifestVersion, manifestPathKeyedVersion)
+	}
+	key := canonicalizePath(proj)
+	entry, ok := m.Projects[key]
+	if !ok {
+		t.Fatalf("no entry at canonical key %s; projects = %v", key, m.Projects)
+	}
+	if entry.Name != "scriptorium" {
+		t.Errorf("Name = %q, want scriptorium (inherited from legacy key)", entry.Name)
+	}
+	if entry.Path != key {
+		t.Errorf("Path = %q, want == map key %q", entry.Path, key)
+	}
+	if entry.LastSHA != "abc123" {
+		t.Errorf("LastSHA = %q, want abc123", entry.LastSHA)
+	}
+}
+
+// TestManifestMigrateToPathKeys_CollapsesDuplicates: two legacy entries
+// under different names whose Path canonicalizes to the SAME real
+// directory (one spelled through a symlink — reproducing the macOS /var
+// vs /private/var class of bug with an explicit symlink rather than a
+// real system path) collapse into exactly one surviving entry. The
+// surviving Name is the one with LastExtracted set (newer); the loser's
+// Worktrees are merged in, not dropped.
+func TestManifestMigrateToPathKeys_CollapsesDuplicates(t *testing.T) {
+	root := t.TempDir()
+	realDir := t.TempDir()
+	linkParent := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(realDir, linkParent); err != nil {
+		t.Skipf("symlink not supported on this platform/filesystem: %v", err)
+	}
+
+	wt1 := filepath.Join(t.TempDir(), "wt1")
+	wt2 := filepath.Join(t.TempDir(), "wt2")
+
+	// Build the raw JSON by hand so both worktrees + timestamps land
+	// exactly as intended (legacyManifestJSON doesn't carry worktrees).
+	content := fmt.Sprintf(`{"projects":{
+		"never-extracted":{"path":%q,"domain":"general","worktrees":[%q]},
+		"was-extracted":{"path":%q,"domain":"general","last_extracted":"2026-06-01T00:00:00Z","worktrees":[%q]}
+	},"domain_aliases":{},"ignored_paths":[]}`, realDir, wt1, linkParent, wt2)
+	writeManifestFile(t, root, content)
+
+	m, err := loadManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canon := canonicalizePath(realDir)
+	if got := len(m.Projects); got != 1 {
+		t.Fatalf("Projects has %d entries after collapse, want 1: %v", got, m.Projects)
+	}
+	entry, ok := m.Projects[canon]
+	if !ok {
+		t.Fatalf("no entry at canonical key %s; projects = %v", canon, m.Projects)
+	}
+	if entry.Name != "was-extracted" {
+		t.Errorf("Name = %q, want %q (the entry with LastExtracted set)", entry.Name, "was-extracted")
+	}
+	if len(entry.Worktrees) != 2 {
+		t.Errorf("Worktrees = %v, want both wt1 and wt2 merged", entry.Worktrees)
+	}
+	var sawWt1, sawWt2 bool
+	for _, w := range entry.Worktrees {
+		if w == wt1 {
+			sawWt1 = true
+		}
+		if w == wt2 {
+			sawWt2 = true
+		}
+	}
+	if !sawWt1 || !sawWt2 {
+		t.Errorf("Worktrees = %v, want union of [%s %s]", entry.Worktrees, wt1, wt2)
+	}
+}
+
+// TestManifestMigrateToPathKeys_Idempotent: migrating twice must equal
+// migrating once — a manifest already at manifestPathKeyedVersion is a
+// no-op on a second migrateToPathKeys call (no re-keying, no duplicate
+// log, migratedCount not bumped again).
+func TestManifestMigrateToPathKeys_Idempotent(t *testing.T) {
+	root := t.TempDir()
+	proj := t.TempDir()
+	content := legacyManifestJSON(t, map[string]*ProjectEntry{
+		"scriptorium": {Path: proj, Domain: "personal", LastSHA: "abc123"},
+	})
+	writeManifestFile(t, root, content)
+
+	m, err := loadManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.save(); err != nil {
+		t.Fatal(err)
+	}
+	firstSave, err := os.ReadFile(filepath.Join(root, "scripts", "projects.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reload the now-migrated (version-2) file and migrate again directly:
+	// must be a complete no-op.
+	reloaded, err := loadManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(reloaded.Projects)
+	beforeVersion := reloaded.ManifestVersion
+	reloaded.migrateToPathKeys()
+	if reloaded.ManifestVersion != beforeVersion {
+		t.Errorf("ManifestVersion changed on second migrate: %d -> %d", beforeVersion, reloaded.ManifestVersion)
+	}
+	if len(reloaded.Projects) != before {
+		t.Errorf("Projects count changed on second migrate: %d -> %d", before, len(reloaded.Projects))
+	}
+	if reloaded.migratedCount != 0 {
+		t.Errorf("migratedCount = %d after a no-op migrate on an already-versioned manifest, want 0", reloaded.migratedCount)
+	}
+
+	if err := reloaded.save(); err != nil {
+		t.Fatal(err)
+	}
+	secondSave, err := os.ReadFile(filepath.Join(root, "scripts", "projects.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstSave, secondSave) {
+		t.Errorf("migrating twice produced a different file than migrating once:\nfirst:\n%s\nsecond:\n%s", firstSave, secondSave)
+	}
+}
+
+// TestLoadManifest_ReadOnlyDoesNotWriteMigratedFile mirrors the
+// TestLoadConfigIsPure contract (readonly_contract_test.go): loading a
+// legacy manifest transforms the in-memory struct only. Nothing on disk
+// changes until a mutating command explicitly calls save().
+func TestLoadManifest_ReadOnlyDoesNotWriteMigratedFile(t *testing.T) {
+	root := t.TempDir()
+	proj := t.TempDir()
+	content := legacyManifestJSON(t, map[string]*ProjectEntry{
+		"scriptorium": {Path: proj, Domain: "personal"},
+	})
+	path := writeManifestFile(t, root, content)
+
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := loadManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sanity: the in-memory struct WAS migrated (else this test would pass
+	// vacuously).
+	if m.ManifestVersion != manifestPathKeyedVersion {
+		t.Fatalf("loadManifest did not migrate in-memory struct: version = %d", m.ManifestVersion)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("loadManifest (read-only) wrote to disk:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// TestManifestSave_LogsMigrationOnce: the migratedCount counter that
+// drives the one-line migration log is reset after the first save() that
+// actually persists the migrated form, so a second save() in the same
+// process doesn't re-trigger it.
+func TestManifestSave_LogsMigrationOnce(t *testing.T) {
+	root := t.TempDir()
+	proj := t.TempDir()
+	content := legacyManifestJSON(t, map[string]*ProjectEntry{
+		"scriptorium": {Path: proj, Domain: "personal"},
+	})
+	writeManifestFile(t, root, content)
+
+	m, err := loadManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.migratedCount == 0 {
+		t.Fatal("migratedCount should be >0 right after migrating a legacy manifest")
+	}
+	if err := m.save(); err != nil {
+		t.Fatal(err)
+	}
+	if m.migratedCount != 0 {
+		t.Errorf("migratedCount = %d after first save(), want 0 (reset so a second save doesn't re-log)", m.migratedCount)
+	}
+	// A second save must not panic or re-derive a nonzero migratedCount.
+	if err := m.save(); err != nil {
+		t.Fatal(err)
+	}
+	if m.migratedCount != 0 {
+		t.Errorf("migratedCount = %d after second save(), want 0", m.migratedCount)
+	}
+}
+
+// TestManifestResolve_ByPath: an entry looks up both by its exact
+// canonical path and by a non-canonical (relative) spelling of the same
+// directory.
+func TestManifestResolve_ByPath(t *testing.T) {
+	dir := t.TempDir()
+	key := canonicalizePath(dir)
+	entry := &ProjectEntry{Path: key, Name: "myproj"}
+	m := &Manifest{Projects: map[string]*ProjectEntry{key: entry}}
+
+	got, err := m.resolve(dir)
+	if err != nil {
+		t.Fatalf("resolve(%q): %v", dir, err)
+	}
+	if got != entry {
+		t.Error("resolve by exact canonical path did not return the entry")
+	}
+
+	rel := filepath.Join(dir, "..", filepath.Base(dir))
+	got2, err := m.resolve(rel)
+	if err != nil {
+		t.Fatalf("resolve(%q): %v", rel, err)
+	}
+	if got2 != entry {
+		t.Error("resolve by non-canonical (relative) spelling did not return the entry")
+	}
+}
+
+// TestManifestResolve_ByName: a short display Name resolves too.
+func TestManifestResolve_ByName(t *testing.T) {
+	entry := &ProjectEntry{Path: "/x/y", Name: "myproj"}
+	m := &Manifest{Projects: map[string]*ProjectEntry{"/x/y": entry}}
+
+	got, err := m.resolve("myproj")
+	if err != nil {
+		t.Fatalf("resolve(myproj): %v", err)
+	}
+	if got != entry {
+		t.Error("resolve by Name did not return the entry")
+	}
+}
+
+// TestManifestResolve_AmbiguousName: two entries sharing a Name (a
+// hand-crafted fixture — uniqueName prevents this in practice) is a
+// resolve error naming both paths.
+func TestManifestResolve_AmbiguousName(t *testing.T) {
+	m := &Manifest{Projects: map[string]*ProjectEntry{
+		"/a": {Path: "/a", Name: "dup"},
+		"/b": {Path: "/b", Name: "dup"},
+	}}
+	_, err := m.resolve("dup")
+	if err == nil {
+		t.Fatal("expected an ambiguous-name error")
+	}
+	if !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("error %q does not mention ambiguous", err)
+	}
+	if !strings.Contains(err.Error(), "/a") || !strings.Contains(err.Error(), "/b") {
+		t.Errorf("error %q does not name both paths", err)
+	}
+}
+
+// TestManifestResolve_NotFound: an empty manifest's error points at
+// `scribe projects list`.
+func TestManifestResolve_NotFound(t *testing.T) {
+	m := &Manifest{Projects: map[string]*ProjectEntry{}}
+	_, err := m.resolve("nope")
+	if err == nil {
+		t.Fatal("expected a not-found error")
+	}
+	if !strings.Contains(err.Error(), "scribe projects list") {
+		t.Errorf("error %q does not mention `scribe projects list`", err)
+	}
+}
+
+// TestManifestUniqueName covers the three escalation tiers: passthrough
+// (no collision), parent-qualified (base collides), and numeric suffix
+// (even the parent-qualified form collides).
+func TestManifestUniqueName(t *testing.T) {
+	m := &Manifest{Projects: map[string]*ProjectEntry{}}
+
+	// No existing entries: passthrough.
+	if got := m.uniqueName("api", "/Users/x/Projects/api"); got != "api" {
+		t.Errorf("passthrough = %q, want api", got)
+	}
+
+	// Seed a colliding entry at a DIFFERENT path.
+	m.Projects["/Users/other/Projects/api"] = &ProjectEntry{Path: "/Users/other/Projects/api", Name: "api"}
+	got := m.uniqueName("api", "/Users/x/work/api")
+	want := "work-api" // parent-qualified
+	if got != want {
+		t.Errorf("parent-qualified = %q, want %q", got, want)
+	}
+
+	// Now seed the parent-qualified form too, at yet another path — even
+	// that collides, so uniqueName must escalate to a numeric suffix.
+	m.Projects["/Users/yet-another/work/api"] = &ProjectEntry{Path: "/Users/yet-another/work/api", Name: "work-api"}
+	got2 := m.uniqueName("api", "/Users/x/work/api")
+	if got2 != "api-2" {
+		t.Errorf("double-collision = %q, want api-2", got2)
+	}
+
+	// A path that's already the canonical path of an EXISTING entry with
+	// that exact name is not a collision with itself.
+	m2 := &Manifest{Projects: map[string]*ProjectEntry{
+		"/Users/x/Projects/api": {Path: "/Users/x/Projects/api", Name: "api"},
+	}}
+	if got := m2.uniqueName("api", "/Users/x/Projects/api"); got != "api" {
+		t.Errorf("self-match = %q, want api (not a collision with its own entry)", got)
 	}
 }

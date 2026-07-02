@@ -128,9 +128,10 @@ func TestFoldWorktreeIntoExistingEntry(t *testing.T) {
 	kbRoot := t.TempDir()
 
 	pname := projectName(main)
+	key := canonicalizePath(main)
 	m := &Manifest{
 		Projects: map[string]*ProjectEntry{
-			pname: {Path: main, Domain: "general"},
+			key: {Path: main, Name: pname, Domain: "general"},
 		},
 		path: filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
@@ -145,7 +146,7 @@ func TestFoldWorktreeIntoExistingEntry(t *testing.T) {
 	if len(m.Projects) != 1 {
 		t.Fatalf("fold created a new project: %v", projectKeys(m))
 	}
-	if got := m.Projects[pname].Worktrees; len(got) != 1 || got[0] != wt {
+	if got := m.Projects[key].Worktrees; len(got) != 1 || got[0] != wt {
 		t.Errorf("worktrees = %v, want [%s]", got, wt)
 	}
 
@@ -159,7 +160,7 @@ func TestFoldWorktreeIntoExistingEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := loaded.Projects[pname].Worktrees; len(got) != 1 || got[0] != wt {
+	if got := loaded.Projects[key].Worktrees; len(got) != 1 || got[0] != wt {
 		t.Errorf("persisted worktrees = %v, want [%s]", got, wt)
 	}
 }
@@ -180,7 +181,7 @@ func TestFoldWorktreeDiscoversMain(t *testing.T) {
 	if n != 1 || !changed {
 		t.Fatalf("fold with unknown main = (%d, %v), want (1, true)", n, changed)
 	}
-	entry := m.Projects[projectName(derived)]
+	entry := m.Projects[canonicalizePath(derived)]
 	if entry == nil {
 		t.Fatalf("main project not created; manifest has %v", projectKeys(m))
 	}
@@ -198,11 +199,14 @@ func TestFoldWorktreeDiscoversMain(t *testing.T) {
 	}
 }
 
-// TestFoldWorktreeBasenameCollision: two repos with the same basename
-// map to the same projectName. The fold must not record this repo's
-// worktree on the OTHER repo's entry (drops would be collected under
-// the wrong project), nor overwrite that entry via the create branch.
-func TestFoldWorktreeBasenameCollision(t *testing.T) {
+// TestFoldWorktreeSharedBasenameGetsUniqueName: two repos with the same
+// basename derive the same projectName, but under path-keyed identity that
+// is no longer the manifest key — so folding this repo's worktree must
+// SUCCEED with a new entry (auto-disambiguated Name), and the unrelated
+// same-basename project must be left byte-for-byte untouched. This
+// replaces the old TestFoldWorktreeBasenameCollision, which asserted the
+// pre-#8 refusal behavior (the bug this plan fixes).
+func TestFoldWorktreeSharedBasenameGetsUniqueName(t *testing.T) {
 	main, wt := initRepoWithWorktree(t)
 	kbRoot := t.TempDir()
 
@@ -210,24 +214,43 @@ func TestFoldWorktreeBasenameCollision(t *testing.T) {
 	if err := os.MkdirAll(other, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	otherKey := canonicalizePath(other)
 	m := &Manifest{
 		Projects: map[string]*ProjectEntry{
-			projectName(main): {Path: other, Domain: "general"},
+			otherKey: {Path: other, Name: projectName(main), Domain: "general"},
 		},
 		path: filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
 	s := &SyncCmd{}
 
 	derived := worktreeMainRoot(wt)
-	if n, changed := s.foldWorktree(kbRoot, m, &ScribeConfig{}, wt, derived, "claude"); n != 0 || changed {
-		t.Errorf("collision fold = (%d, %v), want (0, false)", n, changed)
+	n, changed := s.foldWorktree(kbRoot, m, &ScribeConfig{}, wt, derived, "claude")
+	if n != 1 || !changed {
+		t.Fatalf("shared-basename fold = (%d, %v), want (1, true) — must succeed under path-keyed identity", n, changed)
 	}
-	entry := m.Projects[projectName(main)]
-	if entry.Path != other {
-		t.Errorf("foreign entry overwritten: path = %q, want %q", entry.Path, other)
+
+	// The foreign entry (different real path, same basename) must be
+	// untouched: no worktrees gained, path/name unchanged.
+	foreign := m.Projects[otherKey]
+	if foreign.Path != other {
+		t.Errorf("foreign entry path = %q, want %q", foreign.Path, other)
 	}
-	if len(entry.Worktrees) != 0 {
-		t.Errorf("foreign entry gained worktrees: %v", entry.Worktrees)
+	if len(foreign.Worktrees) != 0 {
+		t.Errorf("foreign entry gained worktrees: %v", foreign.Worktrees)
+	}
+
+	// A NEW entry was created at main's own canonical path, with a Name
+	// distinct from the foreign entry's.
+	mainKey := canonicalizePath(main)
+	entry := m.Projects[mainKey]
+	if entry == nil {
+		t.Fatalf("main project not created at %s; manifest has %v", mainKey, projectKeys(m))
+	}
+	if entry.Name == foreign.Name {
+		t.Errorf("new entry Name %q collides with foreign entry Name — uniqueName should have disambiguated", entry.Name)
+	}
+	if len(entry.Worktrees) != 1 || entry.Worktrees[0] != wt {
+		t.Errorf("worktrees = %v, want [%s]", entry.Worktrees, wt)
 	}
 }
 
@@ -242,10 +265,10 @@ func TestFoldWorktreeFromSubdir(t *testing.T) {
 	if err := os.MkdirAll(subdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pname := projectName(main)
+	key := canonicalizePath(main)
 	m := &Manifest{
 		Projects: map[string]*ProjectEntry{
-			pname: {Path: main, Domain: "general"},
+			key: {Path: main, Name: projectName(main), Domain: "general"},
 		},
 		path: filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
@@ -258,7 +281,7 @@ func TestFoldWorktreeFromSubdir(t *testing.T) {
 	if n, changed := s.foldWorktree(kbRoot, m, &ScribeConfig{}, subdir, derived, "claude"); n != 0 || !changed {
 		t.Fatalf("fold from subdir = (%d, %v), want (0, true)", n, changed)
 	}
-	got := m.Projects[pname].Worktrees
+	got := m.Projects[key].Worktrees
 	if len(got) != 1 || got[0] != wt {
 		t.Errorf("worktrees = %v, want the worktree root [%s]", got, wt)
 	}
@@ -270,10 +293,12 @@ func TestFoldWorktreeSkipsLegacyWorktreeEntry(t *testing.T) {
 
 	// The worktree was enrolled as its own project before folding
 	// existed — fold must not double-register it on the main entry.
+	mainKey := canonicalizePath(main)
+	wtKey := canonicalizePath(wt)
 	m := &Manifest{
 		Projects: map[string]*ProjectEntry{
-			projectName(main): {Path: main},
-			projectName(wt):   {Path: wt},
+			mainKey: {Path: main, Name: projectName(main)},
+			wtKey:   {Path: wt, Name: projectName(wt)},
 		},
 		path: filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
@@ -283,7 +308,7 @@ func TestFoldWorktreeSkipsLegacyWorktreeEntry(t *testing.T) {
 	if n, changed := s.foldWorktree(kbRoot, m, &ScribeConfig{}, wt, derived, "claude"); n != 0 || changed {
 		t.Errorf("fold with legacy entry = (%d, %v), want (0, false)", n, changed)
 	}
-	if got := m.Projects[projectName(main)].Worktrees; len(got) != 0 {
+	if got := m.Projects[mainKey].Worktrees; len(got) != 0 {
 		t.Errorf("main entry gained worktrees %v despite legacy entry", got)
 	}
 }
@@ -292,9 +317,10 @@ func TestFoldWorktreeDryRun(t *testing.T) {
 	main, wt := initRepoWithWorktree(t)
 	kbRoot := t.TempDir()
 
+	mainKey := canonicalizePath(main)
 	m := &Manifest{
 		Projects: map[string]*ProjectEntry{
-			projectName(main): {Path: main},
+			mainKey: {Path: main, Name: projectName(main)},
 		},
 		path: filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
@@ -304,7 +330,7 @@ func TestFoldWorktreeDryRun(t *testing.T) {
 	if n, changed := s.foldWorktree(kbRoot, m, &ScribeConfig{}, wt, derived, "claude"); n != 0 || changed {
 		t.Errorf("dry-run fold = (%d, %v), want (0, false)", n, changed)
 	}
-	if got := m.Projects[projectName(main)].Worktrees; len(got) != 0 {
+	if got := m.Projects[mainKey].Worktrees; len(got) != 0 {
 		t.Errorf("dry run recorded worktrees: %v", got)
 	}
 }
@@ -326,7 +352,7 @@ func TestCollectDropFilesFromWorktree(t *testing.T) {
 	pname := projectName(main)
 	m := &Manifest{
 		Projects: map[string]*ProjectEntry{
-			pname: {Path: main, Worktrees: []string{wt}},
+			canonicalizePath(main): {Path: main, Name: pname, Worktrees: []string{wt}},
 		},
 		path: filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
@@ -365,7 +391,7 @@ func TestCollectResearchFilesFromWorktree(t *testing.T) {
 	pname := projectName(main)
 	m := &Manifest{
 		Projects: map[string]*ProjectEntry{
-			pname: {Path: main, Domain: "general", Worktrees: []string{wt}},
+			canonicalizePath(main): {Path: main, Name: pname, Domain: "general", Worktrees: []string{wt}},
 		},
 		path: filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
@@ -388,8 +414,8 @@ func TestDoctorWarnsOnWorktreeProjectEntry(t *testing.T) {
 
 	m := &Manifest{
 		Projects: map[string]*ProjectEntry{
-			projectName(main): {Path: main},
-			projectName(wt):   {Path: wt},
+			canonicalizePath(main): {Path: main, Name: projectName(main)},
+			canonicalizePath(wt):   {Path: wt, Name: projectName(wt)},
 		},
 		path: filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
@@ -426,8 +452,8 @@ func TestEntryForPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	entry := &ProjectEntry{Path: mainDir, Worktrees: []string{wtDir}}
-	m := &Manifest{Projects: map[string]*ProjectEntry{"projects-api": entry}}
+	entry := &ProjectEntry{Path: mainDir, Name: "api", Worktrees: []string{wtDir}}
+	m := &Manifest{Projects: map[string]*ProjectEntry{canonicalizePath(mainDir): entry}}
 
 	if got := m.entryForPath(mainDir); got != entry {
 		t.Error("main path did not resolve to its entry")

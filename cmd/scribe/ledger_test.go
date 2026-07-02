@@ -135,9 +135,10 @@ func TestExtractionSkippedWhenLedgerHasSHA(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entry := &ProjectEntry{Path: repo, LastSHA: "older-sha", LastExtracted: "2026-01-01T00:00:00Z"}
+	entry := &ProjectEntry{Path: repo, Name: "repo", LastSHA: "older-sha", LastExtracted: "2026-01-01T00:00:00Z"}
+	key := canonicalizePath(repo)
 	m := &Manifest{
-		Projects: map[string]*ProjectEntry{"repo": entry},
+		Projects: map[string]*ProjectEntry{key: entry},
 		path:     filepath.Join(kbRoot, "scripts", "projects.json"),
 	}
 	s := &SyncCmd{}
@@ -155,7 +156,7 @@ func TestExtractionSkippedWhenLedgerHasSHA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reloaded.Projects["repo"].LastSHA != sha {
+	if reloaded.Projects[key].LastSHA != sha {
 		t.Errorf("synced marker not persisted")
 	}
 }

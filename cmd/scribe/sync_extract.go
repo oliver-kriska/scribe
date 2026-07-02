@@ -47,8 +47,8 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 	// Cap toExtract at s.Max so deferral logging is simple.
 	deferred := 0
 	if len(toExtract) > s.Max {
-		for _, pname := range toExtract[s.Max:] {
-			logMsg("sync", " [%s] deferred (max %d reached, will extract next run)", pname, s.Max)
+		for _, key := range toExtract[s.Max:] {
+			logMsg("sync", " [%s] deferred (max %d reached, will extract next run)", manifest.Projects[key].Name, s.Max)
 		}
 		deferred = len(toExtract) - s.Max
 		toExtract = toExtract[:s.Max]
@@ -62,10 +62,10 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 
 	// DryRun bypasses goroutines entirely — the output ordering matters.
 	if s.DryRun {
-		for _, pname := range toExtract {
-			entry := manifest.Projects[pname]
+		for _, key := range toExtract {
+			entry := manifest.Projects[key]
 			changed := gitChangedFiles(entry.Path, entry.LastSHA, extractScanPatterns)
-			logMsg("sync", " [%s] DRY RUN -- changed files (%d):", pname, len(changed))
+			logMsg("sync", " [%s] DRY RUN -- changed files (%d):", entry.Name, len(changed))
 			limit := min(len(changed), 20)
 			for _, f := range changed[:limit] {
 				fmt.Println(f)
@@ -83,8 +83,8 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 		rateLimited bool
 	)
 
-	for _, pname := range toExtract {
-		entry := manifest.Projects[pname]
+	for _, key := range toExtract {
+		entry := manifest.Projects[key]
 
 		g.Go(func() error {
 			// Bail early if another goroutine already hit a rate limit.
@@ -102,15 +102,15 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 			// which batches-by-directory and fits in the timeout.
 			if exceedsExtractFileCap(cfg, len(changed)) {
 				logMsg("sync", " [%s] SKIP: %d files > sync.max_extract_files (%d). Run: scribe deep %s",
-					pname, len(changed), cfg.Sync.MaxExtractFiles, pname)
+					entry.Name, len(changed), cfg.Sync.MaxExtractFiles, entry.Name)
 				return nil
 			}
 
-			logMsg("sync", " [%s] extracting (%d files to scan) from %s", pname, len(changed), entry.Path)
+			logMsg("sync", " [%s] extracting (%d files to scan) from %s", entry.Name, len(changed), entry.Path)
 
-			if err := s.extractProject(root, manifest, pname, entry, changed); err != nil { //nolint:contextcheck // errgroup cancellation is sufficient; extractProject shells out to runCmdErr wrappers
+			if err := s.extractProject(root, manifest, entry.Name, entry, changed); err != nil { //nolint:contextcheck // errgroup cancellation is sufficient; extractProject shells out to runCmdErr wrappers
 				if errors.Is(err, ErrRateLimit) {
-					logMsg("sync", " [%s] rate limited — stopping extraction, will resume next run", pname)
+					logMsg("sync", " [%s] rate limited — stopping extraction, will resume next run", entry.Name)
 					mu.Lock()
 					rateLimited = true
 					mu.Unlock()
@@ -119,20 +119,20 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 					return err
 				}
 				if errors.Is(err, ErrDailyBudgetExhausted) {
-					logMsg("sync", " [%s] daily anthropic budget ceiling reached — stopping extraction (%v)", pname, err)
+					logMsg("sync", " [%s] daily anthropic budget ceiling reached — stopping extraction (%v)", entry.Name, err)
 					mu.Lock()
 					rateLimited = true
 					mu.Unlock()
 					return err
 				}
-				logMsg("sync", " [%s] extraction failed: %v", pname, err)
+				logMsg("sync", " [%s] extraction failed: %v", entry.Name, err)
 				return nil
 			}
 
 			mu.Lock()
 			extracted++
 			mu.Unlock()
-			logMsg("sync", " [%s] done", pname)
+			logMsg("sync", " [%s] done", entry.Name)
 			return nil
 		})
 	}
@@ -151,16 +151,31 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 	return extracted, nil
 }
 
-// projectsNeedingExtraction returns names of projects that need extraction.
+// projectsNeedingExtraction returns manifest keys (canonical paths) of
+// projects that need extraction.
 func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []string {
 	var result []string
 	ledger := loadLedger(root)
 	manifestDirty := false
 	unchanged := 0
 
-	for pname, entry := range manifest.Projects {
+	// s.Extract is resolved once, up front, to a *ProjectEntry — a CLI-typed
+	// Name or a full path both work (manifest.resolve). Filtering below
+	// compares by pointer identity, not by string, since the loop key is
+	// now a canonical path and s.Extract may be a short display Name.
+	var filterEntry *ProjectEntry
+	if s.Extract != "" {
+		e, err := manifest.resolve(s.Extract)
+		if err != nil {
+			logMsg("sync", "%v", err)
+			return nil
+		}
+		filterEntry = e
+	}
+
+	for key, entry := range manifest.Projects {
 		// If --extract specified, only consider that project.
-		if s.Extract != "" && pname != s.Extract {
+		if filterEntry != nil && entry != filterEntry {
 			continue
 		}
 
@@ -168,8 +183,8 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 		// summary hint already printed during discovery, so skip quietly
 		// unless the user named this project explicitly.
 		if !entry.IsApproved() {
-			if s.Extract == pname {
-				logMsg("sync", " [%s] pending approval — run `scribe projects approve %s` first", pname, pname)
+			if filterEntry == entry {
+				logMsg("sync", " [%s] pending approval — run `scribe projects approve %s` first", entry.Name, entry.Name)
 			}
 			continue
 		}
@@ -184,18 +199,18 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 		// compounds duplicates every run). New discovery already filters
 		// these out via manifest.isIgnored → isScribeKB.
 		if withinScribeKB(entry.Path) {
-			logMsg("sync", " [%s] is (inside) a scribe KB — skipping (KBs never harvest themselves or each other)", pname)
+			logMsg("sync", " [%s] is (inside) a scribe KB — skipping (KBs never harvest themselves or each other)", entry.Name)
 			continue
 		}
 
 		if s.Force {
-			result = append(result, pname)
+			result = append(result, key)
 			continue
 		}
 
 		// Never extracted.
 		if entry.LastSHA == "" {
-			result = append(result, pname)
+			result = append(result, key)
 			continue
 		}
 
@@ -214,7 +229,7 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 					if who == "" {
 						who = "a teammate"
 					}
-					logMsg("sync", " [%s] revision %.8s already extracted by %s (%s) — skipping, syncing local marker", pname, currentSHA, who, le.ExtractedAt)
+					logMsg("sync", " [%s] revision %.8s already extracted by %s (%s) — skipping, syncing local marker", entry.Name, currentSHA, who, le.ExtractedAt)
 					entry.LastSHA = currentSHA
 					if entry.LastExtracted == "" {
 						entry.LastExtracted = le.ExtractedAt
@@ -222,12 +237,12 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 					manifestDirty = true
 					continue
 				}
-				result = append(result, pname)
+				result = append(result, key)
 				continue
 			}
 		} else if s.hasNewerFiles(entry) {
 			// No git: any .md file newer than the last extraction counts as changed.
-			result = append(result, pname)
+			result = append(result, key)
 			continue
 		}
 

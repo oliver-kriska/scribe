@@ -4,25 +4,41 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
+
+// manifestPathKeyedVersion marks the manifest schema where Manifest.Projects
+// is keyed by canonicalizePath(entry.Path) instead of the lossy derived
+// projectName(path). Manifests below this version are basename-keyed and get
+// migrated in-memory on load (see migrateToPathKeys).
+const manifestPathKeyedVersion = 2
 
 // Manifest represents scripts/projects.json.
 type Manifest struct {
-	Projects      map[string]*ProjectEntry `json:"projects"`
-	DomainAliases map[string]string        `json:"domain_aliases"`
-	IgnoredPaths  []string                 `json:"ignored_paths"`
-	path          string
+	Projects        map[string]*ProjectEntry `json:"projects"` // key: canonicalizePath(entry.Path)
+	DomainAliases   map[string]string        `json:"domain_aliases"`
+	IgnoredPaths    []string                 `json:"ignored_paths"`
+	ManifestVersion int                      `json:"manifest_version,omitempty"`
+	path            string
+	migratedCount   int // set by migrateToPathKeys; save() logs+resets once (not persisted)
 }
 
 // ProjectEntry represents a project in the manifest.
 type ProjectEntry struct {
-	Path                string `json:"path"`
+	Path string `json:"path"` // kept explicit and always == the map key (see canonicalizePath)
+	// Name is the human display label (the old projectName()-derived
+	// value). Used by CLI args, .repo.yaml, wiki dir naming, log lines.
+	// No longer required globally unique for correctness (identity lives
+	// in the map key), but uniqueName still keeps it unique for CLI
+	// ergonomics — see (*Manifest).resolve / uniqueName.
+	Name                string `json:"name"`
 	Domain              string `json:"domain"`
 	LastSHA             string `json:"last_sha"`
 	LastExtracted       string `json:"last_extracted"`
@@ -65,22 +81,24 @@ func (e *ProjectEntry) IsApproved() bool {
 	return e != nil && (e.Status == "" || e.Status == statusApproved)
 }
 
-// pendingProjects returns the sorted names of projects awaiting approval.
+// pendingProjects returns the manifest keys (canonical paths) of projects
+// awaiting approval, sorted by their human-friendly Name for CLI display.
 func (m *Manifest) pendingProjects() []string {
-	var names []string
-	for name, e := range m.Projects {
+	var keys []string
+	for key, e := range m.Projects {
 		if e != nil && e.Status == statusPending {
-			names = append(names, name)
+			keys = append(keys, key)
 		}
 	}
-	sort.Strings(names)
-	return names
+	sort.Slice(keys, func(i, j int) bool { return m.Projects[keys[i]].Name < m.Projects[keys[j]].Name })
+	return keys
 }
 
 // ignoreProject removes a project from the manifest and blocks its path
-// from re-discovery via IgnoredPaths. Idempotent.
-func (m *Manifest) ignoreProject(name string) {
-	e, ok := m.Projects[name]
+// from re-discovery via IgnoredPaths. key is a manifest map key (canonical
+// path). Idempotent.
+func (m *Manifest) ignoreProject(key string) {
+	e, ok := m.Projects[key]
 	if !ok {
 		return
 	}
@@ -88,7 +106,7 @@ func (m *Manifest) ignoreProject(name string) {
 		m.IgnoredPaths = append(m.IgnoredPaths, e.Path)
 		sort.Strings(m.IgnoredPaths)
 	}
-	delete(m.Projects, name)
+	delete(m.Projects, key)
 }
 
 // unignorePath removes a path from IgnoredPaths so it can be enrolled
@@ -143,9 +161,10 @@ func loadManifest(root string) (*Manifest, error) {
 		// SCRIBE_KB still fails loudly.
 		if os.IsNotExist(err) && isScribeKB(root) {
 			return &Manifest{
-				Projects:      make(map[string]*ProjectEntry),
-				DomainAliases: make(map[string]string),
-				path:          path,
+				Projects:        make(map[string]*ProjectEntry),
+				DomainAliases:   make(map[string]string),
+				ManifestVersion: manifestPathKeyedVersion, // nothing to migrate
+				path:            path,
 			}, nil
 		}
 		return nil, fmt.Errorf("read manifest: %w", err)
@@ -161,6 +180,7 @@ func loadManifest(root string) (*Manifest, error) {
 		m.DomainAliases = make(map[string]string)
 	}
 	m.path = path
+	m.migrateToPathKeys()
 	return &m, nil
 }
 
@@ -180,7 +200,18 @@ func (m *Manifest) save() error {
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, m.path)
+	if err := os.Rename(tmp, m.path); err != nil {
+		return err
+	}
+	// migratedCount is set once, by migrateToPathKeys on load, when the
+	// on-disk file was still basename-keyed. Log the one-line notice on
+	// the first save that actually persists the migrated form, then
+	// clear it so a second save() in the same process doesn't re-log.
+	if m.migratedCount > 0 {
+		logMsg("manifest", "migrated %d project(s) to path-keyed identity (scripts/projects.json)", m.migratedCount)
+		m.migratedCount = 0
+	}
+	return nil
 }
 
 // isIgnored checks if a path is in the ignored list, too shallow, or under a
@@ -344,27 +375,25 @@ func defaultProjectRoots() map[string]bool {
 }
 
 // entryForPath finds the project entry whose Path — or one of whose
-// recorded worktrees — matches path (symlink-tolerant). The keyed
-// projectName lookup alone is wrong in two ways: a worktree's basename
-// differs from the project key (its sessions would bypass per-project
-// gates), and two repos sharing a basename collide on the key (one
-// project's gate would govern the other's sessions).
+// recorded worktrees — matches path (symlink-tolerant). Manifest.Projects
+// is keyed by canonicalizePath(entry.Path), so the common case is now an
+// O(1) map hit; the worktree fallback stays a scan over each entry's
+// (typically tiny) Worktrees list, since a worktree's own canonical path
+// is never a Projects key.
 func (m *Manifest) entryForPath(path string) *ProjectEntry {
 	if m == nil || path == "" {
 		return nil
 	}
-	if e, ok := m.Projects[projectName(path)]; ok && e != nil && samePath(e.Path, path) {
+	canon := canonicalizePath(path)
+	if e, ok := m.Projects[canon]; ok {
 		return e
 	}
 	for _, e := range m.Projects {
 		if e == nil {
 			continue
 		}
-		if samePath(e.Path, path) {
-			return e
-		}
 		for _, w := range e.Worktrees {
-			if samePath(w, path) {
+			if canonicalizePath(w) == canon {
 				return e
 			}
 		}
@@ -380,6 +409,179 @@ func projectName(path string) string {
 		return name
 	}
 	return parent + "-" + name
+}
+
+// canonicalizePath is the sole identity normalization used for
+// Manifest.Projects map keys: absolute, cleaned, and symlink-resolved when
+// possible (macOS /var vs /private/var is the canonical case this exists
+// for — see evalSymlinksCached's doc comment in worktree.go).
+//
+// When EvalSymlinks fails (the directory was since deleted or moved, or a
+// component is a dangling symlink), this falls back to the cleaned
+// absolute path rather than "" — deliberately, so a project whose
+// directory no longer exists on disk stays addressable by its
+// last-known key instead of silently becoming unfindable. scribe doctor's
+// existing dirExists gates already flag missing project directories
+// separately; identity resolution must not also break on them.
+func canonicalizePath(path string) string {
+	abs, err := filepath.Abs(expandHome(path))
+	if err != nil {
+		abs = path
+	}
+	abs = filepath.Clean(abs)
+	if resolved := evalSymlinksCached(abs); resolved != "" {
+		return resolved
+	}
+	return abs
+}
+
+// newerExtracted mirrors ledgerEntryNewer (gitmerge.go): parse RFC3339,
+// falling back to a raw string compare if either side doesn't parse
+// (covers "" for never-extracted entries).
+func newerExtracted(a, b string) bool {
+	ta, errA := time.Parse(time.RFC3339, a)
+	tb, errB := time.Parse(time.RFC3339, b)
+	if errA != nil || errB != nil {
+		return a > b
+	}
+	return ta.After(tb)
+}
+
+// migrateToPathKeys re-keys m.Projects from the legacy basename-derived
+// key (projectName(path)) to canonicalizePath(entry.Path), the fix for the
+// basename-collision bug (two different repos landing on the same
+// derived name — see manifest_test.go's migration tests). In-memory only;
+// nothing is written to disk here (see save()'s migratedCount handling) so
+// read-only commands (ProjectsListCmd, DoctorCmd, StatusCmd) never mutate
+// KB state as a side effect of loading the manifest.
+//
+// Idempotent: a manifest already at manifestPathKeyedVersion (including a
+// freshly created empty one — see loadManifest) is a no-op.
+//
+// Old map keys were themselves already globally unique (Go/JSON maps
+// can't have duplicate keys), so every surviving entry inherits its old
+// key as Name 1:1 — except when N legacy entries canonicalize to the SAME
+// real directory (e.g. one spelled through a symlink), which collapses to
+// one surviving entry per canonical path. Two DIFFERENT canonical paths
+// can therefore never end up sharing an inherited Name; no uniqueName call
+// is needed here — uniqueName exists only for genuinely new discoveries
+// after migration.
+func (m *Manifest) migrateToPathKeys() {
+	if m == nil || m.ManifestVersion >= manifestPathKeyedVersion {
+		return
+	}
+	byCanon := map[string][]*ProjectEntry{}
+	for oldName, e := range m.Projects {
+		if e == nil {
+			continue
+		}
+		if e.Name == "" {
+			e.Name = oldName
+		}
+		e.Path = canonicalizePath(e.Path)
+		byCanon[e.Path] = append(byCanon[e.Path], e)
+	}
+	migrated := make(map[string]*ProjectEntry, len(byCanon))
+	for canon, entries := range byCanon {
+		winner := entries[0]
+		if len(entries) > 1 {
+			sort.Slice(entries, func(i, j int) bool {
+				if entries[i].LastExtracted != entries[j].LastExtracted {
+					return newerExtracted(entries[i].LastExtracted, entries[j].LastExtracted)
+				}
+				return entries[i].Name < entries[j].Name
+			})
+			winner = entries[0]
+			for _, loser := range entries[1:] {
+				for _, w := range loser.Worktrees {
+					winner.recordWorktree(w)
+				}
+			}
+			logMsg("manifest", "migration: %d entries pointed at %s — kept %q's history, merged worktrees",
+				len(entries), canon, winner.Name)
+		}
+		migrated[canon] = winner
+	}
+	m.migratedCount = len(m.Projects)
+	m.Projects = migrated
+	m.ManifestVersion = manifestPathKeyedVersion
+}
+
+// looksLikePath reports whether a CLI-typed project reference looks like a
+// filesystem path (vs. a short display Name) — resolve uses this to decide
+// which lookup to try first.
+func looksLikePath(arg string) bool {
+	return strings.ContainsRune(arg, filepath.Separator) || strings.HasPrefix(arg, "~") || arg == "." || arg == ".."
+}
+
+// resolve looks up a project by a CLI-typed reference: an absolute or
+// relative filesystem path (canonicalized and matched against the map key
+// directly), or a short display Name. Every CLI call site that used to do
+// a raw manifest.Projects[arg] index routes through this instead, so
+// typing the project's Name keeps working exactly as before path-keying
+// while a full path also resolves.
+func (m *Manifest) resolve(arg string) (*ProjectEntry, error) {
+	if m == nil || arg == "" {
+		return nil, errors.New("empty project reference")
+	}
+	if looksLikePath(arg) {
+		if e, ok := m.Projects[canonicalizePath(arg)]; ok {
+			return e, nil
+		}
+	}
+	var matches []*ProjectEntry
+	for _, e := range m.Projects {
+		if e != nil && e.Name == arg {
+			matches = append(matches, e)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("project %q not in manifest (see `scribe projects list`)", arg)
+	case 1:
+		return matches[0], nil
+	default:
+		sort.Slice(matches, func(i, j int) bool { return matches[i].Path < matches[j].Path })
+		paths := make([]string, len(matches))
+		for i, e := range matches {
+			paths[i] = e.Path
+		}
+		return nil, fmt.Errorf("project name %q is ambiguous — matches %d projects: %s (pass the full path instead)",
+			arg, len(matches), strings.Join(paths, ", "))
+	}
+}
+
+// uniqueName returns a display Name for path guaranteed not to collide
+// with any OTHER project's Name already in the manifest (a different
+// canonical path). Called at discovery/enroll time so a newly-found
+// project that happens to share a basename with an existing one still
+// gets a name a human can type, instead of being refused entirely (the
+// basename-collision bug this plan fixes).
+func (m *Manifest) uniqueName(base, path string) string {
+	canon := canonicalizePath(path)
+	if !m.nameCollides(base, canon) {
+		return base
+	}
+	if qualified := filepath.Base(filepath.Dir(path)) + "-" + base; !m.nameCollides(qualified, canon) {
+		return qualified
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if !m.nameCollides(candidate, canon) {
+			return candidate
+		}
+	}
+}
+
+// nameCollides reports whether name is already used by a DIFFERENT
+// canonical path than canon.
+func (m *Manifest) nameCollides(name, canon string) bool {
+	for key, e := range m.Projects {
+		if e != nil && e.Name == name && key != canon {
+			return true
+		}
+	}
+	return false
 }
 
 // decodeClaudePath converts a Claude project dir name back to a real filesystem path.

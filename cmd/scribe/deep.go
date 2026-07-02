@@ -48,10 +48,14 @@ func (d *DeepCmd) Run() error {
 		return fmt.Errorf("load manifest: %w", err)
 	}
 
-	entry, ok := manifest.Projects[d.Project]
-	if !ok {
+	entry, err := manifest.resolve(d.Project)
+	if err != nil {
 		return fmt.Errorf("project %q not in manifest — run 'scribe sync --discover' first", d.Project)
 	}
+	// d.Project may be a CLI-typed Name OR a full path (manifest.resolve
+	// accepts both). Every downstream use is a DISPLAY use (prompt vars,
+	// log lines, commit message) and must stay the short display label.
+	d.Project = entry.Name
 
 	projectPath := entry.Path
 	domain := entry.Domain

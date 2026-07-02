@@ -51,7 +51,7 @@ func TestCollectResearchFiles_IdempotentPreservesEnrichment(t *testing.T) {
 	}
 
 	m := &Manifest{Projects: map[string]*ProjectEntry{
-		"proj": {Path: src, Domain: "general"},
+		"proj": {Path: src, Name: "proj", Domain: "general"},
 	}}
 	m.path = filepath.Join(kb, "scripts", "projects.json") // save() MkdirAll's the dir
 	s := &SyncCmd{}
