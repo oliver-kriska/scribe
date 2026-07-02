@@ -347,6 +347,8 @@ capture:
 #                             # tags (case-insensitive); empty = all. Orthogonal to
 #                             # scope, e.g. scope: all + tags: [kb] = everything
 #                             # you ever tagged "kb".
+#     public_only: false      # true = skip private bookmarks (an authenticated
+#                             # pull sees private ones too); default ingests all.
 #     skip_domains: []        # substring filter, same as capture.skip_domains
 #
 # Token goes in ~/.config/scribe/config.yaml:

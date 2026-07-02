@@ -25,6 +25,9 @@ stars…) is a small file against the same `Source` interface.
   - `tags: []` — an **OR filter**: only ingest bookmarks carrying at least one
     of these tags (case-insensitive); empty ingests everything the scope
     returns. Composes with `scope` (e.g. `scope: all` + `tags: [kb]`).
+  - `public_only: false` — an authenticated pull sees private bookmarks too;
+    set `true` (or pass `--public-only`) to skip them, so private links don't
+    reach a KB that might be shared or promoted.
   - `skip_domains: []` — substring URL filter, same as `capture.skip_domains`.
 - **Token** is a secret: `integration_tokens.pinboard` in
   `~/.config/scribe/config.yaml` or `SCRIBE_PINBOARD_TOKEN` — never the
