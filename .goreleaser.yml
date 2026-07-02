@@ -166,6 +166,12 @@ brews:
       on every `brew upgrade scribe`. After an upgrade, `scribe capture`
       will start failing with "operation not permitted" — just re-run
       `scribe fda`. `scribe doctor` flags this situation explicitly.
+
+      Upgrades already run `scribe cron install --if-installed` for you
+      (see below), so any new or changed scheduled job lands automatically
+      if you'd previously opted into cron — no manual step needed unless
+      you hand-edited a plist yourself, in which case adopt it back with
+      `scribe cron install --force`.
     install: |
       bin.install "scribe"
     # custom_block is injected verbatim into the generated Formula. We use
@@ -179,6 +185,19 @@ brews:
         ohai "If iMessage capture was working before, macOS Full Disk Access"
         ohai "is now invalidated (TCC is keyed to the binary cdhash, not the"
         ohai "install path). Re-run:  scribe fda"
+
+        # Self-heal already-installed LaunchAgents so a changed job set in
+        # this release (e.g. v0.4.0 adding dream-hot) lands without a
+        # manual `scribe cron install`. --if-installed is a silent no-op
+        # on fresh installs (no plists yet — see cmd/scribe/cron.go) and
+        # only rewrites plists it can prove it authored itself. Homebrew's
+        # `system` raises on a nonzero exit, and a cron/launchctl hiccup
+        # here must never abort the brew install — rescue and warn instead.
+        begin
+          system bin/"scribe", "cron", "install", "--if-installed"
+        rescue => e
+          opoo "scribe cron install --if-installed failed: #{e.message} (run it manually)"
+        end
       end
     test: |
       assert_match "scribe", shell_output("#{bin}/scribe --help 2>&1")

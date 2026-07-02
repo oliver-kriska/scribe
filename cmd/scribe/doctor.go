@@ -724,6 +724,7 @@ func checkCron(root string) []check {
 			})
 		}
 	}
+	out = append(out, cronPlistDriftRow(jobs))
 	// KB-scope headline (issue #27 item 1): the agents above are a single
 	// KB-agnostic set (issue #26) shared by every registered KB, so a bare
 	// "loaded" is false confidence on a KB that isn't actually served.
@@ -741,6 +742,77 @@ func checkCron(root string) []check {
 		})
 	}
 	return out
+}
+
+// cronPlistDriftRow classifies every expected scribe job's installed plist
+// as ok / stale / hand-edited / missing (issue #54) by reusing the digest
+// stamp helpers from cron.go — pure file reads, never a launchctl call, so
+// this stays inside doctor's <1s deterministic budget. The per-job loaded/
+// missing rows above already tell "is launchd running this"; this row adds
+// the orthogonal question "does the plist content match what THIS binary
+// would generate right now" — the exact drift a `brew upgrade` or
+// `make install` with a changed job set leaves behind silently otherwise.
+func cronPlistDriftRow(jobs []cronJob) check {
+	var stale, handEdited, missing []string
+	for _, job := range jobs {
+		label := plistLabel(job.Name)
+		path := plistPath(job.Name)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			missing = append(missing, label)
+			continue
+		}
+		switch plistStampState(string(data), renderPlist(job)) {
+		case staleState:
+			stale = append(stale, label)
+		case handEditedState:
+			handEdited = append(handEdited, label)
+		case okState:
+			// current — no row contribution
+		}
+	}
+
+	if len(stale) == 0 && len(handEdited) == 0 && len(missing) == 0 {
+		return check{
+			Section: "cron", Name: "cron-plists", Status: statusOK,
+			Detail: fmt.Sprintf("all %d current", len(jobs)),
+		}
+	}
+
+	var parts []string
+	if len(missing) > 0 {
+		parts = append(parts, fmt.Sprintf("%d missing (%s)", len(missing), strings.Join(missing, ", ")))
+	}
+	if len(stale) > 0 {
+		parts = append(parts, fmt.Sprintf("%d stale (%s)", len(stale), strings.Join(stale, ", ")))
+	}
+	if len(handEdited) > 0 {
+		parts = append(parts, fmt.Sprintf("%d unstamped/hand-edited (%s)", len(handEdited), strings.Join(handEdited, ", ")))
+	}
+
+	// Existing user plists all predate stamping, so on a real machine
+	// running this for the first time every installed plist will report
+	// hand-edited (unstamped) even though nothing was actually hand
+	// edited — `install` treats "unstamped" and "hand-edited" alike on
+	// purpose (it can't tell them apart) and needs one --force run to
+	// adopt stamping. Say so explicitly instead of pointing at a fix that
+	// silently no-ops (plain `cron install` skips unstamped files).
+	fix := "scribe cron install"
+	nonMissing := len(jobs) - len(missing)
+	switch {
+	case len(handEdited) == 0:
+		// stale/missing only — plain install already self-heals both.
+	case nonMissing > 0 && len(handEdited) == nonMissing:
+		fix = "scribe cron install --force  (one-time adoption of stamped plists)"
+	default:
+		fix = "scribe cron install --force"
+	}
+
+	return check{
+		Section: "cron", Name: "cron-plists", Status: statusWarn,
+		Detail: strings.Join(parts, ", "),
+		Fix:    fix,
+	}
 }
 
 // cronScopeCheck answers the question the per-agent rows can't post-#26

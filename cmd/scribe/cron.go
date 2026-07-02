@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -306,8 +309,171 @@ func xmlEscape(s string) string {
 	return s
 }
 
+// ---- content stamping (issue #54) ----
+//
+// `cron install` embeds a `<!-- scribe:digest:sha256:<hex> -->` comment on
+// its own line right after the XML declaration of every plist it writes.
+// The digest covers the WHOLE plist with that one line normalized to a
+// fixed placeholder, so verifying a stamp never has to hash itself, and
+// "does this file match what the current binary would generate right now"
+// reduces to a single byte-for-byte comparison after both sides go through
+// the same normalization (see plistStampState). XML comments in the prolog
+// (between the `<?xml ...?>` declaration and the root element) are
+// standard XML — Apple's own DOCTYPE line lives in exactly that position —
+// so this needed no live launchctl load to trust; verified here by string
+// inspection only, per the hard rule against touching real LaunchAgents.
+const plistDigestPlaceholder = "<!-- scribe:digest: -->"
+
+// plistDigestLineRe matches the stamp comment scribe writes, capturing
+// whatever value follows `sha256:` — even a corrupted one — so a
+// hand-edited digest is caught as a mismatch instead of silently falling
+// through to "no stamp at all".
+var plistDigestLineRe = regexp.MustCompile(`(?m)^<!-- scribe:digest:sha256:(.*) -->\n?`)
+
+// extractPlistDigest returns the hex value embedded in content's stamp
+// comment, or ok=false when content has no scribe digest line at all.
+func extractPlistDigest(content string) (digest string, ok bool) {
+	m := plistDigestLineRe.FindStringSubmatch(content)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// normalizePlistDigest returns content with its digest comment line (if
+// any) replaced by the fixed placeholder, or the placeholder inserted at
+// the same position stampPlist uses — right after the XML declaration —
+// when content has no stamp yet. A stamped plist and a freshly rendered
+// (unstamped) one normalize to identical bytes iff they are otherwise
+// identical; that equality is the whole basis for stale/ok detection.
+func normalizePlistDigest(content string) string {
+	if plistDigestLineRe.MatchString(content) {
+		return plistDigestLineRe.ReplaceAllString(content, plistDigestPlaceholder+"\n")
+	}
+	return insertAfterFirstLine(content, plistDigestPlaceholder+"\n")
+}
+
+// insertAfterFirstLine inserts line right after content's first line (the
+// `<?xml version="1.0" ...?>` declaration for a rendered plist).
+func insertAfterFirstLine(content, line string) string {
+	idx := strings.Index(content, "\n")
+	if idx < 0 {
+		return content + "\n" + line
+	}
+	return content[:idx+1] + line + content[idx+1:]
+}
+
+// stampPlist takes a freshly rendered, unstamped plist (renderPlist's
+// output) and returns it with a digest comment inserted right after the
+// XML declaration. The digest is sha256 of the plist with that same line
+// normalized to plistDigestPlaceholder — see normalizePlistDigest.
+func stampPlist(content string) string {
+	normalized := normalizePlistDigest(content)
+	sum := sha256.Sum256([]byte(normalized))
+	digestLine := fmt.Sprintf("<!-- scribe:digest:sha256:%x -->\n", sum)
+	return strings.Replace(normalized, plistDigestPlaceholder+"\n", digestLine, 1)
+}
+
+// plistState classifies an installed plist against the content the
+// current binary would generate for the same job right now.
+type plistState int
+
+const (
+	okState         plistState = iota // scribe-stamped, content matches expected
+	staleState                        // scribe-stamped, content differs — safe to rewrite
+	handEditedState                   // stamp missing or doesn't match its own content — never auto-touched
+)
+
+// plistStampState classifies installed (a plist read off disk) against
+// expected (the UNSTAMPED plist renderPlist would generate right now for
+// the same job — current binary path, log paths, schedule). "authored" —
+// installed's embedded digest actually matches installed's own content —
+// is what separates a legitimately stale scribe-written plist (safe to
+// rewrite without --force) from a hand-edited or third-party one (never
+// auto-touched). Missing files are handled by the caller: this only
+// classifies content that exists.
+func plistStampState(installed, expected string) plistState {
+	digest, ok := extractPlistDigest(installed)
+	if !ok {
+		return handEditedState
+	}
+	normalizedInstalled := normalizePlistDigest(installed)
+	sum := sha256.Sum256([]byte(normalizedInstalled))
+	if hex.EncodeToString(sum[:]) != digest {
+		return handEditedState
+	}
+	if normalizedInstalled != normalizePlistDigest(expected) {
+		return staleState
+	}
+	return okState
+}
+
+// installAction is what `cron install` should do for one job's existing
+// on-disk plist (or lack of one). Factored out from CronInstallCmd.Run so
+// the decision — which never touches disk, launchctl, or the KB-binding
+// writeGlobalState chokepoint — is directly table-testable on its own,
+// independent of the throwaway-KB write refusal that makes exercising the
+// actual write path difficult from t.TempDir()-rooted tests.
+type installAction int
+
+const (
+	actionWrite          installAction = iota // no existing file, or --force: (over)write unconditionally
+	actionRefresh                             // stamped + un-edited but stale: rewrite without --force
+	actionSkipUpToDate                        // stamped + un-edited + matches expected: nothing to do
+	actionSkipHandEdited                      // stamp missing or invalid: needs --force
+)
+
+// cronInstallDecision decides what to do for one job given existing (the
+// current file content on disk, meaningful only when exists is true), raw
+// (this job's current UNSTAMPED renderPlist output — "expected"), and
+// whether --force was passed.
+func cronInstallDecision(existing string, exists bool, raw string, force bool) installAction {
+	if !exists || force {
+		return actionWrite
+	}
+	switch plistStampState(existing, raw) {
+	case okState:
+		return actionSkipUpToDate
+	case staleState:
+		return actionRefresh
+	default: // handEditedState
+		return actionSkipHandEdited
+	}
+}
+
+// anyScribeAgentInstalled reports whether at least one com.scribe.*.plist
+// exists in the LaunchAgents dir — the signal `cron install --if-installed`
+// uses to distinguish "user already opted into cron on this machine"
+// (proceed and self-heal) from "fresh install, never opted in" (silent
+// no-op). Pure file read: never launchctl, never mutation.
+func anyScribeAgentInstalled() bool {
+	agentsDir := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
+	entries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "com.scribe.") && strings.HasSuffix(e.Name(), ".plist") {
+			return true
+		}
+	}
+	return false
+}
+
 // guiDomain returns launchctl domain target for the current user.
 func guiDomain() string { return fmt.Sprintf("gui/%d", os.Getuid()) }
+
+// runLaunchctl is a package variable (pointing at realRunLaunchctl) purely
+// so cron install/uninstall tests can swap in a stub instead of shelling
+// out to a real launchctl — which would load/unload actual LaunchAgents on
+// whatever machine runs `go test`. Production code never reassigns it;
+// same pattern as runClaude in claude.go.
+var runLaunchctl = realRunLaunchctl
+
+func realRunLaunchctl(args ...string) (string, error) {
+	out, err := exec.Command("launchctl", args...).CombinedOutput() //nolint:noctx // launchctl IPC, fast
+	return string(out), err
+}
 
 // renderCrontab emits one crontab(5) line per scheduled invocation for `job`.
 // Returns nil if the job has no Calendar slots (e.g. a KeepAlive watcher) —
@@ -467,9 +633,8 @@ func probeLaunchAgent(domain, label, plistPath string) string {
 	if _, err := os.Stat(plistPath); err == nil {
 		state = "present"
 	}
-	out, _ := exec.Command("launchctl", "print", domain+"/"+label).CombinedOutput() //nolint:noctx // fast status probe, no cancellation needed
-	s := string(out)
-	if len(s) > 0 && !strings.Contains(s, "Could not find") && !strings.Contains(s, "could not find") {
+	out, _ := runLaunchctl("print", domain+"/"+label)
+	if len(out) > 0 && !strings.Contains(out, "Could not find") && !strings.Contains(out, "could not find") {
 		state = "loaded"
 	}
 	return state
@@ -498,11 +663,22 @@ func resolveScribeBinary() string {
 // ---- install ----
 
 type CronInstallCmd struct {
-	DryRun bool `help:"Print generated plists without writing or loading them."`
-	Force  bool `help:"Overwrite existing plists."`
+	DryRun      bool `help:"Print generated plists without writing or loading them."`
+	Force       bool `help:"Overwrite existing plists (including hand-edited/unstamped ones)."`
+	IfInstalled bool `help:"No-op unless scribe cron is already installed on this machine (brew post_install self-heal on upgrade)." name:"if-installed"`
 }
 
 func (c *CronInstallCmd) Run() error {
+	// --if-installed must be checked before kbDir(): it exists so brew's
+	// post_install (running from an arbitrary directory, not a KB
+	// checkout — see .goreleaser.yml) can call this unconditionally on
+	// every install AND upgrade without erroring on a fresh machine that
+	// never opted into cron. Pure file read, no KB context needed.
+	if c.IfInstalled && !anyScribeAgentInstalled() {
+		fmt.Println("cron not installed on this machine — nothing to refresh (use 'scribe cron install' to opt in)")
+		return nil
+	}
+
 	root, err := kbDir()
 	if err != nil {
 		return err
@@ -521,7 +697,7 @@ func (c *CronInstallCmd) Run() error {
 	if c.DryRun {
 		for _, job := range jobs {
 			fmt.Printf("=== %s (%s) ===\n", plistLabel(job.Name), job.Desc)
-			fmt.Println(renderPlist(job))
+			fmt.Println(stampPlist(renderPlist(job)))
 		}
 		return nil
 	}
@@ -551,14 +727,23 @@ func (c *CronInstallCmd) Run() error {
 
 	domain := guiDomain()
 	for _, job := range jobs {
-		plist := renderPlist(job)
+		raw := renderPlist(job)
 		path := plistPath(job.Name)
 		label := plistLabel(job.Name)
 
-		if _, err := os.Stat(path); err == nil && !c.Force {
-			fmt.Printf("skip %s (exists; use --force to overwrite)\n", label)
+		existing, statErr := os.ReadFile(path)
+		action := cronInstallDecision(string(existing), statErr == nil, raw, c.Force)
+
+		switch action {
+		case actionSkipUpToDate:
+			fmt.Printf("skip %s (up to date)\n", label)
+			continue
+		case actionSkipHandEdited:
+			fmt.Printf("skip %s (unstamped or hand-edited; use --force to overwrite)\n", label)
 			continue
 		}
+
+		plist := stampPlist(raw)
 
 		// LaunchAgent plists are machine-global state binding this
 		// machine's schedule to a KB root — route the write through the
@@ -569,13 +754,17 @@ func (c *CronInstallCmd) Run() error {
 		if err := writeGlobalState(root, false, path, []byte(plist), 0o644); err != nil {
 			return err
 		}
-		fmt.Printf("wrote %s\n", path)
+		if action == actionRefresh {
+			fmt.Printf("refresh %s (content changed)\n", label)
+		} else {
+			fmt.Printf("wrote %s\n", path)
+		}
 
 		// Boot out first (ignore errors) then bootstrap.
-		_ = exec.Command("launchctl", "bootout", domain+"/"+label).Run()                  //nolint:noctx // launchctl IPC, fast
-		out, err := exec.Command("launchctl", "bootstrap", domain, path).CombinedOutput() //nolint:noctx // launchctl IPC, fast
+		_, _ = runLaunchctl("bootout", domain+"/"+label)
+		out, err := runLaunchctl("bootstrap", domain, path)
 		if err != nil {
-			fmt.Printf("  bootstrap failed: %s\n  %s\n", err, strings.TrimSpace(string(out)))
+			fmt.Printf("  bootstrap failed: %s\n  %s\n", err, strings.TrimSpace(out))
 		} else {
 			fmt.Printf("  loaded into %s\n", domain)
 		}
@@ -634,7 +823,7 @@ func (c *CronUninstallCmd) Run() error {
 	for _, job := range jobs {
 		label := plistLabel(job.Name)
 		path := plistPath(job.Name)
-		_ = exec.Command("launchctl", "bootout", domain+"/"+label).Run() //nolint:noctx // launchctl IPC, fast
+		_, _ = runLaunchctl("bootout", domain+"/"+label)
 		if c.KeepFiles {
 			fmt.Printf("unloaded %s (plist kept)\n", label)
 			continue

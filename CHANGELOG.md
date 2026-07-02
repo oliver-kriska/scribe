@@ -5,6 +5,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 ## [Unreleased]
 
 ### Added
+- **Cron plists self-heal across upgrades.** `cron install` digest-stamps every
+  plist it writes; a scribe-authored plist whose content no longer matches what
+  the current binary would generate is refreshed without `--force`, while
+  unstamped or hand-edited files are never auto-touched. `scribe doctor` gains a
+  `cron-plists` drift row (ok/stale/hand-edited/missing per job), and the brew
+  formula's `post_install` runs the new `scribe cron install --if-installed` —
+  a silent no-op unless cron was already opted into — so `brew upgrade` picks up
+  new or changed scheduled jobs automatically. Existing installs need one
+  `scribe cron install --force` to adopt stamping. (#54)
 - **`scribe drop`** — validated drop-file authoring CLI. Agents (and humans)
   author well-formed drop files from any project without hand-rolling
   frontmatter; the scribe-kb skill and both handshake templates now point at it,
