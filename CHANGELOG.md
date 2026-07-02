@@ -40,6 +40,10 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   same-basename projects get unique display names. (#8)
 
 ### Fixed
+- `update_frontmatter` envelope actions tolerate the alternate merge-map keys
+  small local models invent (`set`/`fields`/`updates`) instead of erroring with
+  "empty frontmatter map"; the ollama dream prompts also now spell out the
+  required shape. Found on the first real `dream --hot` run (gemma3:12b). (#53)
 - Regenerated `_index.md` synopsis lines mask credential-shaped strings in
   team KBs, so a reindex can never resurface a value the commit gate held. (#5)
 - `scribe doctor` now surfaces held stop-word files (previously only visible

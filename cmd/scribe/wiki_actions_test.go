@@ -1,15 +1,109 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// TestWikiActionUnmarshalAltFrontmatterKeys pins the tolerant-decode
+// seam for update_frontmatter shape drift (#53): alternate merge-map
+// keys small local models invent are folded into Frontmatter, but only
+// when the canonical key is absent/empty and only for that op.
+func TestWikiActionUnmarshalAltFrontmatterKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want map[string]any
+	}{
+		{
+			name: "canonical key untouched",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md","frontmatter":{"updated":"2026-07-02"}}`,
+			want: map[string]any{"updated": "2026-07-02"},
+		},
+		{
+			name: "set folded",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md","set":{"updated":"2026-07-02"}}`,
+			want: map[string]any{"updated": "2026-07-02"},
+		},
+		{
+			name: "fields folded",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md","fields":{"updated":"2026-07-02"}}`,
+			want: map[string]any{"updated": "2026-07-02"},
+		},
+		{
+			name: "updates folded",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md","updates":{"updated":"2026-07-02"}}`,
+			want: map[string]any{"updated": "2026-07-02"},
+		},
+		{
+			name: "non-empty canonical wins over alternate",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md","frontmatter":{"updated":"keep"},"set":{"updated":"lose"}}`,
+			want: map[string]any{"updated": "keep"},
+		},
+		{
+			name: "empty canonical plus alternate folds",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md","frontmatter":{},"set":{"updated":"2026-07-02"}}`,
+			want: map[string]any{"updated": "2026-07-02"},
+		},
+		{
+			name: "empty alternate stays empty",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md","set":{}}`,
+			want: nil,
+		},
+		{
+			name: "non-object alternate ignored",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md","set":"updated=2026-07-02"}`,
+			want: nil,
+		},
+		{
+			name: "other op never folds",
+			in:   `{"op":"append","path":"wiki/a.md","content":"x","set":{"updated":"2026-07-02"}}`,
+			want: nil,
+		},
+		{
+			name: "truly empty stays empty",
+			in:   `{"op":"update_frontmatter","path":"wiki/a.md"}`,
+			want: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var a WikiAction
+			if err := json.Unmarshal([]byte(tc.in), &a); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if tc.want == nil {
+				if len(a.Frontmatter) != 0 {
+					t.Fatalf("expected empty Frontmatter, got %v", a.Frontmatter)
+				}
+				return
+			}
+			if !reflect.DeepEqual(a.Frontmatter, tc.want) {
+				t.Fatalf("Frontmatter = %v, want %v", a.Frontmatter, tc.want)
+			}
+		})
+	}
+}
+
+// TestParseEnvelopeAltFrontmatterKeyEndToEnd drives the seam through
+// parseEnvelope the way a real dream --hot response arrives.
+func TestParseEnvelopeAltFrontmatterKeyEndToEnd(t *testing.T) {
+	env, err := parseEnvelope(`{"actions":[{"op":"update_frontmatter","path":"wiki/a.md","set":{"updated":"2026-07-02"}}]}`)
+	if err != nil {
+		t.Fatalf("parseEnvelope: %v", err)
+	}
+	if got := env.Actions[0].Frontmatter["updated"]; got != "2026-07-02" {
+		t.Fatalf("folded frontmatter = %v, want updated=2026-07-02", env.Actions[0].Frontmatter)
+	}
+}
 
 // Phase 4B test scope: action envelope parsing, path validation, and
 // every op (create / append / replace_section / update_frontmatter)

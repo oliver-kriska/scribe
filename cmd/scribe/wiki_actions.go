@@ -146,6 +146,53 @@ type WikiAction struct {
 	Frontmatter map[string]any `json:"frontmatter,omitempty"`
 }
 
+// wikiActionAlias breaks UnmarshalJSON recursion — it has WikiAction's
+// fields but not its methods.
+type wikiActionAlias WikiAction
+
+// altFrontmatterKeys are the field names small local models invent for
+// update_frontmatter's merge map instead of the schema's "frontmatter"
+// (observed: gemma3:12b in the first real dream --hot run, issue #53).
+// Checked in order; first non-empty object wins.
+var altFrontmatterKeys = []string{"set", "fields", "updates"}
+
+// UnmarshalJSON is a tolerant-decode seam for update_frontmatter shape
+// drift, in the same spirit as the absorb pass-2 seams: a well-formed
+// action passes through untouched, but when the canonical "frontmatter"
+// key is missing or empty, the alternate keys in altFrontmatterKeys are
+// consulted before the apply-time "empty frontmatter map" error fires.
+// Folding is best-effort — a non-object alternate value is ignored, and
+// a genuinely-empty action still surfaces as an apply error.
+func (a *WikiAction) UnmarshalJSON(data []byte) error {
+	var alias wikiActionAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*a = WikiAction(alias)
+	if a.Op != "update_frontmatter" || len(a.Frontmatter) > 0 {
+		return nil
+	}
+	// Best-effort re-decode into a raw map; on failure raw stays nil
+	// and the loop below finds nothing — the canonical decode above
+	// already succeeded, so this never fails the action.
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(data, &raw)
+	for _, key := range altFrontmatterKeys {
+		rm, ok := raw[key]
+		if !ok {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal(rm, &m); err != nil || len(m) == 0 {
+			continue
+		}
+		a.Frontmatter = m
+		logMsg("envelope", "update_frontmatter %s: folded alternate key %q into frontmatter", a.Path, key)
+		return nil
+	}
+	return nil
+}
+
 // ApplyOptions controls how the executor processes an envelope. Flags
 // here are the failure-mode knobs callers tune per pass:
 //

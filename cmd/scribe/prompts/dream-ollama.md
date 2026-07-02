@@ -52,7 +52,7 @@ You are the LLM consolidation step inside Go's weekly Dream orchestrator. Emit o
 
 - ALWAYS include one `log_append` in meta, even when actions is empty (`"actions": []`).
 - Path rooted in: wiki/, projects/, research/, solutions/, tools/, decisions/, patterns/, ideas/, people/, sessions/.
-- Use `update_frontmatter` for date bumps (cheapest action).
+- Use `update_frontmatter` for date bumps (cheapest action). Its `frontmatter` value MUST be a non-empty object, e.g. `{"updated": "{{TODAY}}"}` — the key is named `frontmatter`, never `set`/`fields`/`updates`. Nothing to set → omit the action entirely.
 - Use `append` for decay markers — content `"\n<!-- decay-candidate {{TODAY}} -->\n"` — and ONLY on a path listed verbatim under "Stale candidates" above. If that list is empty, emit NO decay append. (The executor refuses a decay marker on any doc updated within 60 days, so an off-list guess is dropped.)
 - Use `replace_section` to swap a body without rewriting frontmatter.
 - Use `create` for stub articles (entity referenced in 3+ articles but no wiki page yet).
