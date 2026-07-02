@@ -143,6 +143,7 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
+	defer startHeartbeat(ctx, op)()
 	err := cmd.Run()
 	stdoutStr := stdoutBuf.String()
 	stderrStr := stderrBuf.String()
@@ -500,6 +501,7 @@ func (o *ollamaProvider) generate(ctx context.Context, prompt string, jsonMode b
 	// per-op context is both correct and more honest about which
 	// knob the user should tune.
 	client := &http.Client{}
+	defer startHeartbeat(ctx, op)()
 	resp, err := client.Do(req)
 	if err != nil {
 		entry.OK = false

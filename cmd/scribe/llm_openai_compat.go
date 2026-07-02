@@ -272,6 +272,7 @@ func (p *openaiCompatProvider) generate(ctx context.Context, prompt string, json
 		appendCostEntry(p.root, entry)
 	}()
 
+	defer startHeartbeat(ctx, op)()
 	out, resp, err := p.doRequest(ctx, prompt, jsonMode)
 	if err != nil {
 		entry.OK = false

@@ -86,6 +86,7 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 	cmd.Dir = root
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
+	defer startHeartbeat(ctx, op)()
 	err := cmd.Run()
 	stdoutStr := stdoutBuf.String()
 	stderrStr := stderrBuf.String()
