@@ -223,6 +223,49 @@ func TestPullSourceTagFilterOverride(t *testing.T) {
 	}
 }
 
+func TestPullSourcePublicOnly(t *testing.T) {
+	// public_only: true drops items marked Private; public items pass.
+	root := testKB(t, "integrations:\n  fake:\n    public_only: true\n")
+	src := &fakeSource{name: "fake", items: []SourceItem{
+		{URL: "https://pub.com", ID: "p", Title: "p"},
+		{URL: "https://priv.com", ID: "q", Title: "q", Private: true},
+	}}
+	n, err := pullSource(root, src, FetchOpts{}, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("queued %d, want 1 (private dropped)", n)
+	}
+	files := inboxFiles(t, root)
+	if len(files) != 1 || !strings.Contains(files[0], "pub-com") {
+		t.Errorf("inbox = %v, want only the public entry", files)
+	}
+	// Private item is NOT marked seen (flipping public_only off re-includes it).
+	st, _ := loadSourceState(sourceStatePath(root, "fake"))
+	for _, id := range st.Seen {
+		if id == "q" {
+			t.Error("private item marked seen; should stay eligible")
+		}
+	}
+}
+
+func TestPullSourcePublicOnlyOverride(t *testing.T) {
+	// --public-only forces the filter on even when config leaves it false.
+	root := testKB(t, "")
+	src := &fakeSource{name: "fake", items: []SourceItem{
+		{URL: "https://pub.com", ID: "p", Title: "p"},
+		{URL: "https://priv.com", ID: "q", Title: "q", Private: true},
+	}}
+	n, err := pullSource(root, src, FetchOpts{PublicOnly: true}, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("queued %d, want 1 (--public-only drops private)", n)
+	}
+}
+
 func TestPullSourceNoTagFilterKeepsAll(t *testing.T) {
 	root := testKB(t, "")
 	src := &fakeSource{name: "fake", items: []SourceItem{

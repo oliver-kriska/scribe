@@ -165,6 +165,7 @@ type pinboardPost struct {
 	Tags        string `json:"tags"`        // space-separated
 	Time        string `json:"time"`        // ISO 8601
 	ToRead      string `json:"toread"`      // "yes" | "no"
+	Shared      string `json:"shared"`      // "yes" (public) | "no" (private)
 	Hash        string `json:"hash"`        // stable per-URL id
 }
 
@@ -186,6 +187,9 @@ func (b pinboardPost) toItem() (SourceItem, bool) {
 		CreatedAt: ts,
 		ID:        id,
 		Unread:    b.ToRead == "yes",
+		// Pinboard omits `shared` in some payloads; treat only an explicit
+		// "no" as private so a missing field defaults to public (no over-skip).
+		Private: b.Shared == "no",
 	}, true
 }
 

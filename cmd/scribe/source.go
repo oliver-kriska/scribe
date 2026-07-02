@@ -42,15 +42,19 @@ type SourceItem struct {
 	CreatedAt time.Time // when the bookmark was saved (best-effort)
 	ID        string    // stable dedup key (provider hash; falls back to URL)
 	Unread    bool
+	// Private marks a non-public bookmark. Sources without a public/private
+	// notion leave it false, so the public_only filter is a no-op for them.
+	Private bool
 }
 
 // FetchOpts carries the per-run knobs a Source honors. Empty Scope means
 // "use the configured default". Tags is the per-run override of the OR tag
 // filter the driver applies (empty → use the integration's configured tags).
 type FetchOpts struct {
-	Scope string   // "recent+unread" | "unread" | "all" | ""
-	Tags  []string // OR filter override; empty = use config
-	Force bool     // bypass the source's cheap unchanged-since-last-run probe
+	Scope      string   // "recent+unread" | "unread" | "all" | ""
+	Tags       []string // OR filter override; empty = use config
+	PublicOnly bool     // force-skip private bookmarks for this run
+	Force      bool     // bypass the source's cheap unchanged-since-last-run probe
 }
 
 // sourceRegistry maps integration name → adapter. Adding an adapter is one
@@ -177,6 +181,8 @@ func pullSource(root string, src Source, opts FetchOpts, maxItems int, dryRun bo
 	// OR tag filter: a per-run --tag override wins, else the integration's
 	// configured tags. Empty → keep everything the scope returned.
 	tagFilter := effectiveTags(opts.Tags, integrationTags(cfg, src.Name()))
+	// public_only: skip private bookmarks. --public-only forces it on for a run.
+	publicOnly := opts.PublicOnly || integrationPublicOnly(cfg, src.Name())
 	inbox := filepath.Join(root, "output", "inbox")
 
 	queued := 0
@@ -197,6 +203,9 @@ func pullSource(root string, src Source, opts FetchOpts, maxItems int, dryRun bo
 		if !tagFilter.allows(it.Tags) {
 			// Same reasoning as skip: not marked seen, so widening the filter
 			// later (or --force / --all-history) re-includes it.
+			continue
+		}
+		if publicOnly && it.Private {
 			continue
 		}
 		if maxItems > 0 && queued >= maxItems {
@@ -297,6 +306,15 @@ func integrationTags(cfg *ScribeConfig, name string) []string {
 	return cfg.Integrations[name].Tags
 }
 
+// integrationPublicOnly reports whether an integration is configured to skip
+// private bookmarks.
+func integrationPublicOnly(cfg *ScribeConfig, name string) bool {
+	if cfg == nil || cfg.Integrations == nil {
+		return false
+	}
+	return cfg.Integrations[name].PublicOnly
+}
+
 // tagSet is a case-insensitive OR filter over item tags. An empty set allows
 // everything (no filtering).
 type tagSet map[string]bool
@@ -342,6 +360,7 @@ type PullCmd struct {
 	Scope      string   `help:"Override scope for this run: recent+unread|unread|all." enum:"recent+unread,unread,all," default:""`
 	AllHistory bool     `help:"Backfill the entire archive this run (≡ --scope all). Pair with --max on a first big pull." name:"all-history"`
 	Tag        []string `help:"Only ingest bookmarks carrying at least one of these tags (repeatable, OR). Overrides the integration's configured tags for this run."`
+	PublicOnly bool     `help:"Skip private bookmarks for this run (forces public_only on)." name:"public-only"`
 	Force      bool     `help:"Bypass the source's cheap unchanged-since-last-run probe."`
 	Max        int      `help:"Cap items queued this run (0 = no limit). Useful to pace a first --all-history backfill." default:"0"`
 	List       bool     `help:"List integrations and their status; pull nothing."`
@@ -361,7 +380,7 @@ func (c *PullCmd) Run() error {
 	if c.AllHistory {
 		scope = "all"
 	}
-	opts := FetchOpts{Scope: scope, Tags: c.Tag, Force: c.Force || c.AllHistory}
+	opts := FetchOpts{Scope: scope, Tags: c.Tag, PublicOnly: c.PublicOnly, Force: c.Force || c.AllHistory}
 
 	var srcs []Source
 	if c.Source != "" {
