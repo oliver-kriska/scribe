@@ -55,7 +55,7 @@ Emit EXACTLY ONE JSON object to stdout. No prose before or after. No markdown fe
 3. **Frontmatter (every `create` content must start with YAML between `---` lines):**
    - `title`, `type`, `created: {{TODAY}}`, `updated: {{TODAY}}`, `domain`, `confidence` (low|medium|high), `tags` (≥3, kebab-case), `related` (array of `"[[Title]]"` strings, brackets inside the string), `sources: [{{RAW_FILE}}]`.
 
-4. **Verbatim preservation.** For load-bearing claims (numerics, named decisions, non-obvious trade-offs, exact configs):
+4. **Verbatim preservation.** For load-bearing claims (numerics, named decisions, non-obvious trade-offs, exact configs, approaches tried and rejected and why, failure conditions for the recommended approach):
    ```markdown
    > "<exact quote>"
    > — Source: {{RAW_FILE}}

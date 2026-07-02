@@ -16,7 +16,7 @@ You are extracting knowledge from one directory of project **{{PROJECT}}** via t
 
 ## What to extract
 
-For this directory: decisions, architecture patterns, learnings, and tool evaluations that would warrant their own wiki article. Skip routine code, build artifacts, and conversational summaries.
+For this directory: decisions, architecture patterns, learnings, and tool evaluations that would warrant their own wiki article. Skip routine code, build artifacts, and conversational summaries. Failure traces (when present): what was tried and didn't work, and why; the conditions under which the chosen approach breaks. Not just the final fix — include this alongside it, not instead of it. Skip if the source has nothing of the kind.
 
 ## Output schema
 

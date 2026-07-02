@@ -39,6 +39,7 @@ Extract project-specific knowledge from one Claude Code session for the project 
 ## Rules
 
 - Emit one sessions_log_append per session id.
+- Note failed approaches + why, and known failure conditions, when the source states them — not just the fix.
 - Empty actions list is legal: `"actions": []`.
 - Frontmatter required keys: title, type, created: {{TODAY}}, updated: {{TODAY}}, domain: general, confidence (low|medium|high), tags (≥3 kebab-case), related (array of "[[Title]]" strings), sources (array containing "session:<id>").
 - Allowed `type` values (exactly one): decision, pattern, solution, research, tool, project, idea, person. The directory MUST match the type — decisions/→decision, patterns/→pattern, solutions/→solution, research/→research, tools/→tool, ideas/→idea, people/→person.

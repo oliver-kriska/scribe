@@ -20,6 +20,7 @@ You are extracting knowledge from one Claude Code session for the project at `{{
 - Project-specific decisions, patterns, learnings discovered in this session.
 - Architecture or tool choices unique to this project.
 - Bugs found + their root causes.
+- Failure traces (when present): what was tried and didn't work, and why; the conditions under which the chosen approach breaks. Not just the final fix — include this alongside it, not instead of it. Skip if the source has nothing of the kind.
 
 **Skip** conversation summaries and routine code changes.
 

@@ -44,6 +44,7 @@ You are absorbing one raw article into a wiki. Emit a `WikiActionEnvelope` with 
   - `related:` array of `"[[Title]]"` strings (brackets INSIDE the string)
   - `sources:` array containing `{{RAW_FILE}}`
 - Body: lead with one-line definition, then sections. Quote load-bearing claims verbatim using markdown blockquotes with `— Source: {{RAW_FILE}}`.
+- Note failed approaches + why, and known failure conditions, when the source states them — not just the fix.
 - ≤150 lines per article. If you need more, split into more `create` actions.
 
 - One topic = one article: never two `create` ops with near-identical titles or slugs. If a natural home for a brief claim exists in an article visible in your context, `append` to it instead of creating a parallel page.

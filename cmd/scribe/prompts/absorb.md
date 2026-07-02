@@ -28,6 +28,7 @@ The wiki layer exists for **structure** (typed entity pages, wikilinks, backlink
    - numeric evidence ("49% reduction in failed retrievals")
    - named decisions ("we chose Postgres over SQLite because …")
    - non-obvious trade-offs or constraints
+   - approaches the source says were tried and abandoned, and why, or the conditions under which the recommended approach breaks
    - principles quoted verbatim from the author
    - specific commands, config values, API shapes
    Do NOT quote background context that embeddings can trivially surface from raw. Quote only what would be hard to re-derive from a summary.

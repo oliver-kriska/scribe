@@ -125,3 +125,4 @@ See `scribe --help` for the full command tree.
 10. **Rolling memory files** use `rolling: true` frontmatter and append-newest-first.
 11. **Reality wins** — fix contradicted articles in place, don't carry both versions.
 12. **No knowledge deletion** — the KB is append-only; mark superseded, never delete.
+13. **Capture failure traces** — when a source shows what was tried and rejected (and why), or the conditions under which a solution breaks, record that alongside the fix. A reader avoiding a known dead end is often more valuable than the fix itself. This is a guideline: don't pad an article with a failure-trace section it doesn't need.

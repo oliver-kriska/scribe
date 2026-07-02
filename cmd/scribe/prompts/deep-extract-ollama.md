@@ -34,6 +34,7 @@ Extract knowledge from one directory of project **{{PROJECT}}**.
 ## Rules
 
 - Empty actions legal: `"actions": []`.
+- Note failed approaches + why, and known failure conditions, when the source states them — not just the fix.
 - Frontmatter: title, type, created: {{TODAY}}, updated: {{TODAY}}, domain: {{DOMAIN}}, confidence (low|medium|high), tags (≥3 kebab-case), related (array of "[[Title]]" strings), sources (array containing "{{P_PATH}}/{{REL_DIR}}").
 - Path rooted in wiki/, projects/, decisions/, patterns/, solutions/, tools/, research/, ideas/, people/, sessions/.
 - NEVER target a file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.

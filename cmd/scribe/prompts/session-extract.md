@@ -9,7 +9,7 @@ Related sessions from the same project (already extracted or being extracted in 
 
 For each session:
 1. Use ccrider MCP tool get_session_messages to read the session content
-2. Identify extractable knowledge: decisions with reasoning, architecture patterns, research findings, tool evaluations, lessons learned
+2. Identify extractable knowledge: decisions with reasoning, architecture patterns, research findings, tool evaluations, lessons learned. When the source documents a debugging or decision process, also capture what was tried and rejected (and why) and the conditions under which the chosen approach breaks — not just the fix or verdict; a reader avoiding a known dead end is often more valuable than the fix itself. This is a guideline, not a required section — skip it when the source has no failed attempts or known failure conditions to report.
 2.5. Research before creating: for each candidate new article, Grep {{KB_DIR}}/wiki/_index.md for the candidate title's distinctive words and Grep the content dirs for 2-3 topic keywords. On a match, update the existing article (new section, cross-reference, extended `sources:`) and reuse its exact `title:` in wikilinks; create only when the search comes back empty
 3. Write or update wiki articles in {{KB_DIR}} following frontmatter conventions
 4. Set sources to include session:{session_id}

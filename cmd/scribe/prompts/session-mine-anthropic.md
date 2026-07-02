@@ -23,6 +23,7 @@ Pull only the **non-obvious, reusable** knowledge:
 - research findings with data (numerics, benchmarks, measured outcomes)
 - tool evaluations (which one, why, what alternatives)
 - lessons learned (debug discoveries, surprising behaviors)
+- failure traces (when present): what was tried and didn't work, and why; conditions under which the chosen approach breaks — not just the final fix, include it alongside
 
 **Skip:** conversation summaries, routine code changes, transient debug noise, tool-call mechanics.
 

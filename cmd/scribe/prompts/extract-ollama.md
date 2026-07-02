@@ -46,6 +46,7 @@ Extract reusable knowledge from project **{{PROJECT}}** (domain `{{DOMAIN}}`) in
 - `log_append` ALWAYS included.
 - `rolling_memory_append` only when there's a genuine new learning or decision (not a summary of existing wiki content). Valid `target` values: `learnings`, `decisions-log`.
 - Do NOT extract file summaries, code listings, or test scaffolding — extract the non-obvious *reusable* knowledge only.
+- Note failed approaches + why, and known failure conditions, when the source states them — not just the fix.
 - One topic per article. If a file mentions three distinct decisions, that's three `create` actions, not one combined.
 - NEVER target a file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 

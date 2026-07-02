@@ -19,7 +19,7 @@ Extract reusable knowledge from a Claude Code session transcript. Emit a `WikiAc
 
 ## What to extract (be ruthless — skip noise)
 
-KEEP: decisions with reasoning, architecture patterns, research findings with numerics, tool evaluations, debug lessons.
+KEEP: decisions with reasoning, architecture patterns, research findings with numerics, tool evaluations, debug lessons, failed approaches + why (when stated).
 SKIP: conversation summaries, routine code changes, transient debug noise.
 
 ## Output schema
