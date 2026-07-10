@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -75,6 +76,62 @@ func (x xSource) Configured(cfg *ScribeConfig) (bool, string) {
 		}
 	}
 	return true, ""
+}
+
+// Setup is the guided checklist behind `scribe pull x --setup`. X is the one
+// integration whose setup spans a developer account, an OAuth app, prepaid
+// billing, and a separate CLI — this re-checks each prerequisite in
+// dependency order, prints the exact fix for the first failing step, and
+// finishes with a single live /2/users/me call (one owned read, ~$0.001) to
+// prove auth end-to-end. Offline checks run first so the network — and the
+// meter — is only touched once everything local passes.
+func (x xSource) Setup(ctx context.Context, cfg *ScribeConfig, out io.Writer) error {
+	if ic, ok := integrationConfig(cfg, "x"); !ok || !ic.Enabled {
+		fmt.Fprintln(out, "✗ integrations.x is not enabled — add to scribe.yaml:")
+		fmt.Fprintln(out, "      integrations:")
+		fmt.Fprintln(out, "        x:")
+		fmt.Fprintln(out, "          enabled: true")
+		return errSetupIncomplete("x")
+	}
+	fmt.Fprintln(out, "✓ integrations.x.enabled in scribe.yaml")
+
+	if _, err := exec.LookPath("xurl"); err != nil {
+		fmt.Fprintln(out, "✗ xurl not on PATH — install X's official API CLI:")
+		fmt.Fprintln(out, "      brew install --cask xdevplatform/tap/xurl")
+		fmt.Fprintln(out, "      # or: go install github.com/xdevplatform/xurl@latest")
+		return errSetupIncomplete("x")
+	}
+	fmt.Fprintln(out, "✓ xurl on PATH")
+
+	if home, err := os.UserHomeDir(); err == nil {
+		if _, statErr := os.Stat(filepath.Join(home, ".xurl")); statErr != nil {
+			fmt.Fprintln(out, "✗ no ~/.xurl — xurl has never authenticated. One-time setup:")
+			fmt.Fprintln(out, "    1. developer.x.com → create a Project + App; in the app's user")
+			fmt.Fprintln(out, "       authentication settings enable OAuth 2.0, redirect URI")
+			fmt.Fprintln(out, "       http://localhost:8080/callback, scopes bookmark.read")
+			fmt.Fprintln(out, "       tweet.read users.read offline.access")
+			fmt.Fprintln(out, "    2. add a few dollars of prepaid credit (reads bill $0.001 each)")
+			fmt.Fprintln(out, "    3. xurl auth apps add scribe --client-id YOUR_ID --client-secret YOUR_SECRET")
+			fmt.Fprintln(out, "    4. xurl auth oauth2 --app scribe   # one-time browser consent")
+			return errSetupIncomplete("x")
+		}
+		fmt.Fprintln(out, "✓ ~/.xurl present (xurl has authenticated before)")
+	}
+
+	fmt.Fprintln(out, "→ live check: GET /2/users/me (one owned read, ~$0.001)")
+	body, err := x.get(ctx, "/2/users/me")
+	if err != nil {
+		fmt.Fprintf(out, "✗ live check failed: %v\n", err)
+		return errSetupIncomplete("x")
+	}
+	var resp xUserResponse
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ID == "" {
+		fmt.Fprintf(out, "✗ live check returned no user object (decode error: %v)\n", err)
+		return errSetupIncomplete("x")
+	}
+	fmt.Fprintf(out, "✓ authenticated as @%s (id %s)\n", resp.Data.Username, resp.Data.ID)
+	fmt.Fprintln(out, "ready — next: scribe pull x -n   # dry-run: shows what would be queued")
+	return nil
 }
 
 // xCursor is the opaque per-source cursor persisted between runs. user_id is

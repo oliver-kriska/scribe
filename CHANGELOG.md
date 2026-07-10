@@ -63,6 +63,11 @@ stars…) is a small file against the same `Source` interface.
     `output/inbox/`.
   - **Folders skipped in v1** — X's bookmark-folder API is currently broken
     (20-item cap, rejects pagination).
+  - **`scribe pull x --setup`** — guided one-time setup checklist: verifies
+    each prerequisite in order (config → xurl on PATH → `~/.xurl` auth) with
+    the exact fix printed at the first failure, then proves auth end-to-end
+    with a single ~$0.001 live call. X's developer-account + prepaid-billing
+    onboarding can't be automated away, so scribe walks you through it instead.
   - **`xurl` is an optional tool** (the `fzf` pattern): when it's missing or
     unauthenticated the `x` adapter soft-skips with a one-line install/auth hint
     instead of failing the run. No `scope`/`public_only` (those are Pinboard

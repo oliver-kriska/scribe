@@ -406,6 +406,15 @@ API CLI — so scribe never implements OAuth or stores an X token. Unlike
 Pinboard, **no credential goes into scribe's config at all**: `xurl` owns the
 whole OAuth 2.0 flow and keeps the tokens in `~/.xurl`.
 
+The setup below is more involved than Pinboard's single token — X requires a
+developer account and prepaid billing, and there's no way around that. At any
+point, run the guided checklist and it tells you exactly which step you're on
+and what to do next:
+
+```sh
+scribe pull x --setup    # verifies each prerequisite; ends with one ~$0.001 live auth check
+```
+
 **1. One-time X setup.** This adapter talks to the real X API, so it needs a
 developer account and a trickle of pay-per-use credit:
 
@@ -457,6 +466,7 @@ adapter ignores them if present.
 **4. Run it** (same commands as any adapter):
 
 ```sh
+scribe pull x --setup                 # guided checklist: every prerequisite + live auth check
 scribe pull --list                    # integrations + status (configured? last pull?)
 scribe pull x -n                      # dry-run: show what WOULD be queued, write nothing
 scribe pull x                         # pull bookmarks into output/inbox/

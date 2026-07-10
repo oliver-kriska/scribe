@@ -356,7 +356,8 @@ capture:
 #     enabled: true           # No token here — auth lives entirely in `xurl` (X's
 #                             # API CLI): install it, run `xurl auth oauth2` once
 #                             # (browser), and tokens persist in ~/.xurl for
-#                             # headless cron. See README "Pull integrations".
+#                             # headless cron. `scribe pull x --setup` walks the
+#                             # whole chain. See README "Pull integrations".
 #     tags: []                # OR filter matched against each tweet's hashtags
 #                             # (case-insensitive, bare form: "golang" not
 #                             # "#golang"); empty = all. Most tweets carry no

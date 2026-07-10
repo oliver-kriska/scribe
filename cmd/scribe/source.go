@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,6 +33,23 @@ type Source interface {
 	// resolve their own config (scope defaults, token) off cfg. The tag
 	// filter and skip_domains are applied generically by the driver afterward.
 	Fetch(ctx context.Context, cfg *ScribeConfig, prev json.RawMessage, opts FetchOpts) (items []SourceItem, next json.RawMessage, err error)
+}
+
+// setupGuider is an optional Source extension behind `scribe pull <source>
+// --setup`: a guided one-time checklist for integrations whose setup spans
+// more than pasting a token. Implementations re-check each prerequisite in
+// dependency order, print a ✓/✗ line per step with the exact fix for the
+// first failure, and may end with one cheap live call to prove auth
+// end-to-end. Offline checks must come first so the network (and any meter)
+// is only touched once everything local passes.
+type setupGuider interface {
+	Setup(ctx context.Context, cfg *ScribeConfig, out io.Writer) error
+}
+
+// errSetupIncomplete keeps `pull --setup` honest for scripts: the checklist
+// text explains the fix; the non-zero exit reports that setup isn't done.
+func errSetupIncomplete(name string) error {
+	return fmt.Errorf("%s: setup incomplete — fix the ✗ step above and re-run", name)
 }
 
 // SourceItem is one normalized bookmark from any Source.
@@ -400,6 +419,7 @@ type PullCmd struct {
 	Max        int      `help:"Cap items queued this run (0 = no limit). Useful to pace a first --all-history backfill." default:"0"`
 	List       bool     `help:"List integrations and their status; pull nothing."`
 	DryRun     bool     `help:"Print what would be queued without writing." short:"n"`
+	Setup      bool     `help:"Guided one-time setup checklist for one integration: verifies each prerequisite, prints the exact fix for the first failure; pulls nothing."`
 }
 
 func (c *PullCmd) Run() error {
@@ -409,6 +429,9 @@ func (c *PullCmd) Run() error {
 	}
 	if c.List {
 		return listIntegrations(root)
+	}
+	if c.Setup {
+		return runSetup(root, c.Source)
 	}
 
 	scope := c.Scope
@@ -442,6 +465,26 @@ func (c *PullCmd) Run() error {
 	}
 	logMsg("pull", "done: %d item(s) queued across %d integration(s)", total, len(srcs))
 	return firstErr
+}
+
+// runSetup dispatches `pull <source> --setup` to the source's guided
+// checklist. Sources without one (Pinboard's setup is a single token) point
+// at the README instead.
+func runSetup(root, name string) error {
+	if name == "" {
+		return errors.New("--setup needs an integration name, e.g. `scribe pull x --setup`")
+	}
+	s, ok := sourceRegistry[name]
+	if !ok {
+		return fmt.Errorf("unknown integration %q (known: %s)", name, strings.Join(sourceNames(), ", "))
+	}
+	g, ok := s.(setupGuider)
+	if !ok {
+		return fmt.Errorf("%s has no guided setup — see the README's Pull integrations section", name)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return g.Setup(ctx, loadConfig(root), os.Stdout)
 }
 
 // listIntegrations prints each registered adapter with whether it is

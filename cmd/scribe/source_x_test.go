@@ -69,6 +69,66 @@ func TestXConfiguredGates(t *testing.T) {
 	}
 }
 
+// TestXSetupChecklist walks `pull x --setup` through every failure step in
+// dependency order, then the happy path, asserting each stage prints the
+// exact fix and returns non-nil until the live check passes. t.Setenv state
+// (PATH, HOME) accumulates intentionally — each stage builds on the last.
+func TestXSetupChecklist(t *testing.T) {
+	x := xSource{}
+	ctx := context.Background()
+	var buf bytes.Buffer
+
+	// 1. integration not enabled → yaml snippet.
+	if err := x.Setup(ctx, &ScribeConfig{}, &buf); err == nil || !strings.Contains(buf.String(), "enabled: true") {
+		t.Errorf("setup(disabled): err=%v out=%q, want error + yaml fix", err, buf.String())
+	}
+
+	// 2. enabled but xurl missing → install command.
+	buf.Reset()
+	t.Setenv("PATH", t.TempDir())
+	if err := x.Setup(ctx, xTestCfg(), &buf); err == nil || !strings.Contains(buf.String(), "brew install --cask xdevplatform/tap/xurl") {
+		t.Errorf("setup(no xurl): err=%v out=%q, want error + install command", err, buf.String())
+	}
+
+	// 3. xurl present but never authenticated → dev-account walkthrough.
+	buf.Reset()
+	fakeXurlOnPath(t)
+	t.Setenv("HOME", t.TempDir())
+	if err := x.Setup(ctx, xTestCfg(), &buf); err == nil ||
+		!strings.Contains(buf.String(), "developer.x.com") ||
+		!strings.Contains(buf.String(), "xurl auth oauth2") {
+		t.Errorf("setup(no ~/.xurl): err=%v out=%q, want error + auth walkthrough", err, buf.String())
+	}
+
+	// 4. everything local in place, live check succeeds → ready + next command.
+	buf.Reset()
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".xurl"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	stubXurl(t, func(_ context.Context, path string) ([]byte, error) {
+		if !strings.HasPrefix(path, "/2/users/me") {
+			t.Errorf("live check hit %q, want /2/users/me", path)
+		}
+		return []byte(`{"data":{"id":"u1","username":"alice"}}`), nil
+	})
+	if err := x.Setup(ctx, xTestCfg(), &buf); err != nil ||
+		!strings.Contains(buf.String(), "@alice") ||
+		!strings.Contains(buf.String(), "pull x -n") {
+		t.Errorf("setup(ready): err=%v out=%q, want nil error + @alice + next command", err, buf.String())
+	}
+
+	// 5. live check fails (stale token) → re-auth hint, non-nil error.
+	buf.Reset()
+	stubXurl(t, func(_ context.Context, _ string) ([]byte, error) {
+		return nil, errors.New("401 Unauthorized")
+	})
+	if err := x.Setup(ctx, xTestCfg(), &buf); err == nil || !strings.Contains(buf.String(), "xurl auth oauth2") {
+		t.Errorf("setup(stale token): err=%v out=%q, want error + re-auth hint", err, buf.String())
+	}
+}
+
 func TestXFetchResolvesAndCachesUserID(t *testing.T) {
 	calls := 0
 	stubXurl(t, func(_ context.Context, path string) ([]byte, error) {
