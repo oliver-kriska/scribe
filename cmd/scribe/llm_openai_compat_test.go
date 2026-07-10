@@ -84,6 +84,11 @@ func TestOpenAICompatGenerate(t *testing.T) {
 	if gotReq.ResponseFormat != nil {
 		t.Errorf("plain Generate must not set response_format, got %+v", gotReq.ResponseFormat)
 	}
+	// max_tokens must be explicit: omitting it lets the provider pick its
+	// own default (Together: 2048), which truncates envelope outputs.
+	if gotReq.MaxTokens != hostedMaxOutputTokens {
+		t.Errorf("max_tokens = %d, want %d", gotReq.MaxTokens, hostedMaxOutputTokens)
+	}
 
 	// Ledger row: provider/model prefixed, real token counts, no USD
 	// (no pricing configured).

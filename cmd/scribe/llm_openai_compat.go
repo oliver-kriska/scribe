@@ -179,12 +179,21 @@ func (p *openaiCompatProvider) GenerateJSON(ctx context.Context, prompt string) 
 	return p.generate(ctx, prompt, true)
 }
 
+// hostedMaxOutputTokens is sent as max_tokens on every hosted request.
+// The field must be explicit: when omitted, each provider applies its own
+// default — Together's is 2048, which silently truncated dream's JSON
+// envelope mid-document (ledger showed out=2048 exactly, dream failed with
+// "no JSON envelope in provider output"; 2026-07-10). 8192 clears every
+// envelope scribe emits while staying within hosted models' output limits.
+const hostedMaxOutputTokens = 8192
+
 // oaiChatRequest is the subset of the OpenAI /v1/chat/completions request
 // body scribe sends. ResponseFormat is omitted unless JSON mode is on.
 type oaiChatRequest struct {
 	Model          string           `json:"model"`
 	Messages       []oaiChatMessage `json:"messages"`
 	Temperature    float64          `json:"temperature"`
+	MaxTokens      int              `json:"max_tokens,omitempty"`
 	ResponseFormat *oaiResponseFmt  `json:"response_format,omitempty"`
 }
 
@@ -322,6 +331,7 @@ func (p *openaiCompatProvider) doRequest(ctx context.Context, prompt string, jso
 		Model:       p.model,
 		Messages:    []oaiChatMessage{{Role: "user", Content: prompt}},
 		Temperature: 0.3,
+		MaxTokens:   hostedMaxOutputTokens,
 	}
 	if jsonMode {
 		reqBody.ResponseFormat = &oaiResponseFmt{Type: "json_object"}
@@ -360,6 +370,13 @@ func (p *openaiCompatProvider) doRequest(ctx context.Context, prompt string, jso
 	}
 	if len(resp.Choices) == 0 {
 		return "", oaiChatResponse{}, fmt.Errorf("%s: response had no choices (body=%s)", p.providerName, tailLines(body, 3))
+	}
+	// finish_reason "length" means the completion hit max_tokens and the
+	// tail is gone. The call still "succeeds", so without this line the
+	// only symptom is a confusing downstream parse error ("no JSON
+	// envelope in provider output") with no cause attached.
+	if resp.Choices[0].FinishReason == "length" {
+		logMsg("llm", "%s: output truncated at max_tokens=%d (finish_reason=length) — downstream envelope/JSON parses may fail", p.providerName, reqBody.MaxTokens)
 	}
 	return content, resp, nil
 }
