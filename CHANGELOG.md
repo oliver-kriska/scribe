@@ -4,6 +4,25 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-10
+
+Everything that accreted on `main` after the v0.3.0 team-KB release, cut as one
+minor: an agent-facing `scribe drop` CLI, daily `dream --hot` consolidation,
+priority lanes for the pending-session queue, self-healing cron plists, a
+KB-first adoption metric, and a Go 1.26.5 security bump. Path-keyed project
+identity is the one behavior change — migrated automatically, idempotently, on
+first load.
+
+### Security — Go 1.26.5 clears the Encrypted Client Hello advisory
+- The Go toolchain moves 1.26.4 → 1.26.5, single-sourced in `go.mod` and honored
+  by CI's `go-version-file` and the release container's `GOTOOLCHAIN=auto`. This
+  clears stdlib advisory **GO-2026-5856** — an Encrypted Client Hello privacy
+  leak in `crypto/tls` that `govulncheck` flagged as reachable from scribe's own
+  code, turning the `vuln` CI job red. Direct and indirect `golang.org/x` deps
+  ride along in the same pass: `x/sync` 0.21.0 → 0.22.0, `x/net` 0.56.0 → 0.57.0,
+  `x/sys` 0.46.0 → 0.47.0. `make ci` (test + race + golangci-lint + govulncheck)
+  is green again.
+
 ### Added
 - **Cron plists self-heal across upgrades.** `cron install` digest-stamps every
   plist it writes; a scribe-authored plist whose content no longer matches what
@@ -63,7 +82,7 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   no longer blocks another KB's runs or the hourly auto-commit. (follow-ups to
   #25/#26)
 
-### Also unreleased — landed on main after the v0.3.0 tag was cut
+### Also in 0.4.0 — landed on main after the v0.3.0 tag was cut
 - **Stop-words commit gate** (#25): user-defined words hold (or mask) a document
   out of the KB at commit time — whole-word case-insensitive by default,
   `/regex/` opt-in, union of the shared `scribe.yaml` list and a personal

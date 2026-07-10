@@ -65,11 +65,11 @@ jobs:
           rm -f syft syft_1.45.1_linux_amd64.tar.gz syft_1.45.1_checksums.txt
 
       - name: Run GoReleaser in cross-compile container
-        # The image base is Go 1.26.2 (goreleaser-cross has no 1.26.3/1.26.4
-        # tag yet). GOTOOLCHAIN=auto makes the in-container build honor the
-        # `go 1.26.4` directive in go.mod by fetching that toolchain, so the
+        # The image base is Go 1.26.2 (goreleaser-cross has no newer tag
+        # yet). GOTOOLCHAIN=auto makes the in-container build honor the
+        # `go 1.26.5` directive in go.mod by fetching that toolchain, so the
         # release binary is built against the patched stdlib regardless of
-        # the image's base Go. Bump the image tag to a 1.26.4 base once one
+        # the image's base Go. Bump the image tag to a >=1.26.5 base once one
         # ships and the download step goes away.
         #
         # Image pinned by DIGEST (= tag v1.26.2-3): this container runs
