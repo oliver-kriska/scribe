@@ -64,8 +64,16 @@ func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool) {
 	}
 }
 
+// stderrAtInit pins the process's original stderr. The assertion below must
+// compare against this, not the live os.Stderr: several tests in this package
+// temporarily swap the os.Stderr/os.Stdout globals to capture output, and
+// reading the live global during another test's swap window made this test
+// flake under parallel-ish scheduling shifts (it held the init-time stderr
+// while the global had moved).
+var stderrAtInit = os.Stderr
+
 func TestHeartbeatWriter_DefaultsToStderr(t *testing.T) {
-	if heartbeatWriter != io.Writer(os.Stderr) {
+	if heartbeatWriter != io.Writer(stderrAtInit) {
 		t.Errorf("expected heartbeatWriter to default to os.Stderr; got %v", heartbeatWriter)
 	}
 }
