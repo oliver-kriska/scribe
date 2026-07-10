@@ -24,7 +24,7 @@ Three stages, one pipeline:
 ## What makes scribe different
 
 - **Your agents become context-aware across sessions.** `scribe init` writes a handshake block into **both** `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` that tells Claude Code and Codex to query your KB before recommending a library, proposing an architecture, or reproducing a pattern.
-- **Runs itself on cron.** Hourly auto-commits, 2-hourly project extraction, 3×/day session mining, weekly Dream cycle for consolidation. launchd on macOS, systemd/crontab on Linux.
+- **Runs itself on cron.** Hourly auto-commits, 2-hourly project extraction, 3×/day session mining, a weekly Dream cycle for consolidation with a daily hot-domain pass in between. launchd on macOS, systemd/crontab on Linux.
 - **Knowledge compounds across projects.** One cross-project KB, not siloed per repo. Solve the oban idempotency bug in project A on Monday; the agent finds your fix on Friday when the same shape comes up in project B.
 - **Fully local-capable — 100% Ollama.** Every LLM op — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining `claude -p` callsite in the normal sync flow. A single line in `scribe.yaml` flips the whole pipeline: `llm.provider: ollama`. Zero API spend.
 - **Plain markdown you own.** A git repo of plain markdown files with YAML frontmatter. Push to your own GitHub, Gitea, or Forgejo. Open in Obsidian, VS Code, vim, or mdbook. No SaaS, no vendor lock-in.
@@ -183,7 +183,7 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 
 ## The command surface
 
-44 subcommands, one binary. The ones you'll actually type:
+45 subcommands, one binary. The ones you'll actually type:
 
 ```
 scribe init                 # bootstrap a KB, wire the agent handshake
@@ -198,7 +198,7 @@ scribe relations migrate    # classify `related:` into typed edges
 scribe cron install / uninstall / status
 ```
 
-Run `scribe --help` to see all 44. `scribe cron install` puts the boring ones on a schedule so you never type them again.
+Run `scribe --help` to see all 45. `scribe cron install` puts the boring ones on a schedule so you never type them again.
 
 ## In practice
 
@@ -263,7 +263,7 @@ Yes. macOS gets LaunchAgents via `scribe cron install`; Linux gets paste-ready c
 In a plain git repo of markdown files at whatever path you pass to `scribe init`. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.
 
 **What does the cron schedule look like?**
-Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
+Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday with a daily hot-domain pass in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
 
 **Is scribe an alternative to RAG for a personal knowledge base?**
 Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, and the curated wiki stays small enough for an agent to read whole.
@@ -287,4 +287,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-07-01
+**Last updated:** 2026-07-10

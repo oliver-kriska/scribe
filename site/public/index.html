@@ -172,7 +172,7 @@
       "name": "What does the cron schedule look like?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider (and Codex CLI sessions in that same pass when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday at 02:00 for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
+        "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider (and Codex CLI sessions in that same pass when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
       }
     },
     {
@@ -249,7 +249,7 @@
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og-v2.png",
   "datePublished": "2026-05-14",
-  "dateModified": "2026-07-01",
+  "dateModified": "2026-07-10",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -2483,7 +2483,7 @@
       <article class="feature">
         <div class="feature__kicker">launchd · systemd</div>
         <h3>Runs itself on cron</h3>
-        <p>Hourly auto-commits. Every 2 hours: project extraction. 3×/day: session mining. Every 30 minutes: queued URLs. Every 4 hours: self-iMessaged links. Sundays at 02:00: the weekly Dream consolidation cycle.</p>
+        <p>Hourly auto-commits. Every 2 hours: project extraction. 3×/day: session mining. Every 30 minutes: queued URLs. Every 4 hours: self-iMessaged links. Sundays at 02:00: the full Dream consolidation, with a lighter hot-domain pass daily in between.</p>
       </article>
 
       <article class="feature">
@@ -2575,7 +2575,7 @@ advisory locks table-ambiguous under load.
     <div class="scope">
       <div class="scope__grid">
         <span class="scope__i"><b>4</b> input streams</span>
-        <span class="scope__i"><b>44</b> subcommands</span>
+        <span class="scope__i"><b>45</b> subcommands</span>
         <span class="scope__i"><b>10</b> typed-edge kinds</span>
         <span class="scope__i"><b>3</b> inference modes</span>
         <span class="scope__i"><b>7</b> providers</span>
@@ -3267,7 +3267,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <section class="s" id="commands">
   <div class="wrap">
     <header class="s__head">
-      <h2 class="s__title">44 subcommands. One binary.</h2>
+      <h2 class="s__title">45 subcommands. One binary.</h2>
       <p class="s__sub">Here are the ones you'll actually type. Everything else is <code>scribe doctor</code>-discoverable.</p>
     </header>
 
@@ -3293,7 +3293,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe cron</span> <span class="cmd-arg">install</span> / <span class="cmd-arg">uninstall</span> / <span class="cmd-arg">status</span>
 </code></pre>
       </div>
-      <p class="commands__caption">Run <code>scribe --help</code> to see all 44. <code>scribe cron install</code> puts the boring ones on a schedule so you never type them again.</p>
+      <p class="commands__caption">Run <code>scribe --help</code> to see all 45. <code>scribe cron install</code> puts the boring ones on a schedule so you never type them again.</p>
     </div>
   </div>
 </section>
@@ -3389,7 +3389,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>What does the cron schedule look like?</summary>
-        <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider (and Codex CLI sessions in that same pass when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, weekly Dream cycle on Sunday at 02:00 for memory consolidation, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
+        <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider (and Codex CLI sessions in that same pass when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
       </details>
 
       <details class="q">
