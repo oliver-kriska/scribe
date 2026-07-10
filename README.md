@@ -321,7 +321,7 @@ triage:
     # ... matching weights for each category
 ```
 
-### Pull integrations (Pinboard)
+### Pull integrations (Pinboard, X)
 
 `scribe pull` fetches bookmarks from external accounts into the ingest queue,
 where the same drain path as `ingest url` fetches → contextualizes → absorbs
@@ -397,6 +397,93 @@ process them now. A cheap `posts/update` probe short-circuits runs when nothing
 changed, so the cron job (`scribe pull`, hourly) is kind to Pinboard's rate
 limits. In a **team** KB, integrations are hard-off from the repo config like
 capture — re-enable per-person in `scribe.local.yaml`.
+
+#### X (Twitter) bookmarks
+
+The `x` adapter pulls your X (formerly Twitter) bookmarks through X's official
+API, shelling out to [`xurl`](https://github.com/xdevplatform/xurl) — X's own
+API CLI — so scribe never implements OAuth or stores an X token. Unlike
+Pinboard, **no credential goes into scribe's config at all**: `xurl` owns the
+whole OAuth 2.0 flow and keeps the tokens in `~/.xurl`.
+
+**1. One-time X setup.** This adapter talks to the real X API, so it needs a
+developer account and a trickle of pay-per-use credit:
+
+- Sign up at <https://developer.x.com>, accept the developer agreement, and
+  create a Project + App (a one-line use-case description is enough).
+- In the app's settings, enable **OAuth 2.0** and register the redirect URI
+  `http://localhost:8080/callback`. Save the generated client id and secret —
+  `xurl` uses them for the browser flow below.
+- Add a small **prepaid** pay-per-use credit in the developer console. There's
+  no subscription and no minimum spend — reads bill $0.001 each (see costs
+  below), so a few dollars lasts a long time.
+
+**2. Install and authenticate `xurl`.** It's an optional tool, like `fzf` for
+triage — scribe soft-skips the `x` adapter with a one-line hint when it's
+missing or unauthenticated, so cron keeps flowing:
+
+```sh
+brew install --cask xdevplatform/tap/xurl        # or: go install github.com/xdevplatform/xurl@latest
+xurl auth apps add scribe --client-id YOUR_ID --client-secret YOUR_SECRET
+xurl auth oauth2 --app scribe                     # one-time browser flow; tokens land in ~/.xurl
+```
+
+`xurl auth oauth2 --app scribe` opens a browser once for the consent screen. After that the
+tokens live in `~/.xurl` and `xurl` refreshes them itself, so subsequent cron
+runs are headless with no further prompts. Sanity-check auth with a cheap
+owned-read:
+
+```sh
+xurl "/2/users/me"        # returns your user object if auth works
+```
+
+**3. Enable it** in `scribe.yaml`:
+
+```yaml
+integrations:
+  x:
+    enabled: true
+    tags: []                # OR filter matched against each tweet's hashtags
+                            # (case-insensitive, bare form: "golang" not "#golang");
+                            # empty = all. Most tweets carry no hashtags, so a
+                            # non-empty filter is deliberately strict.
+    skip_domains: []        # substring URL filter, same as capture.skip_domains
+```
+
+There's no `scope` or `public_only` here — those are Pinboard concepts
+(read-state and private-vs-public) that don't map to X bookmarks, so the `x`
+adapter ignores them if present.
+
+**4. Run it** (same commands as any adapter):
+
+```sh
+scribe pull --list                    # integrations + status (configured? last pull?)
+scribe pull x -n                      # dry-run: show what WOULD be queued, write nothing
+scribe pull x                         # pull bookmarks into output/inbox/
+scribe ingest drain                   # fetch → contextualize → absorb them now
+```
+
+Queued bookmarks are author-URL entries (`https://x.com/<user>/status/<id>`)
+that the existing `ingest drain` renders via its FxTwitter tier — no new
+fetching path is added.
+
+**Costs and limits (honest ones):**
+
+- **$0.001 per bookmark read,** billed against your prepaid credits. A first
+  full pull of ~800 bookmarks is ≈ $0.80, one time.
+- **The API only serves the ~800 most recent bookmarks.** It's a rolling
+  window, not an archive — older bookmarks aren't reachable through the API at
+  all. (A known pagination bug has been reported to stop even earlier, around
+  200–300 items — your first full pull will tell you where your account lands.)
+- **Incremental runs are cheap:** a run that finds nothing new costs a fraction
+  of a cent (one small probe page), so the hourly `pull-sources` cron job is
+  kind to your credit.
+- **Bookmark folders are not supported.** X's folder API is currently broken
+  (returns only 20 items and rejects pagination), so v1 skips folders entirely.
+- **For a full historical export beyond the ~800-item window,** use a
+  browser-side bookmark exporter (e.g. the open-source
+  [xarchive](https://github.com/sytelus/xarchive/) extension) and drop the
+  exported URLs into `output/inbox/` — the same inbox `scribe pull` writes to.
 
 ### Local-mode — 100% Ollama (free, offline)
 

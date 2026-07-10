@@ -352,8 +352,22 @@ capture:
 #     public_only: false      # true = skip private bookmarks (an authenticated
 #                             # pull sees private ones too); default ingests all.
 #     skip_domains: []        # substring filter, same as capture.skip_domains
+#   x:                        # X (Twitter) bookmarks via X's official API.
+#     enabled: true           # No token here — auth lives entirely in `xurl` (X's
+#                             # API CLI): install it, run `xurl auth oauth2` once
+#                             # (browser), and tokens persist in ~/.xurl for
+#                             # headless cron. See README "Pull integrations".
+#     tags: []                # OR filter matched against each tweet's hashtags
+#                             # (case-insensitive, bare form: "golang" not
+#                             # "#golang"); empty = all. Most tweets carry no
+#                             # hashtags, so a non-empty filter is strict.
+#     skip_domains: []        # substring filter, same as capture.skip_domains.
+#                             # No scope/public_only — not meaningful for X. The
+#                             # API serves only the ~800 most recent bookmarks
+#                             # (rolling window, not an archive); reads bill
+#                             # $0.001 each against prepaid pay-per-use credits.
 #
-# Token goes in ~/.config/scribe/config.yaml:
+# Pinboard's token goes in ~/.config/scribe/config.yaml (X needs none — see above):
 #   integration_tokens:
 #     pinboard: "username:HEXTOKEN"   # from pinboard.in/settings/password
 

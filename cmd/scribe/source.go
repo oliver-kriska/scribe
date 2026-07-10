@@ -62,6 +62,7 @@ type FetchOpts struct {
 // entry here plus a file implementing Source.
 var sourceRegistry = map[string]Source{
 	"pinboard": pinboardSource{},
+	"x":        xSource{},
 }
 
 // registeredSources returns every adapter, sorted by name for stable output.

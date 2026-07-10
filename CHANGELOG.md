@@ -45,6 +45,30 @@ stars…) is a small file against the same `Source` interface.
 - Bookmark `extended` notes are preserved into the article body, and Pinboard
   tags (plus a `pinboard` provenance tag, and `to-read` for unread) carry into
   frontmatter. Zero new Go dependencies (Pinboard v1 is JSON over HTTPS).
+- **X (Twitter) bookmarks** — a second adapter, pulling your X bookmarks through
+  X's official API by shelling out to
+  [`xurl`](https://github.com/xdevplatform/xurl) (X's own API CLI), so scribe
+  implements no OAuth and stores no X token: auth lives entirely in `xurl`'s
+  `~/.xurl`, and no credential goes in scribe's config at all (unlike Pinboard).
+  Queued entries are author URLs (`https://x.com/<user>/status/<id>`) that the
+  existing FxTwitter ingest tier renders — no new fetch path.
+  - **Incremental by cheap probe:** bookmarks are LIFO, so a run stops once it
+    reaches already-seen ids; a run that finds nothing new costs a fraction of a
+    cent (one small probe page), keeping the hourly `pull-sources` job cheap.
+  - **Costs/depth:** reads bill $0.001 each against prepaid pay-per-use credits
+    (no subscription, no minimum spend); a first full pull of ~800 bookmarks is
+    ≈ $0.80. The API serves only the **~800 most recent** bookmarks — a rolling
+    window, not an archive (and a reported pagination bug may cap real depth
+    lower still); deeper backfill needs a browser-side exporter into
+    `output/inbox/`.
+  - **Folders skipped in v1** — X's bookmark-folder API is currently broken
+    (20-item cap, rejects pagination).
+  - **`xurl` is an optional tool** (the `fzf` pattern): when it's missing or
+    unauthenticated the `x` adapter soft-skips with a one-line install/auth hint
+    instead of failing the run. No `scope`/`public_only` (those are Pinboard
+    read-state concepts); `tags` matches against each tweet's #hashtags (the
+    only tag-like signal a bookmark carries) and `skip_domains` behaves as it
+    does for Pinboard. Zero new Go dependencies (`exec.Command` into `xurl`).
 
 ## [0.4.0] — 2026-07-10
 
