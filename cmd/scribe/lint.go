@@ -102,6 +102,7 @@ func (l *LintCmd) Run() error {
 		fmt.Println()
 	}
 	if rep.errors > 0 {
+		rep.errorHint()
 		return fmt.Errorf("FAILED: %d errors, %d warnings", rep.errors, rep.warnings)
 	}
 	if rep.warnings > 0 {
@@ -141,6 +142,7 @@ func lintFrontmatter(rep *lintReport, root string, files []string) {
 			rep.errors++
 			for _, e := range errs {
 				rep.errorLinef("%s: %s", relPath(root, path), e)
+				rep.noteErrorKind(e)
 			}
 		}
 	}

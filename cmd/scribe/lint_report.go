@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // Warning classes for grouped lint output. Constants keep the warnf call
@@ -53,10 +54,93 @@ type lintReport struct {
 	warnings int
 
 	classCounts map[string]int
+	// errKinds tracks which remediation buckets the Phase-1 frontmatter
+	// errors fell into, so the closing verdict can print a tailored
+	// how-to-fix hint (some classes `--fix` repairs, others need a human).
+	errKinds map[errKind]int
 }
 
 func newLintReport(w io.Writer, verbose, quiet bool) *lintReport {
-	return &lintReport{w: w, verbose: verbose, quiet: quiet, classCounts: make(map[string]int)}
+	return &lintReport{w: w, verbose: verbose, quiet: quiet, classCounts: make(map[string]int), errKinds: make(map[errKind]int)}
+}
+
+// errKind buckets a frontmatter validation error by how it gets resolved.
+type errKind int
+
+const (
+	errKindNone             errKind = iota
+	errKindFixable                  // repaired by `scribe lint --fix`
+	errKindNeedsTitle               // author must supply a title
+	errKindNeedsConfidence          // author must pick high/medium/low
+	errKindNeedsFrontmatter         // page has no valid `---` block
+	errKindOther                    // anything else — no canned remedy
+)
+
+// classifyFrontmatterError maps a validateFile message to its remediation
+// bucket. Keep in sync with autoFixArticle: a class is only errKindFixable
+// if the fixer actually repairs it deterministically.
+func classifyFrontmatterError(msg string) errKind {
+	switch {
+	case strings.Contains(msg, "no frontmatter delimiter"),
+		strings.Contains(msg, "no closing frontmatter delimiter"),
+		strings.Contains(msg, "invalid YAML frontmatter"),
+		strings.Contains(msg, "fails struct validation"),
+		strings.Contains(msg, "empty file"):
+		return errKindNeedsFrontmatter
+	case strings.Contains(msg, "missing required fields"):
+		// title is the one required field --fix won't invent; everything
+		// else (domain/dates/list defaults/type) is backfilled.
+		if strings.Contains(msg, "title") {
+			return errKindNeedsTitle
+		}
+		return errKindFixable
+	case strings.Contains(msg, "title is empty"):
+		return errKindNeedsTitle
+	case strings.Contains(msg, "invalid confidence"):
+		return errKindNeedsConfidence
+	case strings.Contains(msg, "invalid domain"),
+		strings.Contains(msg, "invalid type"),
+		strings.Contains(msg, "should be a list"),
+		strings.Contains(msg, "not in YYYY-MM-DD format"):
+		return errKindFixable
+	default:
+		return errKindOther
+	}
+}
+
+// noteErrorKind records the remediation bucket for one frontmatter error.
+func (r *lintReport) noteErrorKind(msg string) {
+	r.errKinds[classifyFrontmatterError(msg)]++
+}
+
+// errorHint prints a closing how-to-fix block tailored to the errors seen
+// this run: the `--fix` line when any mechanical error is present, plus a
+// per-class bullet for each residual that needs a human. No-op in quiet
+// mode or when no Phase-1 errors were classified.
+func (r *lintReport) errorHint() {
+	if r.quiet || len(r.errKinds) == 0 {
+		return
+	}
+	if r.errKinds[errKindFixable] > 0 {
+		fmt.Fprintln(r.w, "→ some errors are mechanical — run `scribe lint --fix`")
+		fmt.Fprintln(r.w, "  (repairs duplicate keys, list formatting, dates, invalid domains, and missing defaults)")
+	}
+	var manual []string
+	if r.errKinds[errKindNeedsTitle] > 0 {
+		manual = append(manual, "missing title — add a `title:` line (--fix won't invent one)")
+	}
+	if r.errKinds[errKindNeedsConfidence] > 0 {
+		manual = append(manual, "invalid confidence — set it to high, medium, or low")
+	}
+	if r.errKinds[errKindNeedsFrontmatter] > 0 {
+		manual = append(manual, "no frontmatter — the page has no `---` block; add one")
+	}
+	if len(manual) > 0 {
+		fmt.Fprintln(r.w, "→ these need a human:")
+		for _, m := range manual {
+			fmt.Fprintf(r.w, "    • %s\n", m)
+		}
+	}
 }
 
 // errorf prints a per-file ERROR line and counts one error. Errors are

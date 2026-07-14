@@ -1407,7 +1407,7 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 	domains := validDomainsForRoot(root)
 	today := time.Now().UTC().Format("2006-01-02")
 	kept := make([]WikiAction, 0, len(env.Actions))
-	var dropped, retyped, redomained, stamped int
+	var dropped, retyped, redomained, stamped, deduped int
 	for _, a := range env.Actions {
 		if !strings.HasPrefix(a.Content, "---") {
 			kept = append(kept, a) // section body / append fragment — not ours
@@ -1418,6 +1418,20 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 			logMsg("envelope", "clamp: dropped %q — unparseable frontmatter (%v)", a.Path, err)
 			dropped++
 			continue
+		}
+		// Collapse duplicate top-level keys before the field clamps run.
+		// parseFrontmatter reads a duplicated key last-wins, but the
+		// setFrontmatterScalar clamps below rewrite the first occurrence —
+		// so a model that emits both `domain: general` and `domain: <x>`
+		// would otherwise persist both lines (the historical source of the
+		// invalid-domain-that-won't-fix files). Dedup here, then re-parse so
+		// the clamps see the surviving values.
+		if collapsed, n := dedupeFrontmatterKeys(a.Content); n > 0 {
+			a.Content = collapsed
+			deduped += n
+			if fm2, err2 := parseFrontmatter([]byte(a.Content)); err2 == nil {
+				fm = fm2
+			}
 		}
 		top := strings.SplitN(filepath.Clean(a.Path), string(os.PathSeparator), 2)[0]
 		if fm.Type == "" || !validTypes[fm.Type] {
@@ -1448,8 +1462,8 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 		}
 		kept = append(kept, a)
 	}
-	if dropped+retyped+redomained+stamped > 0 {
-		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped", dropped, retyped, redomained, stamped)
+	if dropped+retyped+redomained+stamped+deduped > 0 {
+		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped, %d duplicate key(s) collapsed", dropped, retyped, redomained, stamped, deduped)
 	}
 	env.Actions = kept
 }

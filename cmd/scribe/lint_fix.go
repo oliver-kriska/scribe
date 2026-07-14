@@ -82,6 +82,20 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 		changes = append(changes, "normalized closing frontmatter fence to bare ---")
 	}
 
+	// Collapse duplicate top-level keys (keep the LAST, matching
+	// parseFrontmatter's deduplicateYAMLKeys). The validator reads a
+	// duplicated field last-wins; the domain/type clamps below read it
+	// first-wins via frontmatterValue/replaceFMLine. That split is why a
+	// file carrying both `domain: general` and `domain: <invalid>` was
+	// reported as an error by lint yet skipped by --fix forever — the
+	// clamp saw the valid first copy and did nothing. Collapsing here
+	// realigns the fixer's view with the validator's so the residual
+	// (invalid) value actually reaches the clamp.
+	if deduped, removed := collapseDuplicateFrontmatterKeys(lines); removed > 0 {
+		lines = deduped
+		changes = append(changes, fmt.Sprintf("collapsed %d duplicate frontmatter key(s)", removed))
+	}
+
 	// Strip trailing whitespace on each frontmatter line.
 	trailingStripped := 0
 	for i, line := range lines {
@@ -108,6 +122,19 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 		if didFix {
 			lines[i] = key + ": " + normalized
 			changes = append(changes, fmt.Sprintf("normalized %s date format", key))
+		}
+	}
+
+	// Coerce a scalar tags/related/sources value into an inline list. The
+	// LLM (and hand edits) sometimes emit `tags: a, b, c` — a comma string
+	// where the schema wants a sequence — which validate rejects as
+	// "should be a list, got: string". Only a present, non-empty, non-flow
+	// scalar is rewritten; a block list (`tags:` with `- item` children) or
+	// an existing `[...]` is left untouched, so this stays idempotent.
+	for _, field := range []string{"tags", "related", "sources"} {
+		if newLines, didFix := coerceScalarListField(lines, field); didFix {
+			lines = newLines
+			changes = append(changes, fmt.Sprintf("coerced scalar %s → list", field))
 		}
 	}
 
@@ -323,6 +350,127 @@ func canonicalTypeForRel(rel string) string {
 		return "research"
 	}
 	return ""
+}
+
+// collapseDuplicateFrontmatterKeys removes earlier occurrences of any
+// top-level key that appears more than once in a split frontmatter block,
+// keeping the LAST occurrence — the same last-wins rule parseFrontmatter's
+// deduplicateYAMLKeys applies, so the fixer's field values match the
+// validator's. When a removed occurrence owns a block value (indented
+// child lines), those children are removed with it. Returns the rewritten
+// lines and the number of duplicate key blocks dropped (0 = no change).
+func collapseDuplicateFrontmatterKeys(lines []string) ([]string, int) {
+	// Group the block into units: each top-level `key:` line plus the
+	// contiguous indented child lines it owns. A blank or non-key line
+	// that isn't an indented child becomes its own passthrough unit
+	// (key ""), so comments and blanks survive untouched.
+	type unit struct {
+		key        string
+		start, end int // [start, end)
+	}
+	var units []unit
+	for i := 0; i < len(lines); {
+		key, _, ok := splitFrontmatterLine(lines[i])
+		if !ok {
+			units = append(units, unit{key: "", start: i, end: i + 1})
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(lines) && (strings.HasPrefix(lines[j], " ") || strings.HasPrefix(lines[j], "\t")) {
+			j++
+		}
+		units = append(units, unit{key: key, start: i, end: j})
+		i = j
+	}
+
+	count := make(map[string]int)
+	lastIdx := make(map[string]int)
+	for idx, u := range units {
+		if u.key == "" {
+			continue
+		}
+		count[u.key]++
+		lastIdx[u.key] = idx
+	}
+
+	removed := 0
+	out := make([]string, 0, len(lines))
+	for idx, u := range units {
+		if u.key != "" && count[u.key] > 1 && idx != lastIdx[u.key] {
+			removed++
+			continue // drop this earlier duplicate (and its child lines)
+		}
+		out = append(out, lines[u.start:u.end]...)
+	}
+	return out, removed
+}
+
+// dedupeFrontmatterKeys applies collapseDuplicateFrontmatterKeys to the
+// leading `---` frontmatter block of a full document, returning the
+// rewritten content and the number of duplicate keys dropped. Content
+// without a well-formed frontmatter block is returned unchanged. Used by
+// the extraction seam (clampEnvelopeFrontmatter) so a model that emits a
+// duplicate key never persists one to disk — the on-disk repair in
+// autoFixArticle is the safety net, this is the prevention.
+func dedupeFrontmatterKeys(content string) (string, int) {
+	lines := strings.Split(content, "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
+		return content, 0
+	}
+	closeIdx := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			closeIdx = i
+			break
+		}
+	}
+	if closeIdx < 1 {
+		return content, 0
+	}
+	deduped, removed := collapseDuplicateFrontmatterKeys(lines[1:closeIdx])
+	if removed == 0 {
+		return content, 0
+	}
+	out := make([]string, 0, len(lines))
+	out = append(out, lines[0])
+	out = append(out, deduped...)
+	out = append(out, lines[closeIdx:]...)
+	return strings.Join(out, "\n"), removed
+}
+
+// coerceScalarListField rewrites a top-level `key: a, b, c` scalar into an
+// inline YAML list `key: [a, b, c]`, quoting items that YAML would
+// otherwise misparse. It is a no-op — returning (lines, false) — when the
+// key is absent, empty (block form or genuinely blank), or already a flow
+// list (`[...]`), keeping the fixer idempotent. Used for tags/related/
+// sources, whose schema requires a sequence.
+func coerceScalarListField(lines []string, key string) ([]string, bool) {
+	for i, line := range lines {
+		k, rest, ok := splitFrontmatterLine(line)
+		if !ok || k != key {
+			continue
+		}
+		rest = strings.TrimSpace(rest)
+		if rest == "" || strings.HasPrefix(rest, "[") {
+			return lines, false // block form, empty, or already a flow list
+		}
+		var items []string
+		for piece := range strings.SplitSeq(rest, ",") {
+			piece = strings.TrimSpace(piece)
+			piece = strings.Trim(piece, `"'`)
+			if piece != "" {
+				items = append(items, yamlQuoteScalar(piece))
+			}
+		}
+		if len(items) == 0 {
+			return lines, false
+		}
+		out := append([]string{}, lines...)
+		out[i] = key + ": [" + strings.Join(items, ", ") + "]"
+		return out, true
+	}
+	return lines, false
 }
 
 // frontmatterValue returns the value of a top-level scalar `key:` line

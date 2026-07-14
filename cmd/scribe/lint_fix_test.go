@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -366,5 +368,144 @@ func TestAutoFixArticle_GenuinelyNoClosingFenceStillErrors(t *testing.T) {
 	}
 	if out != nil {
 		t.Errorf("must not write a file with no closing fence")
+	}
+}
+
+// TestCollapseDuplicateFrontmatterKeys_KeepsLast checks the last-wins rule
+// (matching parseFrontmatter/deduplicateYAMLKeys): a scalar key repeated
+// keeps its final value, and a duplicated block key drops the earlier
+// occurrence *with* its child lines.
+func TestCollapseDuplicateFrontmatterKeys_KeepsLast(t *testing.T) {
+	lines := []string{
+		"title: X",
+		"domain: general",
+		"domain: elixir-phoenix",
+		"tags:",
+		"  - a",
+		"tags:",
+		"  - b",
+		"confidence: high",
+	}
+	got, removed := collapseDuplicateFrontmatterKeys(lines)
+	if removed != 2 {
+		t.Fatalf("removed = %d, want 2 (one domain, one tags)", removed)
+	}
+	want := []string{
+		"title: X",
+		"domain: elixir-phoenix",
+		"tags:",
+		"  - b",
+		"confidence: high",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("collapsed =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// TestCollapseDuplicateFrontmatterKeys_Idempotent: a block without repeats
+// is returned untouched so --fix doesn't churn clean files.
+func TestCollapseDuplicateFrontmatterKeys_Idempotent(t *testing.T) {
+	lines := []string{"title: X", "domain: general", "tags:", "  - a", "  - b"}
+	if _, removed := collapseDuplicateFrontmatterKeys(lines); removed != 0 {
+		t.Errorf("clean block reported %d removals, want 0", removed)
+	}
+}
+
+// TestAutoFixArticle_CollapsesDuplicateDomainThenClamps is the end-to-end
+// regression for the reported bug: a file carrying BOTH `domain: general`
+// and an invalid `domain: <x>` was flagged by lint (last-wins → invalid)
+// yet skipped by --fix forever (first-wins → the clamp saw `general` and
+// did nothing). --fix must now collapse to the last value, clamp it to
+// general, and leave a single valid domain line that re-validates clean.
+func TestAutoFixArticle_CollapsesDuplicateDomainThenClamps(t *testing.T) {
+	in := "---\ntitle: JS Hook Null Guard\ntype: pattern\ncreated: 2026-07-01\nupdated: 2026-07-14\ndomain: general\ndomain: elixir-phoenix\nconfidence: high\ntags: []\nrelated: []\nsources: []\nauthority: contextual\n---\n\nBody text long enough.\n"
+	changes, out, err := autoFixArticle("", "patterns/js-hook-null-guard.md", []byte(in))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected a rewritten file")
+	}
+	s := string(out)
+	if strings.Count(s, "domain:") != 1 {
+		t.Errorf("expected exactly one domain line, got:\n%s", s)
+	}
+	if !strings.Contains(s, "\ndomain: general\n") || strings.Contains(s, "elixir-phoenix") {
+		t.Errorf("duplicate/invalid domain not resolved to general:\n%s", s)
+	}
+	var sawCollapse, sawClamp bool
+	for _, c := range changes {
+		if strings.Contains(c, "collapsed") {
+			sawCollapse = true
+		}
+		if strings.Contains(c, "clamped invalid domain") {
+			sawClamp = true
+		}
+	}
+	if !sawCollapse || !sawClamp {
+		t.Errorf("expected both a collapse and a domain clamp, got: %v", changes)
+	}
+	// The whole point: the result must now validate clean. Write it out
+	// under a tmp KB with no scribe.yaml (⇒ universal domains only, so
+	// `general` is the valid landing spot) and run the real validator.
+	dir := t.TempDir()
+	p := filepath.Join(dir, "patterns", "js-hook-null-guard.md")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if errs := validateFile(dir, p); len(errs) != 0 {
+		t.Errorf("fixed file still fails validation: %v", errs)
+	}
+}
+
+// TestCoerceScalarListField covers the tags-as-comma-string class and the
+// no-op cases that keep the fixer idempotent.
+func TestCoerceScalarListField(t *testing.T) {
+	got, ok := coerceScalarListField([]string{"tags: a, b, c"}, "tags")
+	if !ok || got[0] != "tags: [a, b, c]" {
+		t.Errorf("scalar coercion = %q (ok=%v), want `tags: [a, b, c]`", got, ok)
+	}
+	// A colon-bearing item must be quoted so the flow list still parses.
+	got, ok = coerceScalarListField([]string{"sources: session:abc, http://x"}, "sources")
+	if !ok {
+		t.Fatal("expected coercion of colon-bearing scalar")
+	}
+	if _, perr := parseFrontmatter([]byte("---\ntitle: X\n" + got[0] + "\n---\n")); perr != nil {
+		t.Errorf("coerced sources line does not parse: %q (%v)", got[0], perr)
+	}
+	// No-ops: block form, existing inline list, empty.
+	for _, line := range []string{"tags:", "tags: [a, b]", "tags: "} {
+		if _, ok := coerceScalarListField([]string{line}, "tags"); ok {
+			t.Errorf("coerceScalarListField(%q) should be a no-op", line)
+		}
+	}
+}
+
+// TestClassifyFrontmatterError pins the error → remediation-bucket mapping
+// that drives the closing how-to-fix hint.
+func TestClassifyFrontmatterError(t *testing.T) {
+	cases := []struct {
+		msg  string
+		want errKind
+	}{
+		{"invalid domain: 'ci-cd' (expected: ...)", errKindFixable},
+		{"tags should be a list, got: string", errKindFixable},
+		{"invalid type: 'foo' (expected: ...)", errKindFixable},
+		{"created not in YYYY-MM-DD format: '2026/1/1'", errKindFixable},
+		{"missing required fields: domain, tags", errKindFixable},
+		{"missing required fields: title", errKindNeedsTitle},
+		{"missing required fields: title, type", errKindNeedsTitle},
+		{"title is empty", errKindNeedsTitle},
+		{"invalid confidence: 'confirmed' (expected: ...)", errKindNeedsConfidence},
+		{"invalid YAML frontmatter: no frontmatter delimiter", errKindNeedsFrontmatter},
+		{"frontmatter fails struct validation: bad", errKindNeedsFrontmatter},
+	}
+	for _, c := range cases {
+		if got := classifyFrontmatterError(c.msg); got != c.want {
+			t.Errorf("classify(%q) = %d, want %d", c.msg, got, c.want)
+		}
 	}
 }

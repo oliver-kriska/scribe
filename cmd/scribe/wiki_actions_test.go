@@ -1126,6 +1126,32 @@ func TestApplyWikiActions_ClampFrontmatter(t *testing.T) {
 	})
 }
 
+// TestApplyWikiActions_ClampCollapsesDuplicateKeys is split out of
+// TestApplyWikiActions_ClampFrontmatter (already at the gocognit ceiling)
+// but exercises the same seam. Regression: a model that emits both
+// `domain: general` and a specific `domain: <x>` used to persist BOTH
+// lines — the source of the invalid-domain files `lint --fix` could never
+// converge, because validate read the last key and the clamp rewrote the
+// first. The envelope seam must collapse to one line at write time.
+func TestApplyWikiActions_ClampCollapsesDuplicateKeys(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op: "create", Path: "patterns/dup.md",
+		Content: "---\ntitle: Dup\ntype: pattern\ndomain: general\ndomain: elixir-phoenix\n---\nbody\n",
+	}}}
+	if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+		t.Fatal(err)
+	}
+	s := readBack(t, root, "patterns/dup.md")
+	if strings.Count(s, "domain:") != 1 {
+		t.Errorf("expected exactly one domain line on disk:\n%s", s)
+	}
+	// elixir-phoenix is not a configured domain here ⇒ clamped to general.
+	if !strings.Contains(s, "\ndomain: general\n") || strings.Contains(s, "elixir-phoenix") {
+		t.Errorf("surviving domain not clamped to general:\n%s", s)
+	}
+}
+
 // TestLoadPrompt_StripsUnsubstitutedPlaceholders asserts the centralized
 // guard in loadPrompt: any {{VAR}} the caller didn't supply (the
 // session-extract {{DOMAIN}} class) is stripped, never shipped to the
