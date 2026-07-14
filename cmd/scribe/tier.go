@@ -331,6 +331,17 @@ func (w *TierWriteCmd) Run() error {
 	wrote, skipped, scanned := 0, 0, 0
 	err = walkArticles(root, func(path string, content []byte) error {
 		scanned++
+		// A malformed opening fence (e.g. `--- title: ...` joined onto the
+		// first key, with space-indented keys) makes the YAML parser and the
+		// line-level writer disagree about whether index_tier is present: the
+		// writer "succeeds" but the value never registers with parseFrontmatter,
+		// so --missing-only re-writes it every run (a silent non-convergence).
+		// Skip and flag for manual repair (or `scribe lint --fix`) instead.
+		if !strings.HasPrefix(string(content), "---\n") {
+			logMsg("tier", "skip %s: malformed frontmatter fence — run `scribe lint --fix` or repair by hand", relPath(root, path))
+			skipped++
+			return nil
+		}
 		fm, _ := parseFrontmatter(content)
 		body := articleBody(content)
 		sections := 0

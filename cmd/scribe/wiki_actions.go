@@ -1407,7 +1407,7 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 	domains := validDomainsForRoot(root)
 	today := time.Now().UTC().Format("2006-01-02")
 	kept := make([]WikiAction, 0, len(env.Actions))
-	var dropped, retyped, redomained, stamped, deduped int
+	var dropped, retyped, redomained, stamped, deduped, nested int
 	for _, a := range env.Actions {
 		if !strings.HasPrefix(a.Content, "---") {
 			kept = append(kept, a) // section body / append fragment — not ours
@@ -1429,6 +1429,20 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 		if collapsed, n := dedupeFrontmatterKeys(a.Content); n > 0 {
 			a.Content = collapsed
 			deduped += n
+			if fm2, err2 := parseFrontmatter([]byte(a.Content)); err2 == nil {
+				fm = fm2
+			}
+		}
+		// Remove a nested `frontmatter:` map — the artifact where a model
+		// wraps an already-frontmattered source file's frontmatter instead of
+		// merging it. Promotes a more specific nested domain to the top level
+		// first. Re-parse so the field clamps below see the promoted domain.
+		if stripped, promoted, ok := stripNestedFrontmatterDoc(a.Content, domains); ok {
+			a.Content = stripped
+			nested++
+			if promoted != "" {
+				logMsg("envelope", "clamp: %q — stripped nested frontmatter (promoted domain: %s)", a.Path, promoted)
+			}
 			if fm2, err2 := parseFrontmatter([]byte(a.Content)); err2 == nil {
 				fm = fm2
 			}
@@ -1462,8 +1476,8 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 		}
 		kept = append(kept, a)
 	}
-	if dropped+retyped+redomained+stamped+deduped > 0 {
-		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped, %d duplicate key(s) collapsed", dropped, retyped, redomained, stamped, deduped)
+	if dropped+retyped+redomained+stamped+deduped+nested > 0 {
+		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped, %d duplicate key(s) collapsed, %d nested frontmatter stripped", dropped, retyped, redomained, stamped, deduped, nested)
 	}
 	env.Actions = kept
 }

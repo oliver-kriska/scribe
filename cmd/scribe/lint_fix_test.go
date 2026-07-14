@@ -509,3 +509,172 @@ func TestClassifyFrontmatterError(t *testing.T) {
 		}
 	}
 }
+
+// TestStripNestedFrontmatterBlock: the nested `frontmatter:` map is removed
+// and a more specific nested domain is promoted over a generic top-level one.
+func TestStripNestedFrontmatterBlock(t *testing.T) {
+	lines := []string{
+		"title: Blur Fix",
+		"type: research",
+		"domain: general",
+		"confidence: medium",
+		"frontmatter:",
+		"  type: research",
+		"  domain: enaia",
+		"  tags: [blur, liveview]",
+		"tags: []",
+	}
+	valid := map[string]bool{"enaia": true, "general": true}
+	out, promoted, changed := stripNestedFrontmatterBlock(lines, valid)
+	if !changed {
+		t.Fatal("expected the nested block to be stripped")
+	}
+	if promoted != "enaia" {
+		t.Errorf("promoted = %q, want enaia", promoted)
+	}
+	joined := strings.Join(out, "\n")
+	if strings.Contains(joined, "frontmatter:") || strings.Contains(joined, "  type: research") {
+		t.Errorf("nested block/children not removed:\n%s", joined)
+	}
+	if !strings.Contains(joined, "domain: enaia") {
+		t.Errorf("better nested domain not promoted:\n%s", joined)
+	}
+	if !strings.Contains(joined, "tags: []") {
+		t.Errorf("top-level key after the nested block was lost:\n%s", joined)
+	}
+	// No-op when there's no nested block.
+	if _, _, c := stripNestedFrontmatterBlock([]string{"title: X", "domain: enaia"}, valid); c {
+		t.Error("clean frontmatter must not be reported as changed")
+	}
+}
+
+// TestAutoFixArticle_StripsNestedFrontmatter drives the whole fixer over the
+// real artifact shape and asserts the result validates clean.
+func TestAutoFixArticle_StripsNestedFrontmatter(t *testing.T) {
+	prev := validDomainsOverride
+	validDomainsOverride = map[string]bool{"enaia": true, "general": true, "personal": true}
+	defer func() { validDomainsOverride = prev }()
+
+	in := "---\ntitle: Blur Fix\ntype: research\ncreated: 2026-06-24\nupdated: 2026-06-24\ndomain: general\nconfidence: medium\ntags: []\nrelated: []\nsources: []\nauthority: contextual\nindex_tier: brief\nfrontmatter:\n  type: research\n  domain: enaia\n  confidence: high\n---\n\nBody.\n"
+	changes, out, err := autoFixArticle("", "research/blur-fix.md", []byte(in))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected a rewrite")
+	}
+	s := string(out)
+	if strings.Contains(s, "frontmatter:") {
+		t.Errorf("nested frontmatter block survived:\n%s", s)
+	}
+	if !strings.Contains(s, "\ndomain: enaia\n") {
+		t.Errorf("expected domain promoted to enaia:\n%s", s)
+	}
+	var sawStrip bool
+	for _, c := range changes {
+		if strings.Contains(c, "nested `frontmatter:` block") {
+			sawStrip = true
+		}
+	}
+	if !sawStrip {
+		t.Errorf("expected a strip change, got: %v", changes)
+	}
+}
+
+// TestAutoFixArticle_SplitsCleanJoinedFence: a `--- title: X` opening fence
+// with the rest of the keys at column 0 is repaired to a bare `---\n` fence.
+func TestAutoFixArticle_SplitsCleanJoinedFence(t *testing.T) {
+	in := "--- title: \"X\"\ntype: pattern\ncreated: 2026-05-15\nupdated: 2026-05-15\ndomain: general\nconfidence: medium\ntags: []\nrelated: []\nsources: []\nindex_tier: standard\n---\n\nBody.\n"
+	changes, out, err := autoFixArticle("", "patterns/x.md", []byte(in))
+	if err != nil {
+		t.Fatalf("clean joined fence must be fixed, not errored: %v", err)
+	}
+	if out == nil || !strings.HasPrefix(string(out), "---\ntitle: \"X\"\n") {
+		t.Errorf("joined fence not split to a bare fence:\n%s", out)
+	}
+	if !strings.Contains(string(out), "index_tier: standard") {
+		t.Errorf("index_tier lost during fence repair:\n%s", out)
+	}
+	var sawSplit bool
+	for _, c := range changes {
+		if strings.Contains(c, "split joined opening fence") {
+			sawSplit = true
+		}
+	}
+	if !sawSplit {
+		t.Errorf("expected a fence-split change, got: %v", changes)
+	}
+}
+
+// TestAutoFixArticle_MessyJoinedFenceSkips: a joined fence whose remaining
+// keys are space-indented can't be deterministically repaired — after the
+// fence split it still fails to parse, so the honesty guard SKIPs it rather
+// than writing garbage.
+func TestAutoFixArticle_MessyJoinedFenceSkips(t *testing.T) {
+	in := "--- title: \"X\"\n type: pattern\n domain: general\nindex_tier: standard\n---\n\nBody.\n"
+	_, out, err := autoFixArticle("", "patterns/x.md", []byte(in))
+	if err == nil {
+		t.Fatalf("space-indented joined fence must SKIP; got out=%q", out)
+	}
+	if out != nil {
+		t.Error("must not write a still-invalid file")
+	}
+}
+
+// TestAutoFixArticle_BodyOnlyStillSkippedSilently: a page with no frontmatter
+// at all (no leading fence) is left untouched — the joined-fence branch must
+// not mistake body prose for frontmatter.
+func TestAutoFixArticle_BodyOnlyStillSkippedSilently(t *testing.T) {
+	changes, out, err := autoFixArticle("", "wiki/stub.md", []byte("Just a body-only stub, no frontmatter.\n"))
+	if err != nil || out != nil || len(changes) != 0 {
+		t.Errorf("body-only file must be a silent no-op; got changes=%v out=%q err=%v", changes, out, err)
+	}
+}
+
+// TestAutoFixArticle_NormalizesTrailingWhitespaceFence: a `--- ` opening fence
+// (three dashes + trailing space, then a newline) is NOT a joined fence — the
+// first line after the dashes is empty. The fixer must normalize the fence to
+// a bare `---` rather than bailing to a silent no-op (the tier-write skip
+// class). Covers both the compact and the double-spaced (blank-line-between-
+// keys) frontmatter shapes seen on disk.
+func TestAutoFixArticle_NormalizesTrailingWhitespaceFence(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{
+			"compact",
+			"--- \ntitle: \"X\"\ntype: decision\ncreated: 2026-05-15\nupdated: 2026-05-16\ndomain: general\nconfidence: medium\ntags: []\nrelated: []\nsources: []\nindex_tier: stub\n---\n\nBody.\n",
+		},
+		{
+			"double-spaced",
+			"--- \n\ntitle: \"X\"\n\ntype: idea\n\ncreated: 2026-05-18\n\nupdated: 2026-05-27\n\ndomain: general\n\nconfidence: medium\n\ntags: []\n\nrelated: []\n\nsources: []\n\nindex_tier: stub\n---\n\nBody.\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			changes, out, err := autoFixArticle("", "decisions/x.md", []byte(c.in))
+			if err != nil {
+				t.Fatalf("trailing-whitespace fence must be repaired, not errored: %v", err)
+			}
+			if out == nil {
+				t.Fatal("expected a rewrite")
+			}
+			if !strings.HasPrefix(string(out), "---\n") {
+				t.Errorf("opening fence not normalized to bare ---:\n%q", string(out)[:12])
+			}
+			if _, perr := parseFrontmatter(out); perr != nil {
+				t.Errorf("output still invalid after fence repair: %v\n%s", perr, out)
+			}
+			var sawFence bool
+			for _, ch := range changes {
+				if strings.Contains(ch, "normalized opening frontmatter fence") {
+					sawFence = true
+				}
+			}
+			if !sawFence {
+				t.Errorf("expected an opening-fence change, got: %v", changes)
+			}
+		})
+	}
+}

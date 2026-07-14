@@ -173,3 +173,42 @@ func TestIsRawArticle(t *testing.T) {
 		}
 	}
 }
+
+// TestTierWrite_SkipsMalformedFence is the convergence guard: a file whose
+// opening fence is joined (`--- title:` with space-indented keys) makes the
+// YAML parser and the line-writer disagree about index_tier, so --missing-only
+// used to rewrite it every run. The guard must skip it byte-for-byte while a
+// clean sibling still gets its tier written.
+func TestTierWrite_SkipsMalformedFence(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SCRIBE_KB", root)
+	pat := filepath.Join(root, "patterns")
+	if err := os.MkdirAll(pat, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	malformed := "--- title: \"Bad\"\n type: pattern\n domain: general\nindex_tier: standard\n---\n\n" + strings.Repeat("foo ", 50) + "\n"
+	malformedPath := filepath.Join(pat, "bad.md")
+	if err := os.WriteFile(malformedPath, []byte(malformed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cleanPath := filepath.Join(pat, "good.md")
+	clean := "---\ntitle: \"Good\"\ntype: pattern\ncreated: 2026-01-01\nupdated: 2026-01-01\ndomain: general\nconfidence: medium\ntags: []\nrelated: []\nsources: []\n---\n\n" + strings.Repeat("foo ", 50) + "\n"
+	if err := os.WriteFile(cleanPath, []byte(clean), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (&TierWriteCmd{MissingOnly: true}).Run(); err != nil {
+		t.Fatalf("tier write: %v", err)
+	}
+
+	// Malformed file is untouched.
+	got, _ := os.ReadFile(malformedPath)
+	if string(got) != malformed {
+		t.Errorf("malformed-fence file was rewritten, want byte-identical skip:\n%s", got)
+	}
+	// Clean file got its tier.
+	gotClean, _ := os.ReadFile(cleanPath)
+	if !strings.Contains(string(gotClean), "index_tier:") {
+		t.Errorf("clean sibling should have received index_tier:\n%s", gotClean)
+	}
+}

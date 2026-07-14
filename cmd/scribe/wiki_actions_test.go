@@ -1497,3 +1497,36 @@ func TestApplyWikiActions_DecayGuardFiresInDryRun(t *testing.T) {
 		t.Error("dry-run must not modify the file")
 	}
 }
+
+// TestApplyWikiActions_ClampStripsNestedFrontmatter is the envelope-seam
+// counterpart to the on-disk lint --fix strip: when a model wraps an
+// already-frontmattered source under a nested `frontmatter:` map, the clamp
+// removes the nested block before write and promotes a more specific nested
+// domain over a generic top-level one — so the artifact never lands on disk.
+func TestApplyWikiActions_ClampStripsNestedFrontmatter(t *testing.T) {
+	prev := validDomainsOverride
+	validDomainsOverride = map[string]bool{"enaia": true, "general": true}
+	defer func() { validDomainsOverride = prev }()
+
+	root := t.TempDir()
+	env := WikiActionEnvelope{Actions: []WikiAction{{
+		Op:   "create",
+		Path: "research/wrapped.md",
+		Content: "---\ntitle: Wrapped\ntype: research\ndomain: general\nframtter_placeholder: x\nfrontmatter:\n" +
+			"  type: research\n  domain: enaia\n  confidence: high\n---\nbody\n",
+	}}}
+	if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+		t.Fatal(err)
+	}
+	s := readBack(t, root, "research/wrapped.md")
+	if strings.Contains(s, "frontmatter:") {
+		t.Errorf("nested frontmatter block survived to disk:\n%s", s)
+	}
+	if !strings.Contains(s, "\ndomain: enaia\n") {
+		t.Errorf("more specific nested domain not promoted:\n%s", s)
+	}
+	// Result must still parse cleanly.
+	if _, err := parseFrontmatter([]byte(s)); err != nil {
+		t.Errorf("clamped output no longer parses: %v\n%s", err, s)
+	}
+}

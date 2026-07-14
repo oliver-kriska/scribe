@@ -49,8 +49,38 @@ import (
 // log what actually happened.
 func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) {
 	s := string(content)
-	if !strings.HasPrefix(s, "---\n") && !strings.HasPrefix(s, "---\r\n") {
-		return nil, nil, nil // no frontmatter — skip
+	joinedFence := false
+	openingFenceFixed := false
+	switch {
+	case strings.HasPrefix(s, "---\n"), strings.HasPrefix(s, "---\r\n"):
+		// clean opening fence — proceed
+	case strings.HasPrefix(s, "--- "), strings.HasPrefix(s, "---\t"):
+		// The opening `---` has trailing junk on its line. Two distinct shapes,
+		// disambiguated by what remains after the dashes on that first line:
+		//   (a) trailing-whitespace-only fence ("--- \n"): the body is intact,
+		//       only the fence line carries stray spaces/tabs — drop them.
+		//   (b) joined fence ("--- title: ..."): the `---` ran into the first
+		//       key — split to "---\n<firstkey>".
+		// Both require a closing fence to be treated as frontmatter at all, so
+		// body prose that merely starts with "--- " stays a silent no-op.
+		// Residual corruption (e.g. space-indented keys) then surfaces later as
+		// a SKIP via the honesty guard, never a silent success.
+		firstLine, _, _ := strings.Cut(s[3:], "\n")
+		rest := strings.TrimLeft(firstLine, " \t")
+		_, _, restIsKey := splitFrontmatterLine(rest)
+		hasClose := strings.Contains(s, "\n---")
+		switch {
+		case rest == "" && hasClose:
+			s = "---" + s[3+len(firstLine):]
+			openingFenceFixed = true
+		case restIsKey && hasClose:
+			s = "---\n" + strings.TrimLeft(s[3:], " \t")
+			joinedFence = true
+		default:
+			return nil, nil, nil
+		}
+	default:
+		return nil, nil, nil // no frontmatter — skip (body-only stubs)
 	}
 
 	// Locate closing frontmatter delimiter. Tolerate trailing whitespace
@@ -78,8 +108,27 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 	var changes []string
 	lines := strings.Split(fmBlock, "\n")
 
+	if joinedFence {
+		changes = append(changes, "split joined opening fence to ---")
+	}
+	if openingFenceFixed {
+		changes = append(changes, "normalized opening frontmatter fence to bare ---")
+	}
 	if fenceWasNoncanonical {
 		changes = append(changes, "normalized closing frontmatter fence to bare ---")
+	}
+
+	// Remove a nested `frontmatter:` map (the ingestion artifact where a
+	// source file's own frontmatter was wrapped instead of merged), promoting
+	// a more specific nested domain first so the strip keeps the better
+	// signal. Runs before the domain clamp so a promoted domain is validated.
+	if newLines, promoted, stripped := stripNestedFrontmatterBlock(lines, validDomainsForRoot(root)); stripped {
+		lines = newLines
+		if promoted != "" {
+			changes = append(changes, fmt.Sprintf("removed nested `frontmatter:` block (promoted domain: %s)", promoted))
+		} else {
+			changes = append(changes, "removed nested `frontmatter:` block (ingestion artifact)")
+		}
 	}
 
 	// Collapse duplicate top-level keys (keep the LAST, matching
@@ -352,6 +401,37 @@ func canonicalTypeForRel(rel string) string {
 	return ""
 }
 
+// fmUnit is one top-level `key:` line plus the contiguous indented child
+// lines it owns, as a [start, end) range into a split frontmatter block.
+// A blank or non-key line that isn't an indented child is its own
+// passthrough unit (key ""), so comments and blanks survive untouched.
+type fmUnit struct {
+	key        string
+	start, end int
+}
+
+// frontmatterUnits groups split frontmatter lines into fmUnits. Shared by
+// the duplicate-key collapse and the nested-`frontmatter:` strip so both
+// treat block-valued keys (a key plus its indented children) as one unit.
+func frontmatterUnits(lines []string) []fmUnit {
+	var units []fmUnit
+	for i := 0; i < len(lines); {
+		key, _, ok := splitFrontmatterLine(lines[i])
+		if !ok {
+			units = append(units, fmUnit{key: "", start: i, end: i + 1})
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(lines) && (strings.HasPrefix(lines[j], " ") || strings.HasPrefix(lines[j], "\t")) {
+			j++
+		}
+		units = append(units, fmUnit{key: key, start: i, end: j})
+		i = j
+	}
+	return units
+}
+
 // collapseDuplicateFrontmatterKeys removes earlier occurrences of any
 // top-level key that appears more than once in a split frontmatter block,
 // keeping the LAST occurrence — the same last-wins rule parseFrontmatter's
@@ -360,29 +440,7 @@ func canonicalTypeForRel(rel string) string {
 // child lines), those children are removed with it. Returns the rewritten
 // lines and the number of duplicate key blocks dropped (0 = no change).
 func collapseDuplicateFrontmatterKeys(lines []string) ([]string, int) {
-	// Group the block into units: each top-level `key:` line plus the
-	// contiguous indented child lines it owns. A blank or non-key line
-	// that isn't an indented child becomes its own passthrough unit
-	// (key ""), so comments and blanks survive untouched.
-	type unit struct {
-		key        string
-		start, end int // [start, end)
-	}
-	var units []unit
-	for i := 0; i < len(lines); {
-		key, _, ok := splitFrontmatterLine(lines[i])
-		if !ok {
-			units = append(units, unit{key: "", start: i, end: i + 1})
-			i++
-			continue
-		}
-		j := i + 1
-		for j < len(lines) && (strings.HasPrefix(lines[j], " ") || strings.HasPrefix(lines[j], "\t")) {
-			j++
-		}
-		units = append(units, unit{key: key, start: i, end: j})
-		i = j
-	}
+	units := frontmatterUnits(lines)
 
 	count := make(map[string]int)
 	lastIdx := make(map[string]int)
@@ -404,6 +462,56 @@ func collapseDuplicateFrontmatterKeys(lines []string) ([]string, int) {
 		out = append(out, lines[u.start:u.end]...)
 	}
 	return out, removed
+}
+
+// stripNestedFrontmatterBlock removes a top-level `frontmatter:` key whose
+// value is a nested map — the ingestion artifact where an already-
+// frontmattered source file had its own frontmatter wrapped as a nested
+// block instead of merged into the top level. No schema field is named
+// `frontmatter`, so a top-level one is always the artifact. Before removing,
+// a more specific `domain:` from the nested block is promoted to the top
+// level when the top level is empty or the generic "general" and the nested
+// value is a valid configured domain — so the strip preserves the better
+// signal instead of discarding it. Returns (lines, promotedDomain, changed).
+func stripNestedFrontmatterBlock(lines []string, validDomains map[string]bool) ([]string, string, bool) {
+	units := frontmatterUnits(lines)
+	idx := -1
+	for i, u := range units {
+		if u.key == "frontmatter" {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return lines, "", false
+	}
+
+	// Pull a candidate domain out of the nested block before dropping it.
+	nestedDomain := ""
+	for _, l := range lines[units[idx].start:units[idx].end] {
+		if k, rest, ok := splitFrontmatterLine(strings.TrimLeft(l, " \t")); ok && k == "domain" {
+			nestedDomain = strings.Trim(strings.TrimSpace(rest), `"'`)
+			break
+		}
+	}
+
+	out := make([]string, 0, len(lines))
+	for i, u := range units {
+		if i == idx {
+			continue // drop the `frontmatter:` unit and its children
+		}
+		out = append(out, lines[u.start:u.end]...)
+	}
+
+	promoted := ""
+	if nestedDomain != "" && nestedDomain != "general" && validDomains[nestedDomain] {
+		if top := frontmatterValue(out, "domain"); top == "" || top == "general" {
+			if replaceFMLine(out, "domain", nestedDomain) {
+				promoted = nestedDomain
+			}
+		}
+	}
+	return out, promoted, true
 }
 
 // dedupeFrontmatterKeys applies collapseDuplicateFrontmatterKeys to the
@@ -437,6 +545,38 @@ func dedupeFrontmatterKeys(content string) (string, int) {
 	out = append(out, deduped...)
 	out = append(out, lines[closeIdx:]...)
 	return strings.Join(out, "\n"), removed
+}
+
+// stripNestedFrontmatterDoc applies stripNestedFrontmatterBlock to the
+// leading frontmatter block of a full document, returning the rewritten
+// content, any promoted domain, and whether a change was made. Used by the
+// extraction seam (clampEnvelopeFrontmatter) so a model that wraps source
+// frontmatter as a nested `frontmatter:` map never persists one to disk;
+// autoFixArticle is the on-disk safety net for files already written.
+func stripNestedFrontmatterDoc(content string, validDomains map[string]bool) (string, string, bool) {
+	lines := strings.Split(content, "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
+		return content, "", false
+	}
+	closeIdx := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			closeIdx = i
+			break
+		}
+	}
+	if closeIdx < 1 {
+		return content, "", false
+	}
+	stripped, promoted, changed := stripNestedFrontmatterBlock(lines[1:closeIdx], validDomains)
+	if !changed {
+		return content, "", false
+	}
+	out := make([]string, 0, len(lines))
+	out = append(out, lines[0])
+	out = append(out, stripped...)
+	out = append(out, lines[closeIdx:]...)
+	return strings.Join(out, "\n"), promoted, true
 }
 
 // coerceScalarListField rewrites a top-level `key: a, b, c` scalar into an
