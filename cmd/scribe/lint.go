@@ -96,13 +96,15 @@ func (l *LintCmd) Run() error {
 		"warnings":      rep.warnings,
 	}
 
-	// Grouped warning summary (default mode only), then verdict.
+	// Grouped warning summary (default mode only), the "To fix, run:"
+	// footer, then the verdict. The footer prints on a warnings-only PASS
+	// too, so `scribe lint` always ends by naming the command(s) to run.
 	rep.flush()
 	if !l.Quiet {
 		fmt.Println()
 	}
+	rep.remediationFooter()
 	if rep.errors > 0 {
-		rep.errorHint()
 		return fmt.Errorf("FAILED: %d errors, %d warnings", rep.errors, rep.warnings)
 	}
 	if rep.warnings > 0 {

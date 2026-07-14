@@ -113,18 +113,58 @@ func (r *lintReport) noteErrorKind(msg string) {
 	r.errKinds[classifyFrontmatterError(msg)]++
 }
 
-// errorHint prints a closing how-to-fix block whenever Phase-1 frontmatter
-// errors were seen. It ALWAYS leads with `scribe lint --fix`: that is the
-// safe first step (a no-op on classes it can't repair), and the operator
-// shouldn't have to know which errors are mechanical to be told to try it —
-// hiding the line when the current batch happened to be all-manual is what
-// made the hint look missing. The per-class bullets then name what --fix
-// won't touch. No-op in quiet mode or when no frontmatter errors were seen.
-func (r *lintReport) errorHint() {
-	if r.quiet || len(r.errKinds) == 0 {
+// classesByCount returns the warning classes sorted by count descending,
+// ties alphabetical — the order both flush() and the remediation footer use.
+func (r *lintReport) classesByCount() []string {
+	classes := make([]string, 0, len(r.classCounts))
+	for c := range r.classCounts {
+		classes = append(classes, c)
+	}
+	sort.Slice(classes, func(i, j int) bool {
+		if ci, cj := r.classCounts[classes[i]], r.classCounts[classes[j]]; ci != cj {
+			return ci > cj
+		}
+		return classes[i] < classes[j]
+	})
+	return classes
+}
+
+// remediationFooter prints the closing "To fix, run:" block: the concrete
+// commands that address whatever this run surfaced — `scribe lint --fix`
+// for frontmatter errors, plus any warning class that carries a fix command
+// (e.g. index_tier → `scribe tier write --missing-only`) — followed by the
+// error residue no command repairs (missing title, invalid confidence, no
+// frontmatter). It renders on BOTH a warnings-only PASS and a FAIL, so the
+// operator always sees the next command to run, not just when lint fails.
+// Silent in quiet mode or when nothing is actionable.
+func (r *lintReport) remediationFooter() {
+	if r.quiet {
 		return
 	}
-	fmt.Fprintln(r.w, "→ run `scribe lint --fix` first — it repairs duplicate keys, list formatting, dates, invalid domains, and missing defaults")
+
+	// Ordered, de-duplicated (command → why) pairs. `scribe lint --fix` can
+	// be reached from both a frontmatter error and the filename-as-title
+	// warning class; add() keeps the first reason and one line.
+	type step struct{ cmd, why string }
+	var steps []step
+	add := func(cmd, why string) {
+		for i := range steps {
+			if steps[i].cmd == cmd {
+				return
+			}
+		}
+		steps = append(steps, step{cmd, why})
+	}
+
+	if len(r.errKinds) > 0 {
+		add("scribe lint --fix", "frontmatter errors: duplicate keys, list formatting, dates, invalid domains, missing defaults")
+	}
+	for _, class := range r.classesByCount() {
+		if cmd := lintHints[class]; cmd != "" {
+			add(cmd, fmt.Sprintf("%d %s", r.classCounts[class], class))
+		}
+	}
+
 	var manual []string
 	if r.errKinds[errKindNeedsTitle] > 0 {
 		manual = append(manual, "missing title — add a `title:` line (--fix won't invent one)")
@@ -135,12 +175,30 @@ func (r *lintReport) errorHint() {
 	if r.errKinds[errKindNeedsFrontmatter] > 0 {
 		manual = append(manual, "no frontmatter — the page has no `---` block; add one")
 	}
-	if len(manual) > 0 {
-		fmt.Fprintln(r.w, "→ then fix by hand what --fix can't:")
-		for _, m := range manual {
-			fmt.Fprintf(r.w, "    • %s\n", m)
+
+	if len(steps) == 0 && len(manual) == 0 {
+		return
+	}
+
+	if len(steps) > 0 {
+		width := 0
+		for _, s := range steps {
+			if len(s.cmd) > width {
+				width = len(s.cmd)
+			}
+		}
+		fmt.Fprintln(r.w, "To fix, run:")
+		for _, s := range steps {
+			fmt.Fprintf(r.w, "  %-*s  # %s\n", width, s.cmd, s.why)
 		}
 	}
+	if len(manual) > 0 {
+		fmt.Fprintln(r.w, "Needs a human (no command):")
+		for _, m := range manual {
+			fmt.Fprintf(r.w, "  • %s\n", m)
+		}
+	}
+	fmt.Fprintln(r.w)
 }
 
 // errorf prints a per-file ERROR line and counts one error. Errors are
@@ -159,9 +217,12 @@ func (r *lintReport) errorLinef(format string, args ...any) {
 // warnf records a per-file warning of the given class. Verbose mode
 // prints it immediately, with the class's remediation hint appended when
 // lintHints knows one; default mode counts it for the grouped flush;
-// quiet mode only counts.
+// quiet mode only counts. classCounts is populated in every mode so the
+// closing remediationFooter can name the fix command regardless of mode
+// (flush() still renders only in default mode, so this doesn't double-print).
 func (r *lintReport) warnf(class, format string, args ...any) {
 	r.warnings++
+	r.classCounts[class]++
 	if r.quiet {
 		return
 	}
@@ -173,7 +234,6 @@ func (r *lintReport) warnf(class, format string, args ...any) {
 		fmt.Fprintf(r.w, "  WARN %s\n", msg)
 		return
 	}
-	r.classCounts[class]++
 }
 
 // warnAggregatef records a warning that is already one line per class
@@ -209,17 +269,7 @@ func (r *lintReport) flush() {
 		return
 	}
 
-	classes := make([]string, 0, len(r.classCounts))
-	for c := range r.classCounts {
-		classes = append(classes, c)
-	}
-	sort.Slice(classes, func(i, j int) bool {
-		ci, cj := r.classCounts[classes[i]], r.classCounts[classes[j]]
-		if ci != cj {
-			return ci > cj
-		}
-		return classes[i] < classes[j]
-	})
+	classes := r.classesByCount()
 
 	countW := len(strconv.Itoa(r.classCounts[classes[0]]))
 	nameW := 0

@@ -200,41 +200,65 @@ func TestLintSizesGroupsByClass(t *testing.T) {
 	}
 }
 
-// TestErrorHint_AlwaysSuggestsFix: the --fix line must appear whenever there
-// are frontmatter errors — even an all-manual batch (missing title, invalid
-// confidence). Gating it on a mechanical error being present is what made the
-// hint look absent after the auto-fixable errors were already cleared.
-func TestErrorHint_AlwaysSuggestsFix(t *testing.T) {
+// TestRemediationFooter_AlwaysSuggestsFixOnErrors: the `scribe lint --fix`
+// command must appear whenever there are frontmatter errors — even an
+// all-manual batch (missing title, invalid confidence). Gating it on a
+// mechanical error being present is what made the hint look absent after the
+// auto-fixable errors were already cleared. The human-only residue is listed
+// under "Needs a human".
+func TestRemediationFooter_AlwaysSuggestsFixOnErrors(t *testing.T) {
 	var buf bytes.Buffer
 	r := newLintReport(&buf, false, false)
 	r.noteErrorKind("missing required fields: title")
 	r.noteErrorKind("invalid confidence: 'confirmed' (expected: high, low, medium)")
 	r.noteErrorKind("invalid YAML frontmatter: no frontmatter delimiter")
-	r.errorHint()
+	r.remediationFooter()
 	out := buf.String()
-	if !strings.Contains(out, "scribe lint --fix") {
-		t.Errorf("--fix hint must show even for an all-manual batch:\n%s", out)
+	if !strings.Contains(out, "To fix, run:") || !strings.Contains(out, "scribe lint --fix") {
+		t.Errorf("--fix command must show even for an all-manual batch:\n%s", out)
 	}
 	for _, want := range []string{"missing title", "invalid confidence", "no frontmatter"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("manual bullet %q missing:\n%s", want, out)
+			t.Errorf("manual residue %q missing:\n%s", want, out)
 		}
 	}
 }
 
-// TestErrorHint_SilentWhenCleanOrQuiet: no errors ⇒ no hint (lint passed);
-// quiet mode ⇒ no hint (sync's mid-extract lint must stay terse).
-func TestErrorHint_SilentWhenCleanOrQuiet(t *testing.T) {
+// TestRemediationFooter_WarningsOnly: a passing run (no errors) with a
+// warning class that carries a fix command still prints the "To fix, run:"
+// footer naming that command — this is the case the user hit, where lint
+// PASSES but there's still an index_tier command to run. `scribe lint --fix`
+// must NOT appear (there are no frontmatter errors to fix).
+func TestRemediationFooter_WarningsOnly(t *testing.T) {
 	var buf bytes.Buffer
-	newLintReport(&buf, false, false).errorHint() // no errors noted
+	r := newLintReport(&buf, false, false)
+	r.warnf(lintClassIndexTierMissing, "wiki/a.md: index_tier missing")
+	r.warnf(lintClassBloatedArticle, "wiki/b.md: bloated") // no command → not in footer
+	r.remediationFooter()
+	out := buf.String()
+	if !strings.Contains(out, "To fix, run:") || !strings.Contains(out, "scribe tier write --missing-only") {
+		t.Errorf("warning fix command must show on a passing run:\n%s", out)
+	}
+	if strings.Contains(out, "scribe lint --fix") {
+		t.Errorf("--fix must not appear with zero frontmatter errors:\n%s", out)
+	}
+}
+
+// TestRemediationFooter_SilentWhenCleanOrQuiet: nothing actionable ⇒ no
+// footer (all-clean lint); quiet mode ⇒ no footer (sync's mid-extract lint
+// must stay terse) even with errors and warnings recorded.
+func TestRemediationFooter_SilentWhenCleanOrQuiet(t *testing.T) {
+	var buf bytes.Buffer
+	newLintReport(&buf, false, false).remediationFooter() // nothing recorded
 	if buf.Len() != 0 {
-		t.Errorf("clean run must emit no hint, got: %q", buf.String())
+		t.Errorf("clean run must emit no footer, got: %q", buf.String())
 	}
 	buf.Reset()
 	rq := newLintReport(&buf, false, true)
 	rq.noteErrorKind("missing required fields: title")
-	rq.errorHint()
+	rq.warnf(lintClassIndexTierMissing, "wiki/a.md: index_tier missing")
+	rq.remediationFooter()
 	if buf.Len() != 0 {
-		t.Errorf("quiet mode must emit no hint, got: %q", buf.String())
+		t.Errorf("quiet mode must emit no footer, got: %q", buf.String())
 	}
 }
