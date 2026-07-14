@@ -518,12 +518,17 @@ type IntegrationConfig struct {
 	// interpreted; Pinboard understands recent+unread | unread | all.
 	// Empty → adapter default (recent+unread).
 	Scope string `yaml:"scope"`
-	// Tags is an OR filter applied by the generic driver: a bookmark is
-	// ingested only if it carries at least one of these tags (case-
-	// insensitive). Empty (the default) ingests everything the scope
-	// returns. Orthogonal to Scope — e.g. scope: all + tags: [kb] means
-	// "every bookmark I ever tagged kb".
+	// Tags is a tag filter applied by the generic driver (case-insensitive).
+	// Empty (the default) ingests everything the scope returns. Orthogonal
+	// to Scope — e.g. scope: all + tags: [kb] means "every bookmark I ever
+	// tagged kb". How multiple tags combine is TagsMode's call.
 	Tags []string `yaml:"tags"`
+	// TagsMode selects how Tags matches: "any" (the default — a bookmark
+	// carrying at least one listed tag passes; the natural mode for an
+	// ingest gate over several KB-worthy markers) or "all" (it must carry
+	// every listed tag — the narrowing semantics Pinboard's own /t:a/t:b/
+	// URL filtering uses). Ignored while Tags is empty.
+	TagsMode string `yaml:"tags_mode"`
 	// PublicOnly, when true, skips private (non-shared) bookmarks so only
 	// public ones reach the KB. Default false ingests everything, since an
 	// authenticated pull sees private bookmarks too. Useful when the KB may

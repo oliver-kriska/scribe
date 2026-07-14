@@ -223,6 +223,37 @@ func TestPullSourceTagFilterOverride(t *testing.T) {
 	}
 }
 
+func TestPullSourceTagsModeAll(t *testing.T) {
+	// tags_mode: all flips the filter to AND — only bookmarks carrying EVERY
+	// configured tag pass (Pinboard's own /t:a/t:b/ semantics), still
+	// case-insensitively.
+	root := testKB(t, "integrations:\n  fake:\n    tags: [\"elixir\", \"concurrency\"]\n    tags_mode: all\n")
+	src := &fakeSource{name: "fake", items: []SourceItem{
+		taggedItem("https://a.com", "a", "Elixir", "concurrency"), // both → keep
+		taggedItem("https://b.com", "b", "elixir"),                // one of two → drop
+		taggedItem("https://c.com", "c", "concurrency", "otp"),    // one of two → drop
+		taggedItem("https://d.com", "d"),                          // none → drop
+	}}
+	n, err := pullSource(root, src, FetchOpts{}, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("queued %d, want 1 (only a carries both tags)", n)
+	}
+}
+
+func TestPullSourceTagsModeInvalid(t *testing.T) {
+	// A typo in tags_mode must fail loudly, not silently widen the filter.
+	root := testKB(t, "integrations:\n  fake:\n    tags: [\"kb\"]\n    tags_mode: sometimes\n")
+	src := &fakeSource{name: "fake", items: []SourceItem{
+		taggedItem("https://a.com", "a", "kb"),
+	}}
+	if _, err := pullSource(root, src, FetchOpts{}, 0, false); err == nil || !strings.Contains(err.Error(), "tags_mode") {
+		t.Fatalf("err = %v, want a tags_mode config error", err)
+	}
+}
+
 func TestPullSourcePublicOnly(t *testing.T) {
 	// public_only: true drops items marked Private; public items pass.
 	root := testKB(t, "integrations:\n  fake:\n    public_only: true\n")

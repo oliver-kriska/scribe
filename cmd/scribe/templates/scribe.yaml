@@ -343,10 +343,12 @@ capture:
 #   pinboard:
 #     enabled: true
 #     scope: recent+unread    # recent+unread | unread | all  (by read-state/recency)
-#     tags: []                # OR filter: only ingest bookmarks with >=1 of these
-#                             # tags (case-insensitive); empty = all. Orthogonal to
-#                             # scope, e.g. scope: all + tags: [kb] = everything
-#                             # you ever tagged "kb".
+#     tags: []                # tag filter (case-insensitive); empty = all.
+#                             # Orthogonal to scope, e.g. scope: all + tags: [kb]
+#                             # = everything you ever tagged "kb".
+#     tags_mode: any          # any = carries >=1 listed tag (default, ingest-gate
+#                             # shape); all = must carry EVERY listed tag (how
+#                             # pinboard.in/t:a/t:b/ narrows).
 #     public_only: false      # true = skip private bookmarks (an authenticated
 #                             # pull sees private ones too); default ingests all.
 #     skip_domains: []        # substring filter, same as capture.skip_domains

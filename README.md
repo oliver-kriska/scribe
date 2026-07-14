@@ -355,8 +355,9 @@ integrations:
   pinboard:
     enabled: true
     scope: recent+unread    # recent+unread | unread | all  (by read-state/recency)
-    tags: []                # OR filter: only ingest bookmarks with >=1 of these
-                            # tags (case-insensitive); empty = all
+    tags: []                # tag filter (case-insensitive); empty = all
+    tags_mode: any          # any = bookmark carries >=1 listed tag (default)
+                            # all = must carry EVERY listed tag (Pinboard-style)
     public_only: false      # true = skip private bookmarks; default ingests all
     skip_domains: []        # substring filter, same as capture.skip_domains
 ```
@@ -364,10 +365,16 @@ integrations:
 - **`scope`** picks the set by read-state/recency: `recent+unread` (default —
   recent bookmarks plus anything flagged to-read), `unread` (only to-read), or
   `all` (whole archive).
-- **`tags`** is an independent OR filter: with `tags: [kb, elixir]`, only
-  bookmarks carrying `kb` **or** `elixir` are ingested; empty ingests everything
-  the scope returned. The two compose — `scope: all` + `tags: [kb]` means
-  "every bookmark I ever tagged `kb`".
+- **`tags`** is an independent tag filter; empty ingests everything the scope
+  returned. It composes with scope — `scope: all` + `tags: [kb]` means "every
+  bookmark I ever tagged `kb`".
+- **`tags_mode`** picks how multiple tags combine. The default `any` is an
+  ingest gate: `tags: [kb, elixir]` keeps bookmarks carrying `kb` **or**
+  `elixir` — the right shape when the list is "all my KB-worthy markers". Set
+  `all` to require **every** listed tag (`elixir` **and** `concurrency`),
+  which matches how Pinboard's own `/t:elixir/t:concurrency/` URL filtering
+  narrows. Note this deliberately differs from Pinboard's site default —
+  stacking tags there narrows, while an ingest filter usually widens.
 - **`public_only`** — an authenticated pull sees your **private** bookmarks too,
   and by default they're ingested. Set `public_only: true` (or pass
   `--public-only` for one run) to skip private (non-shared) bookmarks — worth it
