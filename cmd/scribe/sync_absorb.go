@@ -587,18 +587,31 @@ func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent abs
 		if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
 			return err
 		}
-		// One-shot corrective retry. The Phase 4B layer 2 e2e
-		// runs showed local models occasionally wrap the
-		// envelope in prose or code fences. A second pass
-		// with a sharper instruction recovers most of those
-		// without burning much extra wallclock. Anthropic
-		// rarely needs the retry but pays a small premium
-		// for the safety net.
-		logMsg("sync", "pass2 entity %q: first attempt failed (%v) — retrying with corrective prompt", ent.Label, err)
-		correctivePrompt := prompt + "\n\n## CORRECTION\n\nYour previous response could not be parsed as a JSON envelope. Output ONLY one JSON object matching WikiActionEnvelope. No prose. No markdown fences. No explanation. The object is the entire response.\n"
-		env, err = runPass2JSONOnce(gctx, run.provider, correctivePrompt, run.timeout)
+		// Corrective retries. The Phase 4B layer 2 e2e runs showed local
+		// models occasionally wrap the envelope in prose or code fences; the
+		// 2026-07-14 MiniMax M3 sync added a second failure mode — under
+		// json_object the model intermittently returns the empty object "{}"
+		// ("envelope has no actions"), stochastic at ~20-40%. json_schema
+		// mode (schema-capable hosted providers) makes "{}" structurally
+		// impossible on the first try, but ollama / a schema-less endpoint
+		// reaches pass-2 through the json_object fallback where it can still
+		// happen. Each empty/fenced reply is a couple of output tokens, so a
+		// second corrective pass is near-free and recovered ~2/3 of the
+		// stragglers in the field; two passes cover most of the rest.
+		const maxCorrectiveRetries = 2
+		correctivePrompt := prompt + "\n\n## CORRECTION\n\nYour previous response could not be parsed as a JSON envelope. Output ONLY one JSON object matching WikiActionEnvelope, with a non-empty \"actions\" array. No prose. No markdown fences. No explanation. The object is the entire response.\n"
+		for attempt := 1; attempt <= maxCorrectiveRetries; attempt++ {
+			logMsg("sync", "pass2 entity %q: attempt %d failed (%v) — corrective retry %d/%d", ent.Label, attempt, err, attempt, maxCorrectiveRetries)
+			env, err = runPass2JSONOnce(gctx, run.provider, correctivePrompt, run.timeout)
+			if err == nil {
+				break
+			}
+			if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
+				return err
+			}
+		}
 		if err != nil {
-			logMsg("sync", "pass2 entity %q: retry also failed: %v", ent.Label, err)
+			logMsg("sync", "pass2 entity %q: all %d corrective retries failed: %v", ent.Label, maxCorrectiveRetries, err)
 			return nil
 		}
 	}
@@ -660,7 +673,7 @@ func (s *SyncCmd) runPass2ToolsEntity(gctx context.Context, run pass2Run, ent ab
 func runPass2JSONOnce(parent context.Context, provider llmProviderGenerator, prompt string, timeout time.Duration) (WikiActionEnvelope, error) {
 	callCtx, cancel := context.WithTimeout(withOpLabel(parent, "absorb-pass2"), timeout)
 	defer cancel()
-	out, err := generateMaybeJSON(callCtx, provider, prompt)
+	out, err := generateWithSchema(callCtx, provider, prompt, wikiEnvelopeSchema())
 	if err != nil {
 		return WikiActionEnvelope{}, err
 	}
@@ -669,6 +682,45 @@ func runPass2JSONOnce(parent context.Context, provider llmProviderGenerator, pro
 		return WikiActionEnvelope{}, fmt.Errorf("no JSON envelope in provider output (%d bytes)", len(out))
 	}
 	return parseEnvelope(jsonText)
+}
+
+// wikiEnvelopeSchema is the json_schema sent with pass-2 requests. Its one
+// load-bearing constraint is actions minItems:1 — that closes the empty-"{}"
+// escape a schema-capable provider (Together, etc.) would otherwise fall into
+// under bare json_object (2026-07-14 MiniMax M3 regression: ~1/6 of pass-2
+// entities were dropped as "envelope has no actions"). The op vocabulary and
+// extra fields are intentionally permissive: apply-time validation
+// (validateActionPath, clampEnvelopeFrontmatter) stays the source of truth for
+// correctness; the schema only guarantees "at least one action with an op and
+// a path". Providers without json_schema support degrade to json_object then
+// plain text (see doRequest), so this is a best-effort tightening, never a
+// hard requirement on the provider.
+func wikiEnvelopeSchema() jsonSchemaSpec {
+	return jsonSchemaSpec{
+		Name: "WikiActionEnvelope",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"entity": map[string]any{"type": "string"},
+				"notes":  map[string]any{"type": "string"},
+				"actions": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"op":      map[string]any{"type": "string"},
+							"path":    map[string]any{"type": "string"},
+							"content": map[string]any{"type": "string"},
+							"heading": map[string]any{"type": "string"},
+						},
+						"required": []any{"op", "path"},
+					},
+				},
+			},
+			"required": []any{"entity", "actions"},
+		},
+	}
 }
 
 // absorbPlan mirrors the JSON schema emitted by prompts/absorb-pass1.md.

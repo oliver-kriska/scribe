@@ -249,14 +249,52 @@ func TestAbsorbDenseTwoPass_RetryFailurePreservesPartialProgress(t *testing.T) {
 	if err := sc.absorbDenseTwoPass(root, rawFile, rawName); err != nil {
 		t.Fatalf("absorbDenseTwoPass: %v (per-entity failure must not abort the absorb)", err)
 	}
-	if got := len(stub.CallsWithOp("absorb-pass2")); got != 3 {
-		t.Errorf("pass2 calls = %d, want 3 (Alpha twice, Beta once)", got)
+	if got := len(stub.CallsWithOp("absorb-pass2")); got != 4 {
+		t.Errorf("pass2 calls = %d, want 4 (Alpha thrice: original + 2 corrective retries, Beta once)", got)
 	}
 	if _, err := os.Stat(filepath.Join(root, "wiki", "alpha.md")); !os.IsNotExist(err) {
 		t.Errorf("alpha page should not exist, stat err = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "wiki", "beta.md")); err != nil {
 		t.Errorf("beta page missing — partial progress lost: %v", err)
+	}
+}
+
+// TestAbsorbDenseTwoPass_EmptyObjectEnvelopeRecovered: a first pass-2
+// response of "{}" — valid JSON but zero actions, which parseEnvelope
+// rejects as "envelope has no actions" — is the MiniMax M3 json_object
+// failure mode found 2026-07-14 (the model intermittently emits the empty
+// object under bare json_object). The corrective retry recovers it and the
+// page lands. Guards the generateWithSchema + retry recovery path against
+// the empty-object escape for providers that reach pass-2 without schema
+// enforcement (ollama / a schema-less endpoint).
+func TestAbsorbDenseTwoPass_EmptyObjectEnvelopeRecovered(t *testing.T) {
+	root := stubHarnessKB(t, denseAbsorbYAML)
+	rawFile, rawName := writeDenseRaw(t, root, "2026-06-01-empty-obj.md", "MARKER-EMPTYOBJ")
+
+	stub := &stubLLM{}
+	stub.Rules = []*stubRule{
+		{MatchOp: "absorb-pass1-whole", Reply: planJSON(t, rawFile, "general", entity("Alpha", "a"))},
+		// CORRECTION rule first (more specific) so it wins on the retry;
+		// the broader Alpha rule returns the empty object on the first try.
+		{MatchOp: "absorb-pass2", MatchPrompt: "## CORRECTION", Reply: envelopeJSON(t, 1, "Alpha", "wiki/alpha.md", "Alpha body.")},
+		{MatchOp: "absorb-pass2", MatchPrompt: "- Label: Alpha", Reply: "{}"},
+	}
+	installStubLLM(t, stub)
+
+	sc := &SyncCmd{Model: "sonnet"}
+	if err := sc.absorbDenseTwoPass(root, rawFile, rawName); err != nil {
+		t.Fatalf("absorbDenseTwoPass: %v", err)
+	}
+	pass2 := stub.CallsWithOp("absorb-pass2")
+	if len(pass2) != 2 {
+		t.Fatalf("pass2 calls = %d, want 2 (empty {} then one corrective retry)", len(pass2))
+	}
+	if strings.Contains(pass2[0].Prompt, "## CORRECTION") {
+		t.Errorf("first attempt must not carry the corrective suffix")
+	}
+	if _, err := os.Stat(filepath.Join(root, "wiki", "alpha.md")); err != nil {
+		t.Errorf("empty-{} entity not recovered on retry: %v", err)
 	}
 }
 

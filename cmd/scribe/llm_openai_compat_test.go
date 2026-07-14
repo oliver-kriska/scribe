@@ -173,6 +173,74 @@ func TestOpenAICompatResponseFormatRetry(t *testing.T) {
 	}
 }
 
+// TestOpenAICompatGenerateJSONSchemaAccepted: the schema path sends
+// response_format=json_schema (strict, carrying the schema + name) at the
+// larger schema max_tokens. This is the structural guard against the
+// empty-"{}" envelope (2026-07-14 MiniMax M3 regression).
+func TestOpenAICompatGenerateJSONSchemaAccepted(t *testing.T) {
+	var gotReq oaiChatRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotReq)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": `{"actions":[{"op":"create","path":"wiki/x.md"}]}`}}},
+			"usage":   map[string]int{"prompt_tokens": 10, "completion_tokens": 5},
+		})
+	}))
+	defer srv.Close()
+
+	p := &openaiCompatProvider{providerName: "together", baseURL: srv.URL + "/v1", apiKey: "k", model: "MiniMaxAI/MiniMax-M3"}
+	_, err := p.GenerateJSONSchema(context.Background(), "go", jsonSchemaSpec{Name: "WikiActionEnvelope", Schema: map[string]any{"type": "object"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotReq.ResponseFormat == nil || gotReq.ResponseFormat.Type != "json_schema" {
+		t.Fatalf("want response_format=json_schema, got %+v", gotReq.ResponseFormat)
+	}
+	js := gotReq.ResponseFormat.JSONSchema
+	if js == nil || !js.Strict || js.Name != "WikiActionEnvelope" || js.Schema == nil {
+		t.Errorf("json_schema payload wrong: %+v", js)
+	}
+	if gotReq.MaxTokens != hostedSchemaMaxOutputTokens {
+		t.Errorf("schema path max_tokens = %d, want %d", gotReq.MaxTokens, hostedSchemaMaxOutputTokens)
+	}
+}
+
+// TestOpenAICompatGenerateJSONSchemaDegrades: an endpoint that rejects the
+// json_schema field (400) must degrade json_schema → json_object → none
+// rather than erroring, so a provider lacking schema support still completes.
+func TestOpenAICompatGenerateJSONSchemaDegrades(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req oaiChatRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		seen = append(seen, responseFmtLabel(req.ResponseFormat))
+		if req.ResponseFormat != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]string{"message": "response_format json_schema is not supported by this model"},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": "plain ok"}}},
+			"usage":   map[string]int{"prompt_tokens": 8, "completion_tokens": 3},
+		})
+	}))
+	defer srv.Close()
+
+	p := &openaiCompatProvider{providerName: "huggingface", baseURL: srv.URL + "/v1", apiKey: "k", model: "m"}
+	out, err := p.GenerateJSONSchema(context.Background(), "go", jsonSchemaSpec{Name: "E", Schema: map[string]any{"type": "object"}})
+	if err != nil {
+		t.Fatalf("degrade path should succeed, got %v", err)
+	}
+	if out != "plain ok" {
+		t.Errorf("out = %q", out)
+	}
+	if got := strings.Join(seen, ","); got != "json_schema,json_object,none" {
+		t.Errorf("format cascade = %q, want json_schema,json_object,none", got)
+	}
+}
+
 func TestOpenAICompatRateLimit(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)

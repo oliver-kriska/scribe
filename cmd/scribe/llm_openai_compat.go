@@ -166,8 +166,20 @@ func resolveHostedAPIKey(providerName, keyEnvName string) string {
 	return strings.TrimSpace(uc.LLMAPIKey)
 }
 
+// hostedGenOpts selects the response_format and token ceiling for one hosted
+// request. The zero value is plain text at hostedMaxOutputTokens.
+type hostedGenOpts struct {
+	// jsonMode requests json_object (implied when schema is set).
+	jsonMode bool
+	// schema, when set, requests json_schema (strict) — the structural
+	// guard against a valid-but-empty object. nil for json_object/plain.
+	schema *oaiJSONSchema
+	// maxTokens overrides hostedMaxOutputTokens when non-zero.
+	maxTokens int
+}
+
 func (p *openaiCompatProvider) Generate(ctx context.Context, prompt string) (string, error) {
-	return p.generate(ctx, prompt, false)
+	return p.generate(ctx, prompt, hostedGenOpts{})
 }
 
 // GenerateJSON requests structured JSON output via response_format. The
@@ -176,7 +188,21 @@ func (p *openaiCompatProvider) Generate(ctx context.Context, prompt string) (str
 // the endpoint rejects the field, so a provider that lacks json mode
 // still works (the envelope prompts enforce shape on their own).
 func (p *openaiCompatProvider) GenerateJSON(ctx context.Context, prompt string) (string, error) {
-	return p.generate(ctx, prompt, true)
+	return p.generate(ctx, prompt, hostedGenOpts{jsonMode: true})
+}
+
+// GenerateJSONSchema requests JSON constrained to a strict schema — the
+// structural guard against a provider emitting a valid-but-empty object (the
+// empty-"{}" escape that bare json_object leaves open). doRequest degrades
+// through json_object then plain text if the endpoint rejects the json_schema
+// field, so a provider lacking schema support still completes the call. Uses
+// the larger schema max_tokens so a full envelope article doesn't truncate.
+func (p *openaiCompatProvider) GenerateJSONSchema(ctx context.Context, prompt string, schema jsonSchemaSpec) (string, error) {
+	return p.generate(ctx, prompt, hostedGenOpts{
+		jsonMode:  true,
+		schema:    &oaiJSONSchema{Name: schema.Name, Strict: true, Schema: schema.Schema},
+		maxTokens: hostedSchemaMaxOutputTokens,
+	})
 }
 
 // hostedMaxOutputTokens is sent as max_tokens on every hosted request.
@@ -186,6 +212,16 @@ func (p *openaiCompatProvider) GenerateJSON(ctx context.Context, prompt string) 
 // "no JSON envelope in provider output"; 2026-07-10). 8192 clears every
 // envelope scribe emits while staying within hosted models' output limits.
 const hostedMaxOutputTokens = 8192
+
+// hostedSchemaMaxOutputTokens is the max_tokens for schema-constrained pass-2
+// envelope writes (GenerateJSONSchema). A full wiki article — frontmatter,
+// verbatim quotes, body — occasionally exceeds 8192 output tokens: the
+// 2026-07-14 MiniMax M3 sync logged 10 finish_reason=length truncations at
+// hostedMaxOutputTokens. 16384 clears them. Cost is unchanged (billed per
+// actual token; only truncation-prone writes approach the ceiling). Scoped to
+// the schema path so every other hosted call keeps the conservative 8192 that
+// all providers accept.
+const hostedSchemaMaxOutputTokens = 16384
 
 // oaiChatRequest is the subset of the OpenAI /v1/chat/completions request
 // body scribe sends. ResponseFormat is omitted unless JSON mode is on.
@@ -202,8 +238,27 @@ type oaiChatMessage struct {
 	Content string `json:"content"`
 }
 
+// oaiResponseFmt is the response_format field. Type is "json_object" or
+// "json_schema"; JSONSchema is set only for the latter. The json_schema path
+// (strict) constrains the model to a populated schema via the endpoint's
+// constrained-decoding grammar — it closes the empty-"{}" escape that bare
+// json_object leaves open (2026-07-14: MiniMax M3 returned "{}" on ~20-40% of
+// pass-2 calls, dropping ~1/6 of extracted entities as "envelope has no
+// actions").
 type oaiResponseFmt struct {
-	Type string `json:"type"`
+	Type       string         `json:"type"`
+	JSONSchema *oaiJSONSchema `json:"json_schema,omitempty"`
+}
+
+// oaiJSONSchema is the json_schema response_format payload (OpenAI / Together
+// shape). Strict enables the constrained-decoding grammar so a schema-invalid
+// object (like "{}") cannot be emitted. Providers that don't support
+// json_schema 400 on the field; doRequest degrades to json_object then to no
+// format, so the request still completes.
+type oaiJSONSchema struct {
+	Name   string         `json:"name"`
+	Strict bool           `json:"strict,omitempty"`
+	Schema map[string]any `json:"schema"`
 }
 
 // oaiChatResponse covers the success and error shapes. Providers add
@@ -233,7 +288,7 @@ type oaiChatResponse struct {
 // (with dollars when a price is configured), and maps a 429 to
 // ErrRateLimit so sync's outer loop drains cleanly — same contract as
 // the anthropic provider.
-func (p *openaiCompatProvider) generate(ctx context.Context, prompt string, jsonMode bool) (string, error) {
+func (p *openaiCompatProvider) generate(ctx context.Context, prompt string, opts hostedGenOpts) (string, error) {
 	// Metered provider → honor the daily output-token ceiling. Reading
 	// config per call mirrors anthropicProvider.Generate; the budget
 	// check no-ops on empty root or a zero ceiling.
@@ -282,7 +337,7 @@ func (p *openaiCompatProvider) generate(ctx context.Context, prompt string, json
 	}()
 
 	defer startHeartbeat(ctx, op)()
-	out, resp, err := p.doRequest(ctx, prompt, jsonMode)
+	out, resp, err := p.doRequest(ctx, prompt, opts)
 	if err != nil {
 		entry.OK = false
 		switch {
@@ -324,35 +379,60 @@ func (p *openaiCompatProvider) generate(ctx context.Context, prompt string, json
 
 // doRequest performs the HTTP call and returns the assistant message
 // content plus the parsed response (for usage accounting). A 429 maps to
-// ErrRateLimit. JSON mode that trips a response_format rejection retries
-// once without the field so providers lacking json_object still work.
-func (p *openaiCompatProvider) doRequest(ctx context.Context, prompt string, jsonMode bool) (string, oaiChatResponse, error) {
+// ErrRateLimit. The response_format is tried as a degrade cascade
+// (json_schema → json_object → none): a tier is abandoned only on a 400 that
+// complains about the format field, so a provider lacking json_schema (or
+// json_object) still completes the call on a looser tier — the envelope
+// prompts constrain shape on their own, making plain text an acceptable floor.
+func (p *openaiCompatProvider) doRequest(ctx context.Context, prompt string, opts hostedGenOpts) (string, oaiChatResponse, error) {
+	maxTok := opts.maxTokens
+	if maxTok == 0 {
+		maxTok = hostedMaxOutputTokens
+	}
 	reqBody := oaiChatRequest{
 		Model:       p.model,
 		Messages:    []oaiChatMessage{{Role: "user", Content: prompt}},
 		Temperature: 0.3,
-		MaxTokens:   hostedMaxOutputTokens,
-	}
-	if jsonMode {
-		reqBody.ResponseFormat = &oaiResponseFmt{Type: "json_object"}
+		MaxTokens:   maxTok,
 	}
 
-	content, resp, status, body, err := p.postChat(ctx, reqBody)
-	if err != nil {
-		return "", oaiChatResponse{}, err
+	// Ordered response_format tiers, tightest first. schema implies the
+	// json_object fallback; plain (nil) is always the floor.
+	var formats []*oaiResponseFmt
+	switch {
+	case opts.schema != nil:
+		formats = []*oaiResponseFmt{
+			{Type: "json_schema", JSONSchema: opts.schema},
+			{Type: "json_object"},
+			nil,
+		}
+	case opts.jsonMode:
+		formats = []*oaiResponseFmt{{Type: "json_object"}, nil}
+	default:
+		formats = []*oaiResponseFmt{nil}
 	}
 
-	// Defensive seam: a provider that doesn't support json_object 400s
-	// complaining about response_format. Retry once without it rather
-	// than stranding the whole pass — the envelope prompts already
-	// constrain shape, so plain text is an acceptable fallback.
-	if status == http.StatusBadRequest && jsonMode && mentionsResponseFormat(resp, body) {
-		logMsg("llm", "%s: endpoint rejected response_format=json_object — retrying without structured-output flag", p.providerName)
-		reqBody.ResponseFormat = nil
+	var (
+		content string
+		resp    oaiChatResponse
+		status  int
+		body    string
+		err     error
+	)
+	for i, rf := range formats {
+		reqBody.ResponseFormat = rf
 		content, resp, status, body, err = p.postChat(ctx, reqBody)
 		if err != nil {
 			return "", oaiChatResponse{}, err
 		}
+		// Fall through to the next (looser) tier only when the endpoint
+		// rejected this format field. Any other outcome — success, a
+		// non-format 400, 429, 5xx — is resolved by the checks below.
+		if status == http.StatusBadRequest && rf != nil && i < len(formats)-1 && mentionsResponseFormat(resp, body) {
+			logMsg("llm", "%s: endpoint rejected response_format=%s — falling back to %s", p.providerName, rf.Type, responseFmtLabel(formats[i+1]))
+			continue
+		}
+		break
 	}
 
 	if status == http.StatusTooManyRequests {
@@ -422,12 +502,23 @@ func (p *openaiCompatProvider) postChat(ctx context.Context, reqBody oaiChatRequ
 	return content, cr, httpResp.StatusCode, string(data), nil
 }
 
-// mentionsResponseFormat reports whether an error body is complaining
-// about the response_format field, so generate can retry without it.
+// responseFmtLabel names a response_format tier for the fallback log line.
+func responseFmtLabel(rf *oaiResponseFmt) string {
+	if rf == nil {
+		return "none"
+	}
+	return rf.Type
+}
+
+// mentionsResponseFormat reports whether an error body is complaining about
+// the response_format field (json_object OR json_schema), so doRequest can
+// fall back to a looser tier. "schema" / "json_schema" cover a provider that
+// accepts json_object but rejects strict json_schema, which then degrades to
+// json_object rather than erroring the whole call.
 func mentionsResponseFormat(resp oaiChatResponse, body string) bool {
 	hay := strings.ToLower(body)
 	if resp.Error != nil {
 		hay += " " + strings.ToLower(resp.Error.Message) + " " + strings.ToLower(resp.Error.Code)
 	}
-	return strings.Contains(hay, "response_format") || strings.Contains(hay, "json_object") || strings.Contains(hay, "json mode")
+	return strings.Contains(hay, "response_format") || strings.Contains(hay, "json_object") || strings.Contains(hay, "json mode") || strings.Contains(hay, "json_schema") || strings.Contains(hay, "schema")
 }

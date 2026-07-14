@@ -48,6 +48,36 @@ func generateMaybeJSON(ctx context.Context, p llmProviderGenerator, prompt strin
 	return p.Generate(ctx, prompt)
 }
 
+// jsonSchemaSpec is a provider-agnostic JSON Schema for structured output.
+// Name labels the schema (some endpoints require it); Schema is the raw JSON
+// Schema object. Used by callers that need a *populated* shape, not merely
+// "some JSON" — e.g. pass-2, where a valid-but-empty "{}" silently drops an
+// entity ("envelope has no actions").
+type jsonSchemaSpec struct {
+	Name   string
+	Schema map[string]any
+}
+
+// jsonSchemaProvider is the optional interface a provider implements when it
+// can constrain output to a JSON Schema via the endpoint's structured-output
+// grammar. Hosted OpenAI-compatible providers do; anthropic (tool-use schema
+// enforcement) and ollama do not.
+type jsonSchemaProvider interface {
+	GenerateJSONSchema(ctx context.Context, prompt string, schema jsonSchemaSpec) (string, error)
+}
+
+// generateWithSchema requests schema-constrained JSON from providers that
+// support it, degrading to generateMaybeJSON (json_object / plain) for those
+// that don't. Callers must still parse defensively: the schema is a strong
+// guard on schema-capable hosted providers, but ollama and anthropic reach
+// this through the fallback with no grammar enforcement.
+func generateWithSchema(ctx context.Context, p llmProviderGenerator, prompt string, schema jsonSchemaSpec) (string, error) {
+	if sp, ok := p.(jsonSchemaProvider); ok {
+		return sp.GenerateJSONSchema(ctx, prompt, schema)
+	}
+	return generateMaybeJSON(ctx, p, prompt)
+}
+
 // newLLMProvider picks the provider backend based on scribe.yaml. It is a
 // package variable (pointing at realNewLLMProvider) purely so driver tests
 // can swap in a scripted stub provider (see llm_stub_test.go) without a
