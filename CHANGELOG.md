@@ -4,6 +4,48 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added — pull adapters (`scribe pull`), starting with Pinboard
+
+A generic **pull-adapter framework** for ingesting bookmarks from external
+accounts into the KB, and **Pinboard** (<https://pinboard.in>) as its first
+adapter. Adapters are URL producers only: they queue bookmarks into
+`output/inbox/`, and the existing `ingest drain` path fetches →
+contextualizes → absorbs them. Deterministic and fast — no LLM, no page
+fetching in `pull` itself — so the next source (Raindrop, Instapaper, GitHub
+stars…) is a small file against the same `Source` interface.
+
+- **`scribe pull [source]`** — pull one integration or, bare, every configured
+  one (what the new hourly `pull-sources` cron job runs). Flags: `--list`
+  (status of each integration), `--scope`, `--tag` (repeatable), `--all-history`
+  (one-shot full backfill), `--max` (pace a big backfill), `--force`, `-n`
+  (dry-run).
+- **Config** in `scribe.yaml` under `integrations.pinboard`:
+  - `scope: recent+unread | unread | all` — selects bookmarks by
+    read-state/recency (`recent+unread` is the default).
+  - `tags: []` — tag filter (case-insensitive); empty ingests everything the
+    scope returns. Composes with `scope` (e.g. `scope: all` + `tags: [kb]`).
+  - `tags_mode: any | all` — how multiple tags combine: `any` (default) keeps
+    bookmarks carrying at least one listed tag (the ingest-gate shape), `all`
+    requires every listed tag — the narrowing semantics of Pinboard's own
+    `/t:a/t:b/` URL filtering. Unknown values fail loudly instead of silently
+    widening the filter.
+  - `public_only: false` — an authenticated pull sees private bookmarks too;
+    set `true` (or pass `--public-only`) to skip them, so private links don't
+    reach a KB that might be shared or promoted.
+  - `skip_domains: []` — substring URL filter, same as `capture.skip_domains`.
+- **Token** is a secret: `integration_tokens.pinboard` in
+  `~/.config/scribe/config.yaml` or `SCRIBE_PINBOARD_TOKEN` — never the
+  committed `scribe.yaml`. Env wins over the file (same rule as `llm_api_keys`).
+- **Rate-limit friendly:** a cheap `posts/update` probe short-circuits a run
+  when nothing changed before touching `posts/all`/`posts/recent`; per-source
+  state (cursor + seen-set) lives in `output/sources/<name>.json` (gitignored).
+- **Team KBs:** integrations are a personal source — hard-off from the repo
+  `scribe.yaml` like capture, re-enabled per-person in `scribe.local.yaml`, and
+  trust-locked in the config-trust layer.
+- Bookmark `extended` notes are preserved into the article body, and Pinboard
+  tags (plus a `pinboard` provenance tag, and `to-read` for unread) carry into
+  frontmatter. Zero new Go dependencies (Pinboard v1 is JSON over HTTPS).
+
 ## [0.4.0] — 2026-07-10
 
 Everything that accreted on `main` after the v0.3.0 team-KB release, cut as one

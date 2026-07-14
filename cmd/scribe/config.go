@@ -115,7 +115,12 @@ type ScribeConfig struct {
 	Sync    SyncConfig    `yaml:"sync"`
 	Deep    DeepConfig    `yaml:"deep"`
 	Capture CaptureConfig `yaml:"capture"`
-	Triage  TriageConfig  `yaml:"triage"`
+	// Integrations holds the non-secret config for pull adapters (`scribe
+	// pull` — Pinboard, and future bookmark sources). API tokens NEVER live
+	// here; they go in ~/.config/scribe/config.yaml under integration_tokens.
+	// Personal source like Capture: zeroed in team mode, re-enabled locally.
+	Integrations IntegrationsConfig `yaml:"integrations"`
+	Triage       TriageConfig       `yaml:"triage"`
 	// PriorityLanes tunes how sync drains pending-sessions.txt (issue
 	// #22) — see PriorityLanesConfig.
 	PriorityLanes PriorityLanesConfig `yaml:"priority_lanes"`
@@ -498,6 +503,52 @@ type CaptureConfig struct {
 	SkipDomains []string `yaml:"skip_domains"`
 }
 
+// IntegrationsConfig maps an integration name (e.g. "pinboard") to its
+// non-secret settings. Secrets (API tokens) never live here — they go in
+// ~/.config/scribe/config.yaml under integration_tokens, so a token can never
+// be committed to a shared KB. `scribe pull` iterates the source registry
+// (source.go) and pulls each configured integration.
+type IntegrationsConfig map[string]IntegrationConfig
+
+// IntegrationConfig holds the shared, non-secret knobs a pull adapter reads.
+type IntegrationConfig struct {
+	// Enabled gates the integration; a pull run soft-skips when false.
+	Enabled bool `yaml:"enabled"`
+	// Scope selects which items to pull by read-state/recency. Adapter-
+	// interpreted; Pinboard understands recent+unread | unread | all.
+	// Empty → adapter default (recent+unread).
+	Scope string `yaml:"scope"`
+	// Tags is a tag filter applied by the generic driver (case-insensitive).
+	// Empty (the default) ingests everything the scope returns. Orthogonal
+	// to Scope — e.g. scope: all + tags: [kb] means "every bookmark I ever
+	// tagged kb". How multiple tags combine is TagsMode's call.
+	Tags []string `yaml:"tags"`
+	// TagsMode selects how Tags matches: "any" (the default — a bookmark
+	// carrying at least one listed tag passes; the natural mode for an
+	// ingest gate over several KB-worthy markers) or "all" (it must carry
+	// every listed tag — the narrowing semantics Pinboard's own /t:a/t:b/
+	// URL filtering uses). Ignored while Tags is empty.
+	TagsMode string `yaml:"tags_mode"`
+	// PublicOnly, when true, skips private (non-shared) bookmarks so only
+	// public ones reach the KB. Default false ingests everything, since an
+	// authenticated pull sees private bookmarks too. Useful when the KB may
+	// be shared/promoted and private bookmarks shouldn't ride along.
+	PublicOnly bool `yaml:"public_only"`
+	// SkipDomains drops queued URLs containing any of these substrings —
+	// the same substring filter as capture.skip_domains.
+	SkipDomains []string `yaml:"skip_domains"`
+}
+
+// integrationConfig returns the config block for a named integration and
+// whether it was present.
+func integrationConfig(cfg *ScribeConfig, name string) (IntegrationConfig, bool) {
+	if cfg == nil || cfg.Integrations == nil {
+		return IntegrationConfig{}, false
+	}
+	ic, ok := cfg.Integrations[name]
+	return ic, ok
+}
+
 type SyncConfig struct {
 	MaxExtractions      int `yaml:"max_extractions"`
 	MaxSessions         int `yaml:"max_sessions"`
@@ -833,6 +884,23 @@ type userConfig struct {
 	// not in any KB's scribe.yaml, so one KB can't set the machine budget
 	// for the others. Zero = disabled. See budget.go.
 	DailyOutputTokenCeiling int64 `yaml:"daily_output_token_ceiling,omitempty"`
+	// IntegrationTokens maps a pull-adapter name (pinboard, …) to its API
+	// token. It lives HERE — the per-machine user config — and never in a
+	// KB's scribe.yaml, so a token can't be committed to a shared KB (same
+	// rule as LLMAPIKeys). Env SCRIBE_<NAME>_TOKEN overrides an entry.
+	IntegrationTokens map[string]string `yaml:"integration_tokens,omitempty"`
+}
+
+// integrationToken resolves the API token for a pull integration. Env wins
+// (SCRIBE_<NAME>_TOKEN, so a one-off export overrides), then the per-machine
+// user config (integration_tokens.<name>). Never read from a KB's scribe.yaml
+// — a token must not be committable to a shared KB.
+func integrationToken(name string) string {
+	env := "SCRIBE_" + strings.ToUpper(name) + "_TOKEN"
+	if v := strings.TrimSpace(os.Getenv(env)); v != "" {
+		return v
+	}
+	return strings.TrimSpace(loadUserConfig().IntegrationTokens[name])
 }
 
 // loadUserConfig reads the user-level config. Returns zero value if missing.
