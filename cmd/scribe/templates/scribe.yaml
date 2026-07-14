@@ -358,10 +358,11 @@ capture:
 #                             # (browser), and tokens persist in ~/.xurl for
 #                             # headless cron. `scribe pull x --setup` walks the
 #                             # whole chain. See README "Pull integrations".
-#     tags: []                # OR filter matched against each tweet's hashtags
+#     tags: []                # tag filter matched against each tweet's hashtags
 #                             # (case-insensitive, bare form: "golang" not
-#                             # "#golang"); empty = all. Most tweets carry no
-#                             # hashtags, so a non-empty filter is strict.
+#                             # "#golang"); empty = all. tags_mode any|all works
+#                             # here too. Most tweets carry no hashtags, so a
+#                             # non-empty filter is strict.
 #     skip_domains: []        # substring filter, same as capture.skip_domains.
 #                             # No scope/public_only — not meaningful for X. The
 #                             # API serves only the ~800 most recent bookmarks

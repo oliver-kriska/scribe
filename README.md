@@ -452,10 +452,12 @@ xurl "/2/users/me"        # returns your user object if auth works
 integrations:
   x:
     enabled: true
-    tags: []                # OR filter matched against each tweet's hashtags
+    tags: []                # tag filter matched against each tweet's hashtags
                             # (case-insensitive, bare form: "golang" not "#golang");
-                            # empty = all. Most tweets carry no hashtags, so a
-                            # non-empty filter is deliberately strict.
+                            # empty = all. tags_mode: any|all applies here too,
+                            # though "all" across hashtags rarely matches.
+                            # Most tweets carry no hashtags, so any non-empty
+                            # filter is deliberately strict.
     skip_domains: []        # substring URL filter, same as capture.skip_domains
 ```
 

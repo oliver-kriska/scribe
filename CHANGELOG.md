@@ -72,8 +72,9 @@ stars…) is a small file against the same `Source` interface.
     unauthenticated the `x` adapter soft-skips with a one-line install/auth hint
     instead of failing the run. No `scope`/`public_only` (those are Pinboard
     read-state concepts); `tags` matches against each tweet's #hashtags (the
-    only tag-like signal a bookmark carries) and `skip_domains` behaves as it
-    does for Pinboard. Zero new Go dependencies (`exec.Command` into `xurl`).
+    only tag-like signal a bookmark carries), honors `tags_mode`, and
+    `skip_domains` behaves as it does for Pinboard. Zero new Go dependencies
+    (`exec.Command` into `xurl`).
 
 ## [0.4.0] — 2026-07-10
 
