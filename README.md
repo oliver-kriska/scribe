@@ -428,20 +428,47 @@ entirely:
 # scribe.yaml — top-level llm block routes ALL ops
 llm:
   provider: together
-  model: Qwen/Qwen3-30B-A3B   # the provider's exact model slug, NOT a Claude alias
+  model: MiniMaxAI/MiniMax-M3  # the provider's exact model slug, NOT a Claude alias
   # base_url:                 # only for provider: openai-compat
   # api_key_env: TOGETHER_API_KEY  # per-provider default; SCRIBE_LLM_API_KEY is a generic fallback
   pricing:                    # optional — lets `scribe cost` report dollars
-    "together/Qwen/Qwen3-30B-A3B": { input: 0.10, output: 0.30 }
+    "together/MiniMaxAI/MiniMax-M3": { input: 0.30, output: 1.20 }
 
 sync:
   daily_output_token_ceiling: 2000000   # REQUIRED backstop for any paid provider (see below)
 ```
 
 Use the **exact model id from the provider's catalog** (e.g. Together lists
-`Qwen/Qwen3-30B-A3B`, `Qwen/Qwen3-32B`, `zai-org/GLM-5.2`, …) — the local
-ollama tag (`qwen3:30b-a3b`) won't resolve. Any chat model the provider hosts
-works; pick by price/quality.
+`MiniMaxAI/MiniMax-M3`, `zai-org/GLM-5.2`, `deepseek-ai/DeepSeek-V4-Pro`, …) —
+the local ollama tag (`qwen3:30b-a3b`) won't resolve. Any chat model the
+provider hosts works; pick by price/quality. **Watch for non-serverless
+models:** a slug can appear in the catalog yet require a paid dedicated
+endpoint — a plain chat call then returns `model_not_available`. Verify the
+model is *serverless* before pinning it (a one-off `curl` to
+`/v1/chat/completions` is the fastest check).
+
+**Hosted-model benchmark (2026-07).** Each model ran scribe's real absorb
+envelope (`prompts/absorb-ollama.md`) in non-streaming `json_object` mode — a
+20-call reliability burst plus a richness probe, on the same source. "Graph
+output" = how well it populates the wiki's `tags:`/`related:` wikilink surface,
+which drives retrieval. Prices are per 1M tokens; **verify current serverless
+availability before pinning — these slugs churn fast.**
+
+| Model | $/1M (in / out) | Reliability (20 calls) | Latency p50 | Graph output | When to pick |
+| ----- | --------------- | ---------------------- | ----------- | ------------ | ------------ |
+| `MiniMaxAI/MiniMax-M3` | $0.30 / $1.20 | 100% valid JSON+schema, 0% fence/leak/trunc | ~8s | **Richest** — populates `related:[]` links, more tags/sections | **Best quality/$. Recommended.** 1M ctx, GA serverless. |
+| `google/gemini-3.1-flash-lite` (via `openai-compat`) | $0.25 / $1.50 | 100% valid, 0% failure modes | **~2s** | Thin — left `related:[]` empty 8/8 | Fastest + cheapest/call if you don't need dense wiki links. |
+| `google/gemma-4-31B-it` | $0.39 / $0.97 | 100% valid | ~35s | Good | Quality is fine but slow + verbose. |
+| `zai-org/GLM-5.2` | $1.40 / $4.40 | 100% valid | ~5s | Good | Solid, ~4× the price for no quality edge here. |
+| `deepseek-ai/DeepSeek-V4-Pro` | $1.74 / $3.48 | 100% valid | ~11s | Good | Solid, pricey. |
+| `openai/gpt-oss-120b` | $0.15 / $0.60 | 100% valid | ~40s | Over-split (3 pages for 1 topic) | Cheapest sticker, but slow and fragments topics. |
+
+All six produced valid, schema-clean envelopes — reliability was a wash at
+100%. The real spread is **latency**, **cost**, and **how richly each populates
+the wiki graph**. For a cron pipeline (latency-insensitive) that leans on
+wikilink traversal, `MiniMaxAI/MiniMax-M3` is the quality-per-dollar pick; a
+Google key + `provider: openai-compat` pointing at Gemini's OpenAI endpoint is
+the faster/cheaper alternative if terse output is fine.
 
 Provide the key once in the **user config** (`~/.config/scribe/config.yaml`,
 per-machine, never in the KB) so interactive runs *and* cron pick it up with no

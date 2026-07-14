@@ -2939,7 +2939,7 @@ advisory locks table-ambiguous under load.
     <div class="cost">
       <div class="cost__figures" role="group" aria-label="One week of inference on the same machine, priced three ways">
         <div class="cost__fig cost__fig--free">$0<small>local · ollama</small></div>
-        <div class="cost__fig">$0.34<small>hosted · together</small></div>
+        <div class="cost__fig">$0.55<small>hosted · together</small></div>
         <div class="cost__fig cost__fig--paid">$103.57<small>anthropic · 7 days</small></div>
       </div>
 
@@ -2957,32 +2957,32 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   sonnet                                              301    281      0     0      3      6h54m     250,468     789,357   $92.80
   haiku                                               151    144      0     0      7      2h21m       1,251     551,761   $10.77
-  together/Qwen/Qwen3-235B-A22B-Instruct-2507-tput    195    195      0     0      0      1h06m   1,261,197     146,728    $0.34
+  together/MiniMaxAI/MiniMax-M3                        195    195      0     0      0      1h06m   1,261,197     146,728    $0.55
   ollama/gemma3:12b                                   120    120      0     0      0      4h57m   1,037,866     138,258        —
   ollama/qwen3:30b-a3b-instruct-2507-q4_K_M         1,643  1,627      0     0      0     23h39m  11,317,941   1,122,293        —
   ollama/gemma3:4b                                    921    912      0     0      0      8h23m   2,355,608     672,157        —
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  TOTAL                                             3,331  3,279      0     0     10     47h22m  16,224,331   3,420,554  $103.91
+  TOTAL                                             3,331  3,279      0     0     10     47h22m  16,224,331   3,420,554  $104.12
 
   By provider:
   provider   calls   in-tokens  out-tokens      usd
   ─────────────────────────────────────────────────
   anthropic    452     251,719   1,341,118  $103.57
-  together     195   1,261,197     146,728    $0.34
+  together     195   1,261,197     146,728    $0.55
   ollama     2,684  14,711,415   1,932,708        —
 
   By KB:
   KB           calls  in-tokens  out-tokens      usd
   ──────────────────────────────────────────────────
   team-kb      1,732  7,020,329   2,211,137  $102.96
-  personal-kb  1,599  9,204,002   1,209,417    $0.95
+  personal-kb  1,599  9,204,002   1,209,417    $1.16
 
   Coverage: 3175/3331 calls had token data; the other 156 add ~$0.62 estimated, not shown above.
   usd = provider-billed spend incl. cache-write & cache-read; in is uncached input, so usd exceeds an in/out list estimate.
   cancl = sibling-canceled (rate-limit cascade).  tmout = ctx.DeadlineExceeded.</pre>
       </div>
       <p class="scroll-hint" aria-hidden="true">↔ swipe the table for the full per-model breakdown</p>
-      <p class="cost__caption">Real output, names anonymized. Same machine, same week, three provider paths: Anthropic billed <strong>$103.57</strong>, the hosted Together path <strong>$0.34</strong>, the local Ollama models nothing. The paths handled different volumes (routing is per-op in <code>scribe.yaml</code>), so read each as what it actually billed, not a like-for-like race. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
+      <p class="cost__caption">Real output, names anonymized. Same machine, same week, three provider paths: Anthropic billed <strong>$103.57</strong>, the hosted Together path <strong>$0.55</strong>, the local Ollama models nothing. The paths handled different volumes (routing is per-op in <code>scribe.yaml</code>), so read each as what it actually billed, not a like-for-like race. One API key usually bills every KB on a machine, so <code>scribe cost</code> aggregates them by default and reconciles to the dashboard.</p>
 
       <div class="cost__local">
         <span class="local__pill">100% Ollama</span>
@@ -3144,10 +3144,10 @@ curl <span class="flag">-fsSL</span> <span class="str">https://raw.githubusercon
 <pre id="code-hosted"><span class="comment"># scribe.yaml — run the same open models on a hosted GPU (~$2–6/mo)</span>
 <span class="kw">llm</span>:
   <span class="kw">provider</span>: together          <span class="comment"># together | groq | fireworks | huggingface</span>
-  <span class="kw">model</span>: <span class="str">qwen3-30b-a3b</span>         <span class="comment"># a real hosted model id, not a Claude alias</span>
+  <span class="kw">model</span>: <span class="str">MiniMaxAI/MiniMax-M3</span>  <span class="comment"># a real hosted model id, not a Claude alias</span>
   <span class="kw">api_key_env</span>: <span class="str">TOGETHER_API_KEY</span>  <span class="comment"># only the VAR NAME lives here — never the key</span>
   <span class="kw">pricing</span>:                      <span class="comment"># optional, so `scribe cost` reports dollars</span>
-    <span class="str">"together/qwen3-30b-a3b"</span>: { <span class="kw">input</span>: <span class="num">0.10</span>, <span class="kw">output</span>: <span class="num">0.30</span> }
+    <span class="str">"together/MiniMaxAI/MiniMax-M3"</span>: { <span class="kw">input</span>: <span class="num">0.30</span>, <span class="kw">output</span>: <span class="num">1.20</span> }
 
 <span class="comment"># the key stays OUT of this file (a shared KB may commit it):</span>
 <span class="comment">#   ~/.config/scribe/config.yaml →  llm_api_key: tok-xxxx   (chmod 600)</span>

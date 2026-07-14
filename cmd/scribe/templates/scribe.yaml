@@ -160,10 +160,12 @@ llm:
 #   input). The API key is read from an ENV VAR, never from this file.
 #
 #   llm:
-#     provider: groq                 # together | groq | fireworks | huggingface | openai-compat
-#     model: qwen3-32b               # a real hosted model id — NOT a Claude alias
+#     provider: together             # together | groq | fireworks | huggingface | openai-compat
+#     model: MiniMaxAI/MiniMax-M3    # a real hosted model id — NOT a Claude alias.
+#                                    # NB: confirm it's SERVERLESS — a catalog slug can be
+#                                    # dedicated-endpoint-only and 400 with model_not_available.
 #     # base_url:  only for provider: openai-compat (named providers have built-in URLs)
-#     # api_key_env: GROQ_API_KEY    # default per provider; SCRIBE_LLM_API_KEY is a generic fallback
+#     # api_key_env: TOGETHER_API_KEY # default per provider; SCRIBE_LLM_API_KEY is a generic fallback
 #
 # The API key never goes in THIS file (it could be committed to a shared
 # KB). Put it in the per-machine user config instead — picked up by both
@@ -177,8 +179,8 @@ llm:
 # `model` column in `scribe cost` (provider/model); a bare model also works.
 #   llm:
 #     pricing:
+#       "together/MiniMaxAI/MiniMax-M3": { input: 0.30, output: 1.20 }
 #       "groq/qwen3-32b": { input: 0.29, output: 0.59 }
-#       "together/qwen3-30b-a3b": { input: 0.10, output: 0.30 }
 #
 # IMPORTANT: set sync.daily_output_token_ceiling below before pointing at
 # a paid provider — it's the runaway-spend backstop (see that block).
