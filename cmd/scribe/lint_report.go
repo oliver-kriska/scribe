@@ -113,18 +113,18 @@ func (r *lintReport) noteErrorKind(msg string) {
 	r.errKinds[classifyFrontmatterError(msg)]++
 }
 
-// errorHint prints a closing how-to-fix block tailored to the errors seen
-// this run: the `--fix` line when any mechanical error is present, plus a
-// per-class bullet for each residual that needs a human. No-op in quiet
-// mode or when no Phase-1 errors were classified.
+// errorHint prints a closing how-to-fix block whenever Phase-1 frontmatter
+// errors were seen. It ALWAYS leads with `scribe lint --fix`: that is the
+// safe first step (a no-op on classes it can't repair), and the operator
+// shouldn't have to know which errors are mechanical to be told to try it —
+// hiding the line when the current batch happened to be all-manual is what
+// made the hint look missing. The per-class bullets then name what --fix
+// won't touch. No-op in quiet mode or when no frontmatter errors were seen.
 func (r *lintReport) errorHint() {
 	if r.quiet || len(r.errKinds) == 0 {
 		return
 	}
-	if r.errKinds[errKindFixable] > 0 {
-		fmt.Fprintln(r.w, "→ some errors are mechanical — run `scribe lint --fix`")
-		fmt.Fprintln(r.w, "  (repairs duplicate keys, list formatting, dates, invalid domains, and missing defaults)")
-	}
+	fmt.Fprintln(r.w, "→ run `scribe lint --fix` first — it repairs duplicate keys, list formatting, dates, invalid domains, and missing defaults")
 	var manual []string
 	if r.errKinds[errKindNeedsTitle] > 0 {
 		manual = append(manual, "missing title — add a `title:` line (--fix won't invent one)")
@@ -136,7 +136,7 @@ func (r *lintReport) errorHint() {
 		manual = append(manual, "no frontmatter — the page has no `---` block; add one")
 	}
 	if len(manual) > 0 {
-		fmt.Fprintln(r.w, "→ these need a human:")
+		fmt.Fprintln(r.w, "→ then fix by hand what --fix can't:")
 		for _, m := range manual {
 			fmt.Fprintf(r.w, "    • %s\n", m)
 		}

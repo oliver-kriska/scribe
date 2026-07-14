@@ -199,3 +199,42 @@ func TestLintSizesGroupsByClass(t *testing.T) {
 		t.Errorf("default mode printed per-file output:\n%s", buf.String())
 	}
 }
+
+// TestErrorHint_AlwaysSuggestsFix: the --fix line must appear whenever there
+// are frontmatter errors — even an all-manual batch (missing title, invalid
+// confidence). Gating it on a mechanical error being present is what made the
+// hint look absent after the auto-fixable errors were already cleared.
+func TestErrorHint_AlwaysSuggestsFix(t *testing.T) {
+	var buf bytes.Buffer
+	r := newLintReport(&buf, false, false)
+	r.noteErrorKind("missing required fields: title")
+	r.noteErrorKind("invalid confidence: 'confirmed' (expected: high, low, medium)")
+	r.noteErrorKind("invalid YAML frontmatter: no frontmatter delimiter")
+	r.errorHint()
+	out := buf.String()
+	if !strings.Contains(out, "scribe lint --fix") {
+		t.Errorf("--fix hint must show even for an all-manual batch:\n%s", out)
+	}
+	for _, want := range []string{"missing title", "invalid confidence", "no frontmatter"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("manual bullet %q missing:\n%s", want, out)
+		}
+	}
+}
+
+// TestErrorHint_SilentWhenCleanOrQuiet: no errors ⇒ no hint (lint passed);
+// quiet mode ⇒ no hint (sync's mid-extract lint must stay terse).
+func TestErrorHint_SilentWhenCleanOrQuiet(t *testing.T) {
+	var buf bytes.Buffer
+	newLintReport(&buf, false, false).errorHint() // no errors noted
+	if buf.Len() != 0 {
+		t.Errorf("clean run must emit no hint, got: %q", buf.String())
+	}
+	buf.Reset()
+	rq := newLintReport(&buf, false, true)
+	rq.noteErrorKind("missing required fields: title")
+	rq.errorHint()
+	if buf.Len() != 0 {
+		t.Errorf("quiet mode must emit no hint, got: %q", buf.String())
+	}
+}
