@@ -23,7 +23,7 @@ You are absorbing one raw article into a wiki. Emit a `WikiActionEnvelope` with 
     {
       "op": "create",
       "path": "wiki/<slug>.md OR <type-dir>/<slug>.md",
-      "content": "---\nfrontmatter\n---\n\nbody"
+      "content": "---\n<yaml fields>\n---\n\n<body>"
     }
   ]
 }

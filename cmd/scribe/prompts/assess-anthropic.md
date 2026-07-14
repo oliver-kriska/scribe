@@ -53,7 +53,7 @@ Produce ONE wiki article at `projects/{{PROJECT_LOWER}}/overview.md` covering al
     {
       "op": "create",
       "path": "projects/{{PROJECT_LOWER}}/overview.md",
-      "content": "---\nfrontmatter\n---\n\nbody"
+      "content": "---\n<yaml fields>\n---\n\n<body>"
     }
   ],
   "meta": [

@@ -47,39 +47,72 @@ import (
 //
 // Returns a slice of human-readable change descriptions so the CLI can
 // log what actually happened.
-func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) {
-	s := string(content)
-	joinedFence := false
-	openingFenceFixed := false
+// openingFenceKind classifies (and drives the repair of) a document's opening
+// frontmatter fence. See normalizeOpeningFence.
+type openingFenceKind int
+
+const (
+	fenceClean          openingFenceKind = iota // already "---\n" / "---\r\n"
+	fenceTrailingWS                             // "--- \n" — stray ws on the fence line
+	fenceJoined                                 // "--- title: ..." — dashes ran into the first key
+	fenceNotFrontmatter                         // no usable opening fence (body prose / stub)
+)
+
+// normalizeOpeningFence repairs a malformed opening frontmatter fence to the
+// canonical "---\n", returning the (possibly rewritten) content and which
+// repair applied. It is the shared choke point for the two on-disk fence
+// artifacts the off-Anthropic envelope path emits (a local/hosted model has no
+// tool-use schema enforcement, so its raw `content` string reaches disk):
+//
+//	(a) trailing-whitespace fence ("--- \n"): the first line after the dashes
+//	    is empty — the body is intact, only the fence line carries stray ws.
+//	(b) joined fence ("--- title: ..."): the dashes ran into the first key.
+//
+// Both require a closing fence to be treated as frontmatter at all, so body
+// prose that merely starts with "--- " stays fenceNotFrontmatter. Used by both
+// autoFixArticle (heals on disk) and clampEnvelopeFrontmatter (stops new writes
+// from persisting it) so the two seams agree on fence syntax.
+func normalizeOpeningFence(s string) (string, openingFenceKind) {
 	switch {
 	case strings.HasPrefix(s, "---\n"), strings.HasPrefix(s, "---\r\n"):
-		// clean opening fence — proceed
+		return s, fenceClean
 	case strings.HasPrefix(s, "--- "), strings.HasPrefix(s, "---\t"):
-		// The opening `---` has trailing junk on its line. Two distinct shapes,
-		// disambiguated by what remains after the dashes on that first line:
-		//   (a) trailing-whitespace-only fence ("--- \n"): the body is intact,
-		//       only the fence line carries stray spaces/tabs — drop them.
-		//   (b) joined fence ("--- title: ..."): the `---` ran into the first
-		//       key — split to "---\n<firstkey>".
-		// Both require a closing fence to be treated as frontmatter at all, so
-		// body prose that merely starts with "--- " stays a silent no-op.
-		// Residual corruption (e.g. space-indented keys) then surfaces later as
-		// a SKIP via the honesty guard, never a silent success.
 		firstLine, _, _ := strings.Cut(s[3:], "\n")
 		rest := strings.TrimLeft(firstLine, " \t")
 		_, _, restIsKey := splitFrontmatterLine(rest)
 		hasClose := strings.Contains(s, "\n---")
 		switch {
 		case rest == "" && hasClose:
-			s = "---" + s[3+len(firstLine):]
-			openingFenceFixed = true
+			return "---" + s[3+len(firstLine):], fenceTrailingWS
 		case restIsKey && hasClose:
-			s = "---\n" + strings.TrimLeft(s[3:], " \t")
-			joinedFence = true
+			return "---\n" + strings.TrimLeft(s[3:], " \t"), fenceJoined
 		default:
-			return nil, nil, nil
+			return s, fenceNotFrontmatter
 		}
 	default:
+		return s, fenceNotFrontmatter
+	}
+}
+
+func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) {
+	s := string(content)
+	joinedFence := false
+	openingFenceFixed := false
+	// Normalize a malformed opening fence first so the rest of the pipeline and
+	// the honesty guard see a canonical "---\n". Residual corruption (e.g.
+	// space-indented keys after a joined-fence split) then surfaces later as a
+	// SKIP via the honesty guard, never a silent success.
+	normalized, kind := normalizeOpeningFence(s)
+	switch kind {
+	case fenceClean:
+		// proceed
+	case fenceTrailingWS:
+		s = normalized
+		openingFenceFixed = true
+	case fenceJoined:
+		s = normalized
+		joinedFence = true
+	case fenceNotFrontmatter:
 		return nil, nil, nil // no frontmatter — skip (body-only stubs)
 	}
 

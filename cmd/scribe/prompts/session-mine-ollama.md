@@ -32,7 +32,7 @@ SKIP: conversation summaries, routine code changes, transient debug noise.
     {
       "op": "create",
       "path": "decisions/some-decision.md OR patterns/x.md OR ...",
-      "content": "---\nfrontmatter\n---\n\nbody"
+      "content": "---\n<yaml fields>\n---\n\n<body>"
     }
   ],
   "meta": [

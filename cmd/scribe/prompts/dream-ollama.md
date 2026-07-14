@@ -39,7 +39,7 @@ You are the LLM consolidation step inside Go's weekly Dream orchestrator. Emit o
   "actions": [
     {"op": "update_frontmatter", "path": "<file>", "frontmatter": {"updated": "{{TODAY}}"}},
     {"op": "replace_section", "path": "<file>", "heading": "<heading>", "content": "<body>"},
-    {"op": "create", "path": "<dir>/<slug>.md", "content": "---\nfrontmatter\n---\n\nbody"},
+    {"op": "create", "path": "<dir>/<slug>.md", "content": "---\n<yaml fields>\n---\n\n<body>"},
     {"op": "append", "path": "<file>", "content": "\n<!-- decay-candidate {{TODAY}} -->\n"}
   ],
   "meta": [

@@ -1407,11 +1407,21 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 	domains := validDomainsForRoot(root)
 	today := time.Now().UTC().Format("2006-01-02")
 	kept := make([]WikiAction, 0, len(env.Actions))
-	var dropped, retyped, redomained, stamped, deduped, nested int
+	var dropped, retyped, redomained, stamped, deduped, nested, refenced int
 	for _, a := range env.Actions {
 		if !strings.HasPrefix(a.Content, "---") {
 			kept = append(kept, a) // section body / append fragment — not ours
 			continue
+		}
+		// Normalize a malformed opening fence ("--- \n" trailing whitespace, or
+		// a joined "--- title:" fence) to a bare "---\n" before parsing. A local
+		// or hosted model has no tool-use schema enforcement, so its raw content
+		// string reaches here verbatim — parseFrontmatter tolerates these fences
+		// (it prefix-matches "---", not "---\n") and the scalar clamps below only
+		// rewrite values, so without this the malformed fence lands on disk.
+		if fixed, kind := normalizeOpeningFence(a.Content); kind == fenceTrailingWS || kind == fenceJoined {
+			a.Content = fixed
+			refenced++
 		}
 		fm, err := parseFrontmatter([]byte(a.Content))
 		if err != nil {
@@ -1476,8 +1486,8 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 		}
 		kept = append(kept, a)
 	}
-	if dropped+retyped+redomained+stamped+deduped+nested > 0 {
-		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped, %d duplicate key(s) collapsed, %d nested frontmatter stripped", dropped, retyped, redomained, stamped, deduped, nested)
+	if dropped+retyped+redomained+stamped+deduped+nested+refenced > 0 {
+		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped, %d duplicate key(s) collapsed, %d nested frontmatter stripped, %d opening fence(s) normalized", dropped, retyped, redomained, stamped, deduped, nested, refenced)
 	}
 	env.Actions = kept
 }

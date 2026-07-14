@@ -1530,3 +1530,50 @@ func TestApplyWikiActions_ClampStripsNestedFrontmatter(t *testing.T) {
 		t.Errorf("clamped output no longer parses: %v\n%s", err, s)
 	}
 }
+
+// TestApplyWikiActions_ClampNormalizesOpeningFence closes the producer seam:
+// an off-Anthropic model (no tool-use schema enforcement) can emit envelope
+// content whose opening fence is malformed — a trailing-whitespace "--- \n" or
+// a joined "--- title:". parseFrontmatter tolerates both, so without a clamp
+// they'd land on disk (the ~36 trailing-whitespace files). The clamp must
+// normalize the fence to bare "---\n" before write.
+func TestApplyWikiActions_ClampNormalizesOpeningFence(t *testing.T) {
+	prev := validDomainsOverride
+	validDomainsOverride = map[string]bool{"general": true}
+	defer func() { validDomainsOverride = prev }()
+
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{
+			"trailing-whitespace",
+			"--- \ntitle: Wonky\ntype: decision\ndomain: general\nconfidence: medium\ntags: []\nrelated: []\nsources: []\n---\nbody\n",
+		},
+		{
+			"joined",
+			"--- title: Wonky\ntype: decision\ndomain: general\nconfidence: medium\ntags: []\nrelated: []\nsources: []\n---\nbody\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			env := WikiActionEnvelope{Actions: []WikiAction{{
+				Op: "create", Path: "decisions/wonky.md", Content: c.content,
+			}}}
+			if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, SanitizeContent: true}); err != nil {
+				t.Fatal(err)
+			}
+			s := readBack(t, root, "decisions/wonky.md")
+			if !strings.HasPrefix(s, "---\n") {
+				t.Errorf("opening fence not normalized to bare ---:\n%q", s[:min(12, len(s))])
+			}
+			if _, err := parseFrontmatter([]byte(s)); err != nil {
+				t.Errorf("clamped output no longer parses: %v\n%s", err, s)
+			}
+			if !strings.Contains(s, "title: Wonky") {
+				t.Errorf("title lost during fence normalization:\n%s", s)
+			}
+		})
+	}
+}

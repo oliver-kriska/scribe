@@ -43,7 +43,7 @@ This pass covers ONLY domain `{{DOMAIN}}`. Every article below belongs to it. Do
   "actions": [
     {"op": "update_frontmatter", "path": "<file>", "frontmatter": {"updated": "{{TODAY}}"}},
     {"op": "replace_section", "path": "<file>", "heading": "<heading>", "content": "<body>"},
-    {"op": "create", "path": "<dir>/<slug>.md", "content": "---\nfrontmatter (domain: {{DOMAIN}})\n---\n\nbody"},
+    {"op": "create", "path": "<dir>/<slug>.md", "content": "---\n<yaml fields, domain: {{DOMAIN}}>\n---\n\n<body>"},
     {"op": "append", "path": "<file>", "content": "\n<!-- decay-candidate {{TODAY}} -->\n"}
   ],
   "meta": [

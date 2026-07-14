@@ -23,7 +23,7 @@ Extract knowledge from one directory of project **{{PROJECT}}**.
   "version": 2,
   "entity": "deep-{{PROJECT}}-{{REL_DIR}}",
   "actions": [
-    {"op": "create", "path": "<wiki-dir>/<slug>.md", "content": "---\nfrontmatter\n---\n\nbody"}
+    {"op": "create", "path": "<wiki-dir>/<slug>.md", "content": "---\n<yaml fields>\n---\n\n<body>"}
   ],
   "meta": [
     {"op": "log_append", "line": "## [{{TODAY}}] deep | {{PROJECT}}/{{REL_DIR}}: <summary>"}

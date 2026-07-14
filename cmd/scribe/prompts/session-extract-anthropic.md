@@ -34,7 +34,7 @@ You are extracting knowledge from one Claude Code session for the project at `{{
     {
       "op": "create",
       "path": "decisions/<slug>.md",
-      "content": "---\nfrontmatter\n---\n\nbody"
+      "content": "---\n<yaml fields>\n---\n\n<body>"
     }
   ],
   "meta": [
