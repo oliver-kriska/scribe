@@ -28,7 +28,7 @@ type Source interface {
 	Configured(cfg *ScribeConfig) (ok bool, reason string)
 	// Fetch returns fresh items given the opaque prior cursor, plus the cursor
 	// to persist for the next run. Implementations own their cursor shape and
-	// resolve their own config (scope defaults, token) off cfg. The OR tag
+	// resolve their own config (scope defaults, token) off cfg. The tag
 	// filter and skip_domains are applied generically by the driver afterward.
 	Fetch(ctx context.Context, cfg *ScribeConfig, prev json.RawMessage, opts FetchOpts) (items []SourceItem, next json.RawMessage, err error)
 }
@@ -48,11 +48,12 @@ type SourceItem struct {
 }
 
 // FetchOpts carries the per-run knobs a Source honors. Empty Scope means
-// "use the configured default". Tags is the per-run override of the OR tag
-// filter the driver applies (empty → use the integration's configured tags).
+// "use the configured default". Tags is the per-run override of the tag
+// filter the driver applies (empty → use the integration's configured tags;
+// tags_mode always comes from config).
 type FetchOpts struct {
 	Scope      string   // "recent+unread" | "unread" | "all" | ""
-	Tags       []string // OR filter override; empty = use config
+	Tags       []string // tag filter override; empty = use config
 	PublicOnly bool     // force-skip private bookmarks for this run
 	Force      bool     // bypass the source's cheap unchanged-since-last-run probe
 }
@@ -178,9 +179,14 @@ func pullSource(root string, src Source, opts FetchOpts, maxItems int, dryRun bo
 	}
 
 	skip := integrationSkipDomains(cfg, src.Name())
-	// OR tag filter: a per-run --tag override wins, else the integration's
-	// configured tags. Empty → keep everything the scope returned.
-	tagFilter := effectiveTags(opts.Tags, integrationTags(cfg, src.Name()))
+	// Tag filter: a per-run --tag override wins, else the integration's
+	// configured tags; tags_mode picks any-vs-all matching. Empty → keep
+	// everything the scope returned.
+	tagsMode, err := integrationTagsMode(cfg, src.Name())
+	if err != nil {
+		return 0, err
+	}
+	tagFilter := effectiveTags(opts.Tags, integrationTags(cfg, src.Name()), tagsMode)
 	// public_only: skip private bookmarks. --public-only forces it on for a run.
 	publicOnly := opts.PublicOnly || integrationPublicOnly(cfg, src.Name())
 	inbox := filepath.Join(root, "output", "inbox")
@@ -297,13 +303,29 @@ func integrationSkipDomains(cfg *ScribeConfig, name string) []string {
 	return cfg.Integrations[name].SkipDomains
 }
 
-// integrationTags returns the configured OR tag filter for an integration
+// integrationTags returns the configured tag filter for an integration
 // (empty when the block is absent).
 func integrationTags(cfg *ScribeConfig, name string) []string {
 	if cfg == nil || cfg.Integrations == nil {
 		return nil
 	}
 	return cfg.Integrations[name].Tags
+}
+
+// integrationTagsMode returns the validated tags_mode for an integration:
+// ""/"any" → at-least-one matching, "all" → every-tag matching. Any other
+// value is a config error — a typo silently widening an ingest filter would
+// be worse than failing loudly.
+func integrationTagsMode(cfg *ScribeConfig, name string) (string, error) {
+	if cfg == nil || cfg.Integrations == nil {
+		return "", nil
+	}
+	raw := cfg.Integrations[name].TagsMode
+	switch mode := strings.ToLower(strings.TrimSpace(raw)); mode {
+	case "", "any", "all":
+		return mode, nil
+	}
+	return "", fmt.Errorf("integrations.%s.tags_mode: unknown value %q (want any or all)", name, raw)
 }
 
 // integrationPublicOnly reports whether an integration is configured to skip
@@ -315,39 +337,51 @@ func integrationPublicOnly(cfg *ScribeConfig, name string) bool {
 	return cfg.Integrations[name].PublicOnly
 }
 
-// tagSet is a case-insensitive OR filter over item tags. An empty set allows
-// everything (no filtering).
-type tagSet map[string]bool
-
-func (ts tagSet) allows(itemTags []string) bool {
-	if len(ts) == 0 {
-		return true
-	}
-	for _, t := range itemTags {
-		if ts[strings.ToLower(strings.TrimSpace(t))] {
-			return true
-		}
-	}
-	return false
+// tagSet is a case-insensitive filter over item tags. An empty set allows
+// everything (no filtering). requireAll=false (tags_mode: any, the default)
+// passes an item carrying at least one listed tag; requireAll=true
+// (tags_mode: all) demands every listed tag, matching the narrowing
+// semantics of Pinboard's own /t:a/t:b/ URL filtering.
+type tagSet struct {
+	set        map[string]bool
+	requireAll bool
 }
 
-// effectiveTags builds the OR filter for a run: the per-run override wins over
-// the configured tags; empty either way disables filtering.
-func effectiveTags(override, configured []string) tagSet {
+func (ts tagSet) allows(itemTags []string) bool {
+	if len(ts.set) == 0 {
+		return true
+	}
+	matched := make(map[string]bool, len(ts.set))
+	for _, t := range itemTags {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if ts.set[t] {
+			if !ts.requireAll {
+				return true
+			}
+			matched[t] = true
+		}
+	}
+	return ts.requireAll && len(matched) == len(ts.set)
+}
+
+// effectiveTags builds the tag filter for a run: the per-run override wins
+// over the configured tags; empty either way disables filtering. mode is the
+// integration's validated tags_mode (""/"any" = at-least-one, "all" = every).
+func effectiveTags(override, configured []string, mode string) tagSet {
 	src := override
 	if len(src) == 0 {
 		src = configured
 	}
 	if len(src) == 0 {
-		return nil
+		return tagSet{}
 	}
-	ts := make(tagSet, len(src))
+	set := make(map[string]bool, len(src))
 	for _, t := range src {
 		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
-			ts[t] = true
+			set[t] = true
 		}
 	}
-	return ts
+	return tagSet{set: set, requireAll: mode == "all"}
 }
 
 // --- CLI ---
@@ -359,7 +393,7 @@ type PullCmd struct {
 	Source     string   `arg:"" optional:"" help:"Integration to pull (e.g. pinboard). Omit to pull every configured integration."`
 	Scope      string   `help:"Override scope for this run: recent+unread|unread|all." enum:"recent+unread,unread,all," default:""`
 	AllHistory bool     `help:"Backfill the entire archive this run (≡ --scope all). Pair with --max on a first big pull." name:"all-history"`
-	Tag        []string `help:"Only ingest bookmarks carrying at least one of these tags (repeatable, OR). Overrides the integration's configured tags for this run."`
+	Tag        []string `help:"Only ingest bookmarks matching these tags (repeatable; any-vs-all per the integration's tags_mode, default any). Overrides the integration's configured tags for this run."`
 	PublicOnly bool     `help:"Skip private bookmarks for this run (forces public_only on)." name:"public-only"`
 	Force      bool     `help:"Bypass the source's cheap unchanged-since-last-run probe."`
 	Max        int      `help:"Cap items queued this run (0 = no limit). Useful to pace a first --all-history backfill." default:"0"`

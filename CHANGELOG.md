@@ -22,9 +22,13 @@ stars…) is a small file against the same `Source` interface.
 - **Config** in `scribe.yaml` under `integrations.pinboard`:
   - `scope: recent+unread | unread | all` — selects bookmarks by
     read-state/recency (`recent+unread` is the default).
-  - `tags: []` — an **OR filter**: only ingest bookmarks carrying at least one
-    of these tags (case-insensitive); empty ingests everything the scope
-    returns. Composes with `scope` (e.g. `scope: all` + `tags: [kb]`).
+  - `tags: []` — tag filter (case-insensitive); empty ingests everything the
+    scope returns. Composes with `scope` (e.g. `scope: all` + `tags: [kb]`).
+  - `tags_mode: any | all` — how multiple tags combine: `any` (default) keeps
+    bookmarks carrying at least one listed tag (the ingest-gate shape), `all`
+    requires every listed tag — the narrowing semantics of Pinboard's own
+    `/t:a/t:b/` URL filtering. Unknown values fail loudly instead of silently
+    widening the filter.
   - `public_only: false` — an authenticated pull sees private bookmarks too;
     set `true` (or pass `--public-only`) to skip them, so private links don't
     reach a KB that might be shared or promoted.
