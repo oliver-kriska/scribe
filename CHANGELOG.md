@@ -4,6 +4,16 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-07-15
+
+An agent-skills release. The single embedded `scribe-kb` skill becomes a
+three-skill bundle — `scribe-kb` (author/search content), `scribe-kb-tidy` (work
+the `scribe lint` content-quality queue), and `scribe-cli` (drive the CLI
+itself) — and `scribe skill install` now writes them to every major coding
+agent's discovery path (Claude Code, Codex, OpenCode, Pi), since the Agent
+Skills format is byte-identical across them. Alongside, `scribe lint` learned to
+explain the warnings it can't auto-fix and to hand that work to an agent.
+
 ### Added — `scribe-cli` agent skill + the CLI now advertises the skills
 - New third bundled skill **`scribe-cli`**: how to drive the scribe CLI itself.
   It leads with the read-only `scribe doctor` / `scribe status` diagnose-first
