@@ -11,12 +11,13 @@ import (
 // Warning classes for grouped lint output. Constants keep the warnf call
 // sites and the lintHints table from drifting apart.
 const (
-	lintClassIndexTierMissing = "index_tier missing"
-	lintClassThinArticle      = "thin article"
-	lintClassBloatedArticle   = "bloated article"
-	lintClassRollingOvergrown = "rolling file overgrown"
-	lintClassFilenameAsTitle  = "filename-as-title duplicate"
-	lintClassSelfNamedDir     = "directory named after the KB"
+	lintClassIndexTierMissing  = "index_tier missing"
+	lintClassThinArticle       = "thin article"
+	lintClassBloatedArticle    = "bloated article"
+	lintClassRollingOvergrown  = "rolling file overgrown"
+	lintClassFilenameAsTitle   = "filename-as-title duplicate"
+	lintClassSelfNamedDir      = "directory named after the KB"
+	lintClassNestedFrontmatter = "nested frontmatter map"
 )
 
 // lintHints maps a warning class to the command that remediates it.
@@ -26,8 +27,9 @@ const (
 // their messages. Add an entry here when a new class gains a fix
 // command; classes without one simply render bare.
 var lintHints = map[string]string{
-	lintClassIndexTierMissing: "scribe tier write --missing-only",
-	lintClassFilenameAsTitle:  "scribe lint --fix",
+	lintClassIndexTierMissing:  "scribe tier write --missing-only",
+	lintClassFilenameAsTitle:   "scribe lint --fix",
+	lintClassNestedFrontmatter: "scribe lint --fix",
 }
 
 // lintReport accumulates findings during a structural lint run and

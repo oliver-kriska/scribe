@@ -425,3 +425,46 @@ func TestChangedWikiFiles(t *testing.T) {
 		t.Errorf("want exactly 2 files, got %d: %v", len(files), files)
 	}
 }
+
+// TestLintSelfIngestion_NestedFrontmatterWarns: Phase 5 surfaces a nested
+// `frontmatter:` map — the extraction artifact that PASSES Phase-1 validation
+// and so would otherwise stay silently valid (the invisibility that let ~56 of
+// them accumulate). The check must fire iff `scribe lint --fix` would strip it,
+// so the warning and the fixer can never disagree.
+func TestLintSelfIngestion_NestedFrontmatterWarns(t *testing.T) {
+	root := lintTestKB(t)
+	nested := "---\ntitle: \"Wrapped\"\ntype: solution\ncreated: 2026-04-10\nupdated: 2026-04-10\n" +
+		"domain: general\nconfidence: high\ntags: [t]\nrelated: []\nsources: [s]\nproblem: p\n" +
+		"index_tier: standard\nfrontmatter:\n  type: solution\n  domain: acme\n---\n\nBody.\n"
+	writeKBFile(t, root, "solutions/wrapped.md", nested)
+	writeKBFile(t, root, "solutions/clean.md", lintValidArticle("Clean", 20))
+
+	var count int
+	out := captureLintStdout(t, func() {
+		rep := newLintReport(os.Stdout, true, false) // verbose → per-file line prints
+		lintSelfIngestion(rep, root)
+		count = rep.classCounts[lintClassNestedFrontmatter]
+	})
+	if count != 1 {
+		t.Fatalf("expected exactly 1 nested-frontmatter warning (clean sibling must not trip), got %d\n%s", count, out)
+	}
+	if !strings.Contains(out, "wrapped.md") {
+		t.Errorf("warning should name the offending file:\n%s", out)
+	}
+
+	// The remediation footer must route this class to the fixer.
+	if lintHints[lintClassNestedFrontmatter] != "scribe lint --fix" {
+		t.Errorf("nested-frontmatter class not wired to `scribe lint --fix`")
+	}
+
+	// Round-trip invariant: warn ⟺ --fix would change it. After the fixer runs,
+	// the same content must NO LONGER trip the warning — check and fixer agree
+	// (the two-tools-disagree failure this whole effort was about).
+	changes, fixed, err := autoFixArticle(root, "solutions/wrapped.md", []byte(nested))
+	if err != nil || fixed == nil {
+		t.Fatalf("fixer should strip the nested block: changes=%v err=%v", changes, err)
+	}
+	if _, _, still := stripNestedFrontmatterDoc(string(fixed), validDomainsForRoot(root)); still {
+		t.Errorf("after --fix the file still trips the warning — check/fixer disagree:\n%s", fixed)
+	}
+}

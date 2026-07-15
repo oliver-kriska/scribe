@@ -309,6 +309,22 @@ func lintSelfIngestion(rep *lintReport, root string) {
 	for _, dir := range findSelfNamedDirs(root) {
 		rep.warnf(lintClassSelfNamedDir, "%s/: directory named after the KB itself — likely self-ingested pages; review and merge into canonical articles", dir)
 	}
+	// Nested `frontmatter:` maps — the extraction artifact where an
+	// already-frontmattered source file's own frontmatter was wrapped as a
+	// map value instead of merged. These PASS Phase-1 validation (the
+	// top-level block is valid YAML), so without this warning they stay
+	// *silently* valid — the exact invisibility that let ~56 of them
+	// accumulate before the producer seam was closed. Warn iff `scribe lint
+	// --fix` would strip it (shared stripNestedFrontmatterDoc predicate) so
+	// the check and the fixer can never disagree — the failure mode this
+	// whole convergence effort was about.
+	domains := validDomainsForRoot(root)
+	_ = walkArticles(root, func(path string, content []byte) error {
+		if _, _, nested := stripNestedFrontmatterDoc(string(content), domains); nested {
+			rep.warnf(lintClassNestedFrontmatter, "%s: nested `frontmatter:` map (extraction artifact)", relPath(root, path))
+		}
+		return nil
+	})
 }
 
 // lintConflictMarkers (Phase 6) hard-errors on unresolved merge
