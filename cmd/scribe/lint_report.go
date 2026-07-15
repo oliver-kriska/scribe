@@ -210,7 +210,18 @@ func (r *lintReport) remediationFooter() {
 		return
 	}
 
+	// A blank line before every section except the first, so the three
+	// buckets read as separate paragraphs instead of one wall of text.
+	sections := 0
+	gap := func() {
+		if sections > 0 {
+			fmt.Fprintln(r.w)
+		}
+		sections++
+	}
+
 	if len(steps) > 0 {
+		gap()
 		width := 0
 		for _, s := range steps {
 			if len(s.cmd) > width {
@@ -223,18 +234,25 @@ func (r *lintReport) remediationFooter() {
 		}
 	}
 	if len(manual) > 0 {
+		gap()
 		fmt.Fprintln(r.w, "Needs a human (no command):")
 		for _, m := range manual {
 			fmt.Fprintf(r.w, "  • %s\n", m)
 		}
 	}
 	if len(review) > 0 {
+		gap()
 		fmt.Fprintln(r.w, "Needs review (no automatic fix):")
 		for _, class := range review {
 			fmt.Fprintf(r.w, "  • %*d× %-*s — %s\n", reviewCountW, r.classCounts[class], reviewW, class, lintReviewGuidance[class])
 		}
-		fmt.Fprintln(r.w, "  → `scribe lint -v` lists the files; the scribe-kb-tidy skill walks an agent through the fixes")
-		fmt.Fprintln(r.w, "    (scribe-cli drives the broader CLI — run `scribe skill install` to set the skills up)")
+		// The agent hand-off gets its own paragraph — the cramped inline
+		// pointer read as noise glued to the bullet list.
+		fmt.Fprintln(r.w)
+		fmt.Fprintln(r.w, "  An agent can work these for you:")
+		fmt.Fprintln(r.w, "    1. scribe skill install   — adds the scribe-kb-tidy + scribe-cli skills (one-time)")
+		fmt.Fprintln(r.w, "    2. scribe lint -v         — lists the exact files")
+		fmt.Fprintln(r.w, "    3. open an agent in this KB and ask it to tidy the KB")
 	}
 	fmt.Fprintln(r.w)
 }

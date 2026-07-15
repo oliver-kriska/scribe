@@ -17,8 +17,10 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   closes with a plain-language next step (open an agent in the KB and ask it —
   naming what each skill does); `scribe status` / `scribe doctor` print a
   one-line `scribe-cli` pointer at the end of the scoreboard; and the `scribe
-  lint` "Needs review" footer gained a second line pointing at `scribe-cli` +
-  `scribe skill install` alongside the existing `scribe-kb-tidy` mention.
+  lint` "Needs review" footer closes with a blank-line-separated "An agent can
+  work these for you" paragraph — a numbered `scribe skill install` → `scribe
+  lint -v` → ask-an-agent sequence (readability fix over the earlier cramped
+  inline pointer), and the footer's three buckets are now spaced apart.
 
 ### Added — `scribe skill install` targets every agent, not just Claude Code
 - `scribe skill install` now writes the bundle to each agent's skill-discovery
