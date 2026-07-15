@@ -655,7 +655,7 @@ scribe status       # one-shot KB scoreboard (raw/wiki/backlog) — splits held-
 scribe projects {list,approve,ignore,review}  # approve/ignore discovered projects before they enter the pipeline
 scribe dream        # weekly memory consolidation (4-phase)
 scribe dream --hot          # daily mini consolidation of the busiest domain (auto-gates)
-scribe lint         # frontmatter + size + orphan checks (warnings grouped by class; -v per-file, -q errors-only)
+scribe lint         # frontmatter + size + orphan checks (grouped by class; closes with a "To fix, run:" footer; -v per-file, -q errors-only)
 scribe lint --contradictions # LLM pass for factual disagreements across articles
 scribe link         # link orphan articles to contextual hosts via See Also sections
 scribe watch        # long-running fsnotify watcher on ccrider DB (near-real-time session extraction)

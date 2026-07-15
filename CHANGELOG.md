@@ -4,6 +4,63 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-07-15
+
+A reliability patch centered on frontmatter convergence: the deterministic
+fixers (`scribe lint --fix`, `scribe tier write`) now reach a fixpoint on
+malformed frontmatter instead of silently no-op'ing or oscillating, the
+extraction seam that produced the malformed frontmatter is closed at the source,
+and `scribe lint` gained a "how to fix" footer plus a regression net. Also clears
+two hosted-model (MiniMax M3 / Together) truncation and empty-envelope losses.
+
+### Fix — the frontmatter fixers converge
+- One root cause spanned the family: `parseFrontmatter` and the line-level
+  scanner read a malformed opening fence differently, so `scribe lint --fix`
+  reported "clean" while `scribe tier write --missing-only` rewrote the same file
+  every run (`wrote=1` forever). Three fence classes now normalize to a bare
+  `---`: duplicate top-level keys (collapsed last-wins to match the validator),
+  a joined `--- title:` fence (split), and a trailing-whitespace `--- ` fence
+  (~36 files on the reference KB). A nested `frontmatter:` map — the extraction
+  artifact where a source file's own frontmatter was wrapped instead of merged —
+  is stripped, promoting the more specific nested `domain` first. `tier write`
+  now skips any file it can't parse cleanly and flags it for `--fix` instead of
+  oscillating. `autoFixArticle`'s honesty guard re-parses its own output, so a
+  file is never "fixed" into valid-looking garbage. Verified end-to-end on a
+  6.5k-article KB: `lint --fix` converges to 0 and `tier write` reports 0
+  malformed-fence skips. (4870562, d285702)
+
+### Fix — the malformed-frontmatter producer seam is closed
+- Traced the origin: raw source articles are clean; both artifacts (the nested
+  map and the trailing-whitespace fence) came from the off-Anthropic extraction
+  envelope path, where a local/hosted model has no tool-use schema enforcement so
+  its raw action `content` reached disk verbatim. `clampEnvelopeFrontmatter` now
+  normalizes a malformed opening fence at write time — sharing the exact
+  `normalizeOpeningFence` helper with `--fix` so the write-time seam and the
+  on-disk healer can't disagree — and the 8 envelope prompts were reworded off
+  the literal `frontmatter` placeholder a weak model echoed as a nested key.
+  (ff69ff0)
+
+### Fix — hosted-model truncation and empty envelopes
+- Hosted requests now send an explicit `max_tokens`; omitting it let Together's
+  2048-token default silently truncate dream envelopes (`ok=true`, output exactly
+  2048), and a `finish_reason=length` now logs a warning. Pass-2 moved to a
+  strict `json_schema` envelope with a token raise, closing a MiniMax M3
+  empty-`{}` loss that dropped ~20-40% of envelopes under `json_object`. A dead
+  Together FP8 slug was retired from the docs. (a620b92, 49b4468, 65bc759)
+
+### Added — lint tells you how to fix what it found
+- `scribe lint` now closes with a **"To fix, run:"** footer naming the exact
+  command(s) for whatever it surfaced (`scribe lint --fix`, `scribe tier write
+  --missing-only`), plus the residue no command repairs (missing title, invalid
+  confidence). The `--fix` hint shows on any error now, not only mechanical ones.
+  (22858ce, c19db60)
+- **Nested-`frontmatter:` warning (Phase 5).** Lint warns on a stray nested
+  `frontmatter:` map so a regression is visible instead of silently valid (these
+  PASS frontmatter validation). Detection reuses the fixer's own predicate — lint
+  warns *iff* `--fix` would strip it — so the check and the fixer can't drift
+  apart. Routes to `scribe lint --fix` via the remediation footer; 0 false
+  positives on the clean reference KB. (8cb9fd6)
+
 ## [0.4.0] — 2026-07-10
 
 Everything that accreted on `main` after the v0.3.0 team-KB release, cut as one
