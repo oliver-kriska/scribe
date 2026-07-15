@@ -19,10 +19,12 @@ import (
 // subdirectory, so a fresh `scribe init` followed by `scribe skill install`
 // gives any agent session opening the KB a set of self-describing skills.
 //
-// The bundle ships two skills:
+// The bundle ships three skills:
 //   - scribe-kb       — how to query/write the KB (frontmatter, wikilinks, drop files)
 //   - scribe-kb-tidy  — how to work the `scribe lint` content-quality queue
 //     (split bloated, expand/merge thin, archive rolling, merge self-named dirs)
+//   - scribe-cli      — how to drive the scribe CLI itself (doctor/status,
+//     sync, cron, FDA; goal→command map + troubleshooting)
 //
 // Bundle format follows the [agentskills.io specification](https://agentskills.io/specification):
 // each skill is a directory with a top-level `SKILL.md` (frontmatter:
@@ -41,7 +43,7 @@ import (
 // adding its files to the //go:embed line below — the walk, install,
 // and list logic are all N-skill generic.
 
-//go:embed skills/scribe-kb/SKILL.md skills/scribe-kb/references/*.md skills/scribe-kb-tidy/SKILL.md skills/scribe-kb-tidy/references/*.md
+//go:embed skills/scribe-kb/SKILL.md skills/scribe-kb/references/*.md skills/scribe-kb-tidy/SKILL.md skills/scribe-kb-tidy/references/*.md skills/scribe-cli/SKILL.md skills/scribe-cli/references/*.md
 var skillsFS embed.FS
 
 // skillRootInFS is the embed-FS parent of every shipped skill. The walk
@@ -54,7 +56,7 @@ const skillRootInFS = "skills"
 //	scribe skill install [--agent <list>] [--target <dir>] [--check] [--force]
 //	scribe skill list
 type SkillCmd struct {
-	Install SkillInstallCmd `cmd:"" help:"Write the embedded scribe skill bundle (scribe-kb, scribe-kb-tidy) to disk."`
+	Install SkillInstallCmd `cmd:"" help:"Write the embedded scribe skill bundle (scribe-kb, scribe-kb-tidy, scribe-cli) to disk."`
 	List    SkillListCmd    `cmd:"" help:"List the files in the embedded skill bundle."`
 }
 
@@ -175,8 +177,9 @@ func (s *SkillInstallCmd) Run() error {
 		logMsg("skill", "install done: target=%s wrote=%d skipped=%d files=%d skills=%s",
 			dest, wrote, skipped, len(embedded), strings.Join(skills, ","))
 	}
-	logMsg("skill", "use these skills by keeping the target dir(s) on the agent's skill path: %s",
-		strings.Join(dests, ", "))
+	logMsg("skill", "installed on the agent skill path: %s", strings.Join(dests, ", "))
+	logMsg("skill", "next: open an agent (Claude Code / Codex / OpenCode / Pi) in this KB and ask it to help —")
+	logMsg("skill", "      scribe-cli drives the CLI · scribe-kb-tidy works the lint queue · scribe-kb authors & searches content")
 	return nil
 }
 
@@ -215,10 +218,7 @@ func (s *SkillInstallCmd) installTo(dest string, embedded map[string][]byte) (wr
 func skillNames(embedded map[string][]byte) []string {
 	seen := make(map[string]struct{})
 	for rel := range embedded {
-		name := rel
-		if i := strings.IndexByte(rel, '/'); i >= 0 {
-			name = rel[:i]
-		}
+		name, _, _ := strings.Cut(rel, "/")
 		seen[name] = struct{}{}
 	}
 	names := make([]string, 0, len(seen))

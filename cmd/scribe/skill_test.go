@@ -61,6 +61,20 @@ func TestReadEmbeddedSkillFiles_PopulatesBundle(t *testing.T) {
 	if _, ok := got["scribe-kb-tidy/references/FIELD_NOTES.md"]; !ok {
 		t.Errorf("expected scribe-kb-tidy/references/FIELD_NOTES.md in bundle")
 	}
+
+	// The CLI-ops skill ships too, with its command and troubleshooting refs.
+	cliMD, ok := got["scribe-cli/SKILL.md"]
+	if !ok {
+		t.Fatal("scribe-cli/SKILL.md missing from embedded bundle")
+	}
+	if !strings.Contains(string(cliMD), "name: scribe-cli") {
+		t.Errorf("cli SKILL.md missing `name: scribe-cli` in frontmatter")
+	}
+	for _, ref := range []string{"scribe-cli/references/COMMANDS.md", "scribe-cli/references/TROUBLESHOOT.md"} {
+		if _, ok := got[ref]; !ok {
+			t.Errorf("expected %s in bundle", ref)
+		}
+	}
 }
 
 func TestSkillNames_DistinctSortedTopLevel(t *testing.T) {
@@ -69,7 +83,7 @@ func TestSkillNames_DistinctSortedTopLevel(t *testing.T) {
 		t.Fatalf("read embedded: %v", err)
 	}
 	names := skillNames(got)
-	want := []string{"scribe-kb", "scribe-kb-tidy"}
+	want := []string{"scribe-cli", "scribe-kb", "scribe-kb-tidy"}
 	if len(names) != len(want) {
 		t.Fatalf("skillNames = %v, want %v", names, want)
 	}
@@ -164,6 +178,9 @@ func TestSkillInstall_WritesBothSkills(t *testing.T) {
 		filepath.Join("scribe-kb", "SKILL.md"),
 		filepath.Join("scribe-kb-tidy", "SKILL.md"),
 		filepath.Join("scribe-kb-tidy", "references", "FIELD_NOTES.md"),
+		filepath.Join("scribe-cli", "SKILL.md"),
+		filepath.Join("scribe-cli", "references", "COMMANDS.md"),
+		filepath.Join("scribe-cli", "references", "TROUBLESHOOT.md"),
 	} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("expected installed file %s: %v", rel, err)

@@ -234,6 +234,7 @@ func (r *lintReport) remediationFooter() {
 			fmt.Fprintf(r.w, "  • %*d× %-*s — %s\n", reviewCountW, r.classCounts[class], reviewW, class, lintReviewGuidance[class])
 		}
 		fmt.Fprintln(r.w, "  → `scribe lint -v` lists the files; the scribe-kb-tidy skill walks an agent through the fixes")
+		fmt.Fprintln(r.w, "    (scribe-cli drives the broader CLI — run `scribe skill install` to set the skills up)")
 	}
 	fmt.Fprintln(r.w)
 }

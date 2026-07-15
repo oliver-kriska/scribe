@@ -140,6 +140,10 @@ func renderStatus(w io.Writer, root string) error {
 		fmt.Fprintln(w, "  qmd collection:   not indexed yet — run `scribe sync` or `qmd update`")
 	}
 
+	// --- agent-skill pointer (issue: humans don't know an agent can drive this) ---
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  tip: an agent with the scribe-cli skill can act on this — `scribe skill install`, then ask it in a session")
+
 	return nil
 }
 

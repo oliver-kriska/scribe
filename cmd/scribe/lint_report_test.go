@@ -266,6 +266,7 @@ func TestRemediationFooter_ReviewSection(t *testing.T) {
 	for _, want := range []string{
 		"split at 150 lines", "expand, or merge",
 		"scribe lint -v", "scribe-kb-tidy skill",
+		"scribe-cli", "scribe skill install",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("review section missing %q:\n%s", want, out)

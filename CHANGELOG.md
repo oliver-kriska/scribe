@@ -4,6 +4,22 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added — `scribe-cli` agent skill + the CLI now advertises the skills
+- New third bundled skill **`scribe-cli`**: how to drive the scribe CLI itself.
+  It leads with the read-only `scribe doctor` / `scribe status` diagnose-first
+  flow, carries a goal→command quick map, and routes content work to `scribe-kb`
+  and the lint content-quality queue to `scribe-kb-tidy` (one skill, one job). Two
+  references ship with it: `COMMANDS.md` (the full subcommand map, grouped) and
+  `TROUBLESHOOT.md` (symptom → doctor section → fix for the common failure modes:
+  extraction stalled, cron off, FDA lost after an upgrade, ollama down, qmd not
+  indexed, lint errors). Includes the lock rule for `sync`/`dream`.
+- The CLI now tells humans an agent can do this work. `scribe skill install`
+  closes with a plain-language next step (open an agent in the KB and ask it —
+  naming what each skill does); `scribe status` / `scribe doctor` print a
+  one-line `scribe-cli` pointer at the end of the scoreboard; and the `scribe
+  lint` "Needs review" footer gained a second line pointing at `scribe-cli` +
+  `scribe skill install` alongside the existing `scribe-kb-tidy` mention.
+
 ### Added — `scribe skill install` targets every agent, not just Claude Code
 - `scribe skill install` now writes the bundle to each agent's skill-discovery
   directory, defaulting to **both** `.claude/skills/` (Claude Code) and
