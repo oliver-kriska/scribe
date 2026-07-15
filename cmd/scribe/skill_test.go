@@ -18,10 +18,11 @@ func TestReadEmbeddedSkillFiles_PopulatesBundle(t *testing.T) {
 			t.Errorf("empty embedded file: %s", path)
 		}
 	}
-	// The top-level SKILL.md must exist and carry the agent-skills frontmatter.
-	skillMD, ok := got["SKILL.md"]
+	// Each skill's SKILL.md lives under its own <skill-name>/ prefix so
+	// install recreates one subdirectory per skill.
+	skillMD, ok := got["scribe-kb/SKILL.md"]
 	if !ok {
-		t.Fatal("SKILL.md missing from embedded bundle")
+		t.Fatal("scribe-kb/SKILL.md missing from embedded bundle")
 	}
 	if !strings.HasPrefix(string(skillMD), "---") {
 		t.Errorf("SKILL.md must start with frontmatter, got: %s", strings.SplitN(string(skillMD), "\n", 2)[0])
@@ -34,16 +35,62 @@ func TestReadEmbeddedSkillFiles_PopulatesBundle(t *testing.T) {
 	}
 	// References must include all six docs documented in the plan.
 	wantRefs := []string{
-		"references/FRONTMATTER.md",
-		"references/WIKILINKS.md",
-		"references/STRUCTURE.md",
-		"references/DROP_FILES.md",
-		"references/QUERY.md",
-		"references/COMPAT.md",
+		"scribe-kb/references/FRONTMATTER.md",
+		"scribe-kb/references/WIKILINKS.md",
+		"scribe-kb/references/STRUCTURE.md",
+		"scribe-kb/references/DROP_FILES.md",
+		"scribe-kb/references/QUERY.md",
+		"scribe-kb/references/COMPAT.md",
 	}
 	for _, want := range wantRefs {
 		if _, ok := got[want]; !ok {
 			t.Errorf("expected reference file missing: %s", want)
+		}
+	}
+
+	// The KB-tidy skill ships in the same bundle with its own frontmatter
+	// and field-notes reference.
+	tidyMD, ok := got["scribe-kb-tidy/SKILL.md"]
+	if !ok {
+		t.Fatal("scribe-kb-tidy/SKILL.md missing from embedded bundle")
+	}
+	if !strings.Contains(string(tidyMD), "name: scribe-kb-tidy") {
+		t.Errorf("tidy SKILL.md missing `name: scribe-kb-tidy` in frontmatter")
+	}
+	if _, ok := got["scribe-kb-tidy/references/FIELD_NOTES.md"]; !ok {
+		t.Errorf("expected scribe-kb-tidy/references/FIELD_NOTES.md in bundle")
+	}
+}
+
+func TestSkillNames_DistinctSortedTopLevel(t *testing.T) {
+	got, err := readEmbeddedSkillFiles()
+	if err != nil {
+		t.Fatalf("read embedded: %v", err)
+	}
+	names := skillNames(got)
+	want := []string{"scribe-kb", "scribe-kb-tidy"}
+	if len(names) != len(want) {
+		t.Fatalf("skillNames = %v, want %v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Errorf("skillNames[%d] = %q, want %q (full: %v)", i, names[i], want[i], names)
+		}
+	}
+}
+
+func TestSkillInstall_WritesBothSkills(t *testing.T) {
+	dir := t.TempDir()
+	if err := (&SkillInstallCmd{Target: dir}).Run(); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	for _, rel := range []string{
+		filepath.Join("scribe-kb", "SKILL.md"),
+		filepath.Join("scribe-kb-tidy", "SKILL.md"),
+		filepath.Join("scribe-kb-tidy", "references", "FIELD_NOTES.md"),
+	} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Errorf("expected installed file %s: %v", rel, err)
 		}
 	}
 }

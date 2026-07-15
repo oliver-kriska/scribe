@@ -4,6 +4,23 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added — `scribe-kb-tidy` agent skill
+- The embedded skill bundle (`scribe skill install`) now ships a second skill,
+  **`scribe-kb-tidy`**, alongside `scribe-kb`. It's a procedure for working the
+  `scribe lint` content-quality queue an agent can't auto-fix: split bloated
+  articles, expand/merge thin stubs, archive overgrown rolling files, and merge
+  KB-self-named directories. Grounded in real KB cleanups — it's honest about
+  which classes have a battle-tested recipe (rolling-archive, self-named-dir
+  triage) versus which are greenfield (split, merge), enforces "mechanical is
+  safe, judgment is propose-first," and carries a `references/FIELD_NOTES.md`
+  with the archive-naming/frontmatter reality, the 150-vs-200 threshold gap, and
+  the parser-vs-scanner convergence trap. `scribe skill install` writes each
+  skill to its own `<target>/<skill-name>/` subdirectory; `scribe skill list`
+  enumerates both.
+- The `scribe lint` "Needs review" footer now names the skill: it points at
+  `scribe lint -v` for the file list and the `scribe-kb-tidy` skill to walk an
+  agent through the fixes.
+
 ### Added — `scribe lint` explains what it can't auto-fix
 - The remediation footer gains a **"Needs review (no automatic fix):"** section.
   The content-quality warning classes with no fix command (bloated / thin /

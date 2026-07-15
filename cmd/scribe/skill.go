@@ -15,33 +15,46 @@ import (
 //
 // `scribe skill install [--target <dir>]` writes the embedded skill
 // tree (cmd/scribe/skills/) to the user's chosen location. The
-// default target is `.claude/skills/scribe-kb/` in the KB root, so a
-// fresh `scribe init` followed by `scribe skill install` gives any
-// Claude Code session opening the KB a self-describing skill bundle.
+// default target is `.claude/skills/` in the KB root, and each skill
+// lands in its own `<target>/<skill-name>/` subdirectory, so a fresh
+// `scribe init` followed by `scribe skill install` gives any Claude
+// Code session opening the KB a set of self-describing skills.
+//
+// The bundle ships two skills:
+//   - scribe-kb       — how to query/write the KB (frontmatter, wikilinks, drop files)
+//   - scribe-kb-tidy  — how to work the `scribe lint` content-quality queue
+//     (split bloated, expand/merge thin, archive rolling, merge self-named dirs)
 //
 // Bundle format follows the [agentskills.io specification](https://agentskills.io/specification):
-// a top-level `SKILL.md` with frontmatter (name, description) plus
-// optional reference files. Compatible with Claude Code, Codex CLI,
-// and OpenCode without any per-vendor adaptation.
+// each skill is a directory with a top-level `SKILL.md` (frontmatter:
+// name, description) plus optional reference files. Compatible with
+// Claude Code, Codex CLI, and OpenCode without any per-vendor adaptation.
 //
 // Source of truth: cmd/scribe/skills/. Update content there; the
-// embed picks it up on next `make build`.
+// embed picks it up on next `make build`. Adding a new skill means
+// adding its files to the //go:embed line below — the walk, install,
+// and list logic are all N-skill generic.
 
-//go:embed skills/scribe-kb/SKILL.md skills/scribe-kb/references/*.md
+//go:embed skills/scribe-kb/SKILL.md skills/scribe-kb/references/*.md skills/scribe-kb-tidy/SKILL.md skills/scribe-kb-tidy/references/*.md
 var skillsFS embed.FS
 
-const skillRootInFS = "skills/scribe-kb"
+// skillRootInFS is the embed-FS parent of every shipped skill. The walk
+// keeps the `<skill-name>/…` path segment so install recreates one
+// subdirectory per skill under the target.
+const skillRootInFS = "skills"
 
 // SkillCmd is the kong CLI surface.
 //
 //	scribe skill install [--target <dir>] [--check] [--force]
 //	scribe skill list
 type SkillCmd struct {
-	Install SkillInstallCmd `cmd:"" help:"Write the embedded scribe-kb skill bundle to disk."`
+	Install SkillInstallCmd `cmd:"" help:"Write the embedded scribe skill bundle (scribe-kb, scribe-kb-tidy) to disk."`
 	List    SkillListCmd    `cmd:"" help:"List the files in the embedded skill bundle."`
 }
 
-// SkillInstallCmd writes the embedded tree under `<target>/scribe-kb/`.
+// SkillInstallCmd writes the embedded tree under `<target>/`, one
+// subdirectory per skill (e.g. `<target>/scribe-kb/`,
+// `<target>/scribe-kb-tidy/`).
 //
 // Default target resolution:
 //
@@ -53,7 +66,7 @@ type SkillCmd struct {
 // disk without writing. Useful in pre-commit hooks or CI to surface
 // "your installed skill is older than your scribe binary."
 type SkillInstallCmd struct {
-	Target string `help:"Parent directory; the bundle lands at <target>/scribe-kb/. Default: KB-root/.claude/skills."`
+	Target string `help:"Parent directory; each skill lands at <target>/<skill-name>/. Default: KB-root/.claude/skills."`
 	Check  bool   `help:"Compare embedded vs installed without writing. Exits non-zero on drift."`
 	Force  bool   `help:"Overwrite even when on-disk content is newer or hand-edited."`
 }
@@ -68,7 +81,9 @@ func (s *SkillInstallCmd) Run() error {
 			target = filepath.Join(".claude", "skills")
 		}
 	}
-	dest := filepath.Join(target, "scribe-kb")
+	// Embedded paths already carry the `<skill-name>/…` prefix, so the
+	// target is the parent that holds every skill directory.
+	dest := target
 
 	embedded, err := readEmbeddedSkillFiles()
 	if err != nil {
@@ -105,10 +120,30 @@ func (s *SkillInstallCmd) Run() error {
 		wrote++
 	}
 
-	logMsg("skill", "install done: target=%s wrote=%d skipped=%d files=%d",
-		dest, wrote, skipped, len(embedded))
-	logMsg("skill", "use this skill in Claude Code by ensuring %s is on the agent's skill path", dest)
+	skills := skillNames(embedded)
+	logMsg("skill", "install done: target=%s wrote=%d skipped=%d files=%d skills=%s",
+		dest, wrote, skipped, len(embedded), strings.Join(skills, ","))
+	logMsg("skill", "use these skills in Claude Code by ensuring %s is on the agent's skill path", dest)
 	return nil
+}
+
+// skillNames returns the distinct top-level skill directory names from a
+// bundle-relative file map (e.g. "scribe-kb", "scribe-kb-tidy"), sorted.
+func skillNames(embedded map[string][]byte) []string {
+	seen := make(map[string]struct{})
+	for rel := range embedded {
+		name := rel
+		if i := strings.IndexByte(rel, '/'); i >= 0 {
+			name = rel[:i]
+		}
+		seen[name] = struct{}{}
+	}
+	names := make([]string, 0, len(seen))
+	for n := range seen {
+		names = append(names, n)
+	}
+	sortStrings(names)
+	return names
 }
 
 // runCheck compares embedded vs installed without writing, returning
