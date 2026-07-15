@@ -139,13 +139,28 @@ func (l *LintCmd) targetFiles(root string) ([]string, error) {
 // finding per-file.
 func lintFrontmatter(rep *lintReport, root string, files []string) {
 	for _, path := range files {
+		rel := relPath(root, path)
 		errs := validateFile(root, path)
 		if len(errs) > 0 {
 			rep.errors++
 			for _, e := range errs {
-				rep.errorLinef("%s: %s", relPath(root, path), e)
+				rep.errorLinef("%s: %s", rel, e)
 				rep.noteErrorKind(e)
 			}
+			continue // errors already route to `scribe lint --fix` via errKinds
+		}
+		// The file passes validation, but `--fix` may still backfill frontmatter
+		// the validator *tolerates* unset — a missing `authority:`, list defaults,
+		// a `2026/04/20` date. Surface it as a warning so `scribe lint` predicts
+		// what `--fix` will change, instead of reporting "clean" and then
+		// rewriting N files on the next `--fix` (the "lint said nothing, --fix
+		// fixed 12" gap). autoFixArticle is a pure dry-run here — it never writes.
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if changes, out, ferr := autoFixArticle(root, rel, content); ferr == nil && out != nil && len(changes) > 0 {
+			rep.warnf(lintClassFixableFrontmatter, "%s: %s", rel, changes[0])
 		}
 	}
 }

@@ -228,12 +228,13 @@ func TestRemediationFooter_AlwaysSuggestsFixOnErrors(t *testing.T) {
 // warning class that carries a fix command still prints the "To fix, run:"
 // footer naming that command — this is the case the user hit, where lint
 // PASSES but there's still an index_tier command to run. `scribe lint --fix`
-// must NOT appear (there are no frontmatter errors to fix).
+// must NOT appear (there are no frontmatter errors to fix). A no-command
+// class (bloated) routes to the "Needs review" section, not the command list.
 func TestRemediationFooter_WarningsOnly(t *testing.T) {
 	var buf bytes.Buffer
 	r := newLintReport(&buf, false, false)
 	r.warnf(lintClassIndexTierMissing, "wiki/a.md: index_tier missing")
-	r.warnf(lintClassBloatedArticle, "wiki/b.md: bloated") // no command → not in footer
+	r.warnf(lintClassBloatedArticle, "wiki/b.md: bloated") // no command → review section
 	r.remediationFooter()
 	out := buf.String()
 	if !strings.Contains(out, "To fix, run:") || !strings.Contains(out, "scribe tier write --missing-only") {
@@ -241,6 +242,38 @@ func TestRemediationFooter_WarningsOnly(t *testing.T) {
 	}
 	if strings.Contains(out, "scribe lint --fix") {
 		t.Errorf("--fix must not appear with zero frontmatter errors:\n%s", out)
+	}
+	if !strings.Contains(out, "Needs review") || !strings.Contains(out, "bloated article") {
+		t.Errorf("no-command warning must land in the review section:\n%s", out)
+	}
+}
+
+// TestRemediationFooter_ReviewSection: the judgment-requiring, no-command
+// warning classes (bloated/thin/rolling/self-named-dir) each render a review
+// line with their remediation guidance, and the footer points at `scribe lint
+// -v` so the file list is reachable. This is the "55 warnings, no guidance"
+// gap the user hit — the footer must never leave a warning unexplained.
+func TestRemediationFooter_ReviewSection(t *testing.T) {
+	var buf bytes.Buffer
+	r := newLintReport(&buf, false, false)
+	r.warnf(lintClassBloatedArticle, "a.md: bloated")
+	r.warnf(lintClassThinArticle, "b.md: thin")
+	r.remediationFooter()
+	out := buf.String()
+	if !strings.Contains(out, "Needs review (no automatic fix):") {
+		t.Fatalf("expected the review section:\n%s", out)
+	}
+	for _, want := range []string{
+		"split at 150 lines", "expand, or merge",
+		"scribe lint -v", "an agent can work them",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("review section missing %q:\n%s", want, out)
+		}
+	}
+	// A no-command class must not be mislabeled as command-fixable.
+	if strings.Contains(out, "To fix, run:") {
+		t.Errorf("pure review warnings must not print a command section:\n%s", out)
 	}
 }
 

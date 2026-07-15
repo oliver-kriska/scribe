@@ -4,6 +4,21 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added — `scribe lint` explains what it can't auto-fix
+- The remediation footer gains a **"Needs review (no automatic fix):"** section.
+  The content-quality warning classes with no fix command (bloated / thin /
+  rolling-overgrown / self-named directory) each print their remediation action
+  (split / expand / archive / merge), and the footer points at `scribe lint -v`
+  to list the files — so a passing run with N warnings never leaves them silently
+  unexplained (previously the footer went blank when no class had a command).
+- `scribe lint` now surfaces **`--fix`-able frontmatter** as its own warning
+  class. A file that passes validation but whose frontmatter `--fix` would still
+  backfill (a tolerated-but-unset `authority:`, list defaults, a slash date) is
+  counted and routed to `scribe lint --fix` — so `lint` predicts what `--fix`
+  will change instead of reporting "clean" and then rewriting N files on the next
+  run (the "lint said nothing, --fix fixed 12" gap). The check is a pure dry-run
+  of the fixer, so the two can't disagree.
+
 ## [0.4.1] — 2026-07-15
 
 A reliability patch centered on frontmatter convergence: the deterministic

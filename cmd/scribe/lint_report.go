@@ -11,13 +11,14 @@ import (
 // Warning classes for grouped lint output. Constants keep the warnf call
 // sites and the lintHints table from drifting apart.
 const (
-	lintClassIndexTierMissing  = "index_tier missing"
-	lintClassThinArticle       = "thin article"
-	lintClassBloatedArticle    = "bloated article"
-	lintClassRollingOvergrown  = "rolling file overgrown"
-	lintClassFilenameAsTitle   = "filename-as-title duplicate"
-	lintClassSelfNamedDir      = "directory named after the KB"
-	lintClassNestedFrontmatter = "nested frontmatter map"
+	lintClassIndexTierMissing   = "index_tier missing"
+	lintClassThinArticle        = "thin article"
+	lintClassBloatedArticle     = "bloated article"
+	lintClassRollingOvergrown   = "rolling file overgrown"
+	lintClassFilenameAsTitle    = "filename-as-title duplicate"
+	lintClassSelfNamedDir       = "directory named after the KB"
+	lintClassNestedFrontmatter  = "nested frontmatter map"
+	lintClassFixableFrontmatter = "fixable frontmatter"
 )
 
 // lintHints maps a warning class to the command that remediates it.
@@ -27,9 +28,23 @@ const (
 // their messages. Add an entry here when a new class gains a fix
 // command; classes without one simply render bare.
 var lintHints = map[string]string{
-	lintClassIndexTierMissing:  "scribe tier write --missing-only",
-	lintClassFilenameAsTitle:   "scribe lint --fix",
-	lintClassNestedFrontmatter: "scribe lint --fix",
+	lintClassIndexTierMissing:   "scribe tier write --missing-only",
+	lintClassFilenameAsTitle:    "scribe lint --fix",
+	lintClassNestedFrontmatter:  "scribe lint --fix",
+	lintClassFixableFrontmatter: "scribe lint --fix",
+}
+
+// lintReviewGuidance maps a warning class that has NO fix command — the
+// judgment-requiring content-quality classes — to the one-line action a human
+// or agent takes to resolve it. Without this, `scribe lint` would print a bare
+// "35× bloated article" and a silent footer, leaving the operator to guess.
+// A class belongs in lintHints (a command fixes it) OR here (review fixes it),
+// never both; the footer routes each class to exactly one section.
+var lintReviewGuidance = map[string]string{
+	lintClassBloatedArticle:   "split at 150 lines into focused sub-articles",
+	lintClassThinArticle:      "expand, or merge into a related article",
+	lintClassRollingOvergrown: "archive oldest entries to {name}-archive-YYYY.md",
+	lintClassSelfNamedDir:     "merge into canonical articles, then remove the directory",
 }
 
 // lintReport accumulates findings during a structural lint run and
@@ -161,9 +176,22 @@ func (r *lintReport) remediationFooter() {
 	if len(r.errKinds) > 0 {
 		add("scribe lint --fix", "frontmatter errors: duplicate keys, list formatting, dates, invalid domains, missing defaults")
 	}
+	// Warning classes split two ways: a command fixes it (lintHints → a step),
+	// or judgment fixes it (lintReviewGuidance → the review section below).
+	var review []string
+	reviewW, reviewCountW := 0, 0
 	for _, class := range r.classesByCount() {
-		if cmd := lintHints[class]; cmd != "" {
-			add(cmd, fmt.Sprintf("%d %s", r.classCounts[class], class))
+		switch {
+		case lintHints[class] != "":
+			add(lintHints[class], fmt.Sprintf("%d %s", r.classCounts[class], class))
+		case lintReviewGuidance[class] != "":
+			review = append(review, class)
+			if len(class) > reviewW {
+				reviewW = len(class)
+			}
+			if w := len(strconv.Itoa(r.classCounts[class])); w > reviewCountW {
+				reviewCountW = w
+			}
 		}
 	}
 
@@ -178,7 +206,7 @@ func (r *lintReport) remediationFooter() {
 		manual = append(manual, "no frontmatter — the page has no `---` block; add one")
 	}
 
-	if len(steps) == 0 && len(manual) == 0 {
+	if len(steps) == 0 && len(manual) == 0 && len(review) == 0 {
 		return
 	}
 
@@ -199,6 +227,13 @@ func (r *lintReport) remediationFooter() {
 		for _, m := range manual {
 			fmt.Fprintf(r.w, "  • %s\n", m)
 		}
+	}
+	if len(review) > 0 {
+		fmt.Fprintln(r.w, "Needs review (no automatic fix):")
+		for _, class := range review {
+			fmt.Fprintf(r.w, "  • %*d× %-*s — %s\n", reviewCountW, r.classCounts[class], reviewW, class, lintReviewGuidance[class])
+		}
+		fmt.Fprintln(r.w, "  → run `scribe lint -v` to list the files; an agent can work them")
 	}
 	fmt.Fprintln(r.w)
 }

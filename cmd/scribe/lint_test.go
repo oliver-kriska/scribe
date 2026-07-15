@@ -468,3 +468,40 @@ func TestLintSelfIngestion_NestedFrontmatterWarns(t *testing.T) {
 		t.Errorf("after --fix the file still trips the warning — check/fixer disagree:\n%s", fixed)
 	}
 }
+
+// TestLintFrontmatter_SurfacesFixableFrontmatter closes the "lint said nothing,
+// --fix fixed 12" gap: a file that PASSES validation but whose frontmatter
+// `--fix` would still backfill (a tolerated-but-unset field) is surfaced as a
+// `fixable frontmatter` warning routed to `scribe lint --fix`. A fully-clean
+// file and a file with hard errors must NOT be counted in that class.
+func TestLintFrontmatter_SurfacesFixableFrontmatter(t *testing.T) {
+	root := lintTestKB(t)
+	// Valid per the schema (all required fields present, authority omitted is
+	// fine) but --fix will backfill `authority:` from type → fixable.
+	fixable := "---\ntitle: \"Fixable\"\ntype: solution\ncreated: 2026-04-10\nupdated: 2026-04-10\n" +
+		"domain: general\nconfidence: high\ntags: [t]\nrelated: []\nsources: [s]\nproblem: p\n" +
+		"index_tier: standard\n---\n\n" + strings.Repeat("Body line.\n", 20)
+	writeKBFile(t, root, "solutions/fixable.md", fixable)
+	// Fully clean (authority already set) → must not be flagged.
+	writeKBFile(t, root, "solutions/clean.md", lintValidArticle("Clean", 20, "authority: contextual"))
+
+	var count int
+	out := captureLintStdout(t, func() {
+		rep := newLintReport(os.Stdout, true, false)
+		lintFrontmatter(rep, root, []string{
+			filepath.Join(root, "solutions", "fixable.md"),
+			filepath.Join(root, "solutions", "clean.md"),
+		})
+		count = rep.classCounts[lintClassFixableFrontmatter]
+	})
+	if count != 1 {
+		t.Fatalf("expected exactly 1 fixable-frontmatter warning (clean file must not trip), got %d\n%s", count, out)
+	}
+	if !strings.Contains(out, "fixable.md") || !strings.Contains(out, "authority") {
+		t.Errorf("fixable warning should name the file and the change:\n%s", out)
+	}
+	// The class routes to the fixer via the remediation footer.
+	if lintHints[lintClassFixableFrontmatter] != "scribe lint --fix" {
+		t.Errorf("fixable-frontmatter class not wired to `scribe lint --fix`")
+	}
+}
