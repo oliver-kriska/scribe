@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,6 +77,81 @@ func TestSkillNames_DistinctSortedTopLevel(t *testing.T) {
 		if names[i] != want[i] {
 			t.Errorf("skillNames[%d] = %q, want %q (full: %v)", i, names[i], want[i], names)
 		}
+	}
+}
+
+func TestResolveTargets_AgentMapping(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("SCRIBE_KB", base)
+	globalRoot = "" // ensure the flag doesn't shadow SCRIBE_KB
+
+	claude := filepath.Join(base, ".claude", "skills")
+	agents := filepath.Join(base, ".agents", "skills")
+	opencode := filepath.Join(base, ".opencode", "skills")
+	pi := filepath.Join(base, ".pi", "skills")
+
+	cases := []struct {
+		name  string
+		cmd   SkillInstallCmd
+		want  []string
+		isErr bool
+	}{
+		{"default is claude+agents", SkillInstallCmd{}, []string{claude, agents}, false},
+		{"codex aliases agents", SkillInstallCmd{Agent: []string{"codex"}}, []string{agents}, false},
+		{"codex and agents dedup", SkillInstallCmd{Agent: []string{"claude", "codex", "agents"}}, []string{claude, agents}, false},
+		{"all expands to four", SkillInstallCmd{Agent: []string{"all"}}, []string{claude, agents, opencode, pi}, false},
+		{"explicit target wins", SkillInstallCmd{Target: "/tmp/x", Agent: []string{"all"}}, []string{"/tmp/x"}, false},
+		{"unknown agent errors", SkillInstallCmd{Agent: []string{"bogus"}}, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.cmd.resolveTargets()
+			if tc.isErr {
+				if err == nil {
+					t.Fatalf("expected error, got %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveTargets: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("resolveTargets = %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("target[%d] = %q, want %q (full: %v)", i, got[i], tc.want[i], got)
+				}
+			}
+		})
+	}
+}
+
+func TestSkillInstall_DefaultWritesClaudeAndAgents(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("SCRIBE_KB", base)
+	globalRoot = ""
+
+	if err := (&SkillInstallCmd{}).Run(); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	// Both agent layouts must receive the full bundle, byte-identical.
+	claudeMD := filepath.Join(base, ".claude", "skills", "scribe-kb-tidy", "SKILL.md")
+	agentsMD := filepath.Join(base, ".agents", "skills", "scribe-kb-tidy", "SKILL.md")
+	c, err := os.ReadFile(claudeMD)
+	if err != nil {
+		t.Fatalf("read %s: %v", claudeMD, err)
+	}
+	a, err := os.ReadFile(agentsMD)
+	if err != nil {
+		t.Fatalf("read %s: %v", agentsMD, err)
+	}
+	if !bytes.Equal(c, a) {
+		t.Errorf(".claude and .agents copies differ; the bundle must be byte-identical across agents")
+	}
+	// --check across both default targets must pass on a pristine install.
+	if err := (&SkillInstallCmd{Check: true}).Run(); err != nil {
+		t.Errorf("--check should pass on pristine multi-agent install: %v", err)
 	}
 }
 

@@ -667,7 +667,7 @@ scribe relations {get,set,rm,graph,check,migrate,migrate-revert}   # typed edges
 scribe contradictions {build,list,show,resolve}                    # contradiction ledger (Phase 6B)
 scribe stale {build,list,show}                                      # staleness ledger (date + source signals) (Phase 6C)
 scribe view {<name>,--list}                 # declarative views over wiki frontmatter (Phase 7B)
-scribe skill {install,list}                 # embedded agent skills: scribe-kb (query/write) + scribe-kb-tidy (work the lint queue) (Phase 7A)
+scribe skill {install,list}                 # embedded agent skills: scribe-kb + scribe-kb-tidy; install --agent claude,codex,opencode,pi,all (Phase 7A)
 scribe install-tools         # bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion
 scribe doctor       # deps + config + cron + freshness + errors + localmode + vault + stale + contradictions
 scribe fda          # macOS Full Disk Access probe + interactive grant flow

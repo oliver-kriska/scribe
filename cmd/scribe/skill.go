@@ -13,12 +13,11 @@ import (
 
 // Phase 7A: agent-skill bundle.
 //
-// `scribe skill install [--target <dir>]` writes the embedded skill
-// tree (cmd/scribe/skills/) to the user's chosen location. The
-// default target is `.claude/skills/` in the KB root, and each skill
-// lands in its own `<target>/<skill-name>/` subdirectory, so a fresh
-// `scribe init` followed by `scribe skill install` gives any Claude
-// Code session opening the KB a set of self-describing skills.
+// `scribe skill install [--agent <list>]` writes the embedded skill tree
+// (cmd/scribe/skills/) into each selected agent's skill-discovery directory
+// under the KB root. Each skill lands in its own `<dir>/<skill-name>/`
+// subdirectory, so a fresh `scribe init` followed by `scribe skill install`
+// gives any agent session opening the KB a set of self-describing skills.
 //
 // The bundle ships two skills:
 //   - scribe-kb       — how to query/write the KB (frontmatter, wikilinks, drop files)
@@ -27,8 +26,15 @@ import (
 //
 // Bundle format follows the [agentskills.io specification](https://agentskills.io/specification):
 // each skill is a directory with a top-level `SKILL.md` (frontmatter:
-// name, description) plus optional reference files. Compatible with
-// Claude Code, Codex CLI, and OpenCode without any per-vendor adaptation.
+// name, description) plus optional reference files. The SKILL.md body and
+// references/ are byte-identical across Claude Code, Codex CLI, OpenCode, and
+// Pi — all built on the open Agent Skills standard — so the ONLY thing that
+// differs per agent is the install path. `.claude/skills` serves Claude Code;
+// `.agents/skills` is the cross-tool standard that Codex, Pi, and OpenCode all
+// read. Two directories therefore cover every known agent with no per-vendor
+// translation (the optional Codex `agents/openai.yaml` composer metadata is not
+// part of the standard and is deliberately omitted — implicit description
+// matching surfaces the skills without it). See agentSkillDir below.
 //
 // Source of truth: cmd/scribe/skills/. Update content there; the
 // embed picks it up on next `make build`. Adding a new skill means
@@ -45,63 +51,145 @@ const skillRootInFS = "skills"
 
 // SkillCmd is the kong CLI surface.
 //
-//	scribe skill install [--target <dir>] [--check] [--force]
+//	scribe skill install [--agent <list>] [--target <dir>] [--check] [--force]
 //	scribe skill list
 type SkillCmd struct {
 	Install SkillInstallCmd `cmd:"" help:"Write the embedded scribe skill bundle (scribe-kb, scribe-kb-tidy) to disk."`
 	List    SkillListCmd    `cmd:"" help:"List the files in the embedded skill bundle."`
 }
 
-// SkillInstallCmd writes the embedded tree under `<target>/`, one
-// subdirectory per skill (e.g. `<target>/scribe-kb/`,
-// `<target>/scribe-kb-tidy/`).
+// agentSkillDir maps an `--agent` selector to the skills directory that
+// agent scans, relative to the project root. Every listed agent loads the
+// SAME agentskills.io-format bundle — SKILL.md + references/ are byte-identical
+// across Claude Code, Codex, OpenCode, and Pi — so only the discovery path
+// differs. `.agents/skills` is the cross-tool standard read by Codex, Pi, and
+// OpenCode alike, which is why two directories cover every known agent.
+var agentSkillDir = map[string][]string{
+	"claude":   {".claude", "skills"},   // Claude Code
+	"codex":    {".agents", "skills"},   // Codex CLI — alias of "agents"
+	"agents":   {".agents", "skills"},   // agentskills.io standard: Codex + Pi + OpenCode
+	"opencode": {".opencode", "skills"}, // OpenCode native (also reads .claude + .agents)
+	"pi":       {".pi", "skills"},       // Pi native (also reads .agents)
+}
+
+// defaultAgents is what `scribe skill install` writes with no `--agent`:
+// Claude Code (`.claude/skills`) plus the cross-tool standard (`.agents/skills`),
+// which together make the bundle discoverable in Claude Code, Codex, OpenCode,
+// and Pi without any per-vendor translation.
+var defaultAgents = []string{"claude", "agents"}
+
+// SkillInstallCmd writes the embedded tree, one subdirectory per skill
+// (e.g. `<dir>/scribe-kb/`, `<dir>/scribe-kb-tidy/`), into every selected
+// agent's skill-discovery directory.
 //
-// Default target resolution:
+// Target resolution:
 //
-//  1. --target <dir>             explicit override
-//  2. KB root + ".claude/skills"  when invoked inside a scribe KB
-//  3. ./.claude/skills            generic fallback
+//  1. --target <dir>   explicit, agent-agnostic override — writes there directly
+//  2. --agent <list>   one or more of claude, codex, agents, opencode, pi, all;
+//     each maps to <project-root>/<agent-dir> (default: claude, agents)
+//  3. project root      = the scribe KB root, or the cwd as a generic fallback
 //
 // `--check` reports drift between the embedded version and what's on
 // disk without writing. Useful in pre-commit hooks or CI to surface
 // "your installed skill is older than your scribe binary."
 type SkillInstallCmd struct {
-	Target string `help:"Parent directory; each skill lands at <target>/<skill-name>/. Default: KB-root/.claude/skills."`
-	Check  bool   `help:"Compare embedded vs installed without writing. Exits non-zero on drift."`
-	Force  bool   `help:"Overwrite even when on-disk content is newer or hand-edited."`
+	Agent  []string `help:"Which agents to install for: claude, codex, agents, opencode, pi, all. Repeatable. Default: claude,agents (covers Claude Code, Codex, OpenCode, Pi)." sep:","`
+	Target string   `help:"Explicit parent directory; each skill lands at <target>/<skill-name>/. Agent-agnostic — overrides --agent. Default: resolve per --agent under the KB root."`
+	Check  bool     `help:"Compare embedded vs installed without writing. Exits non-zero on drift."`
+	Force  bool     `help:"Overwrite even when on-disk content is newer or hand-edited."`
+}
+
+// resolveTargets returns the destination directories to write the bundle
+// into. An explicit --target wins and is agent-agnostic. Otherwise each
+// --agent selector maps to a directory under the project root (KB root, or
+// cwd as a fallback), de-duplicated by resolved path so `codex` and `agents`
+// don't double-write the same `.agents/skills`.
+func (s *SkillInstallCmd) resolveTargets() ([]string, error) {
+	if s.Target != "" {
+		return []string{s.Target}, nil
+	}
+
+	base := "."
+	if root, err := kbDir(); err == nil {
+		base = root
+	}
+
+	agents := s.Agent
+	if len(agents) == 0 {
+		agents = defaultAgents
+	}
+
+	seen := make(map[string]struct{})
+	var dirs []string
+	add := func(a string) error {
+		parts, ok := agentSkillDir[a]
+		if !ok {
+			return fmt.Errorf("unknown --agent %q (valid: claude, codex, agents, opencode, pi, all)", a)
+		}
+		dir := filepath.Join(append([]string{base}, parts...)...)
+		if _, dup := seen[dir]; dup {
+			return nil
+		}
+		seen[dir] = struct{}{}
+		dirs = append(dirs, dir)
+		return nil
+	}
+	for _, raw := range agents {
+		a := strings.ToLower(strings.TrimSpace(raw))
+		if a == "all" {
+			for _, x := range []string{"claude", "agents", "opencode", "pi"} {
+				if err := add(x); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		if err := add(a); err != nil {
+			return nil, err
+		}
+	}
+	return dirs, nil
 }
 
 func (s *SkillInstallCmd) Run() error {
-	target := s.Target
-	if target == "" {
-		root, err := kbDir()
-		if err == nil {
-			target = filepath.Join(root, ".claude", "skills")
-		} else {
-			target = filepath.Join(".claude", "skills")
-		}
-	}
-	// Embedded paths already carry the `<skill-name>/…` prefix, so the
-	// target is the parent that holds every skill directory.
-	dest := target
-
 	embedded, err := readEmbeddedSkillFiles()
 	if err != nil {
 		return fmt.Errorf("read embedded skill bundle: %w", err)
 	}
 
-	if s.Check {
-		return s.runCheck(dest, embedded)
+	dests, err := s.resolveTargets()
+	if err != nil {
+		return err
 	}
 
-	wrote, skipped := 0, 0
+	if s.Check {
+		return s.runCheck(dests, embedded)
+	}
+
+	skills := skillNames(embedded)
+	for _, dest := range dests {
+		wrote, skipped, err := s.installTo(dest, embedded)
+		if err != nil {
+			return err
+		}
+		logMsg("skill", "install done: target=%s wrote=%d skipped=%d files=%d skills=%s",
+			dest, wrote, skipped, len(embedded), strings.Join(skills, ","))
+	}
+	logMsg("skill", "use these skills by keeping the target dir(s) on the agent's skill path: %s",
+		strings.Join(dests, ", "))
+	return nil
+}
+
+// installTo writes the embedded bundle under dest, one subdirectory per
+// skill. Idempotent: files whose on-disk content already matches embedded
+// are skipped, as are hand-edited files (unless --force).
+func (s *SkillInstallCmd) installTo(dest string, embedded map[string][]byte) (wrote, skipped int, err error) {
 	for relPath, content := range embedded {
 		out := filepath.Join(dest, relPath)
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", filepath.Dir(out), err)
+			return wrote, skipped, fmt.Errorf("mkdir %s: %w", filepath.Dir(out), err)
 		}
 
-		// Skip when on-disk matches embedded (idempotent re-runs).
 		if existing, err := os.ReadFile(out); err == nil {
 			if hashBytes(existing) == hashBytes(content) {
 				skipped++
@@ -115,16 +203,11 @@ func (s *SkillInstallCmd) Run() error {
 		}
 
 		if err := os.WriteFile(out, content, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", out, err)
+			return wrote, skipped, fmt.Errorf("write %s: %w", out, err)
 		}
 		wrote++
 	}
-
-	skills := skillNames(embedded)
-	logMsg("skill", "install done: target=%s wrote=%d skipped=%d files=%d skills=%s",
-		dest, wrote, skipped, len(embedded), strings.Join(skills, ","))
-	logMsg("skill", "use these skills in Claude Code by ensuring %s is on the agent's skill path", dest)
-	return nil
+	return wrote, skipped, nil
 }
 
 // skillNames returns the distinct top-level skill directory names from a
@@ -146,25 +229,29 @@ func skillNames(embedded map[string][]byte) []string {
 	return names
 }
 
-// runCheck compares embedded vs installed without writing, returning
-// a non-zero exit when any file differs. Useful in CI / pre-commit.
-func (s *SkillInstallCmd) runCheck(dest string, embedded map[string][]byte) error {
+// runCheck compares embedded vs installed across every target directory
+// without writing, returning a non-zero exit when any file is missing or
+// differs. Useful in CI / pre-commit. Each finding prints its full path so
+// drift in one agent's copy is distinguishable from another's.
+func (s *SkillInstallCmd) runCheck(dests []string, embedded map[string][]byte) error {
 	missing, drifted := 0, 0
-	for relPath, content := range embedded {
-		out := filepath.Join(dest, relPath)
-		existing, err := os.ReadFile(out)
-		if err != nil {
-			missing++
-			fmt.Printf("MISSING  %s\n", relPath)
-			continue
-		}
-		if hashBytes(existing) != hashBytes(content) {
-			drifted++
-			fmt.Printf("DRIFTED  %s (run `scribe skill install` to update)\n", relPath)
+	for _, dest := range dests {
+		for relPath, content := range embedded {
+			out := filepath.Join(dest, relPath)
+			existing, err := os.ReadFile(out)
+			if err != nil {
+				missing++
+				fmt.Printf("MISSING  %s\n", out)
+				continue
+			}
+			if hashBytes(existing) != hashBytes(content) {
+				drifted++
+				fmt.Printf("DRIFTED  %s (run `scribe skill install` to update)\n", out)
+			}
 		}
 	}
 	if missing == 0 && drifted == 0 {
-		fmt.Println("OK: installed skill matches embedded version")
+		fmt.Println("OK: installed skills match embedded version")
 		return nil
 	}
 	return fmt.Errorf("skill drift: missing=%d drifted=%d", missing, drifted)

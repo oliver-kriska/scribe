@@ -4,6 +4,23 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added — `scribe skill install` targets every agent, not just Claude Code
+- `scribe skill install` now writes the bundle to each agent's skill-discovery
+  directory, defaulting to **both** `.claude/skills/` (Claude Code) and
+  `.agents/skills/` (the agentskills.io cross-tool standard that **Codex CLI,
+  Pi, and OpenCode** all read). Two directories cover every known agent because
+  the `SKILL.md` body and `references/` are byte-identical across them — the
+  format is the open Agent Skills standard, so no per-vendor translation is
+  needed.
+- New `--agent <list>` flag selects targets: `claude`, `codex` (alias of
+  `agents`), `agents`, `opencode`, `pi`, or `all` (repeatable / comma-separated;
+  default `claude,agents`). `codex` and `agents` de-duplicate to the same
+  `.agents/skills/`. `--target <dir>` remains as the explicit, agent-agnostic
+  override. `--check` now verifies drift across every resolved target.
+- The Codex-specific `agents/openai.yaml` composer metadata is deliberately
+  omitted — it's not part of the standard, and implicit description-matching
+  surfaces the skills in Codex without it.
+
 ### Added — `scribe-kb-tidy` agent skill
 - The embedded skill bundle (`scribe skill install`) now ships a second skill,
   **`scribe-kb-tidy`**, alongside `scribe-kb`. It's a procedure for working the
