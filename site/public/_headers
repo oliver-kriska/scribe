@@ -7,6 +7,9 @@
 /og-v2.png
   Cache-Control: public, max-age=31536000, immutable
 
+/og-v3.png
+  Cache-Control: public, max-age=31536000, immutable
+
 /og-card.html
   Cache-Control: public, max-age=86400
 

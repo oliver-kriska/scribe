@@ -51,7 +51,7 @@ make check        # test + vet
 
 **Build never deploys.** `make build` writes only to `./bin/scribe`; the live binary at `~/.local/bin/scribe` (executed by cron) changes only on `make install`. On macOS, replacing the deployed binary invalidates the chat.db Full Disk Access grant — re-run `scribe fda` after every `make install`.
 
-**FTS5 is mandatory.** ccrider's `messages_fts` virtual table uses it, and `scribe triage` runs BM25 queries against it. `go-sqlite3` ships without FTS5 — the `sqlite_fts5` build tag is what flips it on. Never drop that tag from the Makefile.
+**FTS5 is mandatory.** ccrider's `messages_fts` virtual table uses it, and `scribe triage` runs weighted FTS5 `MATCH` queries against it. `go-sqlite3` ships without FTS5 — the `sqlite_fts5` build tag is what flips it on. Never drop that tag from the Makefile.
 
 **CGO is required** for go-sqlite3. Cross-compilation across OS/arch needs a C toolchain; GoReleaser handles this in the release workflow.
 

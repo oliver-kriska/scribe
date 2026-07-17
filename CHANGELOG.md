@@ -4,6 +4,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Fixed — docs only, no behavior change
+- Public copy (README, getscribe.dev + its `index.md`/`llms-full.txt` mirrors and
+  OG card, the embedded `scribe.yaml` template comment, and CLAUDE.md) described
+  triage scoring as "BM25". It never was: the gate is a weighted per-category
+  FTS5 `MATCH` hit count computed in pure SQL (`buildTriageSQL`, triage.go).
+  All triage copy now says FTS5 keyword scoring; qmd's lexical search remains
+  correctly described as BM25. The zero-LLM-tokens-on-reject claim is unchanged
+  — that part was always true.
+
 ## [0.4.2] — 2026-07-15
 
 An agent-skills release. The single embedded `scribe-kb` skill becomes a

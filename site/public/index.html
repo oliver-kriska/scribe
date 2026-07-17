@@ -24,7 +24,7 @@
 <meta property="og:url" content="https://getscribe.dev/" />
 <meta property="og:title" content="scribe — your knowledge base, written by your tools" />
 <meta property="og:description" content="A single-binary CLI that turns your git repos, Claude Code and Codex sessions, and self-sent links into a curated, semantically searchable knowledge base. Runs on cron. Fully local-capable." />
-<meta property="og:image" content="https://getscribe.dev/og-v2.png" />
+<meta property="og:image" content="https://getscribe.dev/og-v3.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
@@ -36,7 +36,7 @@
 <meta name="twitter:url" content="https://getscribe.dev/" />
 <meta name="twitter:title" content="scribe — your knowledge base, written by your tools" />
 <meta name="twitter:description" content="A single-binary CLI that turns your git repos, Claude Code/Codex sessions, and self-sent links into a curated, searchable knowledge base. Runs on cron. Local-capable." />
-<meta name="twitter:image" content="https://getscribe.dev/og-v2.png" />
+<meta name="twitter:image" content="https://getscribe.dev/og-v3.png" />
 <meta name="twitter:image:alt" content="scribe — over 7,400 docs, $0/sync, ~70s per run." />
 
 <!-- JSON-LD: SoftwareApplication -->
@@ -124,7 +124,7 @@
       "name": "How is scribe different from RAG, Obsidian, or claude-memory-compiler?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes. scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing."
+        "text": "RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes. scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing."
       }
     },
     {
@@ -204,7 +204,7 @@
       "name": "Does scribe build a knowledge base from my Claude Code and Codex sessions automatically?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with BM25 keyword density to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles. You set it up once with scribe init and scribe cron install, and the knowledge base grows on its own."
+        "text": "Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with weighted FTS5 keyword matches to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles. You set it up once with scribe init and scribe cron install, and the knowledge base grows on its own."
       }
     },
     {
@@ -247,9 +247,9 @@
   "headline": "scribe — the compiled, LLM-written knowledge base for AI coding sessions",
   "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your Claude Code and Codex sessions, git repos, and self-sent URLs into a curated, BM25-searchable wiki your agents read before they decide. Local-first and capable of running 100% on Ollama.",
   "url": "https://getscribe.dev/",
-  "image": "https://getscribe.dev/og-v2.png",
+  "image": "https://getscribe.dev/og-v3.png",
   "datePublished": "2026-05-14",
-  "dateModified": "2026-07-14",
+  "dateModified": "2026-07-17",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -2385,7 +2385,7 @@
     </header>
 
     <div class="rail">
-      <svg viewBox="0 0 960 200" role="img" aria-label="Pipeline schematic: four input streams feed a BM25 triage gate; boilerplate is rejected before any model runs at zero cost, and only dense survivors pass through a two-pass absorb, qmd indexing, and into the agent's CLAUDE.md and AGENTS.md.">
+      <svg viewBox="0 0 960 200" role="img" aria-label="Pipeline schematic: four input streams feed an FTS5 triage gate; boilerplate is rejected before any model runs at zero cost, and only dense survivors pass through a two-pass absorb, qmd indexing, and into the agent's CLAUDE.md and AGENTS.md.">
         <defs>
           <marker id="rail-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 1 L9 5 L0 9 z" class="rail__arrow"/>
@@ -2409,9 +2409,9 @@
           <path class="rail__line" d="M208 100 L236 100" marker-end="url(#rail-arrow)"/>
         </g>
 
-        <!-- BM25 triage gate: the only accent-marked node -->
+        <!-- FTS5 triage gate: the only accent-marked node -->
         <rect class="rail__gate" x="236" y="70" width="112" height="60" rx="12"/>
-        <text class="rail__t rail__t--accent" x="292" y="95"  text-anchor="middle" font-size="15" font-weight="600">BM25</text>
+        <text class="rail__t rail__t--accent" x="292" y="95"  text-anchor="middle" font-size="15" font-weight="600">FTS5</text>
         <text class="rail__t rail__t--accent" x="292" y="114" text-anchor="middle" font-size="13">triage</text>
 
         <!-- reject fork: boilerplate dropped before any model runs, at $0 -->
@@ -2447,10 +2447,10 @@
       </div>
       <div class="step">
         <div class="step__index"><span>2</span> Triage &amp; absorb</div>
-        <h3 class="step__title">BM25 first, LLM second.</h3>
+        <h3 class="step__title">FTS5 first, LLM second.</h3>
         <p class="step__body">Keyword-density scoring rejects boilerplate sessions before any LLM call, so cheap sessions cost nothing. Survivors go through a two-pass absorb: pass 1 grounds atomic facts, pass 2 fans dense sources into multiple entity-first wiki pages.</p>
         <div class="step__tags">
-          <span class="tag">BM25 triage</span><span class="tag">two-pass</span><span class="tag">entity fan-out</span>
+          <span class="tag">FTS5 triage</span><span class="tag">two-pass</span><span class="tag">entity fan-out</span>
         </div>
       </div>
       <div class="step">
@@ -2694,7 +2694,7 @@ advisory locks table-ambiguous under load.
             <th scope="row">scribe<span class="cmp__note">curated wiki + raw sources, in git</span></th>
             <td><span class="cmp__yes">Claude + Codex</span></td>
             <td><span class="cmp__yes">launchd / systemd</span></td>
-            <td><span class="cmp__yes">BM25</span></td>
+            <td><span class="cmp__yes">FTS5</span></td>
             <td><span class="cmp__yes">atomic facts → pass-2</span></td>
             <td><span class="cmp__yes">manifest-tracked</span></td>
             <td><span class="cmp__yes">100% Ollama</span></td>
@@ -2753,7 +2753,7 @@ advisory locks table-ambiguous under load.
           <div class="cmp-card__name">scribe<small>curated wiki + raw sources, in git</small></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Session mining</span><span class="cmp__yes">Claude + Codex</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Cron-driven</span><span class="cmp__yes">launchd / systemd</span></div>
-          <div class="cmp-card__row"><span class="cmp-card__label">Density pre-filter</span><span class="cmp__yes">BM25</span></div>
+          <div class="cmp-card__row"><span class="cmp-card__label">Density pre-filter</span><span class="cmp__yes">FTS5</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Two-pass absorb</span><span class="cmp__yes">facts → pass-2</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Multi-project</span><span class="cmp__yes">manifest-tracked</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Local-mode</span><span class="cmp__yes">100% Ollama</span></div>
@@ -3075,7 +3075,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
       <summary>The full surface &mdash; everything scribe does</summary>
       <dl class="surface__grid">
         <dt>Capture</dt><dd>git repos &middot; Claude Code (ccrider FTS5) &middot; Codex rollouts &middot; iMessage self-chat &middot; drop files &middot; URL ingest</dd>
-        <dt>Triage</dt><dd>BM25 keyword-density gate &middot; zero-LLM reject &middot; <code>sync --estimate</code> token preview</dd>
+        <dt>Triage</dt><dd>FTS5 keyword-density gate &middot; zero-LLM reject &middot; <code>sync --estimate</code> token preview</dd>
         <dt>Extract</dt><dd>two-pass absorb &middot; entity-first fan-out &middot; retrieval-context splicing &middot; <code>deep</code> / <code>assess</code> batch passes</dd>
         <dt>Graph</dt><dd>closed 10-kind typed-edge schema &middot; <code>_backlinks.json</code> &middot; orphan linking &middot; qmd BM25 + vector index</dd>
         <dt>Hygiene</dt><dd>frontmatter validate &middot; structural lint &middot; staleness ledger &middot; contradiction ledger &middot; Dream 4-phase consolidation</dd>
@@ -3319,7 +3319,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <span class="kw">qmd</span> query <span class="str">"oban idempotency pattern"</span>
 
 <span class="comment"># exact keywords, no expansion</span>
-<span class="kw">qmd</span> search <span class="str">"BM25 density"</span>
+<span class="kw">qmd</span> search <span class="str">"FTS5 triage"</span>
 
 <span class="comment"># open the top hit in $EDITOR</span>
 <span class="kw">qmd</span> query <span class="str">"two-pass absorb"</span> <span class="arg">--open</span></pre>
@@ -3359,7 +3359,7 @@ scribe doctor <span class="flag">--section</span> localmode
     <div class="faq">
       <details class="q">
         <summary>How is scribe different from RAG, Obsidian, or claude-memory-compiler?</summary>
-        <div class="answer">RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session; one user burned <strong>$115 in 20 minutes</strong> (issue #3). scribe sits between them: it watches your work and writes the notes for you, but uses BM25 keyword density to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.</div>
+        <div class="answer">RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session; one user burned <strong>$115 in 20 minutes</strong> (issue #3). scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.</div>
       </details>
 
       <details class="q">
@@ -3409,7 +3409,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>Does scribe build a knowledge base from my Claude Code and Codex sessions automatically?</summary>
-        <div class="answer">Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with <strong>BM25 keyword density</strong> to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles. You set it up once with <code>scribe init</code> and <code>scribe cron install</code>, and the knowledge base grows on its own.</div>
+        <div class="answer">Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with <strong>weighted FTS5 keyword matches</strong> to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles. You set it up once with <code>scribe init</code> and <code>scribe cron install</code>, and the knowledge base grows on its own.</div>
       </details>
 
       <details class="q">
@@ -3718,7 +3718,7 @@ scribe doctor <span class="flag">--section</span> localmode
       cmd: 'scribe sync',
       out: [
         '<span class="out-dim">discovery .........</span> 41 projects, manifest fresh',
-        '<span class="out-dim">triage (BM25) .....</span> 142 sessions / <span class="out-em">18 kept</span> / 124 skipped',
+        '<span class="out-dim">triage (FTS5) .....</span> 142 sessions / <span class="out-em">18 kept</span> / 124 skipped',
         '<span class="out-dim">absorb pass 1 ....</span> grounding atomic facts',
         '<span class="out-dim">absorb pass 2 ....</span> fan-out → <span class="out-em">24 entity pages</span>',
         '<span class="out-dim">retrieval splice .</span> 24 articles enriched',

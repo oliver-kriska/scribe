@@ -332,7 +332,7 @@ capture:
   self_chat_handles:
     - "{{.SelfChatHandle}}"
 
-# Triage keyword categories for `scribe triage` (BM25 FTS5 scoring).
+# Triage keyword categories for `scribe triage` (weighted FTS5 keyword scoring).
 # Edit any MATCH expression to tune to your stack. Weights multiply per hit.
 triage:
   keywords:
