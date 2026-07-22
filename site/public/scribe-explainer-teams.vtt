@@ -18,8 +18,9 @@ A new hire's first Claude Code session already knows why you chose what you chos
 00:00:33.253 --> 00:00:41.334
 Shared memory is a trust problem, not a sync problem. A secret gate scans every commit, so no key ever leaks into the wiki.
 
-00:00:41.784 --> 00:00:50.236
-Allowed remotes lock where it can push. Every promoted note is signed with where it came from. Still plain markdown in a repo your team owns.
+00:00:41.784 --> 00:00:49.818
+Allowed remotes lock which repos it reads. Every promoted note carries where it came from. Still plain markdown in a repo your team owns.
 
-00:00:50.686 --> 00:00:58.859
+00:00:50.268 --> 00:00:58.441
 scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev.
+

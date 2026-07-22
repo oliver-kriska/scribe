@@ -1,5 +1,5 @@
 window.TIMELINE = {
-  "total": 61.059,
+  "total": 60.641,
   "audioSrc": "audio_el/voice_master.m4a",
   "intro": 3.0,
   "transition": {
@@ -46,13 +46,13 @@ window.TIMELINE = {
     {
       "i": 7,
       "start": 41.784,
-      "end": 50.236,
-      "text": "Allowed remotes lock where it can push. Every promoted note is signed with where it came from. Still plain markdown in a repo your team owns."
+      "end": 49.818,
+      "text": "Allowed remotes lock which repos it reads. Every promoted note carries where it came from. Still plain markdown in a repo your team owns."
     },
     {
       "i": 8,
-      "start": 50.686,
-      "end": 58.859,
+      "start": 50.268,
+      "end": 58.441,
       "text": "scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev."
     }
   ],
@@ -95,12 +95,12 @@ window.TIMELINE = {
     {
       "id": 7,
       "t0": 41.434,
-      "t1": 50.636
+      "t1": 50.218
     },
     {
       "id": 8,
-      "t0": 50.336,
-      "t1": 61.059
+      "t0": 49.918,
+      "t1": 60.641
     }
   ]
 };

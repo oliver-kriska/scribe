@@ -6,3 +6,8 @@ smoke/
 # scratch capture-debugging experiments, not part of the reproducible pipeline
 debug.mjs
 test*.mjs
+# generated / machine-specific build artifacts (kept out of the repo)
+*.mp3
+*.mp4
+concat_list.txt
+package-lock.json

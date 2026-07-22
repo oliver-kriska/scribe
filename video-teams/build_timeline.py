@@ -21,7 +21,7 @@ LINES = [
  "Every fix, every rejected library, every decision your team makes becomes context the whole team's agents read before they act.",
  "A new hire's first Claude Code session already knows why you chose what you chose.",
  "Shared memory is a trust problem, not a sync problem. A secret gate scans every commit, so no key ever leaks into the wiki.",
- "Allowed remotes lock where it can push. Every promoted note is signed with where it came from. Still plain markdown in a repo your team owns.",
+ "Allowed remotes lock which repos it reads. Every promoted note carries where it came from. Still plain markdown in a repo your team owns.",
  "scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev.",
 ]
 
