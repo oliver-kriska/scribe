@@ -1,12 +1,12 @@
 # scribe
 
-> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary Go CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. It turns your git repos, Claude Code and Codex sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. Auto-discovers projects from both Claude Code and Codex, and writes a query-KB + drop-file handshake into both agents' global instruction files. Cross-project, cron-driven, and runs 100% on local Ollama with zero API spend. In team mode, a small team shares one git-backed KB with a trust layer (shared config is untrusted by default), a deterministic secret-scan commit gate, and per-git-remote approval — keeping secrets, private client repos, and hostile config changes out of shared history.
+> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary Go CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. It turns your git repos, coding-agent sessions, and self-sent URLs into a curated, semantically searchable personal knowledge base. It mines every provider indexed by ccrider while project discovery and the query-KB + drop-file handshake cover Claude Code and Codex. Cross-project, cron-driven, and runs 100% on local Ollama with zero API spend. In team mode, a small team shares one git-backed KB with a trust layer (shared config is untrusted by default), a deterministic secret-scan commit gate, and per-git-remote approval — keeping secrets, private client repos, and hostile config changes out of shared history.
 
 scribe is an LLM-written knowledge base pipeline. It mines:
 
 - git repository commits for new decisions and patterns
-- Claude Code session transcripts via ccrider's FTS5 index
-- Codex CLI rollouts — project discovery, plus opt-in session mining (same triage→absorb path as Claude Code sessions)
+- Coding-agent sessions via ccrider's FTS5 index — Claude Code, Codex CLI, Copilot CLI, OpenCode, Pi, Antigravity, Amp when imported by ccrider, and future providers
+- Codex CLI rollouts — project discovery, plus opt-in direct session mining through the same session-extraction path
 - URLs you text yourself via iMessage (macOS only)
 - drop files committed inside other projects under `.claude/<your-kb-name>/`
 

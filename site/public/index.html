@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>scribe — your knowledge base, written by your tools</title>
-<meta name="description" content="A single-binary CLI that turns your git repos, Claude Code and Codex sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable." />
+<meta name="description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable." />
 <meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#1a1d22" media="(prefers-color-scheme: dark)" />
 
@@ -23,20 +23,20 @@
 <meta property="og:site_name" content="scribe" />
 <meta property="og:url" content="https://getscribe.dev/" />
 <meta property="og:title" content="scribe — your knowledge base, written by your tools" />
-<meta property="og:description" content="A single-binary CLI that turns your git repos, Claude Code and Codex sessions, and self-sent links into a curated, semantically searchable knowledge base. Runs on cron. Fully local-capable." />
-<meta property="og:image" content="https://getscribe.dev/og-v3.png" />
+<meta property="og:description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Runs on cron. Fully local-capable." />
+<meta property="og:image" content="https://getscribe.dev/og.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
-<meta property="article:modified_time" content="2026-07-01T00:00:00Z" />
+<meta property="article:modified_time" content="2026-07-22T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:url" content="https://getscribe.dev/" />
 <meta name="twitter:title" content="scribe — your knowledge base, written by your tools" />
-<meta name="twitter:description" content="A single-binary CLI that turns your git repos, Claude Code/Codex sessions, and self-sent links into a curated, searchable knowledge base. Runs on cron. Local-capable." />
-<meta name="twitter:image" content="https://getscribe.dev/og-v3.png" />
+<meta name="twitter:description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, searchable knowledge base. Runs on cron. Local-capable." />
+<meta name="twitter:image" content="https://getscribe.dev/og.png" />
 <meta name="twitter:image:alt" content="scribe — over 7,400 docs, $0/sync, ~70s per run." />
 
 <!-- JSON-LD: SoftwareApplication -->
@@ -45,7 +45,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "scribe",
-  "description": "A single-binary CLI that turns your git repos, Claude Code and Codex sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable.",
+  "description": "A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable.",
   "url": "https://getscribe.dev/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Linux",
@@ -172,7 +172,7 @@
       "name": "What does the cron schedule look like?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider (and Codex CLI sessions in that same pass when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
+        "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine coding-agent sessions via ccrider (plus direct Codex CLI rollouts when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
       }
     },
     {
@@ -196,15 +196,15 @@
       "name": "Is scribe an AnythingLLM alternative?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. scribe is an AnythingLLM alternative for people who want an LLM wiki instead of a RAG server: it is a compiled knowledge base — plain markdown in git, no vector database, no server to run — where AnythingLLM is a RAG chat app built around a vector store and documents you upload. The concrete difference is that scribe auto-captures knowledge from your Claude Code and Codex coding sessions into portable markdown your agents read back before they decide, instead of you uploading files to chat with."
+        "text": "Yes. scribe is an AnythingLLM alternative for people who want an LLM wiki instead of a RAG server: it is a compiled knowledge base — plain markdown in git, no vector database, no server to run — where AnythingLLM is a RAG chat app built around a vector store and documents you upload. The concrete difference is that scribe auto-captures knowledge from coding-agent sessions into portable markdown your agents read back before they decide, instead of you uploading files to chat with."
       }
     },
     {
       "@type": "Question",
-      "name": "Does scribe build a knowledge base from my Claude Code and Codex sessions automatically?",
+      "name": "Does scribe build a knowledge base from my coding-agent sessions automatically?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with weighted FTS5 keyword matches to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles. You set it up once with scribe init and scribe cron install, and the knowledge base grows on its own."
+        "text": "Yes. On cron, scribe mines every provider in ccrider's FTS5 index — including Amp sessions when imported by ccrider — plus direct Codex CLI rollouts when enabled. It scores each session with weighted FTS5 keyword matches to skip boilerplate before any LLM call, then extracts reusable knowledge into entity-first wiki articles."
       }
     },
     {
@@ -245,11 +245,11 @@
   "@context": "https://schema.org",
   "@type": "TechArticle",
   "headline": "scribe — the compiled, LLM-written knowledge base for AI coding sessions",
-  "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your Claude Code and Codex sessions, git repos, and self-sent URLs into a curated, BM25-searchable wiki your agents read before they decide. Local-first and capable of running 100% on Ollama.",
+  "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your coding-agent sessions, git repos, and self-sent URLs into a curated, BM25-searchable wiki your agents read before they decide. Local-first and capable of running 100% on Ollama.",
   "url": "https://getscribe.dev/",
-  "image": "https://getscribe.dev/og-v3.png",
+  "image": "https://getscribe.dev/og.png",
   "datePublished": "2026-05-14",
-  "dateModified": "2026-07-17",
+  "dateModified": "2026-07-22",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -2325,7 +2325,7 @@
           Your knowledge base, <span class="accent">written by your tools.</span>
         </h1>
         <p class="hero__sub">
-          <strong>scribe reads your git history, your Claude Code &amp; Codex sessions, and self-sent URLs, then writes the wiki for you</strong> &mdash; so the next agent session already knows what you decided and why. It&rsquo;s memory your agents read before they act, not a second brain you maintain and never reopen: plain markdown in git, cross-project, cron-driven, and able to run <strong>100% locally on Ollama</strong> for zero API spend.
+          <strong>scribe reads your git history, coding-agent sessions, and self-sent URLs, then writes the wiki for you</strong> &mdash; so the next agent session already knows what you decided and why. It&rsquo;s memory your agents read before they act, not a second brain you maintain and never reopen: plain markdown in git, cross-project, cron-driven, and able to run <strong>100% locally on Ollama</strong> for zero API spend.
         </p>
         <div class="hero__install">
           <span class="hero__install-sigil" aria-hidden="true">$</span>
@@ -2385,7 +2385,7 @@
     </header>
 
     <div class="rail">
-      <svg viewBox="0 0 960 200" role="img" aria-label="Pipeline schematic: four input streams feed an FTS5 triage gate; boilerplate is rejected before any model runs at zero cost, and only dense survivors pass through a two-pass absorb, qmd indexing, and into the agent's CLAUDE.md and AGENTS.md.">
+      <svg viewBox="0 0 960 200" role="img" aria-label="Pipeline schematic: four input streams feed the appropriate extraction path; boilerplate sessions are rejected by FTS5 before any model runs, and retained knowledge passes through qmd indexing into the agent's CLAUDE.md and AGENTS.md.">
         <defs>
           <marker id="rail-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 1 L9 5 L0 9 z" class="rail__arrow"/>
@@ -2422,8 +2422,8 @@
         <!-- survivors continue: absorb → index → agent -->
         <path class="rail__line" d="M348 100 L408 100" marker-end="url(#rail-arrow)"/>
         <rect class="rail__node" x="408" y="70" width="132" height="60" rx="12"/>
-        <text class="rail__t" x="474" y="95"  text-anchor="middle" font-size="14">absorb</text>
-        <text class="rail__t rail__t--mut" x="474" y="114" text-anchor="middle" font-size="12">pass 1 → 2</text>
+        <text class="rail__t" x="474" y="95"  text-anchor="middle" font-size="14">extract / absorb</text>
+        <text class="rail__t rail__t--mut" x="474" y="114" text-anchor="middle" font-size="12">bounded paths</text>
 
         <path class="rail__line" d="M540 100 L596 100" marker-end="url(#rail-arrow)"/>
         <rect class="rail__node" x="596" y="70" width="118" height="60" rx="12"/>
@@ -2440,15 +2440,15 @@
       <div class="step">
         <div class="step__index"><span>1</span> Capture</div>
         <h3 class="step__title">Four streams, all on cron.</h3>
-        <p class="step__body">Git repos, Claude Code &amp; Codex sessions, URLs you text yourself, and drop files from other projects. scribe auto-discovers every codebase you've ever opened in either CLI and keeps the manifest fresh.</p>
+        <p class="step__body">Git repos, coding-agent sessions via ccrider, URLs you text yourself, and drop files from other projects. scribe also auto-discovers every codebase you've opened in Claude Code or Codex and keeps the manifest fresh.</p>
         <div class="step__tags">
           <span class="tag">git</span><span class="tag">claude code</span><span class="tag">codex</span><span class="tag">imessage</span><span class="tag">drop files</span>
         </div>
       </div>
       <div class="step">
-        <div class="step__index"><span>2</span> Triage &amp; absorb</div>
+        <div class="step__index"><span>2</span> Triage &amp; extract</div>
         <h3 class="step__title">FTS5 first, LLM second.</h3>
-        <p class="step__body">Keyword-density scoring rejects boilerplate sessions before any LLM call, so cheap sessions cost nothing. Survivors go through a two-pass absorb: pass 1 grounds atomic facts, pass 2 fans dense sources into multiple entity-first wiki pages.</p>
+        <p class="step__body">Keyword-density scoring rejects boilerplate session candidates before any LLM call, so cheap sessions cost nothing. Sessions and project changes use bounded extraction envelopes; raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.</p>
         <div class="step__tags">
           <span class="tag">FTS5 triage</span><span class="tag">two-pass</span><span class="tag">entity fan-out</span>
         </div>
@@ -2692,7 +2692,7 @@ advisory locks table-ambiguous under load.
         <tbody>
           <tr class="cmp__scribe">
             <th scope="row">scribe<span class="cmp__note">curated wiki + raw sources, in git</span></th>
-            <td><span class="cmp__yes">Claude + Codex</span></td>
+            <td><span class="cmp__yes">all ccrider providers + direct Codex</span></td>
             <td><span class="cmp__yes">launchd / systemd</span></td>
             <td><span class="cmp__yes">FTS5</span></td>
             <td><span class="cmp__yes">atomic facts → pass-2</span></td>
@@ -2751,7 +2751,7 @@ advisory locks table-ambiguous under load.
       <div class="cmp-cards">
         <div class="cmp-card cmp__scribe">
           <div class="cmp-card__name">scribe<small>curated wiki + raw sources, in git</small></div>
-          <div class="cmp-card__row"><span class="cmp-card__label">Session mining</span><span class="cmp__yes">Claude + Codex</span></div>
+          <div class="cmp-card__row"><span class="cmp-card__label">Session mining</span><span class="cmp__yes">all ccrider providers + direct Codex</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Cron-driven</span><span class="cmp__yes">launchd / systemd</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Density pre-filter</span><span class="cmp__yes">FTS5</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Two-pass absorb</span><span class="cmp__yes">facts → pass-2</span></div>
@@ -2997,17 +2997,17 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
   <div class="wrap">
     <header class="s__head">
       <h2 class="s__title">Built for developers who use AI tools every day.</h2>
-      <p class="s__sub">For developers, the expensive half of the job isn't deciding. It's rebuilding the context you already had. scribe automates that half: if your Claude Code or Codex history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.</p>
+      <p class="s__sub">For developers, the expensive half of the job isn't deciding. It's rebuilding the context you already had. scribe automates that half: if your coding-agent history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.</p>
     </header>
 
     <div class="audience">
       <article class="who">
         <div class="who__role">Heavy AI user</div>
-        <h3>You live in Claude Code and Codex.</h3>
+        <h3>You live in coding agents.</h3>
         <p class="who__body">Your agents keep re-deriving the same answers because each session starts from zero. scribe gives them durable memory.</p>
         <ul class="who__check">
           <li>Handshake into <code>CLAUDE.md</code> + <code>AGENTS.md</code></li>
-          <li>3×/day session mining via ccrider + Codex rollouts</li>
+          <li>Multi-provider mining via ccrider + direct Codex rollouts</li>
           <li>Drop files written back from any project</li>
         </ul>
       </article>
@@ -3074,7 +3074,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
     <details class="surface">
       <summary>The full surface &mdash; everything scribe does</summary>
       <dl class="surface__grid">
-        <dt>Capture</dt><dd>git repos &middot; Claude Code (ccrider FTS5) &middot; Codex rollouts &middot; iMessage self-chat &middot; drop files &middot; URL ingest</dd>
+        <dt>Capture</dt><dd>git repos &middot; coding-agent sessions (ccrider FTS5) &middot; direct Codex rollouts &middot; iMessage self-chat &middot; drop files &middot; URL ingest</dd>
         <dt>Triage</dt><dd>FTS5 keyword-density gate &middot; zero-LLM reject &middot; <code>sync --estimate</code> token preview</dd>
         <dt>Extract</dt><dd>two-pass absorb &middot; entity-first fan-out &middot; retrieval-context splicing &middot; <code>deep</code> / <code>assess</code> batch passes</dd>
         <dt>Graph</dt><dd>closed 10-kind typed-edge schema &middot; <code>_backlinks.json</code> &middot; orphan linking &middot; qmd BM25 + vector index</dd>
@@ -3283,7 +3283,7 @@ scribe doctor <span class="flag">--section</span> localmode
         </div>
         <pre class="commands__lines"><code><span class="cmd-prompt">$</span> <span class="cmd-name">scribe init</span>                        <span class="cmd-cmt"># bootstrap a KB, wire the agent handshake</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span>                        <span class="cmd-cmt"># discover → extract → absorb → reindex</span>
-<span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--sessions</span>             <span class="cmd-cmt"># mine Claude Code + Codex transcripts</span>
+<span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--sessions</span>             <span class="cmd-cmt"># mine coding-agent transcripts</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--estimate</span>             <span class="cmd-cmt"># token estimate, zero LLM calls</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe doctor</span>                      <span class="cmd-cmt"># validate setup, cron, git remote, Ollama</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe commit</span>                      <span class="cmd-cmt"># stage + push the KB to your private remote</span>
@@ -3389,7 +3389,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>What does the cron schedule look like?</summary>
-        <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine Claude Code sessions via ccrider (and Codex CLI sessions in that same pass when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
+        <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine coding-agent sessions via ccrider (plus direct Codex CLI rollouts when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
       </details>
 
       <details class="q">
@@ -3404,12 +3404,12 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>Is scribe an AnythingLLM alternative?</summary>
-        <div class="answer">Yes. scribe is an <strong>AnythingLLM alternative</strong> for people who want an <strong>LLM wiki</strong> instead of a RAG server: it's a compiled knowledge base (plain markdown in git, no vector database, no server to run), where AnythingLLM is a RAG chat app built around a vector store and documents you upload. The concrete difference: scribe auto-captures knowledge from your <strong>Claude Code and Codex coding sessions</strong> into portable markdown your agents read back before they decide, instead of you uploading files to chat with.</div>
+        <div class="answer">Yes. scribe is an <strong>AnythingLLM alternative</strong> for people who want an <strong>LLM wiki</strong> instead of a RAG server: it's a compiled knowledge base (plain markdown in git, no vector database, no server to run), where AnythingLLM is a RAG chat app built around a vector store and documents you upload. The concrete difference: scribe auto-captures knowledge from <strong>coding-agent sessions</strong> into portable markdown your agents read back before they decide, instead of you uploading files to chat with.</div>
       </details>
 
       <details class="q">
-        <summary>Does scribe build a knowledge base from my Claude Code and Codex sessions automatically?</summary>
-        <div class="answer">Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with <strong>weighted FTS5 keyword matches</strong> to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles. You set it up once with <code>scribe init</code> and <code>scribe cron install</code>, and the knowledge base grows on its own.</div>
+        <summary>Does scribe build a knowledge base from my coding-agent sessions automatically?</summary>
+        <div class="answer">Yes. On cron, scribe mines every provider in ccrider's FTS5 index &mdash; including Amp sessions when imported by ccrider &mdash; plus direct Codex CLI rollouts when enabled. It scores each session with <strong>weighted FTS5 keyword matches</strong> to skip boilerplate before any LLM call, then extracts reusable knowledge into entity-first wiki articles.</div>
       </details>
 
       <details class="q">

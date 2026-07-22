@@ -1,6 +1,6 @@
 # scribe — your knowledge base, written by your tools
 
-> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. A single-binary CLI that turns your git repos, Claude Code and Codex sessions, and self-sent links into a curated, semantically searchable knowledge base. Auto-discovers projects from both Claude Code and Codex, and both agents get the same query-KB + write-drop-files handshake. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend. In team mode, a small team points every machine at one git-backed KB — with a trust layer, a deterministic secret-scan commit gate, and per-git-remote approval keeping secrets, private client repos, and hostile config changes out of shared history.
+> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. It mines every provider indexed by ccrider — Claude Code, Codex CLI, Copilot CLI, OpenCode, Pi, Antigravity, and Amp when imported by ccrider — while project discovery and the query-KB + write-drop-files handshake cover Claude Code and Codex. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend. In team mode, a small team points every machine at one git-backed KB — with a trust layer, a deterministic secret-scan commit gate, and per-git-remote approval keeping secrets, private client repos, and hostile config changes out of shared history.
 
 **License:** MIT · **Repo:** <https://github.com/oliver-kriska/scribe> · **Maintainer's KB:** 7,472 articles, zero typed by hand
 
@@ -8,7 +8,7 @@
 
 ## What scribe is
 
-scribe is an LLM-written knowledge base pipeline. It mines four input streams — git repos, agent sessions (Claude Code via ccrider's FTS5 index, Codex CLI rollouts), URLs you text yourself, and drop files from other projects — then compiles a curated wiki of decisions, patterns, learnings, tool evaluations, and research. The wiki is plain markdown with YAML frontmatter, indexed by `qmd` for semantic search.
+scribe is an LLM-written knowledge base pipeline. It mines four input streams — git repos, coding-agent sessions via ccrider's FTS5 index (plus optional direct Codex CLI rollouts), URLs you text yourself, and drop files from other projects — then compiles a curated wiki of decisions, patterns, learnings, tool evaluations, and research. The wiki is plain markdown with YAML frontmatter, indexed by `qmd` for semantic search.
 
 scribe is not a RAG pipeline. It keeps raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities.
 
@@ -16,9 +16,9 @@ scribe is not a RAG pipeline. It keeps raw sources verbatim under `raw/` AND com
 
 Three stages, one pipeline:
 
-1. **Capture** — four input streams, all on cron: git repos, Claude Code & Codex sessions, iMessage self-chat URLs, drop files.
-2. **Triage** — FTS5 keyword-density scoring rejects boilerplate sessions before any LLM call. Cheap sessions cost nothing, so the inference bill scales with signal, not session count.
-3. **Absorb** — two-pass extraction. Pass 1 grounds atomic facts; pass 2 fans dense sources into multiple entity-first wiki pages.
+1. **Capture** — four input streams, all on cron: git repos, coding-agent sessions, iMessage self-chat URLs, drop files.
+2. **Triage** — FTS5 keyword-density scoring rejects boilerplate session candidates before any LLM call. Cheap sessions cost nothing, so the inference bill scales with signal, not session count.
+3. **Extract + absorb** — sessions and project changes use bounded extraction envelopes; raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.
 4. **Compile + index** — auto-generated wikilinks, backlinks JSON, retrieval-context paragraphs spliced into every article. `qmd` reindexes, and the next agent session reads what scribe just wrote (`CLAUDE.md` / `AGENTS.md`).
 
 ## What makes scribe different
@@ -71,7 +71,7 @@ Deeper differentiators against the broader memory-tool landscape:
 
 | Tool | Session mining | Cron-driven | Density pre-filter | Two-pass absorb | Multi-project | Local-mode |
 |---|---|---|---|---|---|---|
-| **scribe** | yes (Claude ccrider + Codex) | yes (LaunchAgents) | yes (FTS5 triage) | yes (fan-out) | yes | yes (Ollama / llama.cpp) |
+| **scribe** | yes (all ccrider providers + direct Codex) | yes (LaunchAgents) | yes (FTS5 triage) | yes (fan-out) | yes | yes (Ollama / llama.cpp) |
 | claude-memory-compiler | every session, no filter | opportunistic | no ($115/20min, issue #3) | no | no | no |
 | nvk/llm-wiki | no | one-shot `/wiki:assess` | n/a | no | no | no |
 | basic-memory | no (issue #669 since Mar) | cron suggested | n/a | no | yes (projects) | no |
@@ -167,9 +167,9 @@ Per-op overrides always win over the top-level block. `scribe doctor --section l
 
 ## Who it's for
 
-Built for developers who use AI tools every day. The expensive half of the job isn't deciding — it's rebuilding the context you already had. scribe automates that half: if your Claude Code or Codex history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.
+Built for developers who use AI tools every day. The expensive half of the job isn't deciding — it's rebuilding the context you already had. scribe automates that half: if your coding-agent history is already full of decisions, fixes, and library evaluations, it keeps them from evaporating between sessions.
 
-- **Heavy AI user — you live in Claude Code and Codex.** Your agents keep re-deriving the same answers because each session starts from zero. scribe gives them durable memory: a handshake into `CLAUDE.md` + `AGENTS.md`, 3×/day session mining via ccrider + Codex rollouts, and drop files written back from any project.
+- **Heavy AI user — you live in coding agents.** Your agents keep re-deriving the same answers because each session starts from zero. scribe gives them durable memory: multi-provider session mining via ccrider, optional direct Codex rollouts, a Claude Code + Codex handshake, and drop files written back from any project.
 - **Multi-project dev — you solve the same problem twice.** One cross-project KB means Friday's repo can pull Monday's fix. Auto-discovery across every git repo you've opened, entity-first fan-out with no buried summaries, and typed edges (`supersedes`, `contradicts`, `specializes`) keep the graph honest as patterns evolve.
 - **Local & private — you want zero API spend.** Run the entire pipeline locally on Ollama. Plain markdown on your own git remote (GitHub, Gitea, Forgejo). No SaaS, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.
 
@@ -188,7 +188,7 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 ```
 scribe init                 # bootstrap a KB, wire the agent handshake
 scribe sync                 # discover → extract → absorb → reindex
-scribe sync --sessions      # mine Claude Code + Codex transcripts
+scribe sync --sessions      # mine coding-agent transcripts
 scribe sync --estimate      # token estimate, zero LLM calls
 scribe doctor               # validate setup, cron, git remote, Ollama
 scribe commit               # stage + push the KB to your private remote
@@ -239,7 +239,7 @@ Or via shell installer: `curl -fsSL https://raw.githubusercontent.com/oliver-kri
 ## Common questions
 
 **What is scribe?**
-A single-binary Go CLI that builds a personal, LLM-written knowledge base from your git repos, Claude Code and Codex sessions, and self-sent URLs. The pipeline runs on cron — set up once with `scribe init` + `scribe cron install`.
+A single-binary Go CLI that builds a personal, LLM-written knowledge base from your git repos, coding-agent sessions, and self-sent URLs. The pipeline runs on cron — set up once with `scribe init` + `scribe cron install`.
 
 **How is scribe different from RAG, Obsidian, or claude-memory-compiler?**
 RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.
@@ -263,7 +263,7 @@ Yes. macOS gets LaunchAgents via `scribe cron install`; Linux gets paste-ready c
 In a plain git repo of markdown files at whatever path you pass to `scribe init`. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.
 
 **What does the cron schedule look like?**
-Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine Claude Code sessions via ccrider — and Codex CLI sessions in that same pass when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday with a daily hot-domain pass in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
+Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine coding-agent sessions via ccrider — plus direct Codex CLI rollouts when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday with a daily hot-domain pass in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
 
 **Is scribe an alternative to RAG for a personal knowledge base?**
 Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, and the curated wiki stays small enough for an agent to read whole.
@@ -272,10 +272,10 @@ Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes
 Code Insights turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them — plus your git repos and self-sent URLs — into a portable markdown wiki in git that your agents read back before they decide. AnythingLLM is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. Obsidian is a manual notes tool you type into yourself — scribe writes the notes for you.
 
 **Is scribe an AnythingLLM alternative?**
-Yes. scribe is an AnythingLLM alternative for people who want an LLM wiki instead of a RAG server: it's a compiled knowledge base — plain markdown in git, no vector database, no server to run — where AnythingLLM is a RAG chat app built around a vector store and documents you upload. scribe auto-captures knowledge from your Claude Code and Codex sessions into portable markdown your agents read back before they decide.
+Yes. scribe is an AnythingLLM alternative for people who want an LLM wiki instead of a RAG server: it's a compiled knowledge base — plain markdown in git, no vector database, no server to run — where AnythingLLM is a RAG chat app built around a vector store and documents you upload. scribe auto-captures knowledge from coding-agent sessions into portable markdown your agents read back before they decide.
 
-**Does scribe build a knowledge base from my Claude Code and Codex sessions automatically?**
-Yes. On cron, scribe mines your Claude Code sessions via ccrider's FTS5 index and your Codex CLI rollouts, scores each session with weighted FTS5 keyword matches to skip boilerplate before any LLM call, then runs a two-pass absorb that fans dense sessions out into entity-first wiki articles.
+**Does scribe build a knowledge base from my coding-agent sessions automatically?**
+Yes. On cron, scribe mines every provider in ccrider's FTS5 index — including Amp sessions when imported by ccrider — plus direct Codex CLI rollouts when enabled. It scores each session with weighted FTS5 keyword matches to skip boilerplate before any LLM call, then extracts reusable knowledge into entity-first wiki articles.
 
 **Is scribe local-first, and does it work without an API key?**
 Yes. The entire pipeline can run 100% locally against an Ollama server with no Anthropic API key — a single line in `scribe.yaml` flips every LLM op to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync.
@@ -287,4 +287,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-07-14
+**Last updated:** 2026-07-22
