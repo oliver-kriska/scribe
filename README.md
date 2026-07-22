@@ -122,7 +122,7 @@ curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.s
 Pin a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh | bash -s -- --version v0.4.2
+curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh | bash -s -- --version v0.4.3
 ```
 
 The installer writes to `$HOME/.local/bin/scribe` by default; pass `--prefix` to change it.

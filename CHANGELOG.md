@@ -4,6 +4,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-07-22
+
+A session-ingestion compatibility release. Scribe now treats ccrider as the
+provider registry instead of assuming only Codex needs near-real-time watcher
+coverage, so every imported provider — including Amp sessions imported by a
+ccrider build with Amp support — enters the same triage and extraction path.
+The release also accepts current Codex subagent metadata and makes session
+dry-runs accurately preview both size lanes without mutating ccrider or the KB.
+
 ### Changed — multi-provider coding-agent session mining
 - `scribe watch` now admits every provider indexed by ccrider by default instead
   of silently limiting the near-real-time queue to Codex. Explicit
