@@ -1,6 +1,6 @@
 ## {{.KBName}} Knowledge Base
 
-{{.OwnerName}} maintains a personal knowledge base at `{{.KBDir}}` indexed by qmd. It contains wiki articles, project insights, decisions, patterns, and solutions extracted from projects. The KB is LLM-managed — a `scribe` Go binary runs on cron to auto-extract from git repos, mine Claude Code sessions via ccrider, capture self-sent iMessage URLs, and absorb queued URLs. You don't need to run any of that yourself; it's already scheduled.
+{{.OwnerName}} maintains a personal knowledge base at `{{.KBDir}}` indexed by qmd. It contains wiki articles, project insights, decisions, patterns, and solutions extracted from projects. The KB is LLM-managed — a `scribe` Go binary runs on cron to auto-extract from git repos, mine coding-agent sessions via ccrider, capture self-sent iMessage URLs, and absorb queued URLs. You don't need to run any of that yourself; it's already scheduled.
 
 **When to search it:** Before making architectural decisions, when encountering a pattern that might exist elsewhere, when the user asks "have I done this before" or "what do I know about X", or when you need context about {{.OwnerName}}'s other projects.
 

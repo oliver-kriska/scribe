@@ -14,12 +14,12 @@ import (
 
 // WatchCmd is the fsnotify-driven near-real-time session capture path.
 //
-// The SessionEnd hook (hook.go) only fires for Claude Code sessions — ccrider
-// imports Codex sessions too, but Codex has no equivalent hook, so Codex
-// sessions would only land in the pending queue on the next cron tick. This
-// watcher closes that gap: it monitors ccrider's SQLite WAL file, and when
-// the DB changes it looks for freshly-updated Codex sessions and scores them
-// with the same FTS5 logic the SessionEnd hook uses.
+// The SessionEnd hook (hook.go) only fires for Claude Code sessions. Other
+// providers imported by ccrider have no equivalent hook, so their sessions
+// would only land in the pending queue on the next cron tick. This watcher
+// closes that gap: it monitors ccrider's SQLite WAL file, and when the DB
+// changes it looks for freshly-updated sessions and scores them with the same
+// FTS5 logic the SessionEnd hook uses.
 //
 // Why the WAL file and not the DB itself: ccrider writes in WAL mode, so
 // sessions.db only changes on checkpoint. sessions.db-wal changes on every
@@ -27,7 +27,7 @@ import (
 //
 // Why fsnotify instead of polling: polling every 30s on an 800MB SQLite file
 // isn't free, and we want the latency of a real file-system notification so
-// a Codex session ending shows up in the pending queue within a minute.
+// a newly imported session shows up in the pending queue within a minute.
 //
 // Debounce logic: ccrider can write the WAL in bursts (multi-statement
 // transactions). We collect events for Debounce seconds of quiet before
@@ -37,7 +37,7 @@ type WatchCmd struct {
 	MinMessages int           `help:"Skip sessions with fewer than this many messages." default:"10" name:"min-messages"`
 	MinScore    int           `help:"Skip sessions whose FTS5 triage score falls below this." default:"50" name:"min-score"`
 	LookbackMin int           `help:"Only consider sessions whose updated_at is within this many minutes." default:"10" name:"lookback-min"`
-	Provider    string        `help:"Session provider to watch (codex | claude | any)." default:"codex"`
+	Provider    string        `help:"Session provider to watch, or any for every ccrider provider." default:"any"`
 	Verbose     bool          `help:"Log scan decisions to stderr."`
 }
 

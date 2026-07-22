@@ -1,4 +1,4 @@
-// sync_sessions.go — sync Phase 2.5: mine Claude Code sessions from
+// sync_sessions.go — sync Phase 2.5: mine coding-agent sessions from
 // ccrider's FTS5 index (triage, pre-filter, batched envelope mining).
 package main
 
@@ -19,6 +19,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var sessionExecutable = os.Executable
 
 // sessionFilterStats captures the per-session numbers the pre-filter looks at.
 type sessionFilterStats struct {
@@ -577,6 +579,14 @@ func (s *SyncCmd) largeSessionBudget() int {
 	return max(1, s.SessionsMax/3)
 }
 
+func dryRunTriageArgs(top int, sortBy string, large bool) []string {
+	args := []string{"triage", "--top", strconv.Itoa(top), "--sort", sortBy}
+	if large {
+		return append(args, "--min-messages", "301")
+	}
+	return append(args, "--message-limit", "300")
+}
+
 // backfillMsgCounts fills MsgCount for entries whose queue line didn't
 // carry one (the 3-column legacy timestamp shape, or bare-ID lines) via
 // one ccrider lookup per unknown entry — cheap and rare (only exists
@@ -778,11 +788,6 @@ func admitForPool(pending, triaged []pendingEntry, budget int, cfg PriorityLanes
 func (s *SyncCmd) mineSessions(root string) (int, error) {
 	logMsg("sync", "session mining (triage + extract, %d normal + %d large)...", s.SessionsMax, s.largeSessionBudget())
 
-	// Ensure ccrider DB is fresh before triaging.
-	if out := runCmd("", "ccrider", "sync"); out != "" {
-		logMsg("sync", "ccrider sync: %s", lastLine(out))
-	}
-
 	// Loaded early: the dry-run peek below needs cfg.PriorityLanes for the
 	// hot/normal classification preview, same as the main path needs it
 	// before size partitioning.
@@ -797,16 +802,29 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 			logMsg("sync", "DRY RUN -- hook queue: %d pending session(s), %d hot / %d normal",
 				len(peeked), len(hot), len(normal))
 		}
-		logMsg("sync", "DRY RUN -- triage results:")
-		scribeExe, _ := os.Executable()
+		scribeExe, _ := sessionExecutable()
 		if scribeExe == "" {
 			scribeExe = "scribe"
 		}
-		out, _ := runCmdErr("", scribeExe, "triage", "--top", strconv.Itoa(s.SessionsMax), "--sort", s.SessionSort)
+		logMsg("sync", "DRY RUN -- normal triage results (<=300 msgs):")
+		out, _ := runCmdErr("", scribeExe, dryRunTriageArgs(s.SessionsMax, s.SessionSort, false)...)
 		if out != "" {
 			fmt.Println(out)
 		}
+		if largeMax := s.largeSessionBudget(); largeMax > 0 {
+			logMsg("sync", "DRY RUN -- large triage results (>300 msgs):")
+			out, _ = runCmdErr("", scribeExe, dryRunTriageArgs(largeMax, s.SessionSort, true)...)
+			if out != "" {
+				fmt.Println(out)
+			}
+		}
 		return 0, nil
+	}
+
+	// Ensure ccrider DB is fresh before a real triage. Dry-run deliberately
+	// previews the existing index so it does not mutate external state.
+	if out := runCmd("", "ccrider", "sync"); out != "" {
+		logMsg("sync", "ccrider sync: %s", lastLine(out))
 	}
 
 	// Ensure _sessions_log.json exists.

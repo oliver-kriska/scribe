@@ -29,7 +29,7 @@ type SyncCmd struct {
 	Max          int    `help:"Max projects to extract per run." default:"3"`
 	MaxAbsorb    int    `help:"Override scribe.yaml absorb.max_per_run for this run (0 = use config default)." name:"max-absorb" default:"0"`
 	Model        string `help:"Claude model to use." default:"sonnet"`
-	Sessions     bool   `help:"Mine Claude Code sessions."`
+	Sessions     bool   `help:"Mine coding-agent sessions from ccrider."`
 	SessionsMax  int    `help:"Max normal sessions per run; large sessions (>300 msgs) get an extra max(1,N/3) slot on top." name:"sessions-max" default:"3"`
 	SessionSort  string `help:"Session sort: score (highest first, default) or date (newest first)." name:"session-sort" default:"score" enum:"date,score"`
 	SkipLarge    bool   `help:"Skip large sessions (>300 messages)." name:"skip-large"`
@@ -154,7 +154,7 @@ func (s *SyncCmd) Run() error {
 	// extraction happens to fire. When the post-pull reindex already ran
 	// and nothing local was produced since, skip the redundant rerun.
 	produced := counters.extracted > 0 || counters.sessionsScanned > 0 || counters.absorbed > 0
-	if produced || (pulledRemote && !pulledReindexed) {
+	if !s.DryRun && (produced || (pulledRemote && !pulledReindexed)) {
 		if err := s.rebuildAndReindex(root); err != nil {
 			logMsg("sync", "reindex error: %v", err)
 		}

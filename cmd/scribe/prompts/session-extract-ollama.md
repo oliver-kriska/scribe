@@ -1,6 +1,6 @@
 OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
-Extract project-specific knowledge from one Claude Code session for the project at `{{PROJECT_PATH}}`.
+Extract project-specific knowledge from one coding-agent session for the project at `{{PROJECT_PATH}}`.
 
 ## Session
 

@@ -4,9 +4,9 @@
 // docs/issue-22-priority-lanes-plan.md §4.4 for the test plan this file
 // implements.
 //
-// mineSessions itself is deliberately NOT exercised end-to-end here: it
-// unconditionally shells out to the real `ccrider sync` binary and
-// re-execs the current binary as `scribe triage --json` (via
+// Real mining is deliberately NOT exercised end-to-end here: it shells out
+// to the real `ccrider sync` binary and re-execs the current binary as
+// `scribe triage --json` (via
 // os.Executable()), neither of which behaves safely or deterministically
 // under `go test` in this environment (ccrider is on PATH and would touch
 // the real ~/.config/ccrider state; the test binary is not `scribe` and
@@ -19,12 +19,60 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestDryRunTriageArgs(t *testing.T) {
+	tests := []struct {
+		name  string
+		large bool
+		want  []string
+	}{
+		{name: "normal", want: []string{"triage", "--top", "3", "--sort", "score", "--message-limit", "300"}},
+		{name: "large", large: true, want: []string{"triage", "--top", "3", "--sort", "score", "--min-messages", "301"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dryRunTriageArgs(3, "score", tt.large)
+			if !equalStrings(got, tt.want) {
+				t.Fatalf("dryRunTriageArgs() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMineSessionsDryRunDoesNotSyncCcrider(t *testing.T) {
+	home := t.TempDir()
+	binDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "ccrider-called")
+	fakeCcrider := filepath.Join(binDir, "ccrider")
+	if err := os.WriteFile(fakeCcrider, []byte("#!/bin/sh\n: > \"$CCRIDER_MARKER\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeScribe := filepath.Join(binDir, "scribe")
+	if err := os.WriteFile(fakeScribe, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	originalExecutable := sessionExecutable
+	sessionExecutable = func() (string, error) { return fakeScribe, nil }
+	t.Cleanup(func() { sessionExecutable = originalExecutable })
+	t.Setenv("HOME", home)
+	t.Setenv("CCRIDER_MARKER", marker)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cmd := SyncCmd{DryRun: true, SessionsMax: 1, SessionSort: "score", SkipLarge: true}
+	if _, err := cmd.mineSessions(t.TempDir()); err != nil {
+		t.Fatalf("mineSessions() error = %v", err)
+	}
+	if fileExists(marker) {
+		t.Fatal("dry-run invoked ccrider sync")
+	}
+}
 
 // idsOf extracts IDs in slice order, for order-sensitive assertions.
 func idsOf(entries []pendingEntry) []string {

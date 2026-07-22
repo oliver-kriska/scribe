@@ -5,7 +5,7 @@ description: Read, write, and search a scribe-managed knowledge base (markdown v
 
 # scribe knowledge base — agent skill
 
-A scribe-managed KB is a local-first markdown vault. Articles live in topic directories under a KB root, every article carries YAML frontmatter, links between articles are `[[Wikilinks]]`, and search runs through qmd (BM25 + vector hybrid). A daemon `scribe` runs on cron to extract from project repos, mine Claude Code sessions, capture iMessage URLs, absorb queued URLs, lint frontmatter, and reindex qmd.
+A scribe-managed KB is a local-first markdown vault. Articles live in topic directories under a KB root, every article carries YAML frontmatter, links between articles are `[[Wikilinks]]`, and search runs through qmd (BM25 + vector hybrid). A daemon `scribe` runs on cron to extract from project repos, mine coding-agent sessions, capture iMessage URLs, absorb queued URLs, lint frontmatter, and reindex qmd.
 
 This skill teaches a Claude Code / Codex / OpenCode session how to interact with such a KB without breaking the conventions the daemon expects.
 

@@ -24,7 +24,6 @@ type codexSessionMeta struct {
 	Cwd        string `json:"cwd"`
 	ID         string `json:"id"`
 	Originator string `json:"originator"`
-	Source     string `json:"source"`
 	Git        struct {
 		RepositoryURL string `json:"repository_url"`
 		Branch        string `json:"branch"`

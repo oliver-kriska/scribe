@@ -70,6 +70,31 @@ func TestWatchScan_MultiKBQueuing(t *testing.T) {
 	}
 }
 
+func TestWatchScan_AnyProvider(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	db, dbPath := newCcriderDB(t)
+
+	updatedAt := time.Now().UTC().Format("2006-01-02 15:04:05")
+	providers := []string{"amp", "opencode", "pi", "antigravity"}
+	for _, provider := range providers {
+		id := "sess-" + provider
+		rid := insertFixtureSession(t, db, id, "/p/"+id, 20, updatedAt, updatedAt, "did work")
+		setSessionProvider(t, db, id, provider)
+		insertFixtureMessage(t, db, rid, "user", "decided to refactor the design", false)
+	}
+
+	w := &WatchCmd{MinMessages: 1, MinScore: 0, LookbackMin: 60, Provider: "any"}
+	w.scan([]string{t.TempDir()}, dbPath)
+
+	got := peekPendingSessions()
+	for _, provider := range providers {
+		id := "sess-" + provider
+		if !slices.Contains(got, id) {
+			t.Errorf("%s session not queued by provider=any; got %v", provider, got)
+		}
+	}
+}
+
 // writeSessionsProcessed writes <kb>/wiki/_sessions_log.json marking the
 // given session IDs processed, in the {"processed": {...}} shape
 // loadProcessedSessionIDs reads.

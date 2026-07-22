@@ -4,6 +4,27 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Changed — multi-provider coding-agent session mining
+- `scribe watch` now admits every provider indexed by ccrider by default instead
+  of silently limiting the near-real-time queue to Codex. Explicit
+  `--provider` filtering remains available. This covers Claude Code, Codex CLI,
+  GitHub Copilot CLI, OpenCode, Pi, Antigravity, Amp, and future ccrider
+  providers without requiring another scribe change. Amp sessions already
+  imported by a ccrider build with Amp support follow the same path.
+- Session prompts, CLI help, the embedded command reference, README, and site
+  copy now describe the ccrider-backed path as provider-neutral rather than
+  implying it is Claude-only.
+
+### Fixed
+- Recent Codex subagent rollouts can encode `session_meta.payload.source` as an
+  object rather than a string. Scribe no longer rejects those rollouts; the
+  unused field is deliberately left untyped.
+- `scribe sync --sessions --dry-run` now previews the normal and large-session
+  lanes with the same message-count bounds used by a real run, and
+  `--skip-large` also suppresses the large preview.
+- Dry-run syncs no longer rebuild indexes or invoke qmd, so the documented
+  no-write guarantee applies to generated KB artifacts as well as extraction.
+
 ### Fixed — docs only, no behavior change
 - Public copy (README, getscribe.dev + its `index.md`/`llms-full.txt` mirrors and
   OG card, the embedded `scribe.yaml` template comment, and CLAUDE.md) described

@@ -23,7 +23,7 @@ raw/                    Immutable source material — NEVER modify
 wiki/                   LLM-compiled knowledge articles
   _index.md             Master index — every article listed with one-line summary
   _backlinks.json       Reverse link index {target: [sources]}
-  _sessions_log.json    Tracks processed Claude Code session IDs
+  _sessions_log.json    Tracks processed coding-agent session IDs
 
 projects/               Per-project extracted knowledge (projects/{name}/overview.md + subtopics)
   {name}/.repo.yaml     Links KB dir back to source repo
@@ -36,7 +36,7 @@ decisions/              Architectural decisions with reasoning and outcome
 patterns/               Recurring patterns observed across projects
 ideas/                  Unrealized project ideas and exploration notes
 people/                 Contacts, collaborators, context
-sessions/               Extracted Claude Code session insights (via ccrider MCP)
+sessions/               Extracted coding-agent session insights (via ccrider)
 output/                 Transient query results and reports (gitignored)
 
 scripts/                State files
@@ -100,7 +100,7 @@ The `personal` and `general` domains are always accepted for cross-cutting conte
 Run via the `scribe` CLI:
 
 - `scribe sync` — discover projects, extract changed repos, absorb raw articles, reindex qmd.
-- `scribe sync --sessions` — mine Claude Code sessions via ccrider.
+- `scribe sync --sessions` — mine coding-agent sessions via ccrider.
 - `scribe capture --fetch` — capture self-sent iMessage URLs, fetch content.
 - `scribe dream` — weekly memory consolidation.
 - `scribe lint --changed` — validate frontmatter on uncommitted changes.

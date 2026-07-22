@@ -1,4 +1,4 @@
-You are extracting reusable knowledge from one Claude Code session transcript. You do NOT have filesystem tools — the transcript is inlined below. Emit ONE `WikiActionEnvelope` JSON document to stdout. Scribe will apply the file mutations itself.
+You are extracting reusable knowledge from one coding-agent session transcript. You do NOT have filesystem tools — the transcript is inlined below. Emit ONE `WikiActionEnvelope` JSON document to stdout. Scribe will apply the file mutations itself.
 
 ## Session
 

@@ -1,6 +1,6 @@
 # scribe — agent guide
 
-`scribe` is a single-binary Go CLI that runs an LLM-written knowledge-base pipeline. It extracts reusable knowledge from git repos, mines Claude Code sessions via ccrider's FTS5 index, absorbs captured URLs, and reindexes the KB with `qmd`. Designed to run on cron against a private KB repo. `scribe init` scaffolds a fresh KB anywhere; the user picks the KB's display name (defaulting to the directory basename).
+`scribe` is a single-binary Go CLI that runs an LLM-written knowledge-base pipeline. It extracts reusable knowledge from git repos, mines coding-agent sessions via ccrider's FTS5 index, absorbs captured URLs, and reindexes the KB with `qmd`. Designed to run on cron against a private KB repo. `scribe init` scaffolds a fresh KB anywhere; the user picks the KB's display name (defaulting to the directory basename).
 
 This file is the agent guide for hacking on scribe itself. End-user docs live in `README.md`.
 

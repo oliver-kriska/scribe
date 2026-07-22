@@ -1,6 +1,6 @@
 # scribe
 
-`scribe` is a single-binary CLI that creates and maintains a personal, LLM-written knowledge base. It continuously extracts reusable knowledge from your git repos, Claude Code sessions (via [`ccrider`](https://github.com/neilberkman/ccrider)'s FTS5 index) and Codex CLI sessions, links you iMessage to yourself as bookmarks (your own number is the world's most portable read-it-later list), and local files, then compiles it into a curated wiki that [`qmd`](https://github.com/tobi/qmd) indexes for semantic search. Every LLM step resolves through one top-level `llm:` provider block: Anthropic's Claude by default, or a 100% local [Ollama](https://ollama.com) server (qwen3 / gemma4 / gemma3, $0 API cost) — flipping the whole pipeline to free/offline is one line of yaml.
+`scribe` is a single-binary CLI that creates and maintains a personal, LLM-written knowledge base. It continuously extracts reusable knowledge from your git repos, coding-agent sessions indexed by [`ccrider`](https://github.com/neilberkman/ccrider) (Claude Code, Codex CLI, GitHub Copilot CLI, OpenCode, Pi, Antigravity, and Amp when imported by ccrider), links you iMessage to yourself as bookmarks (your own number is the world's most portable read-it-later list), and local files, then compiles it into a curated wiki that [`qmd`](https://github.com/tobi/qmd) indexes for semantic search. Every LLM step resolves through one top-level `llm:` provider block: Anthropic's Claude by default, or a 100% local [Ollama](https://ollama.com) server (qwen3 / gemma4 / gemma3, $0 API cost) — flipping the whole pipeline to free/offline is one line of yaml.
 
 **Not a second brain.** scribe writes a personal *context corpus* — durable LLM memory that survives session boundaries and crosses projects. You almost never read the KB directly; Claude Code and Codex do, every session. The human is at the end of the pipeline, consuming an answer, not navigating a graph. The corpus is plain markdown in git, so it outlives the pipeline that wrote it — if scribe disappears tomorrow, the KB is still yours.
 
@@ -29,7 +29,7 @@ That single prompt turns your KB into working memory for every agent session. Wi
 
 - Every hour: auto-commit the KB.
 - Every 2 hours: scan git repos for new decisions, patterns, learnings; extract them via `claude -p`.
-- 3×/day (03:00, 12:00, 18:00): mine Claude Code sessions via ccrider's FTS5 index — and Codex CLI rollouts when `codex.mine` is enabled — scored by keyword density so boilerplate sessions cost nothing.
+- 3×/day (03:00, 12:00, 18:00): mine coding-agent sessions via ccrider's FTS5 index — plus direct Codex CLI rollouts when `codex.mine` is enabled — scored by keyword density so boilerplate sessions cost nothing.
 - Every 30 min: drain queued URLs into `raw/articles/`.
 - Every 4 hours: pull bookmark-links you texted yourself.
 - Daily 06:30: retry previously-unfetched link stubs (`capture-refetch`).
@@ -100,7 +100,7 @@ my-kb/
 
 Every file has YAML frontmatter (`type:`, `domain:`, `confidence:`, `tags:`, `related:`) so you can filter and traverse programmatically. Every article links to every other article via `[[wikilinks]]`, and `scribe link` auto-injects *See Also* sections into orphans based on shared tags. `qmd query "<natural language question>"` returns semantic hits with snippets — from inside the KB, from any terminal, no `cd` required.
 
-One concrete loop: you work on `my-app`, hit a tricky bug in your LiveView, Claude Code helps you fix it. Thirty minutes later `scribe sync --sessions` mines that session via ccrider's FTS5 index, extracts the root cause + fix + tradeoff, writes it into `wiki/learnings/`, cross-links it to `wiki/patterns/phoenix-scope-based-auth.md`, auto-commits + pushes. Two weeks later you hit a similar bug on a different project; `qmd query` surfaces the old learning before you re-debug it.
+One concrete loop: you work on `my-app`, hit a tricky bug in your LiveView, and a coding agent helps you fix it. Thirty minutes later `scribe sync --sessions` mines that session via ccrider's FTS5 index, extracts the root cause + fix + tradeoff, writes it into `wiki/learnings/`, cross-links it to `wiki/patterns/phoenix-scope-based-auth.md`, auto-commits + pushes. Two weeks later you hit a similar bug on a different project; `qmd query` surfaces the old learning before you re-debug it.
 
 ---
 
@@ -642,7 +642,7 @@ scribe projects add --from-sources  # bulk-enroll every sources.include-listed r
 scribe config diff  # team KBs: show sensitive scribe.yaml keys changed since last trusted
 scribe config trust # team KBs: approve the current sensitive keys
 scribe config update # append commented docs for options added since your scribe.yaml was scaffolded
-scribe sync --sessions       # mine Claude Code (ccrider) + Codex CLI sessions (when codex.mine is on)
+scribe sync --sessions       # mine all ccrider providers + direct Codex rollouts (when codex.mine is on)
 scribe sync --estimate       # token estimate for pending work (no LLM calls)
 scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml
 scribe triage       # score unprocessed sessions by knowledge density
@@ -834,7 +834,7 @@ Since Karpathy's LLM-wiki gist in April 2026, a handful of open-source takes hav
 ### Where scribe's niche is
 
 - **Against RAG stacks (LlamaIndex, LangChain, classic embedding pipelines).** RAG stores chunks and retrieves at query time — there's no curation layer, no named entity pages, no decision log. Scribe keeps raw sources AND compiles a structural wiki on top. The wiki is the product; qmd embedding is the index into it.
-- **Against manual note-taking (Obsidian, Notion).** Those expect you to do the writing. Scribe watches your git commits, Claude Code sessions, and self-sent URLs, then writes the notes. You review and curate, the LLM does the data-entry.
+- **Against manual note-taking (Obsidian, Notion).** Those expect you to do the writing. Scribe watches your git commits, coding-agent sessions, and self-sent URLs, then writes the notes. You review and curate, the LLM does the data-entry.
 - **Against `claude-memory-compiler`.** Memory-compiler runs an LLM call on *every* Claude Code session with ≥1 turn. A single Max-20x user burned $115 in 20 minutes on issue #3. Scribe's `scribe triage` scores sessions with weighted FTS5 keyword matching *before* calling Claude, so boilerplate sessions never cost anything. `sync --max` caps project-extraction work; the rate-limit bail-out hands cleanly to the next cron run instead of blocking.
 - **Against `claude-obsidian` and `nvk/llm-wiki`.** Those are read-time research companions — plugin skills and slash commands, no binary, no cron. Great for interactive investigations, not for background absorption of weeks of work. Scribe runs as a scheduled daemon and produces the KB whether or not you open a terminal that day.
 - **Against `basic-memory`.** Basic-memory has the best graph model of the bunch (inline `[decision]` observations, auto-generated relations). What it doesn't do is ingest Claude Code session transcripts (open feature request since March 2026) or iMessage self-chat URLs, and its Dream-analog skills aren't scheduled. Scribe covers those; if you want the richer graph DSL, basic-memory is the reference.

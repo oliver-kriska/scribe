@@ -87,6 +87,23 @@ func TestReadCodexSessionMeta_HappyPath(t *testing.T) {
 	}
 }
 
+func TestReadCodexSessionMeta_ObjectSource(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "rollout-object-source.jsonl")
+	body := []byte(`{"type":"session_meta","payload":{"id":"subagent-1","cwd":"/tmp/project","source":{"subagent":{"thread_spawn":{"depth":1}}}}}` + "\n")
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("write rollout: %v", err)
+	}
+
+	meta, err := readCodexSessionMeta(path)
+	if err != nil {
+		t.Fatalf("readCodexSessionMeta object source: %v", err)
+	}
+	if meta == nil || meta.ID != "subagent-1" || meta.Cwd != "/tmp/project" {
+		t.Fatalf("unexpected metadata: %+v", meta)
+	}
+}
+
 func TestReadCodexSessionMeta_EmptyFile(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()

@@ -10,7 +10,7 @@ lock shared with cron — run one at a time, never backgrounded.
 | Command | What it does |
 |---|---|
 | `scribe sync` | **lock** — full pipeline: discover → extract → mine sessions → absorb → reindex → commit |
-| `scribe sync --sessions` | Mine agent sessions only (Claude Code via ccrider + Codex CLI when enabled) |
+| `scribe sync --sessions` | Mine all ccrider-indexed agent sessions, plus direct Codex rollouts when enabled |
 | `scribe sync --estimate` | Token estimate for pending work — no LLM calls |
 | `scribe sync --max-absorb N` | One-shot override of `absorb.max_per_run` |
 | `scribe status` | **read-only** — scoreboard: raw-by-density, absorb/contextualize progress, backlog, last sync, qmd/ollama health |

@@ -1,4 +1,4 @@
-You are extracting knowledge from one Claude Code session for the project at `{{PROJECT_PATH}}`. You do NOT have filesystem tools — the transcript is inlined below. Emit ONE `WikiActionEnvelope` v2 JSON document to stdout.
+You are extracting knowledge from one coding-agent session for the project at `{{PROJECT_PATH}}`. You do NOT have filesystem tools — the transcript is inlined below. Emit ONE `WikiActionEnvelope` v2 JSON document to stdout.
 
 ## Session
 

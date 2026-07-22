@@ -1,6 +1,6 @@
 You are working in {{KB_DIR}}. Read CLAUDE.md for schema and writing standards.
 
-Extract knowledge from these specific Claude Code sessions (pre-scored as knowledge-rich by FTS5 triage):
+Extract knowledge from these specific coding-agent sessions (pre-scored as knowledge-rich by FTS5 triage):
 
 Session IDs: {{SESSION_ID_LIST}}
 

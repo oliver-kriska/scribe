@@ -14,7 +14,7 @@ A scribe-managed KB has a fixed directory layout. Each directory hosts one artic
 ├── people/                 Identity pages with aliases (handles, emails)
 ├── projects/<name>/        Per-project memory (overview + rolling files)
 ├── ideas/                  Idea drafts that may become decisions later
-├── sessions/               Mined Claude Code sessions (auto-created by triage)
+├── sessions/               Mined coding-agent sessions (auto-created by triage)
 ├── wiki/                   Generated indexes: _index.md, _hot.md, _sections/, _backlinks.json
 └── raw/
     └── articles/           Captured / ingested content (the inbox)

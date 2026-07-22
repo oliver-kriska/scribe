@@ -169,7 +169,7 @@ func scribeJobs(binary string) []cronJob {
 		},
 		{
 			Name:      "watch",
-			Desc:      "fsnotify watcher for ccrider DB (Codex + Claude near-real-time)",
+			Desc:      "fsnotify watcher for ccrider DB (all providers near-real-time)",
 			Command:   binary + " watch",
 			LogFile:   filepath.Join(logDir, "scribe-watch.log"),
 			KeepAlive: true,

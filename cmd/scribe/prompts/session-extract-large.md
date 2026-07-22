@@ -1,6 +1,6 @@
 You are working in {{KB_DIR}}. Read CLAUDE.md for schema and writing standards.
 
-Extract knowledge from this LARGE Claude Code session ({{MESSAGE_COUNT}} messages):
+Extract knowledge from this LARGE coding-agent session ({{MESSAGE_COUNT}} messages):
 
 Session ID: {{SESSION_ID}}
 
