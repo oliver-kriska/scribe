@@ -183,7 +183,7 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 
 ## The command surface
 
-45 subcommands, one binary. The ones you'll actually type:
+78 command paths, one binary. The ones you'll actually type:
 
 ```
 scribe init                 # bootstrap a KB, wire the agent handshake
@@ -198,7 +198,7 @@ scribe relations migrate    # classify `related:` into typed edges
 scribe cron install / uninstall / status
 ```
 
-Run `scribe --help` to see all 45. `scribe cron install` puts the boring ones on a schedule so you never type them again.
+Run `scribe --help` to see all 78. `scribe cron install` puts the boring ones on a schedule so you never type them again.
 
 ## In practice
 
