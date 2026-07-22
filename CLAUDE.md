@@ -133,6 +133,31 @@ not host redirects — and we keep the Worker static-assets-only (no `main`).
 The apex is the canonical everywhere (`<link rel=canonical>`, `og:url`,
 `sitemap.xml`). `/index.html` already auto-307s to `/` via Workers Assets.
 
+### Explainer videos live on R2, not in git
+
+The two homepage explainer MP4s (`scribe-explainer.mp4`,
+`scribe-explainer-teams.mp4`) are **not** committed — `site/public/*.mp4` is
+gitignored. They live in the **R2 bucket `getscribe-assets`**, served via the
+custom domain **`assets.getscribe.dev`** (SSL auto-managed), and are referenced
+from `index.html` (`<source src>`) and the `VideoObject` JSON-LD `contentUrl`.
+Posters (`*-poster.jpg`) and caption tracks (`*.vtt`) **do** stay in
+`site/public` — tiny, and same-origin so `<track>` needs no CORS. The
+reproducible render sources under `video/` + `video-teams/` are kept locally but
+gitignored (regen recipe in `.claude/research/2026-07-22-explainer-video.md`).
+
+To replace a video: re-render, then push to R2 (the `--remote` flag is
+mandatory — `wrangler r2 object put` defaults to a local sim and silently no-ops
+the real bucket):
+
+```sh
+set -a; source .env; set +a
+wrangler r2 object put getscribe-assets/scribe-explainer.mp4 \
+  --file site/public/scribe-explainer.mp4 --content-type video/mp4 --remote
+```
+
+Transcripts are mirrored as page text (`<details>`) and into
+`index.md` / `llms-full.txt` for GEO — keep them in sync with the narration.
+
 ### Deploy
 
 Wrangler is a **global** install on the dev machine, not a project dep:
