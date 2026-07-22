@@ -33,6 +33,7 @@ coverage.txt
 
 # Local scratch — benchmarks, x-post drafts, ad-hoc analysis (not for public repo)
 /scratchpad/
+/.worktrees/
 
 # Session-generated analysis docs (keep committed plans, ignore dated analysis)
 /docs/2026-*
