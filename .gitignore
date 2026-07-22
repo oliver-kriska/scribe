@@ -47,3 +47,10 @@ coverage.txt
 /site/node_modules/
 /site/package.json
 /site/package-lock.json
+
+# Explainer videos live on Cloudflare R2 (assets.getscribe.dev), not in git.
+# Posters + .vtt captions stay in site/public (tiny, same-origin). Reproducible
+# render sources under video/ + video-teams/ are kept locally, untracked.
+/site/public/*.mp4
+/video/
+/video-teams/

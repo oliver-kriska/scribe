@@ -12,6 +12,12 @@ scribe is an LLM-written knowledge base pipeline. It mines four input streams �
 
 scribe is not a RAG pipeline. It keeps raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities.
 
+## Watch: sixty seconds, start to finish
+
+Transcript of the explainer video ([scribe-explainer.mp4](https://assets.getscribe.dev/scribe-explainer.mp4)) — the whole pitch, as narrated:
+
+The expensive half of the job was never deciding. It's rebuilding the context you already had. Close the terminal, and the fix you just earned is gone. Every new agent session starts from zero, re-deriving what you already know. scribe reads your git history, your Claude Code and Codex sessions, and the links you send yourself, and writes the wiki for you. Memory your agents read before they act. Not a second brain you maintain and never reopen. It runs on cron. Four streams in, noise filtered before any model runs, compiled into a typed graph of plain markdown. Fix a nasty bug in one project on Monday. Friday, in a different repo, your agent already has your fix. Not RAG. Not Obsidian. Not another model-on-every-session burner. Plain markdown in git you own, running fully local for zero dollars. scribe. Set it up once, and your tools write the notes for you. Install at getscribe.dev.
+
 ## How it works
 
 Three stages, one pipeline:
@@ -97,6 +103,12 @@ The mechanisms:
 - **A teammate's unrelated repo never leaks in.** Discovered projects start pending. `allowed_remotes` and source filters gate discovery by git-remote identity, and `scribe projects {list,approve,ignore,review}` controls what enters the pipeline, so a side project or a client checkout never lands in the shared KB without an approve.
 - **Curate privately, promote deliberately.** `scribe promote <article> --to team-kb` copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.
 - **One machine consolidates, no server.** The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.
+
+### Transcript — "One KB. The whole team writes to it."
+
+Transcript of the teams explainer video ([scribe-explainer-teams.mp4](https://assets.getscribe.dev/scribe-explainer-teams.mp4)):
+
+Now imagine that memory isn't just yours. A new teammate asks the question you answered six months ago. The decision is in your head, or in a session nobody can find. scribe scales to your team. Every engineer's agent sessions write to one shared, git-backed knowledge base. Every fix, every rejected library, every decision your team makes becomes context the whole team's agents read before they act. A new hire's first Claude Code session already knows why you chose what you chose. Shared memory is a trust problem, not a sync problem. A secret gate scans every commit, so no key ever leaks into the wiki. Allowed remotes lock which repos it reads. Every promoted note carries where it came from. Still plain markdown in a repo your team owns. scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev.
 
 ## Inference & cost — local, hosted, or Anthropic
 

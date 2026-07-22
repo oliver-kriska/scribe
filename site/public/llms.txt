@@ -18,7 +18,9 @@ The product is the curated wiki, not raw chunks. Every dense source fans out int
 
 - [Marketing site](https://getscribe.dev/): overview, features, install, comparison table
 - [Marketing site as markdown](https://getscribe.dev/index.md): same content, plain text
-- [Full content concatenated](https://getscribe.dev/llms-full.txt): everything in one file for large-context LLMs
+- [Full content concatenated](https://getscribe.dev/llms-full.txt): everything in one file for large-context LLMs, including both explainer-video transcripts
+- [Explainer video, 60s](https://assets.getscribe.dev/scribe-explainer.mp4): the whole pitch — scribe reads your git history, Claude Code/Codex sessions, and saved links, and writes a plain-markdown KB your agents read before they act; local, cron-driven, not RAG (full transcript in llms-full.txt)
+- [Teams explainer video](https://assets.getscribe.dev/scribe-explainer-teams.mp4): one shared, git-backed KB — secret-scan gate on every commit, allowed-remotes control, provenance on every promoted note (full transcript in llms-full.txt)
 - [GitHub repository](https://github.com/oliver-kriska/scribe): source code, issues, releases
 - [README](https://github.com/oliver-kriska/scribe/blob/main/README.md): canonical end-user docs
 - [CHANGELOG](https://github.com/oliver-kriska/scribe/blob/main/CHANGELOG.md): per-version release notes

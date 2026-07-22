@@ -1,9 +1,0 @@
-node_modules/
-frames/
-verify/
-*.log
-# generated / machine-specific build artifacts (kept out of the repo)
-*.mp3
-*.mp4
-concat_list.txt
-package-lock.json
