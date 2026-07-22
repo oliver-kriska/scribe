@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:03.000 --> 00:00:08.526
+The expensive half of the job was never deciding. It's rebuilding the context you already had.
+
+00:00:08.976 --> 00:00:15.989
+Close the terminal, and the fix you just earned is gone. Every new agent session starts from zero, re-deriving what you already know.
+
+00:00:16.439 --> 00:00:23.173
+scribe reads your git history, your Claude Code and Codex sessions, and the links you send yourself, and writes the wiki for you.
+
+00:00:23.623 --> 00:00:28.592
+Memory your agents read before they act. Not a second brain you maintain and never reopen.
+
+00:00:29.042 --> 00:00:35.868
+It runs on cron. Four streams in, noise filtered before any model runs, compiled into a typed graph of plain markdown.
+
+00:00:36.318 --> 00:00:42.448
+Fix a nasty bug in one project on Monday. Friday, in a different repo, your agent already has your fix.
+
+00:00:42.898 --> 00:00:52.001
+Not RAG. Not Obsidian. Not another model-on-every-session burner. Plain markdown in git you own, running fully local for zero dollars.
+
+00:00:52.451 --> 00:00:58.023
+scribe. Set it up once, and your tools write the notes for you. Install at getscribe.dev.

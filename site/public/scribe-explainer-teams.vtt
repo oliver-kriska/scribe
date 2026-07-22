@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:03.000 --> 00:00:05.090
+Now imagine that memory isn't just yours.
+
+00:00:05.540 --> 00:00:12.552
+A new teammate asks the question you answered six months ago. The decision is in your head, or in a session nobody can find.
+
+00:00:13.002 --> 00:00:19.318
+scribe scales to your team. Every engineer's agent sessions write to one shared, git-backed knowledge base.
+
+00:00:19.768 --> 00:00:28.452
+Every fix, every rejected library, every decision your team makes becomes context the whole team's agents read before they act.
+
+00:00:28.902 --> 00:00:32.803
+A new hire's first Claude Code session already knows why you chose what you chose.
+
+00:00:33.253 --> 00:00:41.334
+Shared memory is a trust problem, not a sync problem. A secret gate scans every commit, so no key ever leaks into the wiki.
+
+00:00:41.784 --> 00:00:50.236
+Allowed remotes lock where it can push. Every promoted note is signed with where it came from. Still plain markdown in a repo your team owns.
+
+00:00:50.686 --> 00:00:58.859
+scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev.

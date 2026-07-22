@@ -931,6 +931,24 @@
     padding-block: clamp(56px, 7vw, 104px);
     border-top: 1px solid var(--border);
   }
+  /* embedded explainer video — treated like the hero terminal: the one media
+     object that earns a shadow. 16:9, hairline border, rounded, self-hosted. */
+  .video-embed {
+    margin: clamp(28px, 4vw, 44px) auto 0;
+    max-width: 900px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    background: var(--surface);
+    box-shadow: var(--shadow-terminal);
+  }
+  .video-embed video {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    background: oklch(14% 0.012 250);
+  }
   /* two-tier divider: marks where the decider spine ends and the reference /
      "under the hood" sections begin. A single tinted landmark band (not an
      alternating stripe); mono label kept muted so it doesn't add accent surface. */
@@ -2375,6 +2393,23 @@
   </div>
 </section>
 
+<!-- ============================ WATCH ============================ -->
+<section class="s" id="watch">
+  <div class="wrap">
+    <header class="s__head">
+      <div class="s__eyebrow">Watch</div>
+      <h2 class="s__title">Sixty seconds, start to finish.</h2>
+      <p class="s__sub">The pain of re-deriving context you already had, what scribe does about it, and how it becomes memory your agents read before they act.</p>
+    </header>
+    <figure class="video-embed">
+      <video controls preload="metadata" playsinline poster="/scribe-explainer-poster.jpg" width="1920" height="1080">
+        <source src="/scribe-explainer.mp4" type="video/mp4">
+        <track kind="captions" src="/scribe-explainer.vtt" srclang="en" label="English" default>
+      </video>
+    </figure>
+  </div>
+</section>
+
 <!-- ============================ HOW IT WORKS ============================ -->
 <section class="s" id="how">
   <div class="wrap">
@@ -2824,6 +2859,13 @@ advisory locks table-ambiguous under load.
       <h2 class="s__title">One KB. The whole team writes to it.</h2>
       <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB. The obvious fear with sharing agent sessions — a leaked secret, a private client repo, one teammate's config change reaching everyone — is exactly what the gates below are built to stop. Only knowledge you meant to keep crosses into the shared KB.</p>
     </header>
+
+    <figure class="video-embed video-embed--teams">
+      <video controls preload="metadata" playsinline poster="/scribe-explainer-teams-poster.jpg" width="1920" height="1080">
+        <source src="/scribe-explainer-teams.mp4" type="video/mp4">
+        <track kind="captions" src="/scribe-explainer-teams.vtt" srclang="en" label="English" default>
+      </video>
+    </figure>
 
     <figure class="tb">
       <svg viewBox="0 0 720 340" role="img" aria-labelledby="tb-title tb-desc">
