@@ -55,24 +55,24 @@ jobs:
       # goreleaser-cross bundles cosign but NOT syft. Install a pinned,
       # checksum-verified syft on the runner and mount it into the
       # container (static Go binary — runs fine in the debian image).
-      - name: Install syft v1.45.1 (SBOM generation)
+      - name: Install syft v1.49.0 (SBOM generation)
         run: |
-          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.45.1/syft_1.45.1_linux_amd64.tar.gz
-          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.45.1/syft_1.45.1_checksums.txt
-          grep ' syft_1.45.1_linux_amd64.tar.gz$' syft_1.45.1_checksums.txt | sha256sum -c -
-          tar -xzf syft_1.45.1_linux_amd64.tar.gz syft
+          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_linux_amd64.tar.gz
+          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_checksums.txt
+          grep ' syft_1.49.0_linux_amd64.tar.gz$' syft_1.49.0_checksums.txt | sha256sum -c -
+          tar -xzf syft_1.49.0_linux_amd64.tar.gz syft
           sudo install syft /usr/local/bin/syft
-          rm -f syft syft_1.45.1_linux_amd64.tar.gz syft_1.45.1_checksums.txt
+          rm -f syft syft_1.49.0_linux_amd64.tar.gz syft_1.49.0_checksums.txt
 
       - name: Run GoReleaser in cross-compile container
-        # The image base is Go 1.26.2 (goreleaser-cross has no newer tag
+        # The image base is Go 1.26.4 (goreleaser-cross has no newer tag
         # yet). GOTOOLCHAIN=auto makes the in-container build honor the
         # `go 1.26.5` directive in go.mod by fetching that toolchain, so the
         # release binary is built against the patched stdlib regardless of
         # the image's base Go. Bump the image tag to a >=1.26.5 base once one
         # ships and the download step goes away.
         #
-        # Image pinned by DIGEST (= tag v1.26.2-3): this container runs
+        # Image pinned by DIGEST (= tag v1.26.4): this container runs
         # with the Homebrew-tap PAT in its env, so a repointed tag would
         # be a formula-compromise vector. To bump, resolve the new tag:
         #   TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:goreleaser/goreleaser-cross:pull" | jq -r .token)
@@ -88,7 +88,7 @@ jobs:
             -e GOTOOLCHAIN=auto \
             -e ACTIONS_ID_TOKEN_REQUEST_URL \
             -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
-            ghcr.io/goreleaser/goreleaser-cross@sha256:bd51e63c1432305eb0309cdf3bff11e5ae6419cefb10839fea3e705f3e5d57da \
+            ghcr.io/goreleaser/goreleaser-cross@sha256:61ecf9d14fc81b9c3e1f8dde4ba8c4f28a7d33005cd1b9bee13e8ed11860c4bb \
             release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
