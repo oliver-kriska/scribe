@@ -42,6 +42,9 @@ coverage.txt
 # Secrets — never commit
 .env
 
+# wrangler local state (created by r2/deploy commands run from repo root)
+/.wrangler/
+
 # site/ — source-only, no JS toolchain in repo
 /site/.wrangler/
 /site/node_modules/
