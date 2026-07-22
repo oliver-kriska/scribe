@@ -122,6 +122,17 @@ site/
 `custom_domain = true` — Cloudflare auto-manages DNS records and the SSL
 cert; no manual DNS edits needed when the routes change.
 
+**Canonical / www redirect (zone-level, NOT in this repo):** both routes
+serve identical `200`s, so without a redirect the `www.` host is a duplicate
+of the apex — Google Search Console reports it as *"Alternate page with
+proper canonical tag."* A Cloudflare **Redirect Rule** on the zone fixes it
+by 301-ing `www.getscribe.dev/*` → `https://getscribe.dev/*` (preserve path +
+query). It lives in the dashboard (Rules → Redirect Rules), not in `public/`,
+because Workers static-assets `_redirects` only supports **path** redirects,
+not host redirects — and we keep the Worker static-assets-only (no `main`).
+The apex is the canonical everywhere (`<link rel=canonical>`, `og:url`,
+`sitemap.xml`). `/index.html` already auto-307s to `/` via Workers Assets.
+
 ### Deploy
 
 Wrangler is a **global** install on the dev machine, not a project dep:
