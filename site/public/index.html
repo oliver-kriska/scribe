@@ -275,6 +275,7 @@
   "uploadDate": "2026-07-22T00:00:00+02:00",
   "duration": "PT60S",
   "contentUrl": "https://assets.getscribe.dev/scribe-explainer.mp4",
+  "embedUrl": "https://www.youtube.com/embed/YpQmy_wpDs0",
   "transcript": "The expensive half of the job was never deciding. It's rebuilding the context you already had. Close the terminal, and the fix you just earned is gone. Every new agent session starts from zero, re-deriving what you already know. scribe reads your git history, your Claude Code and Codex sessions, and the links you send yourself, and writes the wiki for you. Memory your agents read before they act. Not a second brain you maintain and never reopen. It runs on cron. Four streams in, noise filtered before any model runs, compiled into a typed graph of plain markdown. Fix a nasty bug in one project on Monday. Friday, in a different repo, your agent already has your fix. Not RAG. Not Obsidian. Not another model-on-every-session burner. Plain markdown in git you own, running fully local for zero dollars. scribe. Set it up once, and your tools write the notes for you. Install at getscribe.dev.",
   "publisher": { "@type": "Organization", "name": "scribe", "url": "https://getscribe.dev" }
 }
@@ -289,6 +290,7 @@
   "uploadDate": "2026-07-22T00:00:00+02:00",
   "duration": "PT61S",
   "contentUrl": "https://assets.getscribe.dev/scribe-explainer-teams.mp4",
+  "embedUrl": "https://www.youtube.com/embed/8Q3HxE6cHTE",
   "transcript": "Now imagine that memory isn't just yours. A new teammate asks the question you answered six months ago. The decision is in your head, or in a session nobody can find. scribe scales to your team. Every engineer's agent sessions write to one shared, git-backed knowledge base. Every fix, every rejected library, every decision your team makes becomes context the whole team's agents read before they act. A new hire's first Claude Code session already knows why you chose what you chose. Shared memory is a trust problem, not a sync problem. A secret gate scans every commit, so no key ever leaks into the wiki. Allowed remotes lock which repos it reads. Every promoted note carries where it came from. Still plain markdown in a repo your team owns. scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev.",
   "publisher": { "@type": "Organization", "name": "scribe", "url": "https://getscribe.dev" }
 }
@@ -999,6 +1001,8 @@
     color: var(--fg-soft);
     font-size: 14.5px;
   }
+  .video-yt { max-width: 900px; margin: 10px auto 0; font-size: 13px; }
+  .video-yt a { color: var(--accent); font-weight: 500; }
   /* two-tier divider: marks where the decider spine ends and the reference /
      "under the hood" sections begin. A single tinted landmark band (not an
      alternating stripe); mono label kept muted so it doesn't add accent surface. */
@@ -2457,6 +2461,7 @@
         <track kind="captions" src="/scribe-explainer.vtt" srclang="en" label="English" default>
       </video>
     </figure>
+    <p class="video-yt"><a href="https://youtu.be/YpQmy_wpDs0" target="_blank" rel="noopener">Watch on YouTube ↗</a></p>
     <details class="transcript">
       <summary>Transcript</summary>
       <p>The expensive half of the job was never deciding. It's rebuilding the context you already had. Close the terminal, and the fix you just earned is gone. Every new agent session starts from zero, re-deriving what you already know. scribe reads your git history, your Claude Code and Codex sessions, and the links you send yourself, and writes the wiki for you. Memory your agents read before they act. Not a second brain you maintain and never reopen. It runs on cron. Four streams in, noise filtered before any model runs, compiled into a typed graph of plain markdown. Fix a nasty bug in one project on Monday. Friday, in a different repo, your agent already has your fix. Not RAG. Not Obsidian. Not another model-on-every-session burner. Plain markdown in git you own, running fully local for zero dollars. scribe. Set it up once, and your tools write the notes for you. Install at getscribe.dev.</p>
@@ -2920,6 +2925,7 @@ advisory locks table-ambiguous under load.
         <track kind="captions" src="/scribe-explainer-teams.vtt" srclang="en" label="English" default>
       </video>
     </figure>
+    <p class="video-yt"><a href="https://youtu.be/8Q3HxE6cHTE" target="_blank" rel="noopener">Watch on YouTube ↗</a></p>
     <details class="transcript">
       <summary>Transcript</summary>
       <p>Now imagine that memory isn't just yours. A new teammate asks the question you answered six months ago. The decision is in your head, or in a session nobody can find. scribe scales to your team. Every engineer's agent sessions write to one shared, git-backed knowledge base. Every fix, every rejected library, every decision your team makes becomes context the whole team's agents read before they act. A new hire's first Claude Code session already knows why you chose what you chose. Shared memory is a trust problem, not a sync problem. A secret gate scans every commit, so no key ever leaks into the wiki. Allowed remotes lock which repos it reads. Every promoted note carries where it came from. Still plain markdown in a repo your team owns. scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev.</p>
