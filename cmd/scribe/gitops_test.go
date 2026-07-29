@@ -1,6 +1,50 @@
 package main
 
-import "testing"
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestGitChangedFiles_FirstExtractionHonorsGitignore(t *testing.T) {
+	repo := initTestGitRepo(t, "Extract Tester")
+
+	// Tracked source doc + a gitignored dependency tree whose text files
+	// match the extract patterns (the .venv-blows-past-the-cap case).
+	writeTestArticle(t, repo, "README.md", "# proj\n")
+	writeTestArticle(t, repo, ".gitignore", ".venv/\n")
+	writeTestArticle(t, repo, ".venv/lib/pkg.txt", "junk\n")
+	writeTestArticle(t, repo, ".venv/notes.md", "junk\n")
+	gitRun(t, repo, "add", "README.md", ".gitignore")
+	gitRun(t, repo, "commit", "-q", "-m", "init")
+	// Untracked but NOT ignored — must still be extracted.
+	writeTestArticle(t, repo, "docs/guide.txt", "kept\n")
+
+	got := gitChangedFiles(repo, "", []string{"*.md", "*.txt", "*.exs", "*.ex"})
+
+	has := func(suffix string) bool {
+		for _, f := range got {
+			if strings.HasSuffix(f, suffix) {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("/README.md") {
+		t.Errorf("tracked README.md missing from first-extraction set: %v", got)
+	}
+	if !has("/docs/guide.txt") {
+		t.Errorf("untracked-non-ignored docs/guide.txt missing: %v", got)
+	}
+	for _, f := range got {
+		if strings.Contains(f, "/.venv/") {
+			t.Errorf("gitignored .venv file leaked into extraction set: %s", f)
+		}
+		if !filepath.IsAbs(f) {
+			t.Errorf("returned path is not absolute: %s", f)
+		}
+	}
+}
 
 func TestPullBeforeSyncEnabled_DefaultsTrue(t *testing.T) {
 	if !pullBeforeSyncEnabled(nil) {

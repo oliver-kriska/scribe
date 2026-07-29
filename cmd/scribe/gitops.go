@@ -30,7 +30,18 @@ func gitRemoteURL(repoPath string) string {
 // gitChangedFiles returns files changed between two SHAs (or all files if oldSHA is empty).
 func gitChangedFiles(repoPath, oldSHA string, patterns []string) []string {
 	if oldSHA == "" {
-		// Never synced: list all matching files
+		// Never synced: list all matching files. In a git repo, use
+		// `git ls-files` so .gitignore is honored — a raw filesystem walk
+		// (findFiles) sweeps in gitignored dependency trees (.venv,
+		// site-packages, __pycache__) whose text files match the extract
+		// patterns, inflating the count past sync.max_extract_files so the
+		// whole project is skipped. The git-diff path below is already
+		// gitignore-aware (diff only sees tracked files); this keeps the
+		// first-extraction path consistent with it. findFiles remains the
+		// fallback for a non-git directory.
+		if hasGit(repoPath) {
+			return gitListFiles(repoPath, patterns)
+		}
 		return findFiles(repoPath, patterns)
 	}
 
@@ -47,6 +58,31 @@ func gitChangedFiles(repoPath, oldSHA string, patterns []string) []string {
 		if line != "" {
 			files = append(files, filepath.Join(repoPath, line))
 		}
+	}
+	return files
+}
+
+// gitListFiles returns tracked and untracked-but-not-ignored files under
+// repoPath matching patterns, honoring .gitignore via --exclude-standard.
+// It's the first-extraction (empty oldSHA) counterpart to gitChangedFiles'
+// `git diff` path — both stay gitignore-aware, unlike the findFiles
+// filesystem walk. patterns are git pathspecs (e.g. "*.md") and match at
+// any depth. Returns absolute paths; nil on any git error (callers then
+// treat the project as having no changed files this run).
+func gitListFiles(repoPath string, patterns []string) []string {
+	args := make([]string, 0, 7+len(patterns))
+	args = append(args, "-C", repoPath, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--")
+	args = append(args, patterns...)
+	out, err := runCmdRaw("", "git", args...)
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for rel := range strings.SplitSeq(string(out), "\x00") {
+		if rel == "" {
+			continue
+		}
+		files = append(files, filepath.Join(repoPath, rel))
 	}
 	return files
 }
