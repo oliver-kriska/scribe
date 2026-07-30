@@ -815,7 +815,7 @@ type CronStatusCmd struct{}
 // deterministic tests. `crontab -l` exits non-zero when the user has no
 // crontab; callers turn that into an actionable missing-schedule result.
 var readUserCrontab = func() (string, error) {
-	out, err := exec.Command("crontab", "-l").CombinedOutput() //nolint:noctx // one-shot local probe
+	out, err := exec.Command("crontab", "-l").CombinedOutput()
 	return string(out), err
 }
 
