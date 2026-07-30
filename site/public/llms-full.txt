@@ -88,6 +88,8 @@ Deeper differentiators against the broader memory-tool landscape:
 
 scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB: clone the repo, and scribe rebuilds local state from what's committed. The obvious fear with sharing agent sessions — a leaked secret, a private client repo, one teammate's config change reaching everyone — is exactly what the gates below are built to stop. **Only knowledge you meant to keep crosses into the shared KB; every gate here is a mechanism in the code, not a policy in a doc.**
 
+**Exact commands:** the [setup runbook](https://getscribe.dev/setup.md) separates the one team owner who creates and publishes the KB from the commands every member runs after cloning it.
+
 The trust boundary, concretely — what tries to cross into the shared KB and what stops it:
 
 - An **AWS key in a session transcript** → the **secret-scan gate** → held back, never committed.
@@ -202,10 +204,10 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 78 command paths, one binary. The ones you'll actually type:
 
 ```
-scribe init                 # bootstrap a KB, wire the agent handshake
+scribe init --bind          # bootstrap a KB, wire the agent handshake
 scribe sync                 # discover → extract → absorb → reindex
 scribe sync --sessions      # mine coding-agent transcripts
-scribe sync --estimate      # token estimate, zero LLM calls
+scribe sync --dry-run --estimate  # token estimate, no writes or LLM calls
 scribe doctor               # validate setup, cron, git remote, Ollama
 scribe commit               # stage + push the KB to your private remote
 scribe dream                # weekly consolidation (Ollama-driven)
@@ -241,14 +243,38 @@ The loop closes here: every absorb tick reindexes `qmd`; the next Claude Code, C
 
 ## Install
 
+For personal Anthropic, local Ollama, hosted-provider, team-owner, team-member,
+second-KB, and Linux recipes — plus a prompt that lets Claude Code or Codex
+perform and verify the setup — use <https://getscribe.dev/setup.md>.
+
 ```sh
 brew tap oliver-kriska/scribe
 brew install oliver-kriska/scribe/scribe
-scribe init --path ~/my-kb
+scribe init --path ~/my-kb --bind
 cd ~/my-kb
+scribe skill install
+scribe sync --discover
+scribe projects review
+scribe sync --dry-run --estimate
 scribe cron install
 scribe doctor
 ```
+
+### Install with Claude Code or Codex
+
+Paste this prompt into your coding agent:
+
+> Read https://getscribe.dev/setup.md and set up scribe on this machine.
+> Before changing anything, ask me for the setup profile, KB path, and LLM provider.
+> For a team setup, also ask whether I am creating or joining the KB and ask for the private git remote.
+> Inspect existing state before changing it. Execute the applicable steps; do not only explain them.
+> Never use --force. Never print or commit secrets.
+> Ask before the first real scribe sync because it may call an LLM and incur cost.
+> Finish with the runbook's verification checklist and report what passed and what still needs human action.
+
+The complete runbook tells the agent which actions still require a human, such
+as provider sign-in, private-repository creation, API-key entry, macOS Full Disk
+Access, and saving Linux crontab entries.
 
 Or via shell installer: `curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh | bash`
 

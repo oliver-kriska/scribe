@@ -164,8 +164,8 @@ main() {
     esac
 
     echo
-    echo "Next: scribe init --path ~/my-kb"
-    echo "See README for cron + Full Disk Access (macOS) details."
+    echo "Next: scribe init --path ~/my-kb --bind"
+    echo "Setup recipes (personal, Ollama, hosted, teams): https://getscribe.dev/setup.md"
 }
 
 main

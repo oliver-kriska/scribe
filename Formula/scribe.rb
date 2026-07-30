@@ -64,9 +64,13 @@ class Scribe < Formula
       Already installed by brew as dependencies: git, sqlite, ccrider.
 
       After installing:
-        scribe init --path ~/my-kb
+        scribe init --path ~/my-kb --bind
+        cd ~/my-kb && scribe skill install
         scribe cron install           # macOS: LaunchAgents
                                       # Linux: prints crontab lines to paste
+        scribe doctor
+
+      Personal, Ollama, hosted, and team recipes: https://getscribe.dev/setup.md
 
       macOS — Full Disk Access for `scribe capture` (iMessage):
         scribe fda                    # opens the FDA pane and walks you through
