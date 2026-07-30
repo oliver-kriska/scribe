@@ -1,12 +1,40 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestPrintedLinuxCronBlockMatchesStatusDetection(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStdout := os.Stdout
+	os.Stdout = w
+	printErr := printLinuxCronInstructions(scribeJobs("/home/alice/.local/bin/scribe"), false)
+	_ = w.Close()
+	os.Stdout = origStdout
+	t.Cleanup(func() {
+		os.Stdout = origStdout
+		_ = r.Close()
+	})
+
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if printErr != nil {
+		t.Fatalf("printLinuxCronInstructions: %v", printErr)
+	}
+	if !hasScribeCrontabBlock(string(out)) {
+		t.Fatalf("printed cron block is not recognized by status/doctor:\n%s", out)
+	}
+}
 
 // TestRenderCrontab confirms the collapsing rules and the one-line-per-slot
 // fallback match what we document in README. Each case is one representative
