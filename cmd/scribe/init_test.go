@@ -2,12 +2,47 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCollectVarsCheckDoesNotPrompt(t *testing.T) {
+	stdinR, stdinW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stdinW.Close() // immediate EOF if code incorrectly tries to read
+	stdoutR, stdoutW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	origStdin, origStdout := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = stdinR, stdoutW
+	_, collectErr := (&InitCmd{Check: true}).collectVars("/home/alice/my-kb")
+	_ = stdoutW.Close()
+	os.Stdin, os.Stdout = origStdin, origStdout
+	t.Cleanup(func() {
+		os.Stdin, os.Stdout = origStdin, origStdout
+		_ = stdinR.Close()
+		_ = stdoutR.Close()
+	})
+
+	out, err := io.ReadAll(stdoutR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if collectErr != nil {
+		t.Fatalf("collectVars: %v", collectErr)
+	}
+	if len(out) != 0 {
+		t.Fatalf("--check prompted or printed during variable collection: %q", out)
+	}
+}
 
 // TestIsThrowawayPath guards the heuristic that gates global state
 // rewrites in `scribe init -p ...`. The 2026-05-13 incident burned
@@ -572,5 +607,31 @@ func TestInstallUserConfigPreservesSecretsAndRegistry(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Errorf("config perms = %o, want 0600 (file carries an api key)", perm)
+	}
+}
+
+func TestInstallUserConfigPreservesPreviousDefaultInRegistry(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	oldRoot := filepath.Join(fakeHome, "personal-kb")
+	newRoot := filepath.Join(fakeHome, "team-kb")
+	if err := os.MkdirAll(filepath.Dir(userConfigPath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userConfigPath(), []byte("kb_dir: "+oldRoot+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installUserConfig(newRoot, false, true, true); err != nil {
+		t.Fatalf("installUserConfig: %v", err)
+	}
+	got := loadUserConfig()
+	if got.KBDir != newRoot {
+		t.Errorf("KBDir = %q, want %q", got.KBDir, newRoot)
+	}
+	if len(got.KBs) != 1 || got.KBs[0] != oldRoot {
+		t.Errorf("KBs = %v, want previous default %q preserved", got.KBs, oldRoot)
 	}
 }

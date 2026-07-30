@@ -322,24 +322,30 @@ func (c *InitCmd) runBootstrap() error {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Review the generated scribe.yaml and tweak domains/triage keywords.")
+	fmt.Println("  2. Install agent skills: cd " + abs + " && scribe skill install")
+	fmt.Println("  3. Discover + approve sources: scribe sync --discover && scribe projects review")
+	fmt.Println("  4. Preview cost/scope: scribe sync --dry-run --estimate")
 	if other := otherKBServedByAgents(abs); other != "" {
-		fmt.Printf("  2. Cron: this machine's scribe LaunchAgents already serve %s —\n", other)
-		fmt.Println("     one agent set per machine for now (issue #26). Run this KB manually,")
-		fmt.Printf("     e.g. SCRIBE_KB=%s scribe sync\n", abs)
+		fmt.Printf("  5. Migrate legacy cron (currently tied to %s): scribe cron install\n", other)
+		fmt.Println("     This registers both KBs and replaces the old single-KB agents with")
+		fmt.Println("     the current KB-agnostic `scribe each` scheduler.")
 	} else {
-		fmt.Println("  2. Install cron: scribe cron install")
+		fmt.Println("  5. Install cron: scribe cron install")
 		fmt.Println("     (On Linux, `scribe cron install` prints crontab entries you paste manually.)")
 	}
-	fmt.Println("  3. Run `scribe doctor` to verify dependencies + freshness checks.")
+	fmt.Println("  6. Run `scribe doctor` to verify dependencies + freshness checks.")
 	if strings.EqualFold(vars.LLMProvider, "ollama") {
-		fmt.Println("  4. Ollama mode: `ollama serve` must be running when sync fires; `scribe doctor` probes it.")
+		fmt.Println("  7. Ollama mode: `ollama serve` must be running when sync fires; `scribe doctor` probes it.")
 	}
 	if c.Team {
 		fmt.Println()
 		fmt.Println("Team KB setup (this KB is in shared mode — scripts/projects.json is gitignored):")
-		fmt.Println("  push it:        git remote add origin git@github.com:yourorg/team-kb.git && git push -u origin main")
-		fmt.Println("  members clone:  git clone <remote> ~/team-kb && SCRIBE_KB=~/team-kb scribe sync")
-		fmt.Println("  approvals:      each member runs `scribe projects review` after their first sync")
+		fmt.Println("  owner publish:  install + commit the skills, then add a private origin and push")
+		fmt.Println("  members clone:  git clone <remote> ~/team-kb && cd ~/team-kb")
+		fmt.Println("  member bind:    scribe init --bind --yes")
+		fmt.Println("  member trust:   scribe config diff && scribe config trust")
+		fmt.Println("  member sources: scribe sync --discover && scribe projects review")
+		fmt.Println("  member verify:  scribe sync --dry-run --estimate && scribe cron install && scribe doctor")
 		fmt.Println("  config trust:   sensitive scribe.yaml keys are locked per-machine; review pushed")
 		fmt.Println("                  changes with `scribe config diff`, accept with `scribe config trust`")
 		fmt.Println("  personal bits:  per-user settings (capture handles, extra filters) go in the")
@@ -350,6 +356,7 @@ func (c *InitCmd) runBootstrap() error {
 		fmt.Println("                  unprefixed `password = ...` leaks, at the cost of noise)")
 		fmt.Println("  consolidation:  `scribe dream` coordinates itself via a committed lease — the")
 		fmt.Println("                  first machine claims the weekly cycle, the rest skip")
+		fmt.Println("  full runbook:   https://getscribe.dev/setup.md")
 	}
 
 	// Offer to walk the user through Full Disk Access right now. Only on
@@ -375,26 +382,27 @@ func (c *InitCmd) runBootstrap() error {
 // --check mode any missing value falls back to a safe default so init can
 // run unattended (CI, shell scripts).
 func (c *InitCmd) collectVars(abs string) (templateVars, error) {
+	interactive := !c.Yes && !c.Check
 	kbName := c.KBName
 	if kbName == "" {
 		kbName = filepath.Base(abs)
 	}
 	owner := c.OwnerName
-	if owner == "" && !c.Yes {
+	if owner == "" && interactive {
 		owner = prompt("Owner name", os.Getenv("USER"))
 	}
 	if owner == "" {
 		owner = os.Getenv("USER")
 	}
 	ownerCtx := c.OwnerContext
-	if ownerCtx == "" && !c.Yes {
+	if ownerCtx == "" && interactive {
 		ownerCtx = prompt("Owner context (one sentence about your role/projects)", "Knowledge base owner.")
 	}
 	if ownerCtx == "" {
 		ownerCtx = "Knowledge base owner."
 	}
 	domains := c.Domains
-	if len(domains) == 0 && !c.Yes {
+	if len(domains) == 0 && interactive {
 		raw := prompt("Domains (comma-separated, e.g. work, oss, personal)", "")
 		for d := range strings.SplitSeq(raw, ",") {
 			d = strings.TrimSpace(d)
@@ -404,7 +412,7 @@ func (c *InitCmd) collectVars(abs string) (templateVars, error) {
 		}
 	}
 	handle := c.Handle
-	if handle == "" && !c.Yes {
+	if handle == "" && interactive {
 		handle = prompt("iMessage self-chat handle (leave empty to disable capture)", "")
 	}
 
@@ -412,7 +420,7 @@ func (c *InitCmd) collectVars(abs string) (templateVars, error) {
 	// --provider on the CLI, that wins. Otherwise prompt in
 	// interactive mode; default anthropic.
 	provider := strings.ToLower(strings.TrimSpace(c.Provider))
-	if provider == "" && !c.Yes {
+	if provider == "" && interactive {
 		provider = prompt("LLM provider (anthropic | ollama)", "anthropic")
 	}
 	if provider == "" {
@@ -963,6 +971,22 @@ func installUserConfig(root string, check, yes, bound bool) error {
 	// run inside a second KB silently wiped the machine's API key and KB
 	// list. Marshal the loaded config back instead; omitempty keeps the
 	// file minimal when those fields are unset.
+	//
+	// Preserve the previous default as an explicit registry member before
+	// repointing. Otherwise binding a cloned team KB would make a personal KB
+	// disappear from `scribe each` whenever it was represented only by kb_dir.
+	if uc.KBDir != "" && !samePath(uc.KBDir, root) {
+		alreadyListed := false
+		for _, kb := range uc.KBs {
+			if samePath(kb, uc.KBDir) {
+				alreadyListed = true
+				break
+			}
+		}
+		if !alreadyListed {
+			uc.KBs = append(uc.KBs, uc.KBDir)
+		}
+	}
 	uc.KBDir = root
 	body, err := yaml.Marshal(&uc)
 	if err != nil {

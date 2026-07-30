@@ -694,6 +694,10 @@ func routeDocOrEpub(hasMarker bool) string {
 // ---- Cron ----
 
 func checkCron(root string) []check {
+	if runtimeGOOS != "darwin" {
+		return checkLinuxCron(root)
+	}
+
 	var out []check
 	binary := resolveScribeBinary()
 	jobs := scribeJobs(binary)
@@ -739,6 +743,44 @@ func checkCron(root string) []check {
 			Section: "cron", Name: "foreign-agents", Status: statusWarn,
 			Detail: fmt.Sprintf("%d LaunchAgent(s) outside scribe's job set also reference this binary or KB: %s — duplicated jobs run twice per slot", len(foreign), strings.Join(foreign, ", ")),
 			Fix:    "review each; if it is a stale duplicate: launchctl bootout gui/$(id -u)/<label> and move the plist out of ~/Library/LaunchAgents",
+		})
+	}
+	return out
+}
+
+func checkLinuxCron(root string) []check {
+	var out []check
+	if kbRegistered(loadUserConfig(), root) {
+		out = append(out, check{
+			Section: "cron", Name: "kb-scope", Status: statusOK,
+			Detail: fmt.Sprintf("this KB is registered — `scribe each` serves it (%d KB(s) on this machine)", len(registeredKBs())),
+		})
+	} else {
+		out = append(out, check{
+			Section: "cron", Name: "kb-scope", Status: statusFail,
+			Detail: "this KB is not in the machine registry — scheduled `scribe each` runs skip it",
+			Fix:    "scribe kb add " + root,
+		})
+	}
+
+	raw, err := readUserCrontab()
+	switch {
+	case err != nil:
+		out = append(out, check{
+			Section: "cron", Name: "linux-crontab", Status: statusFail,
+			Detail: "no readable user crontab with the scribe block",
+			Fix:    "run `scribe cron install`, review the output, then paste it into `crontab -e`",
+		})
+	case hasScribeCrontabBlock(raw):
+		out = append(out, check{
+			Section: "cron", Name: "linux-crontab", Status: statusOK,
+			Detail: "scribe marker block with KB-agnostic `scribe each` jobs is installed",
+		})
+	default:
+		out = append(out, check{
+			Section: "cron", Name: "linux-crontab", Status: statusFail,
+			Detail: "user crontab does not contain the current scribe block",
+			Fix:    "run `scribe cron install`, review the output, then paste it into `crontab -e`",
 		})
 	}
 	return out
