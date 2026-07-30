@@ -4,6 +4,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Fixed
+- `scribe init --check` no longer prompts for scaffold values, preserving its
+  documented read-only, non-interactive contract.
+- Rebinding the default KB preserves the previous default as an explicit
+  registry entry, so machine-level `scribe each` schedules continue serving it.
+- On Linux, `scribe cron status` and `scribe doctor --section cron` now inspect
+  the user crontab and current KB registry membership instead of reporting
+  missing macOS LaunchAgents.
+
 ## [0.4.4] — 2026-08-10
 
 A reliability and agent-integration release. It closes pass-2 content omission

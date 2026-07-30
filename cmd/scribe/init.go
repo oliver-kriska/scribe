@@ -386,26 +386,27 @@ func (c *InitCmd) runBootstrap() error {
 // --check mode any missing value falls back to a safe default so init can
 // run unattended (CI, shell scripts).
 func (c *InitCmd) collectVars(abs string) (templateVars, error) {
+	interactive := !c.Yes && !c.Check
 	kbName := c.KBName
 	if kbName == "" {
 		kbName = filepath.Base(abs)
 	}
 	owner := c.OwnerName
-	if owner == "" && !c.Yes {
+	if owner == "" && interactive {
 		owner = prompt("Owner name", os.Getenv("USER"))
 	}
 	if owner == "" {
 		owner = os.Getenv("USER")
 	}
 	ownerCtx := c.OwnerContext
-	if ownerCtx == "" && !c.Yes {
+	if ownerCtx == "" && interactive {
 		ownerCtx = prompt("Owner context (one sentence about your role/projects)", "Knowledge base owner.")
 	}
 	if ownerCtx == "" {
 		ownerCtx = "Knowledge base owner."
 	}
 	domains := c.Domains
-	if len(domains) == 0 && !c.Yes {
+	if len(domains) == 0 && interactive {
 		raw := prompt("Domains (comma-separated, e.g. work, oss, personal)", "")
 		for d := range strings.SplitSeq(raw, ",") {
 			d = strings.TrimSpace(d)
@@ -415,7 +416,7 @@ func (c *InitCmd) collectVars(abs string) (templateVars, error) {
 		}
 	}
 	handle := c.Handle
-	if handle == "" && !c.Yes {
+	if handle == "" && interactive {
 		handle = prompt("iMessage self-chat handle (leave empty to disable capture)", "")
 	}
 
@@ -423,7 +424,7 @@ func (c *InitCmd) collectVars(abs string) (templateVars, error) {
 	// --provider on the CLI, that wins. Otherwise prompt in
 	// interactive mode; default anthropic.
 	provider := strings.ToLower(strings.TrimSpace(c.Provider))
-	if provider == "" && !c.Yes {
+	if provider == "" && interactive {
 		provider = prompt("LLM provider (anthropic | ollama)", "anthropic")
 	}
 	if provider == "" {
@@ -1004,6 +1005,22 @@ func installUserConfig(root string, check, yes, bound bool) error {
 	// run inside a second KB silently wiped the machine's API key and KB
 	// list. Marshal the loaded config back instead; omitempty keeps the
 	// file minimal when those fields are unset.
+	//
+	// Preserve the previous default as an explicit registry member before
+	// repointing. Otherwise binding a cloned team KB would make a personal KB
+	// disappear from `scribe each` whenever it was represented only by kb_dir.
+	if uc.KBDir != "" && !samePath(uc.KBDir, root) {
+		alreadyListed := false
+		for _, kb := range uc.KBs {
+			if samePath(kb, uc.KBDir) {
+				alreadyListed = true
+				break
+			}
+		}
+		if !alreadyListed {
+			uc.KBs = append(uc.KBs, uc.KBDir)
+		}
+	}
 	uc.KBDir = root
 	body, err := yaml.Marshal(&uc)
 	if err != nil {

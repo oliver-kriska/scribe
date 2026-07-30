@@ -15,7 +15,8 @@ import (
 	"time"
 )
 
-// CronCmd manages macOS LaunchAgents for scribe's scheduled KB jobs.
+// CronCmd manages scheduled scribe KB jobs: macOS LaunchAgents, or
+// ready-to-paste crontab guidance and status on Linux.
 //
 // Why LaunchAgents instead of crontab: macOS cron runs under launchd without
 // a user Aqua session, so it cannot read the login keychain. Claude Code's
@@ -24,8 +25,8 @@ import (
 // the gui/<uid> domain run inside the user's login session and have keychain
 // access. This command installs/removes/status those plists.
 type CronCmd struct {
-	Install   CronInstallCmd   `cmd:"" help:"Install LaunchAgent plists for scribe KB jobs."`
-	Status    CronStatusCmd    `cmd:"" help:"Show status of scribe LaunchAgents."`
+	Install   CronInstallCmd   `cmd:"" help:"Install macOS LaunchAgents or print Linux crontab entries."`
+	Status    CronStatusCmd    `cmd:"" help:"Show status of macOS LaunchAgents or the Linux crontab block."`
 	Uninstall CronUninstallCmd `cmd:"" help:"Unload and remove scribe LaunchAgents."`
 }
 
@@ -810,6 +811,14 @@ func (c *CronInstallCmd) Run() error {
 
 type CronStatusCmd struct{}
 
+// readUserCrontab is shared with doctor's Linux cron check and indirected for
+// deterministic tests. `crontab -l` exits non-zero when the user has no
+// crontab; callers turn that into an actionable missing-schedule result.
+var readUserCrontab = func() (string, error) {
+	out, err := exec.Command("crontab", "-l").CombinedOutput()
+	return string(out), err
+}
+
 func (c *CronStatusCmd) Run() error {
 	// KB-agnostic: agents serve the whole registry, so status no longer
 	// needs a KB context. Show the registry first, then per-agent state.
@@ -821,6 +830,21 @@ func (c *CronStatusCmd) Run() error {
 		fmt.Println()
 	} else {
 		fmt.Printf("No registered KBs — add one with `scribe kb add <path>` (or set kb_dir in %s)\n\n", userConfigPath())
+	}
+
+	if runtime.GOOS != "darwin" {
+		raw, err := readUserCrontab()
+		switch {
+		case err != nil:
+			fmt.Println("Linux crontab: missing or unreadable")
+			fmt.Println("Run `scribe cron install`, review the printed block, then add it with `crontab -e`.")
+		case hasScribeCrontabBlock(raw):
+			fmt.Println("Linux crontab: scribe block installed")
+		default:
+			fmt.Println("Linux crontab: no current scribe block found")
+			fmt.Println("Run `scribe cron install`, review the printed block, then add it with `crontab -e`.")
+		}
+		return nil
 	}
 
 	jobs := scribeJobs(resolveScribeBinary())
@@ -835,6 +859,12 @@ func (c *CronStatusCmd) Run() error {
 		fmt.Printf("%-28s %-10s %s\n", label, state, path)
 	}
 	return nil
+}
+
+func hasScribeCrontabBlock(raw string) bool {
+	return strings.Contains(raw, "# ---- scribe ----") &&
+		strings.Contains(raw, "# ---- end scribe ----") &&
+		strings.Contains(raw, "scribe each --")
 }
 
 // ---- uninstall ----
