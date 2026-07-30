@@ -34,5 +34,8 @@
 /llms-full.txt
   Cache-Control: public, max-age=3600
 
+/setup.md
+  Cache-Control: public, max-age=3600
+
 /index.md
   Cache-Control: public, max-age=3600

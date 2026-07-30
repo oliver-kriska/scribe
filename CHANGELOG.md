@@ -13,6 +13,23 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   the user crontab and current KB registry membership instead of reporting
   missing macOS LaunchAgents.
 
+### Changed — setup and team onboarding
+- Added a public, prompt-compatible setup runbook for humans and coding agents
+  covering personal Anthropic, local Ollama, hosted OpenAI-compatible providers,
+  team-owner, team-member, second-KB, Linux cron, and verification flows. It
+  explains why the embedded skills help after bootstrap but do not replace
+  install/init/source approval/cron/doctor.
+- Quick-start commands now use `init --bind` so the documented flow actually
+  installs the machine-global Claude/Codex/Amp handshake, and cost previews use
+  the CLI's real no-write form: `sync --dry-run --estimate`.
+- Team setup now separates the one owner who runs `init --team` from members who
+  clone and run `init --bind --yes`, quotes shared `--allow '~/work'` paths so
+  the owner's shell does not commit an absolute home path, and documents shared
+  versus per-machine state, config trust, skill drift, source approval, and the
+  current multi-KB scheduler.
+- Linux guidance distinguishes generated crontab output from an installed
+  schedule and verifies it directly with `crontab -l`.
+
 ## [0.4.4] — 2026-08-10
 
 A reliability and agent-integration release. It closes pass-2 content omission

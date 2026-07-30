@@ -17,13 +17,15 @@ section with `scribe doctor --section <name>` when you're chasing one thing.
 ### "Nothing is being extracted / KB feels empty or stale"
 1. `scribe status` — look at `raw/articles` count, absorb/contextualize pending,
    and **last sync**. A stale/absent last-sync means the pipeline isn't running.
-2. `scribe doctor --section cron` — if the LaunchAgents aren't installed, the
-   daemon never runs. Fix: `scribe cron install`, then `scribe cron status`.
+2. Check scheduling — `scribe doctor --section cron`, then `scribe cron status`.
+   Both report macOS LaunchAgents or the Linux crontab block. Fix with
+   `scribe cron install` (on Linux it prints the block to paste into
+   `crontab -e`; confirm with `crontab -l`).
 3. `scribe doctor --section freshness` — flags when the last run is older than
    expected (reads `output/runs/*.jsonl`).
 4. If cron is healthy but backlog is high, run one pipeline pass by hand:
    `scribe sync` (respect the lock rule — one at a time, never backgrounded).
-   Preview first with `scribe sync --estimate`.
+   Preview first with `scribe sync --dry-run --estimate`.
 
 ### "Sessions aren't being mined"
 - `scribe triage` (read-only) shows unprocessed sessions scored by density. If

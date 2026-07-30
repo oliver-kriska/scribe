@@ -163,14 +163,38 @@ make install    # builds with -tags sqlite_fts5 to ./bin/scribe, then deploys to
 
 ---
 
-## Quick start
+## Quick start — personal KB
+
+If you want Claude Code or Codex to do the setup, give it the public
+**[setup runbook](https://getscribe.dev/setup.md)**. It includes a copyable
+prompt, personal/Ollama/hosted/team recipes, safety rules, and an explicit
+verification checklist. `scribe skill install` is useful after bootstrap, but
+it is not a replacement for installing dependencies, choosing a setup profile,
+running `init --bind`, approving sources, and verifying cron/configuration
+(plus Ollama health when selected).
 
 ```sh
-scribe init --path ~/my-kb
+scribe init --path ~/my-kb --bind
 cd ~/my-kb
-git remote add origin git@github.com:you/my-kb.git   # optional
+scribe skill install
+scribe sync --discover
+scribe projects review
+scribe sync --dry-run --estimate
 scribe cron install
 scribe doctor
+```
+
+`--bind` makes this KB the machine default and writes the scribe handshake into
+`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.config/amp/AGENTS.md`.
+Without it, init may
+deliberately leave those machine-global files untouched when another KB is
+already configured. The discover/review pair is the source-consent gate; the
+dry-run estimate does not write or call an LLM. Add a private git remote when
+you want backup/sync:
+
+```sh
+git remote add origin git@github.com:you/my-kb.git
+git push -u origin main
 ```
 
 `scribe init` will prompt for:
@@ -180,7 +204,7 @@ scribe doctor
 - **Domains** — comma-separated list for the `domain:` frontmatter field. `personal` and `general` are always added.
 - **iMessage self-chat handle** — phone number or email you iMessage yourself at (optional; leave empty to disable capture).
 
-Everything gets written into `scribe.yaml` at the KB root. Re-run `scribe init --check` any time to re-validate against dependencies and templates.
+Everything gets written into `scribe.yaml` at the KB root. Re-run `scribe init --check` any time to re-validate against dependencies and templates without prompts or writes.
 
 On macOS, if you gave a self-chat handle, `scribe init` finishes by offering to walk you through Full Disk Access for the scribe binary (needed by `scribe capture`). You can skip and run `scribe fda` later — see [Full Disk Access](#full-disk-access-for-scribe-capture) below.
 
@@ -191,6 +215,7 @@ All prompts take matching flags:
 ```sh
 scribe init \
   --path ~/my-kb \
+  --bind \
   --owner-name "Alice" \
   --owner-context "Platform engineer. Main projects: weblog, infra." \
   --domains weblog,infra \
@@ -245,7 +270,9 @@ Manual fallback if you ever need it: System Settings → Privacy & Security → 
 
 ### Linux — manual crontab
 
-On Linux, `scribe cron install` prints crontab(5) lines you paste into `crontab -e`. Example output:
+On Linux, `scribe cron install` prints crontab(5) lines you paste into
+`crontab -e`. Abbreviated example output (the command prints the complete block
+with the machine's real `PATH` and scribe binary):
 
 ```
 # ---- scribe ----
@@ -253,23 +280,36 @@ SHELL=/bin/bash
 PATH=/home/alice/.local/bin:/usr/bin:/bin:...
 
 # Hourly KB auto-commit
-7 */1 * * * cd "/home/alice/my-kb" && /home/alice/.local/bin/scribe commit
+7 */1 * * * /home/alice/.local/bin/scribe each -- commit
 
 # Project extraction every 2h
-23 */2 * * * cd "/home/alice/my-kb" && /home/alice/.local/bin/scribe sync --max 2
+23 */2 * * * /home/alice/.local/bin/scribe each -- sync --max 2
 
 # Session mining at 3:00, 12:00, 18:00
-0 12 * * * cd "/home/alice/my-kb" && /home/alice/.local/bin/scribe sync --sessions --sessions-max 3 --skip-large
-0 18 * * * cd "/home/alice/my-kb" && /home/alice/.local/bin/scribe sync --sessions --sessions-max 3 --skip-large
-0 3  * * * cd "/home/alice/my-kb" && /home/alice/.local/bin/scribe sync --sessions --sessions-max 3 --skip-large
+0 12 * * * /home/alice/.local/bin/scribe each -- sync --sessions --sessions-max 3 --skip-large
+0 18 * * * /home/alice/.local/bin/scribe each -- sync --sessions --sessions-max 3 --skip-large
+0 3 * * * /home/alice/.local/bin/scribe each -- sync --sessions --sessions-max 3 --skip-large
 
 # Drain queued URLs into raw/articles/ every 30min
-*/30 * * * * cd "/home/alice/my-kb" && /home/alice/.local/bin/scribe ingest drain
+*/30 * * * * /home/alice/.local/bin/scribe each -- ingest drain
 
 # Weekly Dream cycle (Sun 2am)
-0 2 * * 0 cd "/home/alice/my-kb" && /home/alice/.local/bin/scribe dream
+0 2 * * 0 /home/alice/.local/bin/scribe each -- dream
 # ---- end scribe ----
 ```
+
+The generated jobs use `scribe each` so one machine-level crontab serves every
+KB in `scribe kb list`. After saving the block, verify its presence and review
+the machine registry directly:
+
+```sh
+crontab -l
+scribe cron status
+scribe kb list
+```
+
+`scribe cron status` reads the user crontab on Linux, so it confirms the block
+actually landed rather than just that scribe printed it.
 
 The `scribe watch` job (fsnotify watcher for ccrider's SQLite DB) is not cron-friendly — run it under systemd-user, supervisord, or a persistent tmux/screen session. `scribe cron install` on Linux names the jobs that fall into this category so you know what still needs a supervisor.
 
@@ -643,9 +683,9 @@ This is for the Claude Desktop **app** only — Claude Code and Codex CLI alread
 ## Command reference
 
 ```sh
-scribe init         # bootstrap a KB or check an existing one
-scribe init --allow ~/work --disallow ~/personal   # scaffold with discovery filters baked in
-scribe init --team -p ~/team-kb --allow ~/work     # scaffold a shared team KB (per-machine manifest)
+scribe init --path ~/my-kb --bind  # bootstrap a default KB and wire the agent handshake
+scribe init --path ~/my-kb --bind --allow '~/work' --disallow '~/personal'  # portable discovery filters
+scribe init --bind --team -p ~/team-kb --allow '~/work'      # team owner: scaffold a shared KB
 scribe sync         # discover → extract → absorb → reindex
 scribe projects     # list discovered projects with status
 scribe projects review       # interactively approve/ignore pending projects
@@ -656,7 +696,7 @@ scribe config diff  # team KBs: show sensitive scribe.yaml keys changed since la
 scribe config trust # team KBs: approve the current sensitive keys
 scribe config update # append commented docs for options added since your scribe.yaml was scaffolded
 scribe sync --sessions       # mine all ccrider providers + direct Codex rollouts (when codex.mine is on)
-scribe sync --estimate       # token estimate for pending work (no LLM calls)
+scribe sync --dry-run --estimate  # token estimate for pending work (no writes or LLM calls)
 scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml
 scribe triage       # score unprocessed sessions by knowledge density
 scribe capture      # pull links you iMessaged to yourself as bookmarks (macOS only; needs Full Disk Access)
@@ -703,32 +743,80 @@ own sessions and repos; git is the merge layer.
 
 ### The recipe
 
+The complete prompt-compatible owner/member runbook is also available at
+**<https://getscribe.dev/setup.md>**. The important split is: one owner
+bootstraps with `--team`; every other member clones that exact repository and
+runs `init --bind --yes` inside it. Teammates do not each create a new team KB.
+
 1. **One member bootstraps the team KB** and pushes it to a private remote:
 
    ```sh
-   scribe init -p ~/team-kb --kb-name teamkb --team --allow ~/work
+   scribe init \
+     --path ~/team-kb \
+     --bind \
+     --kb-name teamkb \
+     --team \
+     --allow '~/work'
    cd ~/team-kb
+   scribe skill install
+   git add scribe.yaml .claude/skills .agents/skills
+   git commit -m "chore: add scribe agent skills"
    git remote add origin git@github.com:yourorg/team-kb.git
    git push -u origin main
    ```
 
    `--team` gitignores the per-machine manifest (see below) and prints these
-   setup steps. The `--allow` filter is committed in `scribe.yaml` and applies
-   to every member (`~` expands per-machine), so personal projects never leak
-   into the team repo.
+   setup steps. The quotes around `'~/work'` prevent the shell from replacing
+   `~` with the owner's absolute home path before it is committed. Scribe then
+   expands `~` separately on every member's machine. If checkout layouts differ,
+   add `sources.allowed_remotes: [github.com/yourorg]` to `scribe.yaml` before
+   the commit; origin identity is a stronger team boundary than a path alone.
 
-2. **Everyone else clones and points scribe at it** (per session or per cron job):
+2. **Everyone else clones and onboards their machine**:
+
+   If a member already has a personal KB and wants to keep it as the default
+   agent handshake, use the [second-KB profile](https://getscribe.dev/setup.md)
+   instead of `--bind`. Making the team KB the default is safe either way:
+   rebinding preserves the previous default as an explicit registry entry, so
+   the personal KB stays in the machine-level schedule (`scribe kb list`).
 
    ```sh
    git clone git@github.com:yourorg/team-kb.git ~/team-kb
-   SCRIBE_KB=~/team-kb scribe sync
+   cd ~/team-kb
+   git config user.name "Alice Example"
+   git config user.email "alice@example.com"
+
+   scribe init --bind --yes
+   scribe config diff
+   scribe config trust
+   scribe skill install --check
+   scribe sync --discover
+   scribe projects review
+   scribe sync --dry-run --estimate
+   scribe cron install
+   scribe doctor
    ```
 
-   The first sync rebuilds a fresh machine-local manifest, discovers that member's
-   projects (as `pending` — they approve with `scribe projects review`), and starts
-   extracting.
+   Do **not** pass `--path`, `--team`, `--kb-name`, `--allow`, or `--provider`
+   on member machines: those choices are already committed by the owner. The
+   member's `init --bind --yes` checks the existing clone and installs that
+   machine's default + Claude/Codex/Amp handshake. `config trust` explicitly accepts
+   the cloned sensitive config. Discovery rebuilds the gitignored machine-local
+   manifest, and nothing is extracted until that member approves projects.
 
-3. **That's the whole setup.** The pieces below make multi-writer work:
+3. **Shared versus per-member state**:
+
+   - **Same for everyone:** the private git remote and committed `scribe.yaml`
+     (`team`, KB name, domains, provider policy, shared source/remote filters,
+     secret gate). Change it once through git; each member reviews sensitive
+     drift with `scribe config diff` / `scribe config trust`.
+   - **Different on every machine:** `scripts/projects.json`, git identity,
+     credentials, capture handles, subscriptions, personal stop words, and extra
+     source exclusions. Put local KB overrides in gitignored
+     `scribe.local.yaml`; put hosted-provider keys and personal stop words in
+     `~/.config/scribe/config.yaml`.
+
+   The pieces below explain why multi-writer operation works:
 
    - `scripts/projects.json` is **gitignored** because it holds machine-local
      absolute paths, git SHAs, and approval decisions. Sharing it breaks when two
@@ -816,9 +904,15 @@ competing claims.
   others see the active claim after their pull and skip. Expired leases are
   stealable. Best-effort — with the remote unreachable, two machines may dream
   once concurrently, which only costs duplicate consolidation churn.
-- **`scribe cron install` manages one KB per machine** — the LaunchAgent labels
-  are fixed. Run your personal KB on cron and sync the team KB with a manual
-  cron line (`SCRIBE_KB=~/team-kb scribe sync`), or vice versa.
+- **One machine-level schedule serves every registered KB.** The macOS
+  LaunchAgents and generated Linux crontab lines run `scribe each` across
+  `scribe kb list`. Register secondary KBs explicitly with `scribe kb add`; on
+  macOS, `scribe cron install` also registers the current KB while installing
+  or refreshing the one KB-agnostic agent set. Use
+  `each.cadence` in an individual KB's `scribe.yaml` to pace it differently.
+  The global Claude/Codex/Amp handshake still points at one default KB at a time;
+  the [setup runbook](https://getscribe.dev/setup.md#a-second-kb-on-one-machine)
+  shows how to keep a personal default while registering a team KB.
 - **Concurrent edits to the same article can conflict** like any git repo. The
   append-heavy article layout keeps this rare; resolve by hand and re-run sync.
 - **Session transcripts never leave the machine.** Only the distilled wiki
