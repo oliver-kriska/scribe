@@ -4,6 +4,29 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Changed — setup and team onboarding
+- Added a public, prompt-compatible setup runbook for humans and coding agents
+  covering personal Anthropic, local Ollama, hosted OpenAI-compatible providers,
+  team-owner, team-member, second-KB, Linux cron, and verification flows. It
+  explains why the embedded skills help after bootstrap but do not replace
+  install/init/source approval/cron/doctor.
+- Quick-start commands now use `init --bind` so the documented flow actually
+  installs the machine-global Claude/Codex handshake, and cost previews use the
+  CLI's real no-write form: `sync --dry-run --estimate`.
+- Team setup now separates the one owner who runs `init --team` from members who
+  clone and run `init --bind --yes`, quotes shared `--allow '~/work'` paths so
+  the owner's shell does not commit an absolute home path, and documents shared
+  versus per-machine state, config trust, skill drift, source approval, and the
+  current multi-KB scheduler.
+- `scribe init` prints the same discover/review/estimate/skills flow and no
+  longer describes the retired one-KB-per-machine scheduler behavior.
+- `scribe init --check` is now genuinely non-interactive, and rebinding a
+  machine to another default KB preserves the previous default in the explicit
+  registry so `scribe each` continues scheduling both.
+- Linux `scribe cron status` and `scribe doctor --section cron` now inspect the
+  user's installed crontab block instead of falsely reporting missing macOS
+  LaunchAgent plists; doctor also verifies that the current KB is registered.
+
 ## [0.4.3] — 2026-07-22
 
 A session-ingestion compatibility release. Scribe now treats ccrider as the

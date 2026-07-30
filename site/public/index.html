@@ -97,8 +97,14 @@
     {
       "@type": "HowToStep",
       "name": "Bootstrap a knowledge base",
-      "text": "Scaffold a KB and wire the agent handshake into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md: scribe init --path ~/my-kb",
+      "text": "Scaffold a KB and wire the agent handshake into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md: scribe init --path ~/my-kb --bind",
       "url": "https://getscribe.dev/#install"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Install skills and approve sources",
+      "text": "Install the agent skills, discover candidate repositories, and approve only the intended sources: cd ~/my-kb; scribe skill install; scribe sync --discover; scribe projects review",
+      "url": "https://getscribe.dev/setup.md"
     },
     {
       "@type": "HowToStep",
@@ -252,7 +258,7 @@
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
-  "dateModified": "2026-07-23T00:00:00+02:00",
+  "dateModified": "2026-07-30T00:00:00+02:00",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -1406,6 +1412,11 @@
     color: var(--fg);
     overflow-x: auto;
     white-space: pre;
+  }
+  .code-panel pre.agent-prompt {
+    max-width: 82ch;
+    padding-right: 72px;
+    white-space: pre-wrap;
   }
   .code-panel .comment { color: var(--muted-2); }
   .code-panel .kw { color: var(--accent); font-weight: 500; }
@@ -2964,6 +2975,7 @@ advisory locks table-ambiguous under load.
       <div class="s__eyebrow">For teams</div>
       <h2 class="s__title">One KB. The whole team writes to it.</h2>
       <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB. The obvious fear with sharing agent sessions — a leaked secret, a private client repo, one teammate's config change reaching everyone — is exactly what the gates below are built to stop. Only knowledge you meant to keep crosses into the shared KB.</p>
+      <p class="s__sub"><a href="/setup.md">Run the exact team-owner and team-member setup commands →</a></p>
     </header>
 
     <figure class="video-embed video-embed--teams">
@@ -3228,7 +3240,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
       <summary>The full surface &mdash; everything scribe does</summary>
       <dl class="surface__grid">
         <dt>Capture</dt><dd>git repos &middot; coding-agent sessions (ccrider FTS5) &middot; direct Codex rollouts &middot; iMessage self-chat &middot; drop files &middot; URL ingest</dd>
-        <dt>Triage</dt><dd>FTS5 keyword-density gate &middot; zero-LLM reject &middot; <code>sync --estimate</code> token preview</dd>
+        <dt>Triage</dt><dd>FTS5 keyword-density gate &middot; zero-LLM reject &middot; <code>sync --dry-run --estimate</code> token preview</dd>
         <dt>Extract</dt><dd>two-pass absorb &middot; entity-first fan-out &middot; retrieval-context splicing &middot; <code>deep</code> / <code>assess</code> batch passes</dd>
         <dt>Graph</dt><dd>closed 10-kind typed-edge schema &middot; <code>_backlinks.json</code> &middot; orphan linking &middot; qmd BM25 + vector index</dd>
         <dt>Hygiene</dt><dd>frontmatter validate &middot; structural lint &middot; staleness ledger &middot; contradiction ledger &middot; Dream 4-phase consolidation</dd>
@@ -3246,12 +3258,13 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
     <header class="s__head">
       <div class="s__eyebrow">CLI</div>
       <h2 class="s__title">Set it up once. Forget it.</h2>
-      <p class="s__sub">Two commands to install. One <code>llm</code> block in <code>scribe.yaml</code> routes the whole pipeline local, hosted, or Anthropic. One query from any terminal.</p>
+      <p class="s__sub">One guided init, then explicit source approval and verification. The <a href="/setup.md">setup runbook</a> has copyable personal, Ollama, hosted-provider, team-owner, and team-member recipes. One <code>llm</code> block in <code>scribe.yaml</code> routes the whole pipeline local, hosted, or Anthropic.</p>
     </header>
 
     <div class="code-card">
       <div class="code-tabs" role="tablist" id="tabs">
         <button class="code-tab" role="tab" data-tab="install" aria-selected="true" aria-controls="panel-install" id="tab-install" tabindex="0">install</button>
+        <button class="code-tab" role="tab" data-tab="agent" aria-selected="false" aria-controls="panel-agent" id="tab-agent" tabindex="-1">install with agent</button>
         <button class="code-tab" role="tab" data-tab="local" aria-selected="false" aria-controls="panel-local" id="tab-local" tabindex="-1">scribe.yaml · local</button>
         <button class="code-tab" role="tab" data-tab="hosted" aria-selected="false" aria-controls="panel-hosted" id="tab-hosted" tabindex="-1">scribe.yaml · hosted</button>
         <button class="code-tab" role="tab" data-tab="anthropic" aria-selected="false" aria-controls="panel-anthropic" id="tab-anthropic" tabindex="-1">scribe.yaml · Anthropic</button>
@@ -3266,13 +3279,28 @@ brew tap oliver-kriska/scribe
 brew install oliver-kriska/scribe/scribe
 
 <span class="comment"># one-time setup</span>
-scribe init <span class="flag">--path</span> <span class="str">~/my-kb</span>
+scribe init <span class="flag">--path</span> <span class="str">~/my-kb</span> <span class="flag">--bind</span>
 <span class="kw">cd</span> ~/my-kb
+scribe skill install
+scribe sync <span class="flag">--discover</span>
+scribe projects review
+scribe sync <span class="flag">--dry-run --estimate</span>
 scribe cron install
 scribe doctor
 
 <span class="comment"># or via shell installer</span>
 curl <span class="flag">-fsSL</span> <span class="str">https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh</span> | bash</pre>
+      </div>
+
+      <div class="code-panel" data-tab="agent" id="panel-agent" role="tabpanel" aria-labelledby="tab-agent" tabindex="0">
+        <button class="copy-btn" data-copy-target="code-agent" aria-label="Copy coding-agent setup prompt">copy prompt</button>
+<pre id="code-agent" class="agent-prompt">Read https://getscribe.dev/setup.md and set up scribe on this machine.
+Before changing anything, ask me for the setup profile, KB path, and LLM provider.
+For a team setup, also ask whether I am creating or joining the KB and ask for the private git remote.
+Inspect existing state before changing it. Execute the applicable steps; do not only explain them.
+Never use --force. Never print or commit secrets.
+Ask before the first real scribe sync because it may call an LLM and incur cost.
+Finish with the runbook's verification checklist and report what passed and what still needs human action.</pre>
       </div>
 
       <div class="code-panel" data-tab="local" id="panel-local" role="tabpanel" aria-labelledby="tab-local" tabindex="0">
@@ -3434,10 +3462,10 @@ scribe doctor <span class="flag">--section</span> localmode
           </div>
           <div class="terminal__title">~/kb — scribe</div>
         </div>
-        <pre class="commands__lines"><code><span class="cmd-prompt">$</span> <span class="cmd-name">scribe init</span>                        <span class="cmd-cmt"># bootstrap a KB, wire the agent handshake</span>
+        <pre class="commands__lines"><code><span class="cmd-prompt">$</span> <span class="cmd-name">scribe init --bind</span>                 <span class="cmd-cmt"># bootstrap a KB, wire the agent handshake</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span>                        <span class="cmd-cmt"># discover → extract → absorb → reindex</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--sessions</span>             <span class="cmd-cmt"># mine coding-agent transcripts</span>
-<span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--estimate</span>             <span class="cmd-cmt"># token estimate, zero LLM calls</span>
+<span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--dry-run --estimate</span>   <span class="cmd-cmt"># token estimate, no writes or LLM calls</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe doctor</span>                      <span class="cmd-cmt"># validate setup, cron, git remote, Ollama</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe commit</span>                      <span class="cmd-cmt"># stage + push the KB to your private remote</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe dream</span>                       <span class="cmd-cmt"># weekly consolidation (Ollama-driven)</span>
@@ -3581,14 +3609,11 @@ scribe doctor <span class="flag">--section</span> localmode
 <!-- ============================ CTA END ============================ -->
 <section class="s cta-end" id="install">
   <div class="wrap">
-    <h2>Install in 60 seconds.</h2>
-    <p>One <code>brew install</code>, one <code>scribe init</code>, and your tools start writing the notes for you.</p>
+    <h2>Install, approve sources, verify.</h2>
+    <p>Use the personal, local Ollama, hosted-provider, or team recipe. The same runbook can be pasted into Claude Code or Codex so it performs the setup and proves what works.</p>
     <div class="cta-end__buttons">
-      <a class="btn btn--accent" href="https://github.com/oliver-kriska/scribe">
-        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-        Get scribe on GitHub
-      </a>
-      <a class="btn btn--ghost" href="#cli">Read the CLI →</a>
+      <a class="btn btn--accent" href="/setup.md">Open the setup runbook</a>
+      <a class="btn btn--ghost" href="https://github.com/oliver-kriska/scribe">View source on GitHub →</a>
     </div>
   </div>
 </section>
@@ -3615,7 +3640,7 @@ scribe doctor <span class="flag">--section</span> localmode
       <div class="footer__col">
         <h4>Resources</h4>
         <a href="https://github.com/oliver-kriska/scribe">GitHub repo</a>
-        <a href="https://github.com/oliver-kriska/scribe#install">Install guide</a>
+        <a href="/setup.md">Setup runbook</a>
         <a href="https://github.com/oliver-kriska/scribe/issues">Issues</a>
         <a href="#faq">FAQ</a>
       </div>
@@ -3628,7 +3653,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT · last updated 2026-07-23</span>
+      <span>MIT · last updated 2026-07-30</span>
       <span>github.com/oliver-kriska/scribe</span>
     </div>
   </div>
@@ -3857,7 +3882,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
   const SCENES = [
     {
-      cmd: 'scribe init --path ~/my-kb',
+      cmd: 'scribe init --path ~/my-kb --bind',
       out: [
         '<span class="out-key">→</span> creating ~/my-kb/scribe.yaml',
         '<span class="out-key">→</span> writing handshake into ~/.claude/CLAUDE.md',

@@ -1,6 +1,6 @@
 ---
 name: scribe-cli
-description: Operate the scribe CLI to keep a knowledge-base pipeline healthy — diagnose with doctor/status, run sync/extraction, manage cron and Full Disk Access, and pick the right command for a maintenance goal. Use when the user wants to run scribe, asks which scribe command does X, says their KB is stale/empty or extraction/sync stopped, or is reading `scribe doctor`/`scribe status` output. For authoring KB content use scribe-kb; for the `scribe lint` content-quality queue use scribe-kb-tidy.
+description: Set up and operate the scribe CLI — install/init personal or team KBs, diagnose with doctor/status, run sync/extraction, manage cron and Full Disk Access, and pick the right command for a maintenance goal. Use when the user wants to install or run scribe, asks which scribe command or init/team flags to use, says their KB is stale/empty or extraction/sync stopped, or is reading `scribe doctor`/`scribe status` output. For authoring KB content use scribe-kb; for the `scribe lint` content-quality queue use scribe-kb-tidy.
 ---
 
 # scribe CLI — operations agent skill
@@ -15,6 +15,30 @@ Two sibling skills own the other halves and this skill routes to them:
 - **scribe-kb** — authoring/searching KB *content* (articles, drop files, qmd).
 - **scribe-kb-tidy** — working the `scribe lint` content-quality queue (split
   bloated, archive rolling, merge thin/self-named-dirs).
+
+## Installation or bootstrap requests
+
+For zero-to-running setup, read the public, prompt-compatible runbook first:
+<https://getscribe.dev/setup.md>. It has separate command sequences for a
+personal Anthropic KB, local Ollama, a hosted OpenAI-compatible provider, the
+team owner, each team member, a second KB on one machine, and Linux cron. Follow
+one profile rather than mixing flags.
+
+Key distinctions the short command map cannot express:
+
+- Fresh/default KBs use `scribe init --path <kb> --bind`; `--bind` is what
+  installs the machine-global Claude/Codex handshake.
+- Only the team owner uses `--team`, `--kb-name`, `--allow`, and `--provider`.
+  Members clone, `cd` into the checkout, then run `scribe init --bind --yes`.
+- Quote a shared tilde path (`--allow '~/work'`) so the shell does not commit the
+  owner's absolute home path.
+- Discover and approve sources before extraction: `scribe sync --discover`,
+  then `scribe projects review`.
+- The safe cost/scope preflight is `scribe sync --dry-run --estimate`. Ask before
+  the first real sync when it may spend tokens.
+- `scribe skill install` is post-bootstrap assistance. It does not install the
+  binary/dependencies, choose personal versus team mode, bind the handshake,
+  approve sources, install cron, or verify the provider.
 
 ## Golden rule: diagnose read-only before you act
 
@@ -51,7 +75,7 @@ blocks the real cron job. Everything else here is safe to run interactively.
 | See what's pending / backlog | `scribe status` |
 | Run the whole pipeline now | `scribe sync` (mind the lock rule) |
 | Just mine agent sessions | `scribe sync --sessions` |
-| Estimate token cost before syncing | `scribe sync --estimate` |
+| Estimate token cost before syncing | `scribe sync --dry-run --estimate` |
 | Score unprocessed sessions by value | `scribe triage` |
 | Enroll a repo for extraction | `scribe projects add <path>` |
 | Approve/ignore discovered repos | `scribe projects review` |
@@ -103,5 +127,7 @@ the chat.db/FDA check). Verify the live binary first: `which scribe` and
 - `references/TROUBLESHOOT.md` — symptom → doctor section → fix, for the common
   failure modes (extraction stalled, cron off, FDA lost, ollama down, qmd not
   indexed, lint errors).
+- <https://getscribe.dev/setup.md> — zero-to-running personal/team setup and
+  verification, including the exact init flags.
 - The **scribe-kb** and **scribe-kb-tidy** skills (installed alongside) for
   content authoring and the lint content queue respectively.

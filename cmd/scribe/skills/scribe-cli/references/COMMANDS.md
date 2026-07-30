@@ -11,7 +11,7 @@ lock shared with cron — run one at a time, never backgrounded.
 |---|---|
 | `scribe sync` | **lock** — full pipeline: discover → extract → mine sessions → absorb → reindex → commit |
 | `scribe sync --sessions` | Mine all ccrider-indexed agent sessions, plus direct Codex rollouts when enabled |
-| `scribe sync --estimate` | Token estimate for pending work — no LLM calls |
+| `scribe sync --dry-run --estimate` | Token estimate for pending work — no writes or LLM calls |
 | `scribe sync --max-absorb N` | One-shot override of `absorb.max_per_run` |
 | `scribe status` | **read-only** — scoreboard: raw-by-density, absorb/contextualize progress, backlog, last sync, qmd/ollama health |
 | `scribe doctor` | **read-only** — health check: deps, config, localmode, convert, cron, state, freshness, errors, contradictions, stale, vault. Ends with the status scoreboard |
@@ -76,8 +76,10 @@ dir) that `scribe lint` flags but `--fix` can't repair → hand off to the
 
 | Command | What it does |
 |---|---|
-| `scribe init` | Scaffold a fresh KB (writes scribe.yaml, templates, agent handshake blocks) |
-| `scribe cron {install,status,uninstall}` | Manage the macOS LaunchAgents that run the pipeline |
+| `scribe init --path <kb> --bind` | Scaffold a fresh default KB and install the machine-global Claude/Codex handshake blocks |
+| `scribe init --team --path <kb> --bind` | Team owner only: scaffold a shared KB; members clone and run `scribe init --bind --yes` inside it |
+| `scribe cron {install,status}` | Manage macOS LaunchAgents or print/check the Linux crontab block |
+| `scribe cron uninstall` | Unload and remove macOS LaunchAgents; edit Linux crontab entries manually |
 | `scribe fda` | macOS Full Disk Access probe + interactive grant (needed for chat.db capture) |
 | `scribe install-tools` | Bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion |
 | `scribe skill {install,list}` | Install/list the embedded agent skills (scribe-kb, scribe-kb-tidy, scribe-cli) |

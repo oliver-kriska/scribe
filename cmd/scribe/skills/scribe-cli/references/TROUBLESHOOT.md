@@ -23,7 +23,7 @@ section with `scribe doctor --section <name>` when you're chasing one thing.
    expected (reads `output/runs/*.jsonl`).
 4. If cron is healthy but backlog is high, run one pipeline pass by hand:
    `scribe sync` (respect the lock rule — one at a time, never backgrounded).
-   Preview first with `scribe sync --estimate`.
+   Preview first with `scribe sync --dry-run --estimate`.
 
 ### "Sessions aren't being mined"
 - `scribe triage` (read-only) shows unprocessed sessions scored by density. If
