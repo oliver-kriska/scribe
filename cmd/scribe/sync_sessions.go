@@ -488,6 +488,7 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 		totalMined++
 		sinceCheckpoint++
 		batchIDs = append(batchIDs, r.sessionID)
+		recordSessionProcessed(root, r.sessionID) // Go owns the _sessions_log write, not the model
 		logMsg("sync", "%s: %s complete (%d/%d mined)", label, r.sessionID, totalMined, len(sessionIDs))
 
 		// Checkpoint after every N successful extractions.
@@ -549,6 +550,7 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 
 		totalMined++
 		batchIDs = append(batchIDs, sid)
+		recordSessionProcessed(root, sid) // Go owns the _sessions_log write, not the model
 		logMsg("sync", "%s [%d/%d] complete (%d mined)", label, i+1, len(sessionIDs), totalMined)
 
 		// Checkpoint.
@@ -566,6 +568,26 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 		}
 	}
 	return totalMined, false
+}
+
+// recordSessionProcessed marks a session as processed in
+// wiki/_sessions_log.json, via Go, under sessionsLogMu (through
+// applyMetaSessionsLogAppend). The legacy tools prompt used to delegate
+// this to the model's own Write/Edit tool call — but with parallel=N that
+// meant N uncoordinated `claude -p` subprocesses read-modify-writing one
+// JSON file, a cross-process lost-update race that left sessions
+// permanently unrecorded and re-mined every run. Go owns the write now
+// (idempotent, keyed on session_id); the prompt no longer touches the file.
+//
+// A failed mark is degraded, not a warning: the session stays in the
+// candidate pool and is re-mined next run, so a unit of work is repeated
+// at full LLM cost. Phase name matches the pre-filter skip-marker write
+// so `scribe doctor` groups both writes to this file under one phase.
+func recordSessionProcessed(root, sessionID string) {
+	if err := applyMetaAction(root, MetaAction{Op: "sessions_log_append", SessionID: sessionID}, ApplyOptions{}); err != nil {
+		logPhaseDegraded("sync", "session log update",
+			"could not record session %s as processed (it will be re-mined): %v", sessionID, err)
+	}
 }
 
 // largeSessionBudget is the separate large-session (>300 msgs) lane cap.

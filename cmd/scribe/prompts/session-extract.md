@@ -14,8 +14,9 @@ For each session:
 3. Write or update wiki articles in {{KB_DIR}} following frontmatter conventions
 4. Set sources to include session:{session_id}
 5. For learnings and decisions, append to rolling memory files (projects/{name}/learnings.md, decisions-log.md)
-6. Update wiki/_sessions_log.json — add each processed session ID to the 'processed' object with timestamp
-7. Rebuild _index.md and _backlinks.json
+6. Rebuild _index.md and _backlinks.json
+
+Do NOT touch wiki/_sessions_log.json — scribe records processed sessions itself after this run.
 
 Extract the non-obvious knowledge — decisions with reasoning, patterns that apply across projects, research findings with data. Not conversation summaries or routine code changes.
 Do NOT git commit.
