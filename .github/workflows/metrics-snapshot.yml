@@ -1,0 +1,133 @@
+# Weekly, privacy-preserving usage signals for scribe. No CLI telemetry is
+# collected: this workflow snapshots only aggregate data already held by GitHub.
+#
+# Required repository Actions secret:
+#   TRAFFIC_TOKEN — fine-grained PAT scoped only to oliver-kriska/scribe with
+#                   Repository permissions → Administration: Read-only.
+#
+# GitHub's traffic/clones and traffic/views endpoints require push access and
+# the Administration: read permission. Actions' built-in GITHUB_TOKEN cannot be
+# granted that permission, so the PAT is used only for those two GET requests.
+# GITHUB_TOKEN handles every other API read and the metrics commit.
+
+name: metrics-snapshot
+
+on:
+  schedule:
+    - cron: "15 7 * * 1" # weekly, Monday 07:15 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: metrics-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Snapshot GitHub usage signals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRAFFIC_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$TRAFFIC_TOKEN" ]]; then
+            echo "TRAFFIC_TOKEN is required; see the workflow header for its minimal scope." >&2
+            exit 1
+          fi
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          gh api --paginate "repos/$REPOSITORY/releases?per_page=100" >"$tmp/release-pages.json"
+          jq -s 'add' "$tmp/release-pages.json" >"$tmp/releases.json"
+          gh api "repos/$REPOSITORY" >"$tmp/repository.json"
+          gh api --method GET search/issues -f q="repo:$REPOSITORY is:issue is:open" >"$tmp/issues.json"
+          gh api --method GET search/issues -f q="repo:$REPOSITORY is:pr is:open" >"$tmp/pulls.json"
+          GH_TOKEN="$TRAFFIC_TOKEN" gh api "repos/$REPOSITORY/traffic/clones?per=day" >"$tmp/clones.json"
+          GH_TOKEN="$TRAFFIC_TOKEN" gh api "repos/$REPOSITORY/traffic/views?per=day" >"$tmp/views.json"
+
+          captured_at="$(date -u +%FT%TZ)"
+          snapshot="metrics/$(date -u +%F).json"
+          mkdir -p metrics
+
+          jq -n \
+            --arg captured_at "$captured_at" \
+            --arg repository "$REPOSITORY" \
+            --arg default_branch "$DEFAULT_BRANCH" \
+            --slurpfile repo "$tmp/repository.json" \
+            --slurpfile issues "$tmp/issues.json" \
+            --slurpfile pulls "$tmp/pulls.json" \
+            --slurpfile clones "$tmp/clones.json" \
+            --slurpfile views "$tmp/views.json" \
+            --slurpfile releases "$tmp/releases.json" '
+              def days($rows):
+                $rows | map({date: (.timestamp[0:10]), count, uniques});
+              def binary_assets:
+                map(select(.name | test("^scribe_[^/]+_(darwin|linux)_(amd64|arm64)\\.tar\\.gz$")))
+                | map({name, download_count});
+              {
+                schema_version: 1,
+                captured_at: $captured_at,
+                repository: {
+                  full_name: $repository,
+                  default_branch: $default_branch,
+                  stars: $repo[0].stargazers_count,
+                  forks: $repo[0].forks_count,
+                  open_issues: $issues[0].total_count,
+                  open_pull_requests: $pulls[0].total_count
+                },
+                traffic: {
+                  window_days: 14,
+                  clones: {
+                    count: $clones[0].count,
+                    uniques: $clones[0].uniques,
+                    days: days($clones[0].clones)
+                  },
+                  views: {
+                    count: $views[0].count,
+                    uniques: $views[0].uniques,
+                    days: days($views[0].views)
+                  }
+                },
+                releases: (
+                  ($releases[0] // [])
+                  | map(. as $release | (.assets | binary_assets) as $assets | {
+                      tag_name: $release.tag_name,
+                      published_at: $release.published_at,
+                      prerelease: $release.prerelease,
+                      downloads: ($assets | map(.download_count) | add // 0),
+                      assets: $assets
+                    })
+                  | sort_by(.published_at // "")
+                )
+              }
+            ' >"$snapshot"
+
+          jq -e '.schema_version == 1 and (.releases | type == "array")' "$snapshot" >/dev/null
+
+      - name: Commit snapshot
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git add metrics/*.json
+          if git diff --cached --quiet; then
+            echo "A snapshot already exists for today; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(metrics): snapshot $(date -u +%F) [skip ci]"
+          git push origin "HEAD:$DEFAULT_BRANCH"

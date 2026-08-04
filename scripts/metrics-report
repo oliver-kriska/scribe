@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Print a compact trend report from metrics/*.json snapshots.
+
+set -euo pipefail
+
+repo_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+cd "$repo_root"
+
+shopt -s nullglob
+snapshots=(metrics/*.json)
+if ((${#snapshots[@]} == 0)); then
+    echo "No metrics snapshots found under $repo_root/metrics." >&2
+    exit 1
+fi
+
+command -v jq >/dev/null 2>&1 || {
+    echo "metrics-report requires jq." >&2
+    exit 1
+}
+
+printf '%-10s %7s %7s %7s %7s %7s %10s\n' \
+    "date" "stars" "clones" "unique" "views" "unique" "downloads"
+printf '%-10s %7s %7s %7s %7s %7s %10s\n' \
+    "----------" "-------" "-------" "-------" "-------" "-------" "----------"
+
+for snapshot in "${snapshots[@]}"; do
+    jq -r '[
+      .captured_at[0:10],
+      .repository.stars,
+      .traffic.clones.count,
+      .traffic.clones.uniques,
+      .traffic.views.count,
+      .traffic.views.uniques,
+      ([.releases[].downloads] | add // 0)
+    ] | @tsv' "$snapshot" |
+        while IFS=$'\t' read -r date stars clones clone_uniques views view_uniques downloads; do
+            printf '%-10s %7d %7d %7d %7d %7d %10d\n' \
+                "$date" "$stars" "$clones" "$clone_uniques" "$views" "$view_uniques" "$downloads"
+        done
+done
+
+printf '\nDownloads by release (cumulative count and change since prior snapshot)\n'
+printf '%-10s %-14s %12s %10s\n' "date" "release" "downloads" "change"
+printf '%-10s %-14s %12s %10s\n' "----------" "--------------" "------------" "----------"
+
+declare -A previous=()
+for snapshot in "${snapshots[@]}"; do
+    while IFS=$'\t' read -r date release downloads; do
+        change="—"
+        if [[ -n "${previous[$release]+set}" ]]; then
+            change="+$((downloads - previous[$release]))"
+        fi
+        printf '%-10s %-14s %12d %10s\n' "$date" "$release" "$downloads" "$change"
+        previous[$release]="$downloads"
+    done < <(jq -r '.captured_at[0:10] as $date | .releases[] | [$date, .tag_name, .downloads] | @tsv' "$snapshot")
+done
