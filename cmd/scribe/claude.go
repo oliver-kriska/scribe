@@ -58,7 +58,24 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 		"--output-format", "json",
 	}
 	if len(tools) > 0 {
-		args = append(args, "--allowedTools", strings.Join(tools, ","))
+		// Belt-and-suspenders on the second pair: Go owns
+		// wiki/_sessions_log.json (recordSessionProcessed); deny the model
+		// write access to it so a stray model write can't race Go's writer.
+		// A Write() rule is silently ignored, so the rule must be spelled
+		// Edit(); deny wins over allow. cmd.Dir is root (set below), so this
+		// cwd-relative pattern resolves to <root>/wiki/_sessions_log.json.
+		//
+		// Measured against Claude Code 2.1.236, with Write granted and this
+		// rule set (see the PR for the harness): a Write to the named path is
+		// rejected, a Bash redirect to the same path is rejected, and a
+		// sibling (wiki/article.md) still writes — the rule is file-scoped
+		// despite an error message that says "directory". MultiEdit and
+		// NotebookEdit are not granted by any caller here, so they are
+		// untested rather than known-covered.
+		args = append(args,
+			"--allowedTools", strings.Join(tools, ","),
+			"--disallowedTools", "Edit(wiki/_sessions_log.json)",
+		)
 	}
 
 	// Phase 3D: start timer for the cost ledger. The deferred append

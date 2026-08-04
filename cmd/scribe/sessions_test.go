@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"os"
@@ -556,5 +557,33 @@ func TestRecordSessionProcessed(t *testing.T) {
 	}
 	if len(logFile.Processed) != 2 {
 		t.Errorf("re-recording sess-alpha should be idempotent; got %d entries: %s", len(logFile.Processed), raw)
+	}
+}
+
+// TestUpdateJSONFileRefusesCorruptFile pins the data-loss guard: a state file
+// that exists but won't parse must abort the update, not get silently reset to
+// only the new entry (which for _sessions_log.json would wipe all history).
+func TestUpdateJSONFileRefusesCorruptFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	if err := updateJSONFile(path, func(d map[string]any) { d["a"] = "1" }); err != nil {
+		t.Fatalf("valid update failed: %v", err)
+	}
+
+	corrupt := []byte(`{"a": "1"`) // truncated JSON (simulates a partial write)
+	if err := os.WriteFile(path, corrupt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := updateJSONFile(path, func(d map[string]any) { d["b"] = "2" }); err == nil {
+		t.Fatal("expected updateJSONFile to refuse a corrupt file, got nil error")
+	}
+	if raw, _ := os.ReadFile(path); !bytes.Equal(raw, corrupt) {
+		t.Errorf("corrupt file was overwritten (data loss): %q", raw)
+	}
+
+	// A missing file is still a legitimate empty start, not an error.
+	if err := updateJSONFile(filepath.Join(dir, "fresh.json"), func(d map[string]any) { d["x"] = "y" }); err != nil {
+		t.Fatalf("missing file should initialize cleanly: %v", err)
 	}
 }

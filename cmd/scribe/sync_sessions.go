@@ -590,6 +590,19 @@ func recordSessionProcessed(root, sessionID string) {
 	}
 }
 
+// updateSessionsLog serializes a Go write to wiki/_sessions_log.json through
+// sessionsLogMu — the same mutex applyMetaSessionsLogAppend holds — so the
+// several in-process writers (per-session record, mechanical skip-mark,
+// last_scan bump) can't interleave their read-modify-writes and drop each
+// other's updates. Do NOT call this from a path that already holds
+// sessionsLogMu (e.g. inside applyMetaSessionsLogAppend); the mutex is not
+// reentrant.
+func updateSessionsLog(sessionsLog string, fn func(data map[string]any)) error {
+	sessionsLogMu.Lock()
+	defer sessionsLogMu.Unlock()
+	return updateJSONFile(sessionsLog, fn)
+}
+
 // largeSessionBudget is the separate large-session (>300 msgs) lane cap.
 // It rides ON TOP of SessionsMax rather than inside it: the floor of 1
 // keeps deep sessions from starving behind a busy normal queue, at the
@@ -907,7 +920,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 			if len(skipped) > 0 {
 				logMsg("sync", "pre-filter: skipped %d mechanical sessions (<%d user msgs or <500 chars)", len(skipped), 3)
 				// Mark skipped sessions so they're not re-triaged.
-				if err := updateJSONFile(sessionsLog, func(data map[string]any) {
+				if err := updateSessionsLog(sessionsLog, func(data map[string]any) {
 					processed, _ := data["processed"].(map[string]any)
 					if processed == nil {
 						processed = make(map[string]any)
@@ -964,7 +977,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 
 // updateScanTimestamp updates the last_scan field in _sessions_log.json.
 func (s *SyncCmd) updateScanTimestamp(sessionsLog string) {
-	if err := updateJSONFile(sessionsLog, func(data map[string]any) {
+	if err := updateSessionsLog(sessionsLog, func(data map[string]any) {
 		data["last_scan"] = time.Now().UTC().Format(time.RFC3339)
 	}); err != nil {
 		logPhaseDegraded("sync", "session log update", "could not update last_scan in _sessions_log.json: %v", err)

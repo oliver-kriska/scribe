@@ -595,9 +595,39 @@ func saveJSONMap(path string, m map[string]any) error {
 	return os.Rename(tmp, path)
 }
 
-// updateJSONFile reads a JSON object file, applies a mutation, and writes it back.
+// loadJSONMapStrict is loadJSONMap that distinguishes an absent/empty file
+// (→ empty map, nil — a legitimate first run) from one that exists but won't
+// parse (→ error). It backs updateJSONFile so a corrupt file ABORTS the
+// read-modify-write rather than silently resetting to only the new entry —
+// which for _sessions_log.json would wipe every processed-session mark and
+// re-mine the entire history.
+func loadJSONMapStrict(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]any), nil
+		}
+		return nil, err
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return make(map[string]any), nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("refusing to overwrite unparseable %s: %w", path, err)
+	}
+	return m, nil
+}
+
+// updateJSONFile reads a JSON object file, applies a mutation, and writes it
+// back. It refuses to proceed if the file exists but is unparseable, so a
+// partial/corrupt write can't be turned into a total data loss on the next
+// update (see loadJSONMapStrict).
 func updateJSONFile(path string, fn func(data map[string]any)) error {
-	m := loadJSONMap(path)
+	m, err := loadJSONMapStrict(path)
+	if err != nil {
+		return err
+	}
 	fn(m)
 	return saveJSONMap(path, m)
 }
