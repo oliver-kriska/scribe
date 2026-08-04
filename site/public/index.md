@@ -104,6 +104,10 @@ The mechanisms:
 - **Curate privately, promote deliberately.** `scribe promote <article> --to team-kb` copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.
 - **One machine consolidates, no server.** The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.
 
+### Scribe for Teams — early access
+
+The trust gates, secret scanning, and provenance above already exist. Scribe is gauging demand for packaging and support around a **paid team edition that runs on a Git repo your team owns — not a hosted product**. The early-access form asks only for team size and expected monthly price, then opens a prefilled public [GitHub Discussion draft](https://github.com/oliver-kriska/scribe/discussions/new?category=general) for review before posting.
+
 ### Transcript — "One KB. The whole team writes to it."
 
 Transcript of the teams explainer video ([scribe-explainer-teams.mp4](https://assets.getscribe.dev/scribe-explainer-teams.mp4)):
@@ -299,4 +303,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-07-22
+**Last updated:** 2026-08-04

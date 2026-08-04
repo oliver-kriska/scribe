@@ -29,7 +29,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
-<meta property="article:modified_time" content="2026-07-22T00:00:00Z" />
+<meta property="article:modified_time" content="2026-08-04T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -252,7 +252,7 @@
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
-  "dateModified": "2026-07-23T00:00:00+02:00",
+  "dateModified": "2026-08-04T00:00:00+02:00",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -1326,6 +1326,74 @@
   }
   .team-grid .feature h3 { font-size: 16px; }
 
+  /* paid team-edition demand probe: one flat panel, two questions, no account
+     or site backend. Submission opens a prefilled GitHub Discussion draft. */
+  .teams-early {
+    margin-top: clamp(32px, 5vw, 56px);
+    padding: clamp(24px, 4vw, 38px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+  }
+  .teams-early__grid {
+    display: grid;
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    gap: clamp(26px, 5vw, 64px);
+    align-items: end;
+  }
+  .teams-early h3 {
+    margin-top: 8px;
+    font-size: clamp(24px, 2.5vw, 34px);
+    letter-spacing: -0.024em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+  .teams-early__copy p {
+    margin-top: 14px;
+    color: var(--fg-soft);
+    max-width: 52ch;
+    line-height: 1.55;
+  }
+  .teams-interest {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .teams-interest label {
+    display: grid;
+    gap: 7px;
+    color: var(--fg-soft);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .teams-interest select,
+  .teams-interest input {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 11px;
+    appearance: none;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    font: inherit;
+    font-size: 14px;
+  }
+  .teams-interest select { cursor: pointer; }
+  .teams-interest input::placeholder { color: var(--muted); }
+  .teams-interest__action {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+  }
+  .teams-interest__note {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
   /* for-teams trust boundary: the security story as a diagram — what tries to
      cross into the shared KB, the code-enforced gate that stops it, and the one
      thing that does cross. Desktop-only; the six spec cards below carry the same
@@ -2190,6 +2258,7 @@
   }
   @media (max-width: 900px) {
     .feels, .search { grid-template-columns: 1fr; }
+    .teams-early__grid { grid-template-columns: 1fr; align-items: start; }
   }
   @media (max-width: 720px) {
     .cmp { display: none; }
@@ -2202,6 +2271,7 @@
     .stage__num span { width: 36px; height: 36px; }
     .commands__lines { padding: 16px 18px; font-size: 12.5px; line-height: 1.9; }
     .anecdote { padding: 22px 22px 20px; }
+    .teams-interest { grid-template-columns: 1fr; }
   }
 
   /* -------------------- final CTA -------------------- */
@@ -3077,6 +3147,39 @@ advisory locks table-ambiguous under load.
         <p>The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.</p>
       </article>
     </div>
+
+    <aside class="teams-early" aria-labelledby="teams-early-title">
+      <div class="teams-early__grid">
+        <div class="teams-early__copy">
+          <div class="s__eyebrow">Early access</div>
+          <h3 id="teams-early-title">A paid team edition, on Git you own.</h3>
+          <p>The trust gates, secret scanning, and provenance above already exist. This is a demand check for packaging and support around a paid Scribe for Teams edition &mdash; not a hosted product. Two numbers help decide whether to build it.</p>
+        </div>
+        <form class="teams-interest" id="teamsInterest" method="get" action="https://github.com/oliver-kriska/scribe/discussions/new" target="_blank" rel="noopener">
+          <label>
+            Team size
+            <select name="team_size" required>
+              <option value="" selected disabled>Select a range</option>
+              <option value="2–5">2&ndash;5</option>
+              <option value="6–15">6&ndash;15</option>
+              <option value="16–50">16&ndash;50</option>
+              <option value="51+">51+</option>
+            </select>
+          </label>
+          <label>
+            Expected monthly price
+            <input name="monthly_price" type="text" inputmode="decimal" placeholder="$100 / month" required />
+          </label>
+          <input name="category" type="hidden" value="general" />
+          <input name="title" type="hidden" value="Scribe for Teams early access" />
+          <input name="body" type="hidden" value="" />
+          <div class="teams-interest__action">
+            <button class="btn btn--accent" type="submit">Share interest via GitHub&nbsp;↗</button>
+            <span class="teams-interest__note">Opens a prefilled public Discussion draft for you to review before posting.</span>
+          </div>
+        </form>
+      </div>
+    </aside>
   </div>
 </section>
 
@@ -3628,7 +3731,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT · last updated 2026-07-23</span>
+      <span>MIT · last updated 2026-08-04</span>
       <span>github.com/oliver-kriska/scribe</span>
     </div>
   </div>
@@ -3685,6 +3788,26 @@ scribe doctor <span class="flag">--section</span> localmode
   const onScroll = () => nav.classList.toggle('is-scrolled', window.scrollY > 8);
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
+
+  // ---------- lightweight conversion events ----------
+  // Plausible custom events: Brew Install Copy, GitHub Outbound,
+  // and Teams Early Access. All are aggregate, cookie-free events.
+  document.querySelectorAll('a[href^="https://github.com/oliver-kriska/scribe"]').forEach(link => {
+    link.addEventListener('click', () => plausible('GitHub Outbound', { props: { path: link.pathname } }));
+  });
+
+  const teamsInterest = document.getElementById('teamsInterest');
+  teamsInterest.addEventListener('submit', () => {
+    const data = new FormData(teamsInterest);
+    const body = [
+      'Team size: ' + data.get('team_size'),
+      'Expected monthly price: ' + data.get('monthly_price'),
+      '',
+      '_Submitted from the getscribe.dev early-access form._'
+    ].join('\n');
+    teamsInterest.elements.body.value = body;
+    plausible('Teams Early Access');
+  });
 
   // ---------- mobile menu ----------
   const menuBtn = document.getElementById('menuBtn');
@@ -3816,6 +3939,7 @@ scribe doctor <span class="flag">--section</span> localmode
       const id = btn.dataset.copyTarget;
       const el = document.getElementById(id);
       if (!el) return;
+      if (el.innerText.trim().startsWith('brew install ')) plausible('Brew Install Copy');
       try {
         await navigator.clipboard.writeText(el.innerText);
         const prev = btn.textContent;

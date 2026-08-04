@@ -20,7 +20,7 @@ The product is the curated wiki, not raw chunks. Every dense source fans out int
 - [Marketing site as markdown](https://getscribe.dev/index.md): same content, plain text
 - [Full content concatenated](https://getscribe.dev/llms-full.txt): everything in one file for large-context LLMs, including both explainer-video transcripts
 - [Explainer video, 60s](https://assets.getscribe.dev/scribe-explainer.mp4): the whole pitch — scribe reads your git history, Claude Code/Codex sessions, and saved links, and writes a plain-markdown KB your agents read before they act; local, cron-driven, not RAG (full transcript in llms-full.txt; also on YouTube: https://youtu.be/f2jV9PnzRzI)
-- [Teams explainer video](https://assets.getscribe.dev/scribe-explainer-teams.mp4): one shared, git-backed KB — secret-scan gate on every commit, allowed-remotes control, provenance on every promoted note (full transcript in llms-full.txt; also on YouTube: https://youtu.be/iDa4n7wzUXg)
+- [Teams explainer video](https://assets.getscribe.dev/scribe-explainer-teams.mp4): one shared, git-backed KB — secret-scan gate on every commit, allowed-remotes control, provenance on every promoted note (full transcript in llms-full.txt; also on YouTube: https://youtu.be/iDa4n7wzUXg). A paid team edition on customer-owned Git is being validated through the early-access form on the page; it is not a hosted-product promise.
 - [GitHub repository](https://github.com/oliver-kriska/scribe): source code, issues, releases
 - [README](https://github.com/oliver-kriska/scribe/blob/main/README.md): canonical end-user docs
 - [CHANGELOG](https://github.com/oliver-kriska/scribe/blob/main/CHANGELOG.md): per-version release notes
