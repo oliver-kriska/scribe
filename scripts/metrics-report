@@ -27,14 +27,14 @@ for snapshot in "${snapshots[@]}"; do
     jq -r '[
       .captured_at[0:10],
       .repository.stars,
-      .traffic.clones.count,
-      .traffic.clones.uniques,
-      .traffic.views.count,
-      .traffic.views.uniques,
+      (if .traffic.clones.available == false then "—" else .traffic.clones.count end),
+      (if .traffic.clones.available == false then "—" else .traffic.clones.uniques end),
+      (if .traffic.views.available == false then "—" else .traffic.views.count end),
+      (if .traffic.views.available == false then "—" else .traffic.views.uniques end),
       ([.releases[].downloads] | add // 0)
     ] | @tsv' "$snapshot" |
         while IFS=$'\t' read -r date stars clones clone_uniques views view_uniques downloads; do
-            printf '%-10s %7d %7d %7d %7d %7d %10d\n' \
+            printf '%-10s %7d %7s %7s %7s %7s %10d\n' \
                 "$date" "$stars" "$clones" "$clone_uniques" "$views" "$view_uniques" "$downloads"
         done
 done

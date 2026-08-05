@@ -11,6 +11,10 @@ Each `YYYY-MM-DD.json` file uses schema version 1 and contains:
 - stars, forks, and separate open issue and pull-request counts;
 - GitHub's rolling 14-day clone and page-view totals and daily breakdowns.
 
+Traffic records include `available: false` and null totals when the workflow's
+optional `TRAFFIC_TOKEN` secret is not configured; release and repository
+metrics are still captured in that case.
+
 Traffic windows overlap, so do not add clone or view totals across snapshots.
 Run `scripts/metrics-report` from anywhere in the checkout for a compact trend
 report. The script requires `jq`.
