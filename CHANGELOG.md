@@ -4,6 +4,36 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Fixed — a failed absorb can no longer be recorded as a success
+- Pass 2 now treats a **body-less envelope** as a failure and spends a
+  corrective retry on it. A schema-valid reply whose every action carried only
+  YAML frontmatter (no prose) parsed cleanly, satisfied `wikiEnvelopeSchema`,
+  and was then refused action-by-action at apply time — so the entity vanished
+  with nothing logged but a per-action error. The retry names the actual defect
+  ("your `content` was empty") rather than repeating the generic
+  "emit valid JSON" correction, which taught the model nothing when the JSON was
+  already well-formed. Observed 2026-08-10 on Together/MiniMax M3, where 9 of 9
+  entities for one article came back this way; `minItems: 1` (0.4.3-era) closed
+  the empty-`{}` escape and the model answered with frontmatter-only stubs
+  instead.
+- An absorb that applies **zero actions across every entity** is now an error,
+  not a silent success. Previously `absorbRaw` stamped the source into
+  `wiki/_absorb_log.json` regardless, so an article whose entities were all
+  dropped was marked permanently done and never retried — the run reported
+  `absorbed: 1` having written nothing. "Partial absorb beats losing the source"
+  still holds; zero is not partial. The same guard now covers the single-pass
+  path, which had the identical hole.
+
+### Fixed — sync commits raw sources alongside the bookkeeping that references them
+- A sync-driven commit staged `wiki/_absorb_log.json` (which records, by sha,
+  that a raw article was absorbed) but never staged `raw/` itself, so the source
+  existed only on the machine that ran the sync — a clone got the bookkeeping
+  without the evidence, and the recorded sha could not be re-verified.
+  `scribe commit` swept `raw/` up incidentally (it stages everything but
+  `output/`); sync now stages it directly. `raw/` is deliberately kept out of
+  `wikiDirs`, which also gates where absorb may write — the source corpus must
+  never become an LLM write target.
+
 ## [0.4.3] — 2026-07-22
 
 A session-ingestion compatibility release. Scribe now treats ccrider as the

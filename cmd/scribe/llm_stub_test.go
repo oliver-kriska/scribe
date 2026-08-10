@@ -380,3 +380,22 @@ tags: []
 	}
 	return string(b)
 }
+
+// bodylessEnvelopeJSON builds a pass-2 reply that is valid JSON and satisfies
+// wikiEnvelopeSchema (one action, with op and path) but whose content stops at
+// the frontmatter fence. applyWikiActions refuses it as an empty page, so the
+// entity produces nothing. This is the observed 2026-08-10 MiniMax M3 output.
+func bodylessEnvelopeJSON(t *testing.T, entity, path string) string {
+	t.Helper()
+	content := fmt.Sprintf("---\ntitle: %s\ntype: research\ndomain: general\ncreated: 2026-06-12\nupdated: 2026-06-12\nconfidence: medium\ntags: []\n---\n", entity)
+	env := WikiActionEnvelope{
+		Version: 1,
+		Entity:  entity,
+		Actions: []WikiAction{{Op: "create", Path: path, Content: content}},
+	}
+	b, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+	return string(b)
+}

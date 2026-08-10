@@ -710,3 +710,99 @@ func TestAbsorbRaw_CheckpointsProgressAndStopsOnRateLimit(t *testing.T) {
 		t.Errorf("absorb log must NOT contain the rate-limited article (it has to retry next run):\n%s", logData)
 	}
 }
+
+// TestAbsorbDenseTwoPass_BodylessEnvelopeRecovered: a first pass-2 response
+// that is schema-valid but frontmatter-only (no body) is the 2026-08-10
+// MiniMax M3 failure mode — `minItems:1` closed the empty-"{}" escape, so the
+// model emitted stub pages instead. It parses, so the pre-fix code accepted it
+// and the entity vanished at apply time. The corrective retry must recover it.
+func TestAbsorbDenseTwoPass_BodylessEnvelopeRecovered(t *testing.T) {
+	root := stubHarnessKB(t, denseAbsorbYAML)
+	rawFile, rawName := writeDenseRaw(t, root, "2026-06-01-bodyless.md", "MARKER-BODYLESS")
+
+	stub := &stubLLM{}
+	stub.Rules = []*stubRule{
+		{MatchOp: "absorb-pass1-whole", Reply: planJSON(t, rawFile, "general", entity("Alpha", "a"))},
+		// CORRECTION rule first (more specific) so it wins on the retry.
+		{MatchOp: "absorb-pass2", MatchPrompt: "## CORRECTION", Reply: envelopeJSON(t, 1, "Alpha", "wiki/alpha.md", "Alpha body.")},
+		{MatchOp: "absorb-pass2", MatchPrompt: "- Label: Alpha", Reply: bodylessEnvelopeJSON(t, "Alpha", "wiki/alpha.md")},
+	}
+	installStubLLM(t, stub)
+
+	sc := &SyncCmd{Model: "sonnet"}
+	if err := sc.absorbDenseTwoPass(root, rawFile, rawName); err != nil {
+		t.Fatalf("absorbDenseTwoPass: %v", err)
+	}
+	pass2 := stub.CallsWithOp("absorb-pass2")
+	if len(pass2) != 2 {
+		t.Fatalf("pass2 calls = %d, want 2 (bodyless then one corrective retry)", len(pass2))
+	}
+	// The correction must name the actual defect. Repeating the generic
+	// "could not be parsed" nudge teaches the model nothing here — the JSON
+	// was perfect; only the prose was missing.
+	if !strings.Contains(pass2[1].Prompt, "every action's \"content\" was empty") {
+		t.Errorf("retry did not carry the bodyless-specific correction:\n%s", pass2[1].Prompt)
+	}
+	if _, err := os.Stat(filepath.Join(root, "wiki", "alpha.md")); err != nil {
+		t.Errorf("bodyless entity not recovered on retry: %v", err)
+	}
+}
+
+// TestAbsorbRaw_AllEntitiesBodylessLeavesSourceUnabsorbed reproduces the
+// 2026-08-10 incident end-to-end: every planned entity comes back bodyless and
+// stays that way through the retries, so pass 2 writes nothing. The absorb must
+// fail rather than report success, or absorbRaw stamps _absorb_log.json and the
+// article is lost forever with its source marked done.
+func TestAbsorbRaw_AllEntitiesBodylessLeavesSourceUnabsorbed(t *testing.T) {
+	root := stubHarnessKB(t, denseAbsorbYAML)
+	// A full-length body, not writeDenseRaw's short fixture: absorbRaw parks
+	// thin articles as unfetched stubs before the absorb path is ever
+	// reached, which would mark the log for an unrelated (and legitimate)
+	// reason and mask what this test is checking.
+	rawName := "2026-06-01-alldead.md"
+	rawFile := filepath.Join(root, "raw", "articles", rawName)
+	denseBody := "---\ntitle: All Dead\ndomain: general\ndensity: dense\n---\n\n# All Dead\n\nMARKER-ALLDEAD " +
+		strings.Repeat("knowledge worth keeping flows through this paragraph again and again. ", 12)
+	if err := os.WriteFile(rawFile, []byte(denseBody), 0o644); err != nil {
+		t.Fatalf("write raw article: %v", err)
+	}
+
+	stub := &stubLLM{}
+	stub.Rules = []*stubRule{
+		{MatchOp: "absorb-pass1-whole", Reply: planJSON(t, rawFile, "general", entity("Alpha", "a"), entity("Beta", "b"))},
+		// Bodyless on every attempt, corrective retries included.
+		{MatchOp: "absorb-pass2", MatchPrompt: "- Label: Alpha", Reply: bodylessEnvelopeJSON(t, "Alpha", "wiki/alpha.md")},
+		{MatchOp: "absorb-pass2", MatchPrompt: "- Label: Beta", Reply: bodylessEnvelopeJSON(t, "Beta", "wiki/beta.md")},
+	}
+	installStubLLM(t, stub)
+
+	sc := &SyncCmd{Model: "sonnet"}
+	err := sc.absorbDenseTwoPass(root, rawFile, rawName)
+	if err == nil {
+		t.Fatal("absorbDenseTwoPass returned nil after writing zero pages — the caller will stamp the absorb log and lose the article")
+	}
+	if !errors.Is(err, errAbsorbNothingApplied) {
+		t.Errorf("error = %v, want errAbsorbNothingApplied", err)
+	}
+	for _, p := range []string{"wiki/alpha.md", "wiki/beta.md"} {
+		if _, statErr := os.Stat(filepath.Join(root, p)); !os.IsNotExist(statErr) {
+			t.Errorf("%s should not exist, stat err = %v", p, statErr)
+		}
+	}
+
+	// The whole point: absorbRaw must leave the source unmarked so the next
+	// run retries it.
+	absorbed, err := sc.absorbRaw(root)
+	if err != nil {
+		t.Fatalf("absorbRaw: %v", err)
+	}
+	if absorbed != 0 {
+		t.Errorf("absorbed = %d, want 0 (nothing was written)", absorbed)
+	}
+	logPath := filepath.Join(root, "wiki", "_absorb_log.json")
+	if data, readErr := os.ReadFile(logPath); readErr == nil {
+		if strings.Contains(string(data), rawName) {
+			t.Errorf("absorb log stamped %s despite zero pages written — article lost:\n%s", rawName, data)
+		}
+	}
+}

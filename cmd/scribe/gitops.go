@@ -256,10 +256,11 @@ func gitHasStagedChanges(repoPath string) bool {
 	return errors.As(err, &exitErr)
 }
 
-// gitAddWiki stages wiki content directories. Before staging, new
-// articles get a `contributor:` frontmatter stamp — this funnel is
-// shared by every commit path, so attribution lands regardless of
-// which writer (envelope executor or tool-mode model) created the file.
+// gitAddWiki stages wiki content directories plus raw/ (see
+// stagedContentDirs). Before staging, new articles get a `contributor:`
+// frontmatter stamp — this funnel is shared by every commit path, so
+// attribution lands regardless of which writer (envelope executor or
+// tool-mode model) created the file.
 //
 // Returns false when the secret gate detected a credential it could
 // not hold back — the staged set is then unsafe and callers must skip
@@ -271,9 +272,10 @@ func gitAddWiki(root string) bool {
 	// command — a KB missing a content dir or the extraction ledger
 	// (absent until the first post-upgrade extraction) must not block
 	// staging everything else.
-	args := make([]string, 0, 1+len(wikiDirs)+3)
+	dirs := stagedContentDirs()
+	args := make([]string, 0, 1+len(dirs)+3)
 	args = append(args, "add")
-	for _, d := range wikiDirs {
+	for _, d := range dirs {
 		if dirExists(filepath.Join(root, d)) {
 			args = append(args, d)
 		}

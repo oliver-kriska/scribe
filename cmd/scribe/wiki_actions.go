@@ -462,6 +462,29 @@ func bodyAfterFrontmatter(content string) string {
 	return strings.TrimSpace(s)
 }
 
+// envelopeAllBodyless reports whether every action in the envelope carries an
+// empty body (blank, or frontmatter with nothing after it). Such an envelope
+// parses cleanly and satisfies wikiEnvelopeSchema — `content` is optional there
+// and unconstrained — but applyWikiActions refuses every action in it, so the
+// entity is silently dropped. That is the 2026-08-10 MiniMax M3 failure mode:
+// `minItems:1` closed the empty-"{}" escape, and the model answered with
+// schema-valid frontmatter-only stubs instead. Callers treat it like a parse
+// failure and burn a corrective retry rather than accepting the drop.
+//
+// An envelope with no actions at all is NOT bodyless by this definition —
+// parseEnvelope already rejects that case with its own error.
+func envelopeAllBodyless(env WikiActionEnvelope) bool {
+	if len(env.Actions) == 0 {
+		return false
+	}
+	for _, a := range env.Actions {
+		if bodyAfterFrontmatter(a.Content) != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // applyCreateAction writes a new page; an existing file is an error
 // unless the consumer opted into AllowOverwrite (only pass-2 absorb —
 // see entityWriterApplyOptions).

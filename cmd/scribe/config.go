@@ -54,6 +54,21 @@ var wikiDirs = []string{
 	"decisions", "patterns", "ideas", "people", "sessions",
 }
 
+// stagedContentDirs lists the directories a sync-driven commit stages. It is
+// wikiDirs plus raw/ — the sources, not just the pages derived from them.
+//
+// raw/ is deliberately NOT in wikiDirs: that list also gates where the LLM may
+// write (validateActionPath), and absorb must never be able to target the
+// source corpus. But leaving raw/ unstaged meant sync committed
+// wiki/_absorb_log.json entries pointing at files that existed only on the
+// machine that ran the sync — a clone had the bookkeeping and not the source,
+// and the entry's sha could never be re-verified. `scribe commit` already
+// swept raw/ up incidentally (it stages everything but output/), so this only
+// closes the window between a sync and the next commit run.
+func stagedContentDirs() []string {
+	return append(append([]string{}, wikiDirs...), "raw")
+}
+
 // ScribeConfig holds configuration loaded from scribe.yaml.
 type ScribeConfig struct {
 	// LoadErr records a scribe.yaml parse failure (duplicate key, bad

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	gosync "sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -277,6 +278,11 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 	} else {
 		logMsg("sync", "absorb-single: applied %d action(s)", len(res.Applied))
 	}
+	// Same contract as the two-pass path: nothing written is a failure, so
+	// the caller leaves the source unstamped and retries it next run.
+	if len(res.Applied) == 0 {
+		return fmt.Errorf("%w: absorb-single wrote nothing (%d action(s) refused)", errAbsorbNothingApplied, len(res.Errors))
+	}
 	return nil
 }
 
@@ -483,6 +489,10 @@ func (s *SyncCmd) runPass2(ctx context.Context, run pass2Run, plan absorbPlan) e
 	var rateLimited bool
 	var budgetExhausted bool
 	var rateLimitMu gosync.Mutex
+	// Applied actions across every entity. Only meaningful on the json-mode
+	// path — tools mode writes through the model's own tool calls, which the
+	// executor never sees, so its count stays 0 and the guard below skips it.
+	var appliedTotal atomic.Int64
 
 	for i, ent := range plan.Entities {
 		g.Go(func() error {
@@ -500,7 +510,9 @@ func (s *SyncCmd) runPass2(ctx context.Context, run pass2Run, plan absorbPlan) e
 
 			logMsg("sync", "pass2 [%d/%d] writing %s", i+1, len(plan.Entities), ent.Label)
 			if run.jsonMode {
-				if err := s.runPass2JSONEntity(gctx, run, ent, pass2Prompt); err != nil {
+				applied, err := s.runPass2JSONEntity(gctx, run, ent, pass2Prompt)
+				appliedTotal.Add(int64(applied))
+				if err != nil {
 					rateLimitMu.Lock()
 					if errors.Is(err, ErrDailyBudgetExhausted) {
 						// Daily-budget ceiling is tracked separately from
@@ -533,6 +545,16 @@ func (s *SyncCmd) runPass2(ctx context.Context, run pass2Run, plan absorbPlan) e
 		}
 		// Any other error bubbles from the one goroutine that returned non-nil.
 		return err
+	}
+	// Zero pages written across every entity is a failed absorb, not a
+	// partial one: pass 1 found entities worth writing and pass 2 produced
+	// nothing usable for any of them. Returning an error here keeps the
+	// caller from stamping _absorb_log.json, so the article stays in the
+	// queue for the next run instead of being lost with the source marked
+	// done (2026-08-10: 9/9 entities refused as empty pages, article
+	// recorded as absorbed, knowledge dropped silently).
+	if run.jsonMode && appliedTotal.Load() == 0 {
+		return fmt.Errorf("%w: %d entities planned, 0 actions applied", errAbsorbNothingApplied, len(plan.Entities))
 	}
 	return nil
 }
@@ -576,16 +598,41 @@ func (s *SyncCmd) buildPass2Prompt(run pass2Run, ent absorbEntity) (string, erro
 	return loadPrompt(promptName, vars)
 }
 
+// errEnvelopeBodyless marks a pass-2 reply that parsed and satisfied the schema
+// but whose every action had an empty body — see envelopeAllBodyless. Routed
+// through the same corrective-retry loop as a parse failure because the outcome
+// is identical: zero pages written.
+var errEnvelopeBodyless = errors.New("envelope actions have no body")
+
+// errAbsorbNothingApplied marks an absorb whose pass 2 wrote nothing at all.
+// It fails the absorb so the source is not stamped into _absorb_log.json.
+var errAbsorbNothingApplied = errors.New("absorb applied no actions")
+
+// correctiveSuffixFor picks the correction to append for a retry. A bodyless
+// envelope is syntactically perfect, so the generic "emit valid JSON" nudge is
+// noise — it has to be told the prose itself is missing.
+func correctiveSuffixFor(err error) string {
+	if errors.Is(err, errEnvelopeBodyless) {
+		return "\n\n## CORRECTION\n\nYour previous response was valid JSON but every action's \"content\" was empty or contained only YAML frontmatter. A page with no body is discarded. Re-emit the same envelope with each action's \"content\" holding the COMPLETE markdown page: the frontmatter block, then a blank line, then the full article prose (headings, paragraphs, lists) written from the source material. Output ONLY the JSON object.\n"
+	}
+	return "\n\n## CORRECTION\n\nYour previous response could not be parsed as a JSON envelope. Output ONLY one JSON object matching WikiActionEnvelope, with a non-empty \"actions\" array. No prose. No markdown fences. No explanation. The object is the entire response.\n"
+}
+
 // runPass2JSONEntity drives the json-mode pass-2 for one entity: call the
-// provider, retry once with a corrective prompt on a parse failure, then apply
-// the resulting envelope. Returns ErrRateLimit or ErrDailyBudgetExhausted
-// (stop-the-world) unchanged; every other failure is logged and returns nil so
-// a partial absorb beats losing the whole source.
-func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent absorbEntity, prompt string) error {
+// provider, retry with a corrective prompt on a parse failure or a bodyless
+// envelope, then apply the resulting envelope. Returns the number of actions
+// applied. ErrRateLimit and ErrDailyBudgetExhausted (stop-the-world) propagate
+// unchanged; every other failure is logged and returns (0, nil) so a partial
+// absorb beats losing the whole source — the caller's zero-applied guard is
+// what stops a total failure from being recorded as success.
+func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent absorbEntity, prompt string) (int, error) {
 	env, err := runPass2JSONOnce(gctx, run.provider, prompt, run.timeout)
+	if err == nil && envelopeAllBodyless(env) {
+		err = errEnvelopeBodyless
+	}
 	if err != nil {
 		if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
-			return err
+			return 0, err
 		}
 		// Corrective retries. The Phase 4B layer 2 e2e runs showed local
 		// models occasionally wrap the envelope in prose or code fences; the
@@ -599,20 +646,26 @@ func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent abs
 		// second corrective pass is near-free and recovered ~2/3 of the
 		// stragglers in the field; two passes cover most of the rest.
 		const maxCorrectiveRetries = 2
-		correctivePrompt := prompt + "\n\n## CORRECTION\n\nYour previous response could not be parsed as a JSON envelope. Output ONLY one JSON object matching WikiActionEnvelope, with a non-empty \"actions\" array. No prose. No markdown fences. No explanation. The object is the entire response.\n"
 		for attempt := 1; attempt <= maxCorrectiveRetries; attempt++ {
+			// The correction is chosen per failure: a bodyless envelope
+			// parsed fine, so repeating "emit valid JSON" teaches the
+			// model nothing — it needs to be told the prose is missing.
+			correctivePrompt := prompt + correctiveSuffixFor(err)
 			logMsg("sync", "pass2 entity %q: attempt %d failed (%v) — corrective retry %d/%d", ent.Label, attempt, err, attempt, maxCorrectiveRetries)
 			env, err = runPass2JSONOnce(gctx, run.provider, correctivePrompt, run.timeout)
+			if err == nil && envelopeAllBodyless(env) {
+				err = errEnvelopeBodyless
+			}
 			if err == nil {
 				break
 			}
 			if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
-				return err
+				return 0, err
 			}
 		}
 		if err != nil {
 			logMsg("sync", "pass2 entity %q: all %d corrective retries failed: %v", ent.Label, maxCorrectiveRetries, err)
-			return nil
+			return 0, nil
 		}
 	}
 	// Content robustness (fabricated [cNN-fM] strip +
@@ -637,14 +690,14 @@ func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent abs
 	})
 	if err != nil {
 		logMsg("sync", "pass2 entity %q: apply actions: %v", ent.Label, err)
-		return nil
+		return 0, nil
 	}
 	if len(res.Errors) > 0 {
 		logMsg("sync", "pass2 entity %q: %d applied, %d errors: %s", ent.Label, len(res.Applied), len(res.Errors), strings.Join(res.Errors, "; "))
 	} else {
 		logMsg("sync", "pass2 entity %q: applied %d action(s)", ent.Label, len(res.Applied))
 	}
-	return nil
+	return len(res.Applied), nil
 }
 
 // runPass2ToolsEntity drives the legacy tools-mode pass-2 for one entity via
