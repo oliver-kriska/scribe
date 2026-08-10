@@ -626,9 +626,10 @@ func correctiveSuffixFor(err error) string {
 // absorb beats losing the whole source — the caller's zero-applied guard is
 // what stops a total failure from being recorded as success.
 func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent absorbEntity, prompt string) (int, error) {
-	env, err := runPass2JSONOnce(gctx, run.provider, prompt, run.timeout)
+	env, raw, err := runPass2JSONOnce(gctx, run.provider, prompt, run.timeout)
 	if err == nil && envelopeAllBodyless(env) {
 		err = errEnvelopeBodyless
+		dumpEnvelopeFailure(run.root, ent.Label, "bodyless", 0, raw)
 	}
 	if err != nil {
 		if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
@@ -652,9 +653,10 @@ func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent abs
 			// model nothing — it needs to be told the prose is missing.
 			correctivePrompt := prompt + correctiveSuffixFor(err)
 			logMsg("sync", "pass2 entity %q: attempt %d failed (%v) — corrective retry %d/%d", ent.Label, attempt, err, attempt, maxCorrectiveRetries)
-			env, err = runPass2JSONOnce(gctx, run.provider, correctivePrompt, run.timeout)
+			env, raw, err = runPass2JSONOnce(gctx, run.provider, correctivePrompt, run.timeout)
 			if err == nil && envelopeAllBodyless(env) {
 				err = errEnvelopeBodyless
+				dumpEnvelopeFailure(run.root, ent.Label, "bodyless-retry", attempt, raw)
 			}
 			if err == nil {
 				break
@@ -723,18 +725,49 @@ func (s *SyncCmd) runPass2ToolsEntity(gctx context.Context, run pass2Run, ent ab
 // envelope or an error that the caller decides whether to retry.
 // Stays a free function (not a method) because it has no dependency on
 // SyncCmd state — just provider + prompt + timeout.
-func runPass2JSONOnce(parent context.Context, provider llmProviderGenerator, prompt string, timeout time.Duration) (WikiActionEnvelope, error) {
+// Returns the provider's raw response alongside the parsed envelope so the
+// caller can dump it on a degenerate reply (see dumpEnvelopeFailure) — a
+// bodyless envelope is indistinguishable from a good one in the logs, and the
+// 2026-08-10 failure could not be reproduced from a benchmark harness (40
+// controlled calls, 0 reproductions). Capturing the live payload is the only
+// way to see what the provider actually sent.
+func runPass2JSONOnce(parent context.Context, provider llmProviderGenerator, prompt string, timeout time.Duration) (WikiActionEnvelope, string, error) {
 	callCtx, cancel := context.WithTimeout(withOpLabel(parent, "absorb-pass2"), timeout)
 	defer cancel()
 	out, err := generateWithSchema(callCtx, provider, prompt, wikiEnvelopeSchema())
 	if err != nil {
-		return WikiActionEnvelope{}, err
+		return WikiActionEnvelope{}, "", err
 	}
 	jsonText, ok := extractJSON(out)
 	if !ok {
-		return WikiActionEnvelope{}, fmt.Errorf("no JSON envelope in provider output (%d bytes)", len(out))
+		return WikiActionEnvelope{}, out, fmt.Errorf("no JSON envelope in provider output (%d bytes)", len(out))
 	}
-	return parseEnvelope(jsonText)
+	env, perr := parseEnvelope(jsonText)
+	return env, out, perr
+}
+
+// dumpEnvelopeFailure writes a degenerate pass-2 reply to
+// $KB/output/absorb-failures/ for post-mortem. Best-effort and never fatal:
+// losing a diagnostic must not fail an absorb. Lands under output/, which is
+// gitignored in a KB, so raw provider payloads are never committed.
+func dumpEnvelopeFailure(root, label, reason string, attempt int, raw string) {
+	dir := filepath.Join(root, "output", "absorb-failures")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	stamp := time.Now().UTC().Format("20060102T150405Z")
+	name := fmt.Sprintf("%s-%s-a%d.json", stamp, slugify(label), attempt)
+	rec := map[string]any{
+		"at": time.Now().UTC().Format(time.RFC3339), "entity": label,
+		"reason": reason, "attempt": attempt, "raw_len": len(raw), "raw": raw,
+	}
+	b, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err == nil {
+		logMsg("sync", "captured degenerate pass2 reply → output/absorb-failures/%s", name)
+	}
 }
 
 // wikiEnvelopeSchema is the json_schema sent with pass-2 requests. Its one

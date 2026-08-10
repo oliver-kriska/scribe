@@ -28,6 +28,21 @@ reusable knowledge. Skip it with `--no-amp-md`; `scribe doctor` gains a WARN-onl
 - The three doctor handshake rows now share one `checkAgentMDHandshake` helper
   instead of a third copy of the same four-state check.
 
+### Added — degenerate pass-2 replies are captured for post-mortem
+- When pass 2 returns a body-less envelope, the verbatim provider response is
+  written to `$KB/output/absorb-failures/<ts>-<entity>-a<attempt>.json` (the
+  first attempt and each corrective retry). Best-effort — a failed dump never
+  fails an absorb — and it lands under `output/`, which a KB gitignores, so raw
+  payloads are never committed. Motivation: a 40-call benchmark against the real
+  pass-2 prompt, using the real persisted plan, reproduced the 2026-08-10 failure
+  **zero** times, so the live payload is the only remaining evidence.
+- `scripts/bench-absorb-pass2.py` — the benchmark harness, now committed. It
+  renders the real `absorb-pass2-json.md` with a KB's persisted pass-1 plan,
+  sends `json_schema` strict at `max_tokens=16384`, and scores body-populated
+  rate alongside parse/schema validity, richness, and latency. The 2026-07-14
+  benchmark's scripts lived in a scratchpad and were lost, which forced a
+  from-scratch rebuild during this investigation.
+
 ### Fixed — a failed absorb can no longer be recorded as a success
 - Pass 2 now treats a **body-less envelope** as a failure and spends a
   corrective retry on it. A schema-valid reply whose every action carried only

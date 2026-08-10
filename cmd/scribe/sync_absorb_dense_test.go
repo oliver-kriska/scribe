@@ -746,6 +746,28 @@ func TestAbsorbDenseTwoPass_BodylessEnvelopeRecovered(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "wiki", "alpha.md")); err != nil {
 		t.Errorf("bodyless entity not recovered on retry: %v", err)
 	}
+
+	// The degenerate reply must be captured for post-mortem. The 2026-08-10
+	// failure could not be reproduced from a benchmark harness (40 controlled
+	// calls, 0 reproductions), so the live payload is the only evidence.
+	dumps, _ := filepath.Glob(filepath.Join(root, "output", "absorb-failures", "*.json"))
+	if len(dumps) == 0 {
+		t.Fatal("no capture written to output/absorb-failures/ — a bodyless reply must be dumped")
+	}
+	blob, err := os.ReadFile(dumps[0])
+	if err != nil {
+		t.Fatalf("read capture: %v", err)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(blob, &rec); err != nil {
+		t.Fatalf("capture is not valid JSON: %v", err)
+	}
+	if rec["reason"] != "bodyless" {
+		t.Errorf("capture reason = %v, want bodyless", rec["reason"])
+	}
+	if s, _ := rec["raw"].(string); !strings.Contains(s, "wiki/alpha.md") {
+		t.Errorf("capture must hold the verbatim provider reply, got %.120q", s)
+	}
 }
 
 // TestAbsorbRaw_AllEntitiesBodylessLeavesSourceUnabsorbed reproduces the
