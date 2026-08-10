@@ -4,6 +4,14 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-08-10
+
+A reliability and agent-integration release. It closes pass-2 content omission
+and zero-action success holes, commits raw source evidence alongside absorb
+bookkeeping, installs the KB handshake for Amp, detects coding-agent importers
+that quietly stop indexing, and ships Developer ID-signed and notarized macOS
+binaries with launchd-isolated Full Disk Access verification.
+
 ### Added — signed macOS releases stabilize Full Disk Access identity
 
 Darwin release binaries are now signed with a stable Developer ID identity and
