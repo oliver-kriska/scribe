@@ -182,13 +182,13 @@ concurrently with the still-running old process, briefly defeating the
 lock's purpose for that one KB during that one transition window. Chosen
 fix: **accept this window, document it, do nothing further.** Reasoning:
 (1) `CLAUDE.md` already documents `make install` as a deliberate,
-infrequent, single-maintainer-triggered event with an accepted disruptive
-cost (it invalidates the chat.db FDA grant every time) — a narrow race
-during that same already-disruptive window is consistent with the project's
-existing risk posture, not a new category of risk; (2) the advisory lock is
-a courtesy layer, not the only safety net — git's own `.git/index.lock`
-still serializes the actual write that matters; worst case is duplicate
-work and noisy logs, the same class already accepted for the
+infrequent, single-maintainer-triggered event that replaces the live cron
+binary. Developer ID-signed same-path replacements now preserve the chat.db
+FDA grant, but a narrow race during that deliberate deployment window remains
+consistent with the project's risk posture, not a new category of risk; (2)
+the advisory lock is a courtesy layer, not the only safety net — git's own
+`.git/index.lock` still serializes the actual write that matters; worst case is
+duplicate work and noisy logs, the same class already accepted for the
 `foreign-agents` doctor check's "duplicated jobs run twice per slot"
 finding (`doctor.go:736-742`); (3) the window closes itself as soon as the one
 old process still running exits — it cannot recur or compound. Rejected

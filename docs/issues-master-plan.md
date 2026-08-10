@@ -5,6 +5,14 @@ merge/release strategy. Per-issue deep plans live in `docs/issue-NN-*-plan.md`.
 
 Base commit: `49bfd53`.
 
+> **Status update (2026-08-10): #2 is complete.** Release v0.4.4 ships
+> Developer ID-signed and Apple-notarized Darwin binaries, and the release
+> workflow fails rather than publishing unsigned macOS artifacts. Stable
+> signing preserves Full Disk Access for replacements at the same registered
+> path. Homebrew's versioned Cellar path still changes on upgrade, so the
+> formula correctly retains its `scribe fda` verification nudge. The original
+> paid-account blocker below has therefore been removed from the active backlog.
+
 ## Triage
 
 ### Implementable now (13 plans, 5 phases)
@@ -47,7 +55,6 @@ Rationale for the order:
 
 | Issue | Disposition |
 | ----- | ----------- |
-| #2 codesigning | **Blocked on Oliver**: needs a paid Apple Developer account ($99/yr). No code until then. |
 | #3 branch protection | Conflicts with the recorded Scorecard posture decision (branch-protection = won't-fix for the solo direct-commit workflow). Partial, non-breaking subset possible: a ruleset blocking only force-pushes/deletions on main (does not require PRs or checks). Do that, comment on the issue, leave close/won't-fix to Oliver. |
 | #40 OKF export | Explicitly gated on OKF adoption + a concrete consumer — both zero today. Park. (The small `resource:` frontmatter key could ride along later; out of scope now.) |
 | #7 TUI, #10 stamps, #11 review-branch, #14 neighbors | Parked by explicit maintainer verdicts recorded in the issues. No action. |
@@ -84,8 +91,11 @@ single-integration-point simplicity of main-only development.
 
 - Base check first: `git rev-parse HEAD` must match the SHA given in the task; agent
   worktrees have snapshotted stale bases before.
-- `make build` only builds (`./bin/scribe`); never run `make install` (replaces the
-  live cron binary and kills the chat.db FDA grant).
+- `make build` only builds (`./bin/scribe`); use it instead of `make install` in
+  issue worktrees so tests do not replace the live cron binary. On macOS,
+  `make install` now signs automatically when a Developer ID Application identity
+  is available, preserving the chat.db FDA grant for same-path replacements;
+  unsigned installs still require another `scribe fda`.
 - Never run `scribe sync` / `scribe dream` outside `go test` (machine-wide /tmp lock
   shared with real cron). Never `scribe init` outside `t.TempDir()` tests.
 - No new go.mod deps without written justification in the plan.
