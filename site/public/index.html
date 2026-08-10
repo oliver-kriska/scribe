@@ -12,7 +12,7 @@
 <link rel="canonical" href="https://getscribe.dev/" />
 <meta name="robots" content="index, follow, max-image-preview:large" />
 <meta name="author" content="Oliver Kriška" />
-<meta name="keywords" content="knowledge base, CLI, Claude Code, Codex, git, BM25, Ollama, local LLM, developer tools, scribe" />
+<meta name="keywords" content="knowledge base, CLI, Claude Code, Codex, Amp, git, BM25, Ollama, local LLM, developer tools, scribe" />
 
 <!-- favicon (inline SVG, matches the .brand__mark in the nav) -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6feb'/%3E%3Ctext x='16' y='22' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif' font-size='20' font-weight='700' text-anchor='middle' fill='white'%3Es%3C/text%3E%3C/svg%3E" />
@@ -29,7 +29,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
-<meta property="article:modified_time" content="2026-08-04T00:00:00Z" />
+<meta property="article:modified_time" content="2026-08-10T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -97,7 +97,7 @@
     {
       "@type": "HowToStep",
       "name": "Bootstrap a knowledge base",
-      "text": "Scaffold a KB and wire the agent handshake into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md: scribe init --path ~/my-kb",
+      "text": "Scaffold a KB and wire the agent handshake into ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, and ~/.config/amp/AGENTS.md: scribe init --path ~/my-kb",
       "url": "https://getscribe.dev/#install"
     },
     {
@@ -159,7 +159,7 @@
       "name": "Does scribe work on Linux?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. macOS gets LaunchAgents via scribe cron install; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (scribe watch) is not cron-friendly on either OS — run it under launchd KeepAlive on macOS or systemd-user on Linux. The iMessage capture step is macOS-only because it reads chat.db; everything else is portable."
+        "text": "Yes. macOS gets LaunchAgents via scribe cron install; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (scribe watch) is not cron-friendly on either OS — run it under launchd KeepAlive on macOS or systemd-user on Linux. The iMessage capture step is macOS-only because it reads chat.db; everything else is portable. macOS release binaries are Developer ID signed and notarized, and scribe fda verifies chat.db access in the same launchd context scheduled capture uses."
       }
     },
     {
@@ -252,7 +252,7 @@
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
-  "dateModified": "2026-08-04T00:00:00+02:00",
+  "dateModified": "2026-08-10T00:00:00+02:00",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -266,7 +266,7 @@
     "name": "Oliver Kriška",
     "url": "https://github.com/oliver-kriska"
   },
-  "about": ["compiled knowledge base", "LLM Wiki", "RAG alternative", "Claude Code", "Codex", "local-first AI", "BM25 search", "Ollama"]
+  "about": ["compiled knowledge base", "LLM Wiki", "RAG alternative", "Claude Code", "Codex", "Amp", "local-first AI", "BM25 search", "Ollama"]
 }
 </script>
 <!-- JSON-LD: Organization entity graph — one node connecting scribe to its GitHub, YouTube, and X presences (sameAs) so search/AI engines resolve it as a single entity -->
@@ -2688,7 +2688,7 @@
       <article class="feature">
         <div class="feature__kicker">agent handshake</div>
         <h3>Context-aware agents</h3>
-        <p><code>scribe init</code> writes a handshake block into <strong>both</strong> <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>, so every session in every project queries your KB before recommending a library or proposing an architecture.</p>
+        <p><code>scribe init</code> writes maintained handshake blocks into <code>~/.claude/CLAUDE.md</code>, <code>~/.codex/AGENTS.md</code>, and <code>~/.config/amp/AGENTS.md</code>, so Claude Code, Codex, and Amp query your KB before recommending a library or proposing an architecture.</p>
       </article>
 
       <article class="feature">
@@ -3460,7 +3460,7 @@ scribe doctor <span class="flag">--section</span> localmode
     <header class="s__head">
       <div class="s__eyebrow">Autonomous loop</div>
       <h2 class="s__title">Five things happen on cron. You set it up once.</h2>
-      <p class="s__sub">After <code>scribe init</code> and <code>scribe cron install</code>, the loop closes by itself. New work flows in, the KB grows, and the next Claude Code or Codex session, in any project, queries what scribe just wrote.</p>
+      <p class="s__sub">After <code>scribe init</code> and <code>scribe cron install</code>, the loop closes by itself. New work flows in, the KB grows, and the next Claude Code, Codex, or Amp session queries what scribe just wrote.</p>
     </header>
 
     <div class="autonomous">
@@ -3478,10 +3478,10 @@ scribe doctor <span class="flag">--section</span> localmode
         <div class="stage__num"><span>02</span></div>
         <div class="stage__head">
           <h3>The agent handshake</h3>
-          <span class="stage__pill">~/.claude/CLAUDE.md + ~/.codex/AGENTS.md</span>
+          <span class="stage__pill">Claude Code + Codex + Amp</span>
         </div>
-        <p class="stage__body">scribe writes a maintained block into <code>~/.claude/CLAUDE.md</code> and <code>~/.codex/AGENTS.md</code>. Every Claude Code and Codex session, in every repo, picks up the same instructions: query the KB first, and drop reusable findings as files. The handshake is idempotent: re-run init and only that block updates.</p>
-        <div class="stage__src">cmd/scribe/init.go: <code>installClaudeMD()</code> + <code>installCodexMD()</code> → <code>templates/claude-md-kb.md</code> + <code>templates/codex-agents-md.md</code> → marker-fenced block in both files</div>
+        <p class="stage__body">scribe writes maintained blocks into <code>~/.claude/CLAUDE.md</code>, <code>~/.codex/AGENTS.md</code>, and <code>~/.config/amp/AGENTS.md</code>. Claude Code, Codex, and Amp pick up the same loop: query the KB first, then drop reusable findings as files. The handshake is idempotent: re-run init and only the marker-fenced blocks update.</p>
+        <div class="stage__src">cmd/scribe/init.go: <code>installClaudeMD()</code> + <code>installCodexMD()</code> + <code>installAmpMD()</code> → three agent-specific templates → marker-fenced blocks in each global instructions file</div>
       </article>
 
       <article class="stage">
@@ -3515,7 +3515,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </article>
     </div>
 
-    <p class="autonomous__closer">Every absorb tick reindexes qmd, so the next Claude Code or Codex session, in any repo on this machine, finds what scribe just wrote. The loop closes itself, in the background, on a schedule you forget about.</p>
+    <p class="autonomous__closer">Every absorb tick reindexes qmd, so the next Claude Code, Codex, or Amp session finds what scribe just wrote. The loop closes itself, in the background, on a schedule you forget about.</p>
   </div>
 </section>
 
@@ -3635,7 +3635,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>Does scribe work on Linux?</summary>
-        <div class="answer">Yes. macOS gets LaunchAgents via <code>scribe cron install</code>; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (<code>scribe watch</code>) is not cron-friendly on either OS; run it under launchd KeepAlive on macOS or systemd-user on Linux. The iMessage capture step is macOS-only because it reads <code>chat.db</code>; everything else is portable.</div>
+        <div class="answer">Yes. macOS gets LaunchAgents via <code>scribe cron install</code>; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (<code>scribe watch</code>) is not cron-friendly on either OS; run it under launchd KeepAlive on macOS or systemd-user on Linux. The iMessage capture step is macOS-only because it reads <code>chat.db</code>; everything else is portable. macOS release binaries are <strong>Developer ID signed and notarized</strong>, and <code>scribe fda</code> verifies <code>chat.db</code> access in the same launchd context scheduled capture uses.</div>
       </details>
 
       <details class="q">
@@ -3986,6 +3986,7 @@ scribe doctor <span class="flag">--section</span> localmode
         '<span class="out-key">→</span> creating ~/my-kb/scribe.yaml',
         '<span class="out-key">→</span> writing handshake into ~/.claude/CLAUDE.md',
         '<span class="out-key">→</span> writing handshake into ~/.codex/AGENTS.md',
+        '<span class="out-key">→</span> writing handshake into ~/.config/amp/AGENTS.md',
         '<span class="out-key">→</span> scanning ~/.claude/projects/ ........ <span class="out-em">37 projects</span>',
         '<span class="out-key">→</span> scanning ~/.codex/sessions/ ......... <span class="out-em">+4 codex-only</span>',
         '<span class="out-ok">ok</span> 41 projects tracked · llm.provider=<span class="out-em">ollama</span>'

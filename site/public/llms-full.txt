@@ -1,6 +1,6 @@
 # scribe — your knowledge base, written by your tools
 
-> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. It mines every provider indexed by ccrider — Claude Code, Codex CLI, Copilot CLI, OpenCode, Pi, Antigravity, and Amp when imported by ccrider — while project discovery and the query-KB + write-drop-files handshake cover Claude Code and Codex. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend. In team mode, a small team points every machine at one git-backed KB — with a trust layer, a deterministic secret-scan commit gate, and per-git-remote approval keeping secrets, private client repos, and hostile config changes out of shared history.
+> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. It mines every provider indexed by ccrider — Claude Code, Codex CLI, Copilot CLI, OpenCode, Pi, Antigravity, and Amp when imported by ccrider. Project discovery covers Claude Code and Codex; the query-KB + write-drop-files handshake also reaches Amp. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend. In team mode, a small team points every machine at one git-backed KB — with a trust layer, a deterministic secret-scan commit gate, and per-git-remote approval keeping secrets, private client repos, and hostile config changes out of shared history.
 
 **License:** MIT · **Repo:** <https://github.com/oliver-kriska/scribe> · **Maintainer's KB:** 7,472 articles, zero typed by hand
 
@@ -29,7 +29,7 @@ Three stages, one pipeline:
 
 ## What makes scribe different
 
-- **Your agents become context-aware across sessions.** `scribe init` writes a handshake block into **both** `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` that tells Claude Code and Codex to query your KB before recommending a library, proposing an architecture, or reproducing a pattern.
+- **Your agents become context-aware across sessions.** `scribe init` writes maintained handshake blocks into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.config/amp/AGENTS.md` that tell Claude Code, Codex, and Amp to query your KB before recommending a library, proposing an architecture, or reproducing a pattern.
 - **Runs itself on cron.** Hourly auto-commits, 2-hourly project extraction, 3×/day session mining, a weekly Dream cycle for consolidation with a daily hot-domain pass in between. launchd on macOS, systemd/crontab on Linux.
 - **Knowledge compounds across projects.** One cross-project KB, not siloed per repo. Solve the oban idempotency bug in project A on Monday; the agent finds your fix on Friday when the same shape comes up in project B.
 - **Fully local-capable — 100% Ollama.** Every LLM op — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining `claude -p` callsite in the normal sync flow. A single line in `scribe.yaml` flips the whole pipeline: `llm.provider: ollama`. Zero API spend.
@@ -225,11 +225,11 @@ Two real loops from the maintainer's normal use — concrete, not marketing:
 
 ## The autonomous loop — hands-off
 
-After `scribe init` + `scribe cron install`, five things happen on their own. New work flows in, the KB grows, your private git remote stays current, and the next Claude Code or Codex session in any project queries what scribe just wrote.
+After `scribe init` + `scribe cron install`, five things happen on their own. New work flows in, the KB grows, your private git remote stays current, and the next Claude Code, Codex, or Amp session queries what scribe just wrote.
 
 1. **Discovery — scribe finds every project you've already touched (Claude Code + Codex).** Walks `~/.claude/projects/` and `~/.codex/sessions/` — reading the `session_meta` event at the head of each rollout to extract a verbatim `cwd`. Cross-agent projects collapse to a single manifest entry tagged `discovered_from: both`. Every git repo you've opened in either CLI becomes a tracked project automatically.
 
-2. **The agent handshake — your tools write the notes for you (Claude Code + Codex).** `scribe init` appends a parameterised block to **both** `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. That block tells every Claude Code *and* Codex session to (a) query your KB before recommending a library or making a decision (Claude via the qmd MCP server, Codex via shell `qmd query`), and (b) write reusable knowledge back as a drop file to `.claude/<your-kb-name>/YYYY-MM-DD-{slug}.md` with structured frontmatter.
+2. **The agent handshake — your tools write the notes for you (Claude Code + Codex + Amp).** `scribe init` appends maintained blocks to `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.config/amp/AGENTS.md`. Those blocks tell Claude Code, Codex, and Amp to (a) query your KB before recommending a library or making a decision and (b) write reusable knowledge back as a drop file to `.claude/<your-kb-name>/YYYY-MM-DD-{slug}.md` with structured frontmatter.
 
 3. **Cron sweeps — drop files + research notes flow into the absorb pipeline.** Every 2 hours `scribe sync` visits each tracked project and globs `.claude/<your-kb-name>/*.md` and `.claude/research/**/*.md`. New files are fed through the same two-pass absorb; per-project timestamps track what's new.
 
@@ -237,7 +237,7 @@ After `scribe init` + `scribe cron install`, five things happen on their own. Ne
 
 5. **Weekly cleanup — Dream cycle prunes, merges, breaks down (100% Ollama).** Sundays at 02:00, `scribe dream` runs a 4-phase consolidation (ORIENT → SIGNAL → CONSOLIDATE → PRUNE + INDEX). A Go orchestrator inlines the orient packet into one bounded prompt and parses one `EnvelopeV2` JSON document back — verified end-to-end on a 7,472-article KB in ~70s on `gemma3:12b`.
 
-The loop closes here: every absorb tick reindexes `qmd`; the next time you open Claude Code or Codex in any project, the agent finds whatever scribe just wrote — and if that session produces a new lesson, it writes a drop file, and the cycle repeats.
+The loop closes here: every absorb tick reindexes `qmd`; the next Claude Code, Codex, or Amp session finds whatever scribe just wrote — and if that session produces a new lesson, it writes a drop file, and the cycle repeats.
 
 ## Install
 
@@ -273,7 +273,7 @@ Zero on the local-mode path (Ollama) for the entire pipeline. On a hosted OpenAI
 Yes. A small team points every machine at one git-backed KB. A trust layer treats shared `scribe.yaml` as untrusted by default (config that repoints inference or widens ingest paths reverts until approved); a deterministic secret-scan gate holds credentials back before they hit shared git history; `allowed_remotes` keeps a teammate's unrelated or client repo out; `scribe promote` moves curated pages over with provenance; and a committed leader lease elects the single machine that runs the weekly consolidation — no server, no etcd.
 
 **Does scribe work on Linux?**
-Yes. macOS gets LaunchAgents via `scribe cron install`; Linux gets paste-ready crontab lines from the same command. The iMessage capture step is macOS-only because it reads `chat.db`; everything else is portable.
+Yes. macOS gets LaunchAgents via `scribe cron install`; Linux gets paste-ready crontab lines from the same command. The iMessage capture step is macOS-only because it reads `chat.db`; everything else is portable. macOS release binaries are Developer ID signed and notarized, and `scribe fda` verifies `chat.db` access in the same launchd context scheduled capture uses.
 
 **Where does scribe store the knowledge base?**
 In a plain git repo of markdown files at whatever path you pass to `scribe init`. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.
@@ -303,4 +303,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-08-04
+**Last updated:** 2026-08-10
