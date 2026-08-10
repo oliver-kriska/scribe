@@ -28,6 +28,7 @@ func TestBuildInitPlanTeamBind(t *testing.T) {
 		"point ~/.config/scribe/config.yaml at this KB (currently /home/u/old-kb)",
 		"install/refresh scribe block in ~/.claude/CLAUDE.md",
 		"install/refresh scribe block in ~/.codex/AGENTS.md",
+		"install/refresh scribe block in ~/.config/amp/AGENTS.md",
 		"run dependency self-test",
 	} {
 		if !strings.Contains(titles, want) {

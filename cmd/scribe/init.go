@@ -70,6 +70,7 @@ type InitCmd struct {
 	Bind         bool     `help:"Repoint ~/.claude/CLAUDE.md and ~/.config/scribe/config.yaml at the new KB. Required to move them away from another KB, and for /tmp/ and other temp paths."`
 	NoClaudeMD   bool     `help:"Never refresh the scribe block in ~/.claude/CLAUDE.md, regardless of --bind/--yes/--force." name:"no-claude-md"`
 	NoCodexMD    bool     `help:"Never refresh the scribe block in ~/.codex/AGENTS.md, regardless of --bind/--yes/--force." name:"no-codex-md"`
+	NoAmpMD      bool     `help:"Never refresh the scribe block in ~/.config/amp/AGENTS.md, regardless of --bind/--yes/--force." name:"no-amp-md"`
 	// Phase 5: top-level LLM provider for the new KB. When set to
 	// "ollama" the rendered scribe.yaml has `llm.provider: ollama`
 	// uncommented and the bootstrap pre-pulls the recommended local
@@ -301,6 +302,16 @@ func (c *InitCmd) runBootstrap() error {
 		}
 	default:
 		fmt.Println("  (skipping ~/.codex/AGENTS.md block — pass --bind to install)")
+	}
+	switch {
+	case c.NoAmpMD:
+		fmt.Println("  (--no-amp-md: skipping ~/.config/amp/AGENTS.md block)")
+	case allowUserWrites:
+		if err := installAmpMD(vars, c.Check, true, c.Bind); err != nil {
+			fmt.Printf("  warning: %s\n", err)
+		}
+	default:
+		fmt.Println("  (skipping ~/.config/amp/AGENTS.md block — pass --bind to install)")
 	}
 
 	// Phase 5: when the user picked Ollama, probe the server and
@@ -674,7 +685,7 @@ func (c *InitCmd) runStatus(root string) error {
 	// Collect vars once and reuse for both agent handshakes — calling
 	// collectVars twice would re-prompt in interactive status mode.
 	var agentVars templateVars
-	if !c.NoClaudeMD || !c.NoCodexMD {
+	if !c.NoClaudeMD || !c.NoCodexMD || !c.NoAmpMD {
 		agentVars, _ = c.collectVars(root)
 		// In status mode, prefer the stored config over fresh prompts.
 		if cfg.OwnerName != "" {
@@ -700,6 +711,13 @@ func (c *InitCmd) runStatus(root string) error {
 	if c.NoCodexMD {
 		fmt.Println("  (--no-codex-md: skipping)")
 	} else if err := installCodexMD(agentVars, c.Check, c.Yes, c.Bind); err != nil {
+		fmt.Printf("  warning: %s\n", err)
+	}
+
+	fmt.Println("\nAmp AGENTS.md (~/.config/amp/AGENTS.md):")
+	if c.NoAmpMD {
+		fmt.Println("  (--no-amp-md: skipping)")
+	} else if err := installAmpMD(agentVars, c.Check, c.Yes, c.Bind); err != nil {
 		fmt.Printf("  warning: %s\n", err)
 	}
 
@@ -821,6 +839,20 @@ func codexAgentsMDPath() string {
 	return filepath.Join(os.Getenv("HOME"), ".codex", "AGENTS.md")
 }
 
+// ampAgentsMDPath returns ~/.config/amp/AGENTS.md — Amp's user-level
+// instructions file. Amp also reads ~/.config/AGENTS.md and any
+// project-root AGENTS.md walked up to $HOME; scribe manages only the
+// amp-scoped user file, so the block can't leak into a repo or collide
+// with a generic ~/.config/AGENTS.md the user keeps for other tools.
+//
+// $HOME (not $XDG_CONFIG_HOME) is deliberate: Amp's manual documents
+// this path as `$HOME/.config/amp/AGENTS.md` verbatim. Honoring XDG
+// here would, on a machine that sets it, write a file Amp never reads
+// while doctor happily reported the block installed.
+func ampAgentsMDPath() string {
+	return filepath.Join(os.Getenv("HOME"), ".config", "amp", "AGENTS.md")
+}
+
 // buildAgentMDBlock renders an embedded block template against the given
 // vars and wraps it in the shared idempotency markers. The markers are
 // HTML comments, valid in any markdown file, so the same pair works for
@@ -844,6 +876,15 @@ func installClaudeMD(_ string, vars templateVars, check, yes, bound bool) error 
 // drop files) Claude Code sessions get from ~/.claude/CLAUDE.md.
 func installCodexMD(vars templateVars, check, yes, bound bool) error {
 	return installAgentMD(codexAgentsMDPath(), "templates/codex-agents-md.md", vars, check, yes, bound)
+}
+
+// installAmpMD syncs the scribe block in ~/.config/amp/AGENTS.md so Amp
+// sessions get the same KB handshake. The Amp template carries one
+// instruction the others don't: Amp threads live server-side and reach
+// ccrider only via its opt-in Amp importer, so an Amp session can't
+// count on being mined — which makes drop files the load-bearing path.
+func installAmpMD(vars templateVars, check, yes, bound bool) error {
+	return installAgentMD(ampAgentsMDPath(), "templates/amp-agents-md.md", vars, check, yes, bound)
 }
 
 // installAgentMD syncs the scribe block in an agent's global

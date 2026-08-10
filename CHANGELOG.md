@@ -4,6 +4,30 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added — Amp gets the KB handshake
+
+`scribe init` now installs its block in **`~/.config/amp/AGENTS.md`** alongside
+`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, so [Amp](https://ampcode.com)
+sessions run the same loop: query the KB before decisions, write drop files for
+reusable knowledge. Skip it with `--no-amp-md`; `scribe doctor` gains a WARN-only
+`~/.config/amp/AGENTS.md block` row (installed / missing / points at another KB).
+
+- **Only the amp-scoped user file is managed.** Amp also reads
+  `~/.config/AGENTS.md`, project-root `AGENTS.md` walked up to `$HOME`, and a
+  system-wide file. scribe writes exactly one of them, so the block can't leak
+  into a repo or collide with a generic `~/.config/AGENTS.md`. The path is
+  `$HOME`-relative rather than `$XDG_CONFIG_HOME`-relative because Amp documents
+  it that way — honoring XDG on a machine that sets it would write a file Amp
+  never reads while doctor reported the block installed.
+- **The Amp block carries a warning the other two don't need.** Claude Code and
+  Codex transcripts are local files, so session mining always finds them. Amp
+  threads live server-side and reach ccrider only through its opt-in importer
+  (`amp_enabled` in `~/.config/ccrider/config.toml`), which needs network and a
+  live login — so an Amp session can't assume it will be mined, and the block
+  tells it to treat drop files as the load-bearing path rather than a nicety.
+- The three doctor handshake rows now share one `checkAgentMDHandshake` helper
+  instead of a third copy of the same four-state check.
+
 ### Fixed — a failed absorb can no longer be recorded as a success
 - Pass 2 now treats a **body-less envelope** as a failure and spends a
   corrective retry on it. A schema-valid reply whose every action carried only

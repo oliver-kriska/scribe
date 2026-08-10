@@ -140,6 +140,23 @@ func (c *InitCmd) buildInitPlan(abs string, vars templateVars, ucKBDir string, a
 			Explain: blockExplain("~/.codex/AGENTS.md", "Codex CLI") + " " + skipExplain,
 		})
 	}
+	switch {
+	case c.NoAmpMD:
+		plan = append(plan, initAction{
+			Title:   "skip ~/.config/amp/AGENTS.md block (--no-amp-md)",
+			Explain: blockExplain("~/.config/amp/AGENTS.md", "Amp"),
+		})
+	case allowUserWrites:
+		plan = append(plan, initAction{
+			Title:   "install/refresh scribe block in ~/.config/amp/AGENTS.md",
+			Explain: blockExplain("~/.config/amp/AGENTS.md", "Amp"),
+		})
+	default:
+		plan = append(plan, initAction{
+			Title:   "skip ~/.config/amp/AGENTS.md block (pass --bind to install)",
+			Explain: blockExplain("~/.config/amp/AGENTS.md", "Amp") + " " + skipExplain,
+		})
+	}
 
 	if strings.EqualFold(vars.LLMProvider, "ollama") {
 		plan = append(plan, initAction{

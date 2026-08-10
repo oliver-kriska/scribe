@@ -511,3 +511,53 @@ func TestBlockReferencesKB(t *testing.T) {
 		t.Error("root outside the block must not count")
 	}
 }
+
+// TestCheckAgentMDHandshake pins the four states the shared handshake
+// row reports, and that a foreign-KB block names the right agent — the
+// row is what tells a multi-KB machine which sessions are pointed where.
+func TestCheckAgentMDHandshake(t *testing.T) {
+	dir := t.TempDir()
+	const root = "/Users/u/Projects/kb-a"
+
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		return p
+	}
+	block := func(kb string) string {
+		return claudeMDMarkerBegin + "\nKB lives at `" + kb + "`.\n" + claudeMDMarkerEnd
+	}
+
+	// 1. File missing → WARN with the caller's detail, row named for the
+	//    file (not "<file> block") so it reads as "no file at all".
+	got := checkAgentMDHandshake(filepath.Join(dir, "absent.md"), "~/.config/amp/AGENTS.md", "Amp", "not found (Amp not set up?)", root)
+	if got.Status != statusWarn || got.Detail != "not found (Amp not set up?)" {
+		t.Errorf("missing file: got %+v", got)
+	}
+	if got.Name != "~/.config/amp/AGENTS.md" {
+		t.Errorf("missing file row should name the file, got %q", got.Name)
+	}
+
+	// 2. File present, no block → WARN.
+	got = checkAgentMDHandshake(write("nomarkers.md", "# my own notes\n"), "~/.config/amp/AGENTS.md", "Amp", "nf", root)
+	if got.Status != statusWarn || got.Detail != "scribe block not found" {
+		t.Errorf("no block: got %+v", got)
+	}
+
+	// 3. Block pointing at this KB → OK.
+	got = checkAgentMDHandshake(write("ok.md", "user prose\n"+block(root)), "~/.config/amp/AGENTS.md", "Amp", "nf", root)
+	if got.Status != statusOK || got.Name != "~/.config/amp/AGENTS.md block" {
+		t.Errorf("in-sync block: got %+v", got)
+	}
+
+	// 4. Block pointing at another KB → WARN naming the agent (#27).
+	got = checkAgentMDHandshake(write("foreign.md", block("/Users/u/Projects/kb-b")), "~/.config/amp/AGENTS.md", "Amp", "nf", root)
+	if got.Status != statusWarn || !strings.Contains(got.Detail, "Amp sessions query that one") {
+		t.Errorf("foreign block: got %+v", got)
+	}
+	if !strings.Contains(got.Fix, "--bind") {
+		t.Errorf("foreign block fix should point at --bind, got %q", got.Fix)
+	}
+}

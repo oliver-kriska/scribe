@@ -133,10 +133,14 @@ func TestRunBootstrap_ThrowawayPathSkipsGlobals(t *testing.T) {
 		t.Errorf("user config should not be written to fake home; found at %s", userCfg)
 	}
 	// Codex AGENTS.md must not have been written either — the
-	// throwaway-path guard covers both agent handshakes.
+	// throwaway-path guard covers every agent handshake.
 	codexMD := filepath.Join(fakeHome, ".codex", "AGENTS.md")
 	if _, err := os.Stat(codexMD); err == nil {
 		t.Errorf("~/.codex/AGENTS.md should not be written to fake home; found at %s", codexMD)
+	}
+	ampMD := filepath.Join(fakeHome, ".config", "amp", "AGENTS.md")
+	if _, err := os.Stat(ampMD); err == nil {
+		t.Errorf("~/.config/amp/AGENTS.md should not be written to fake home; found at %s", ampMD)
 	}
 }
 
@@ -193,6 +197,10 @@ func TestRunBootstrap_BindFlagAllowsThrowawayWrites(t *testing.T) {
 	codexMD := filepath.Join(fakeHome, ".codex", "AGENTS.md")
 	if _, err := os.Stat(codexMD); err != nil {
 		t.Errorf("--bind should install ~/.codex/AGENTS.md, but %s missing: %v", codexMD, err)
+	}
+	ampMD := filepath.Join(fakeHome, ".config", "amp", "AGENTS.md")
+	if _, err := os.Stat(ampMD); err != nil {
+		t.Errorf("--bind should install ~/.config/amp/AGENTS.md, but %s missing: %v", ampMD, err)
 	}
 }
 
@@ -287,6 +295,94 @@ func TestInstallCodexMD_CheckModeNeverWrites(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(fakeHome, ".codex", "AGENTS.md")); err == nil {
 		t.Error("check mode must not create ~/.codex/AGENTS.md")
+	}
+}
+
+// TestInstallAmpMD_Lifecycle mirrors the Codex lifecycle test against
+// ~/.config/amp/AGENTS.md, and pins the two things that make the Amp
+// block different from the others: the path is amp-scoped (never the
+// generic ~/.config/AGENTS.md, which the user may keep for other tools)
+// and the body must carry the "threads are not mined" instruction —
+// without it an Amp session has no reason to prioritize drop files.
+func TestInstallAmpMD_Lifecycle(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	// XDG must not move the file: Amp documents $HOME/.config/amp.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "xdg-elsewhere"))
+	vars := minimalVars(t.TempDir())
+	path := filepath.Join(fakeHome, ".config", "amp", "AGENTS.md")
+
+	// 1. Missing file → created with the block + markers.
+	if err := installAmpMD(vars, false, true, true); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after create: %v", err)
+	}
+	if !strings.Contains(string(data), claudeMDMarkerBegin) || !strings.Contains(string(data), claudeMDMarkerEnd) {
+		t.Fatal("created AGENTS.md missing scribe markers")
+	}
+	if !strings.Contains(string(data), "testkb Knowledge Base") {
+		t.Errorf("created AGENTS.md missing rendered KB name; got:\n%s", data)
+	}
+	if !strings.Contains(string(data), "Don't assume this thread gets mined") {
+		t.Error("Amp template must flag that thread mining is opt-in — it's why drop files matter more here")
+	}
+	// The generic ~/.config/AGENTS.md is Amp-readable but shared with
+	// other tools; scribe must not claim it.
+	if _, err := os.Stat(filepath.Join(fakeHome, ".config", "AGENTS.md")); err == nil {
+		t.Error("scribe must not write the generic ~/.config/AGENTS.md")
+	}
+
+	// 2. In-sync → byte-identical, no-op.
+	before, _ := os.ReadFile(path)
+	if err := installAmpMD(vars, false, true, true); err != nil {
+		t.Fatalf("in-sync: %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Errorf("in-sync run rewrote the file:\nbefore=%q\nafter=%q", before, after)
+	}
+
+	// 3. User content outside markers is preserved on refresh. Oliver's
+	// hand-written ~/.config/amp/AGENTS.md predates this target, so the
+	// append-and-preserve path is the common case, not the rare one.
+	userPrefix := "# Oliver's Global Preferences\n\nkeep me\n\n"
+	userSuffix := "\n\n## Worktrees\nalso keep me\n"
+	body, _ := os.ReadFile(path)
+	mixed := userPrefix + string(body) + userSuffix
+	if err := os.WriteFile(path, []byte(mixed), 0o644); err != nil {
+		t.Fatalf("write mixed: %v", err)
+	}
+	vars2 := vars
+	vars2.OwnerName = "Someone Else"
+	if err := installAmpMD(vars2, false, true, true); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	out, _ := os.ReadFile(path)
+	if !strings.Contains(string(out), "keep me") || !strings.Contains(string(out), "also keep me") {
+		t.Errorf("refresh dropped user content outside markers; got:\n%s", out)
+	}
+	if !strings.Contains(string(out), "Someone Else") {
+		t.Errorf("refresh did not update the drifted block; got:\n%s", out)
+	}
+	if strings.Count(string(out), claudeMDMarkerBegin) != 1 {
+		t.Errorf("refresh should leave exactly one scribe block, got %d", strings.Count(string(out), claudeMDMarkerBegin))
+	}
+}
+
+// TestInstallAmpMD_CheckModeNeverWrites confirms --check is read-only
+// for the Amp handshake like the other two.
+func TestInstallAmpMD_CheckModeNeverWrites(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	vars := minimalVars(t.TempDir())
+	if err := installAmpMD(vars, true, true, false); err != nil {
+		t.Fatalf("check mode: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(fakeHome, ".config", "amp", "AGENTS.md")); err == nil {
+		t.Error("check mode must not create ~/.config/amp/AGENTS.md")
 	}
 }
 

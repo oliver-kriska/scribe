@@ -256,51 +256,51 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 		})
 	}
 
-	claudeMD := filepath.Join(os.Getenv("HOME"), ".claude", "CLAUDE.md")
-	data, err := os.ReadFile(claudeMD)
-	switch {
-	case err != nil:
-		out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md", Status: statusWarn, Detail: "not found", Fix: "scribe init"})
-	case strings.Contains(string(data), claudeMDMarkerBegin) && strings.Contains(string(data), claudeMDMarkerEnd):
-		if blockReferencesKB(string(data), root) {
-			out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusOK, Detail: "installed"})
-		} else {
-			out = append(out, check{
-				Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusWarn,
-				Detail: "installed but references another KB — agent sessions query that one, not this",
-				Fix:    "scribe init --bind  (repoints the block at this KB)",
-			})
-		}
-	default:
-		out = append(out, check{Section: "config", Name: "~/.claude/CLAUDE.md block", Status: statusWarn, Detail: "scribe block not found", Fix: "scribe init"})
-	}
-
-	// Codex CLI handshake: ~/.codex/AGENTS.md is Codex's analog of
-	// ~/.claude/CLAUDE.md. WARN-only — Codex is optional, and AGENTS.md
-	// is a softer contract (Codex churned codex.md → instructions.md →
-	// AGENTS.md, and Desktop/managed installs may manage their own), so
-	// this row reports *presence of the scribe block*, never "Codex is
-	// reading it" — we can't probe the latter.
-	codexMD := filepath.Join(os.Getenv("HOME"), ".codex", "AGENTS.md")
-	cdata, cerr := os.ReadFile(codexMD)
-	switch {
-	case cerr != nil:
-		out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md", Status: statusWarn, Detail: "not found (Codex CLI not set up?)", Fix: "scribe init"})
-	case strings.Contains(string(cdata), claudeMDMarkerBegin) && strings.Contains(string(cdata), claudeMDMarkerEnd):
-		if blockReferencesKB(string(cdata), root) {
-			out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusOK, Detail: "installed"})
-		} else {
-			out = append(out, check{
-				Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusWarn,
-				Detail: "installed but references another KB — Codex sessions query that one, not this",
-				Fix:    "scribe init --bind  (repoints the block at this KB)",
-			})
-		}
-	default:
-		out = append(out, check{Section: "config", Name: "~/.codex/AGENTS.md block", Status: statusWarn, Detail: "scribe block not found", Fix: "scribe init"})
-	}
+	// Agent handshakes. Every row reports *presence of the scribe block*,
+	// never "the agent is reading it" — we can't probe the latter. Codex
+	// and Amp are softer contracts than CLAUDE.md: Codex churned
+	// codex.md → instructions.md → AGENTS.md and Desktop/managed installs
+	// may manage their own, while Amp merges several AGENTS.md sources
+	// (project-root, ~/.config/AGENTS.md, system-wide) of which scribe
+	// manages exactly one. Both are optional, hence WARN-only — a user
+	// without Codex or Amp still gets a clean doctor. The Amp row carries
+	// the most weight: Amp threads are server-side and reach ccrider only
+	// through its opt-in importer, so drop files carry more of the load
+	// than they do for a local-transcript agent, and a missing block
+	// leaves that path uninstructed.
+	out = append(out,
+		checkAgentMDHandshake(claudeMDPath(), "~/.claude/CLAUDE.md", "agent", "not found", root),
+		checkAgentMDHandshake(codexAgentsMDPath(), "~/.codex/AGENTS.md", "Codex", "not found (Codex CLI not set up?)", root),
+		checkAgentMDHandshake(ampAgentsMDPath(), "~/.config/amp/AGENTS.md", "Amp", "not found (Amp not set up?)", root),
+	)
 
 	return out
+}
+
+// checkAgentMDHandshake audits one agent's global instructions file for
+// the scribe handshake block. Four states: file missing, block missing,
+// block present but pointing at another KB (#27), block present and
+// pointing here. display is the ~-style path used in the row name, agent
+// names whose sessions read the file, and missingDetail is the WARN
+// detail when the file itself is absent (each agent phrases "you may
+// simply not use me" differently).
+func checkAgentMDHandshake(path, display, agent, missingDetail, root string) check {
+	data, err := os.ReadFile(path)
+	switch {
+	case err != nil:
+		return check{Section: "config", Name: display, Status: statusWarn, Detail: missingDetail, Fix: "scribe init"}
+	case strings.Contains(string(data), claudeMDMarkerBegin) && strings.Contains(string(data), claudeMDMarkerEnd):
+		if blockReferencesKB(string(data), root) {
+			return check{Section: "config", Name: display + " block", Status: statusOK, Detail: "installed"}
+		}
+		return check{
+			Section: "config", Name: display + " block", Status: statusWarn,
+			Detail: "installed but references another KB — " + agent + " sessions query that one, not this",
+			Fix:    "scribe init --bind  (repoints the block at this KB)",
+		}
+	default:
+		return check{Section: "config", Name: display + " block", Status: statusWarn, Detail: "scribe block not found", Fix: "scribe init"}
+	}
 }
 
 // blockReferencesKB reports whether the scribe handshake block mentions
