@@ -49,7 +49,7 @@ make test         # go test ./... -tags sqlite_fts5
 make check        # test + vet
 ```
 
-**Build never deploys.** `make build` writes only to `./bin/scribe`; the live binary at `~/.local/bin/scribe` (executed by cron) changes only on `make install`. On macOS, replacing the deployed binary invalidates the chat.db Full Disk Access grant — re-run `scribe fda` after every `make install`.
+**Build never deploys.** `make build` writes only to `./bin/scribe`; the live binary at `~/.local/bin/scribe` (executed by cron) changes only on `make install`. On macOS, `make install` automatically Developer-ID-signs with the first available **Developer ID Application** identity; override `CODESIGN_IDENTITY` when more than one is installed. Signed rebuilds from the same team preserve the chat.db Full Disk Access grant. Without a Developer ID identity the install stays unsigned, and replacing it requires another `scribe fda`.
 
 **FTS5 is mandatory.** ccrider's `messages_fts` virtual table uses it, and `scribe triage` runs weighted FTS5 `MATCH` queries against it. `go-sqlite3` ships without FTS5 — the `sqlite_fts5` build tag is what flips it on. Never drop that tag from the Makefile.
 

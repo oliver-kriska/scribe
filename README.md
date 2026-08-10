@@ -139,7 +139,7 @@ cd scribe
 make install    # builds with -tags sqlite_fts5 to ./bin/scribe, then deploys to ~/.local/bin
 ```
 
-`make build` alone compiles to the repo-local `./bin/scribe` and never touches `~/.local/bin` — only `make install` replaces the binary cron executes. On macOS, re-run `scribe fda` after `make install`: replacing the deployed binary invalidates its Full Disk Access grant.
+`make build` alone compiles to the repo-local `./bin/scribe` and never touches `~/.local/bin` — only `make install` replaces the binary cron executes. On macOS, `make install` automatically Developer-ID-signs the binary when a **Developer ID Application** identity is available in the login keychain. Rebuilds signed by the same team keep their Full Disk Access grant; without that identity, the install remains unsigned and needs a fresh `scribe fda` after replacement.
 
 ---
 
@@ -224,13 +224,22 @@ scribe fda
 
 That command:
 
-1. Detects every scribe binary on disk (`~/.local/bin/scribe`, the mise-managed copy, etc.) and reports which already have FDA.
+1. Detects every scribe binary on disk (`~/.local/bin/scribe`, the mise-managed copy, etc.) and verifies each through launchd—the same parent context scheduled capture uses. An FDA-granted Terminal or coding agent therefore cannot mask a missing grant on the binary itself.
 2. Opens **System Settings → Privacy & Security → Full Disk Access** directly via the `x-apple.systempreferences:` URL.
 3. Prints the full path to each missing binary — paste it into the file picker (Cmd-Shift-G), Enter, then toggle the checkbox.
 4. Polls every 3 seconds for up to 2 minutes; flips a `✓` next to each binary the moment its grant lands.
 5. Reminds you to reload LaunchAgents (`scribe cron uninstall && scribe cron install`) so running jobs pick up the grant.
 
 `scribe fda --verify` is the scriptable form: exit 0 if the current binary has FDA, non-zero otherwise. `scribe init` prompts once at the end of a fresh bootstrap; `scribe doctor` surfaces ungranted state in its **Recent run errors** section with a direct `run: scribe fda` fix hint.
+
+Official macOS release binaries are Developer ID signed and notarized. The
+stable signing identity preserves FDA when a signed binary is replaced at the
+same registered path. This includes shell-installer updates to
+`~/.local/bin/scribe` when the installer downloads a signed release archive;
+its source-build fallback may be unsigned. Homebrew additionally moves the raw
+executable to a new versioned Cellar path, which TCC records separately; after
+`brew upgrade scribe`, run `scribe fda` to verify the new path and re-grant it
+if needed.
 
 Manual fallback if you ever need it: System Settings → Privacy & Security → Full Disk Access → **+** → add the paths `scribe fda` lists.
 

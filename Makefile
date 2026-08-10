@@ -6,9 +6,9 @@
 #
 # Build vs deploy are split (issue #18): `make build` compiles to ./bin/scribe
 # (repo-local, gitignored) and never touches the live binary; `make install`
-# deploys to $(PREFIX)/bin — the binary cron executes. On macOS, replacing the
-# deployed binary invalidates the chat.db Full Disk Access grant; re-run
-# `scribe fda` after `make install`.
+# deploys to $(PREFIX)/bin — the binary cron executes. On macOS, install signs
+# with the first available Developer ID Application identity. The stable
+# signing identity lets the chat.db Full Disk Access grant survive rebuilds.
 
 GO      ?= go
 GOFLAGS ?=
@@ -23,8 +23,16 @@ INSTALL_BIN := $(PREFIX)/bin/scribe
 GOBIN_DIR := $(shell $(GO) env GOBIN)
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
+UNAME_S := $(shell uname -s)
+# Override when multiple Developer ID identities are installed. Use the
+# certificate SHA-1 rather than its display name so spaces and punctuation
+# cannot confuse codesign. GoReleaser's cross-platform signer uses the binary
+# basename as its identifier, so local installs must use "scribe" too: matching
+# Team ID + identifier is what keeps the TCC designated requirement stable.
+CODESIGN_IDENTITY ?= $(shell if [ "$(UNAME_S)" = "Darwin" ]; then security find-identity -v -p codesigning 2>/dev/null | awk '/"Developer ID Application:/{print $$2; exit}'; fi)
+CODESIGN_IDENTIFIER ?= scribe
 
-.PHONY: build install test tidy check fmt race lint vuln ci clean
+.PHONY: build sign install test tidy check fmt race lint vuln ci clean
 
 # Default target builds — matches existing muscle memory, but the output now
 # lands in ./bin/scribe instead of ~/.local/bin (deploy is `make install`).
@@ -33,14 +41,29 @@ build: ## Build the scribe binary to ./bin/scribe (default; does not deploy)
 	@mkdir -p $(dir $(BIN))
 	CGO_ENABLED=1 $(GO) build -tags "$(TAGS)" -ldflags "$(LDFLAGS)" $(GOFLAGS) -o $(BIN) $(PKG)
 
-install: build ## Build, then deploy to $(PREFIX)/bin (and $GOBIN if set) — the binary cron runs
+sign: build ## On macOS, Developer-ID-sign the binary when an identity is available
+	@set -e; if [ "$(UNAME_S)" = "Darwin" ] && [ -n "$(CODESIGN_IDENTITY)" ]; then \
+		codesign --force --timestamp --options runtime \
+			--identifier "$(CODESIGN_IDENTIFIER)" \
+			--sign "$(CODESIGN_IDENTITY)" "$(BIN)"; \
+		codesign --verify --strict --verbose=2 "$(BIN)"; \
+		echo "signed $(BIN) with Developer ID identity $(CODESIGN_IDENTITY)"; \
+	elif [ "$(UNAME_S)" = "Darwin" ]; then \
+		echo "no Developer ID Application identity found — leaving $(BIN) unsigned"; \
+	fi
+
+install: sign ## Build, sign on macOS when possible, then deploy — the binary cron runs
 	install -d "$(PREFIX)/bin"
 	install -m 0755 "$(BIN)" "$(INSTALL_BIN)"
 	@if [ -n "$(GOBIN_DIR)" ] && [ "$(GOBIN_DIR)/scribe" != "$(INSTALL_BIN)" ]; then \
 		echo "mirroring binary to $(GOBIN_DIR)/scribe (GOBIN is set — keeps \`which scribe\` in sync)"; \
 		install -m 0755 "$(BIN)" "$(GOBIN_DIR)/scribe"; \
 	fi
-	@echo "deployed $(INSTALL_BIN) — on macOS, re-run \`scribe fda\` (replacing the binary drops the chat.db Full Disk Access grant)"
+	@if [ "$(UNAME_S)" = "Darwin" ] && [ -z "$(CODESIGN_IDENTITY)" ]; then \
+		echo "deployed $(INSTALL_BIN) unsigned — re-run \`scribe fda\` after replacing it"; \
+	else \
+		echo "deployed $(INSTALL_BIN)"; \
+	fi
 
 test: ## Run tests
 	$(GO) test -tags "$(TAGS)" $(GOFLAGS) -count=1 ./...

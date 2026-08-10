@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,7 +26,13 @@ import (
 // This command is safe to run repeatedly; it is purely advisory.
 type FDACmd struct {
 	Verify bool `help:"Only check current FDA state; do not open System Settings." short:"v"`
+	Direct bool `hidden:"" help:"Run the internal direct probe without launchd isolation."`
 }
+
+// ReadOnly prevents FDA probes from appending a run record to the KB. The
+// command only reads chat.db access state and, in interactive mode, opens
+// System Settings and Finder.
+func (c *FDACmd) ReadOnly() bool { return true }
 
 // chatDBPath is the file whose readability determines whether the current
 // binary has Full Disk Access. A function, not a package var: a var
@@ -46,32 +53,41 @@ func (c *FDACmd) Run() error {
 		fmt.Println("Full Disk Access is macOS-only — not applicable on this platform.")
 		return nil
 	}
-	state := probeFDA()
+	// TCC can attribute a child process to the "responsible" parent process.
+	// A scribe invoked from an FDA-granted terminal or coding agent can therefore
+	// read chat.db even when scribe itself has an explicit denied row. The hidden
+	// direct mode is launched only by probeFDAIsolated, under launchd, so its
+	// parent cannot lend scribe a grant and produce a false positive.
+	if c.Direct {
+		state := probeFDADirect()
+		if state.OK {
+			fmt.Println("granted")
+		} else {
+			fmt.Printf("missing\t%s\n", state.Reason)
+		}
+		// launchctl submit keeps failed jobs alive. Emit the result but exit
+		// successfully so an expected FDA denial cannot become a respawn loop;
+		// the public parent converts "missing" back into a non-zero result.
+		return nil
+	}
+
+	targets := fdaTargets()
 	// `--verify` is a one-shot for the current binary only. Returning before
 	// the multi-binary checks keeps the exit code semantics simple for
-	// scripts (exit 0 = this binary has FDA). Trim Targets to just the
-	// current inode so the printout doesn't show other binaries as "NOT
-	// GRANTED" — they weren't actually checked in this mode.
+	// scripts (exit 0 = this binary has FDA). Probe only the current executable
+	// so the printout doesn't show other binaries as "NOT GRANTED" when they
+	// were not requested.
 	if c.Verify {
-		state.Targets = filterToCurrent(state.Targets)
+		targets = filterToCurrent(targets)
+	}
+	state := probeFDA(targets)
+	if c.Verify {
 		printFDAStatus(state)
 		if !state.OK {
 			return fmt.Errorf("full disk access not granted for %s", selfBinaryPath())
 		}
 		return nil
 	}
-	// For the interactive flow, promote each other-inode target by exec'ing
-	// it with `fda --verify`. TCC is per-inode, so the currently-running
-	// binary's grant says nothing about the cron binary next door.
-	for i, t := range state.Targets {
-		if t.Live || t.Path == selfBinaryPath() {
-			continue
-		}
-		if err := exec.Command(t.Path, "fda", "--verify").Run(); err == nil { //nolint:noctx // local scribe self-invocation
-			state.Targets[i].Live = true
-		}
-	}
-	state.OK = allTargetsLive(state.Targets)
 	printFDAStatus(state)
 
 	if state.OK {
@@ -84,7 +100,7 @@ func (c *FDACmd) Run() error {
 
 // filterToCurrent keeps only the target whose Role == "current". Used by
 // `--verify`, which probes only the running binary and should not render
-// other inodes as "NOT GRANTED" when they were never tested.
+// other executables as "NOT GRANTED" when they were never tested.
 func filterToCurrent(ts []fdaTarget) []fdaTarget {
 	for _, t := range ts {
 		if t.Role == "current" {
@@ -95,7 +111,7 @@ func filterToCurrent(ts []fdaTarget) []fdaTarget {
 }
 
 // allTargetsLive is true when every listed binary has passed the FDA probe.
-// A single ungranted inode means the user still has a broken path.
+// A single ungranted executable means the user still has a broken path.
 func allTargetsLive(ts []fdaTarget) bool {
 	for _, t := range ts {
 		if !t.Live {
@@ -112,48 +128,122 @@ type fdaState struct {
 }
 
 // fdaTarget is one on-disk scribe binary the user may need to grant FDA to.
-// We enumerate every distinct inode because TCC tracks grants per-binary,
-// so a user who granted FDA to the mise-managed copy still sees cron fail
-// if the LaunchAgent invokes a different path.
+// We enumerate every distinct executable because separate install locations
+// may contain unsigned or differently signed builds. A grant that works for a
+// mise-managed copy does not prove that the LaunchAgent's copy can read chat.db.
 type fdaTarget struct {
 	Path string
 	Role string // "current" | "cron" | "shadow"
 	Live bool   // true once this specific binary has passed a probe
 }
 
-// probeFDA opens chat.db and classifies the failure. The Open call is the
-// most reliable signal: TCC denials surface as "operation not permitted"
+// probeFDA launches every target under launchd and records whether that isolated
+// invocation can open chat.db. Isolation matters because TCC can attribute a
+// child to an FDA-granted "responsible" parent such as Terminal or Amp; a direct
+// child exec would otherwise report a grant that the LaunchAgent does not have.
+func probeFDA(targets []fdaTarget) fdaState {
+	s := fdaState{Targets: targets}
+	for i, target := range s.Targets {
+		live, reason := probeFDAIsolated(target.Path)
+		s.Targets[i].Live = live
+		if !live && (s.Reason == "" || target.Role == "current") {
+			s.Reason = reason
+		}
+	}
+	s.OK = allTargetsLive(s.Targets)
+	return s
+}
+
+// probeFDADirect opens chat.db and classifies the failure. The Open call is the
+// most reliable direct signal: TCC denials surface as "operation not permitted"
 // (EPERM) even though the file exists; that's the FDA-specific pattern we
 // match against to avoid false positives on "file missing" and generic I/O.
 //
-// The probe only speaks for the *currently-running* binary (TCC tracks per
-// inode). `OK` therefore means "this invocation can read chat.db"; it does
-// not guarantee that a differently-pathed scribe (e.g. the one cron uses)
-// has the same grant. fdaTargets() enumerates the others so the caller can
-// tell the user which ones still need attention.
-func probeFDA() fdaState {
-	s := fdaState{Targets: fdaTargets()}
+// Call this only from FDACmd's hidden --direct mode. User-facing checks must go
+// through probeFDAIsolated so an FDA-granted parent cannot lend the invocation
+// its own TCC responsibility and create a false positive.
+func probeFDADirect() fdaState {
+	s := fdaState{}
 	f, err := os.Open(chatDBPath())
 	if err == nil {
 		_ = f.Close()
 		s.OK = true
-		// Mark the currently-running binary as live; other paths stay as
-		// "assumed needs grant". There is no way from here to test a
-		// different inode's TCC grant without exec'ing that binary.
-		for i, t := range s.Targets {
-			if t.Role == "current" {
-				s.Targets[i].Live = true
-			}
-		}
 		return s
 	}
 	s.Reason = err.Error()
 	return s
 }
 
+// probeFDAIsolated asks launchd to execute one scribe binary with no
+// FDA-granted terminal or coding-agent parent. The direct child emits a tiny
+// machine-readable result to its launchd-managed stdout file. Poll that file
+// and remove the submitted job as soon as the child reports.
+func probeFDAIsolated(binary string) (bool, string) {
+	stdout, err := os.CreateTemp("", "scribe-fda-probe-*.out")
+	if err != nil {
+		return false, fmt.Sprintf("create isolated-probe output: %v", err)
+	}
+	stdoutPath := stdout.Name()
+	_ = stdout.Close()
+	stderr, err := os.CreateTemp("", "scribe-fda-probe-*.err")
+	if err != nil {
+		_ = os.Remove(stdoutPath)
+		return false, fmt.Sprintf("create isolated-probe error output: %v", err)
+	}
+	stderrPath := stderr.Name()
+	_ = stderr.Close()
+
+	label := fmt.Sprintf("com.scribe.fda-probe.%d.%d", os.Getpid(), time.Now().UnixNano())
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if output, err := exec.CommandContext(cleanupCtx, "launchctl", "remove", label).CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: remove isolated FDA probe %s: %v (%s)\n", label, err, strings.TrimSpace(string(output)))
+		}
+		_ = os.Remove(stdoutPath)
+		_ = os.Remove(stderrPath)
+	}()
+
+	submitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(
+		submitCtx,
+		"launchctl", "submit",
+		"-l", label,
+		"-p", binary,
+		"-o", stdoutPath,
+		"-e", stderrPath,
+		"--", binary, "fda", "--verify", "--direct",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return false, fmt.Sprintf("launch isolated FDA probe: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(stdoutPath)
+		if err == nil {
+			result := strings.TrimSpace(string(data))
+			switch {
+			case result == "granted":
+				return true, ""
+			case strings.HasPrefix(result, "missing\t"):
+				return false, strings.TrimPrefix(result, "missing\t")
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	detail, _ := os.ReadFile(stderrPath)
+	if reason := strings.TrimSpace(string(detail)); reason != "" {
+		return false, "isolated FDA probe timed out: " + reason
+	}
+	return false, "isolated FDA probe timed out without a result"
+}
+
 // fdaTargets returns every distinct scribe binary on disk: the running one,
 // the canonical cron path (~/.local/bin/scribe), and any GOBIN shadow.
-// Duplicates (same inode) are collapsed.
+// Duplicates that resolve to the same path are collapsed.
 func fdaTargets() []fdaTarget {
 	paths := []struct {
 		Role string
@@ -215,8 +305,8 @@ func selfBinaryPath() string {
 
 // miseShadowPath returns the GOBIN-resident copy of the scribe binary if it
 // differs from the one that's currently running. Mise (or any GOBIN-setting
-// tool) produces a second on-disk scribe; TCC grants are per-inode, so the
-// user may need to grant FDA to both copies if they run scribe interactively.
+// tool) produces a second on-disk scribe; probe both because they may have
+// different signing identities.
 func miseShadowPath() string {
 	gobin := strings.TrimSpace(runCmd("", "go", "env", "GOBIN"))
 	if gobin == "" {
@@ -235,7 +325,7 @@ func miseShadowPath() string {
 func printFDAStatus(s fdaState) {
 	fmt.Println("Full Disk Access probe:")
 	fmt.Printf("  chat.db path: %s\n", chatDBPath())
-	fmt.Println("  scribe binaries that need FDA (TCC grants per-inode — add each distinct path):")
+	fmt.Println("  discovered scribe binaries (each verified independently):")
 	for _, t := range s.Targets {
 		marker := " "
 		note := ""
@@ -314,22 +404,14 @@ func runFDAFlow(s fdaState) error {
 		}
 	}
 
-	// Poll for up to 2 minutes, re-checking every 3 seconds. Each iteration
-	// refreshes the live status of each target: the current binary via
-	// direct open() and others by exec'ing them. The user can add multiple
-	// binaries to FDA in one go and watch each flip to ✓ as it completes.
+	// Poll for up to 2 minutes, re-checking every 3 seconds. Every check runs
+	// under launchd so an FDA-granted terminal or coding agent cannot lend its
+	// grant to scribe. The user can add multiple binaries in one go and watch
+	// each flip to ✓ as it completes.
 	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
 		time.Sleep(3 * time.Second)
-		fresh := probeFDA()
-		for i, t := range fresh.Targets {
-			if t.Live || t.Path == selfBinaryPath() {
-				continue
-			}
-			if err := exec.Command(t.Path, "fda", "--verify").Run(); err == nil { //nolint:noctx // local scribe self-invocation
-				fresh.Targets[i].Live = true
-			}
-		}
+		fresh := probeFDA(fdaTargets())
 		if allTargetsLive(fresh.Targets) {
 			fmt.Println()
 			fmt.Println("  ✓ All scribe binaries have Full Disk Access.")

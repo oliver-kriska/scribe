@@ -9,6 +9,10 @@
 #   - HOMEBREW_TAP_GITHUB_TOKEN repo secret (PAT with repo:write on
 #     oliver-kriska/homebrew-scribe)  — used by goreleaser to publish the
 #     formula update.
+#   - MACOS_SIGN_P12 + MACOS_SIGN_PASSWORD (Developer ID Application
+#     certificate exported as base64 PKCS#12 and its password).
+#   - MACOS_NOTARY_KEY + MACOS_NOTARY_KEY_ID + MACOS_NOTARY_ISSUER_ID
+#     (base64 App Store Connect API key and its identifiers).
 
 name: release
 
@@ -64,15 +68,40 @@ jobs:
           sudo install syft /usr/local/bin/syft
           rm -f syft syft_1.49.0_linux_amd64.tar.gz syft_1.49.0_checksums.txt
 
+      # Never silently publish unsigned macOS artifacts. The notarize block in
+      # .goreleaser.yml is conditionally disabled for local snapshots, so the
+      # release workflow must enforce that every production credential exists.
+      - name: Require Apple signing credentials
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          missing=()
+          for name in \
+            MACOS_SIGN_P12 \
+            MACOS_SIGN_PASSWORD \
+            MACOS_NOTARY_KEY \
+            MACOS_NOTARY_KEY_ID \
+            MACOS_NOTARY_ISSUER_ID
+          do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf 'Missing required repository secret: %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+
       - name: Run GoReleaser in cross-compile container
-        # The image base is Go 1.26.4 (goreleaser-cross has no newer tag
-        # yet). GOTOOLCHAIN=auto makes the in-container build honor the
-        # `go 1.26.5` directive in go.mod by fetching that toolchain, so the
-        # release binary is built against the patched stdlib regardless of
-        # the image's base Go. Bump the image tag to a >=1.26.5 base once one
-        # ships and the download step goes away.
+        # Image contains Go 1.26.5 + GoReleaser 2.17.1. Do not downgrade to
+        # 2.17.0: its Quill wait loop polls Apple's notarization API every 10ns
+        # instead of 10s and can fail releases with RATE_LIMIT responses.
         #
-        # Image pinned by DIGEST (= tag v1.26.4): this container runs
+        # Image pinned by DIGEST (= tag v1.26.5-v2.17.1): this container runs
         # with the Homebrew-tap PAT in its env, so a repointed tag would
         # be a formula-compromise vector. To bump, resolve the new tag:
         #   TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:goreleaser/goreleaser-cross:pull" | jq -r .token)
@@ -85,11 +114,20 @@ jobs:
             -w /go/src/github.com/oliver-kriska/scribe \
             -e GITHUB_TOKEN \
             -e HOMEBREW_TAP_GITHUB_TOKEN \
-            -e GOTOOLCHAIN=auto \
             -e ACTIONS_ID_TOKEN_REQUEST_URL \
             -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
-            ghcr.io/goreleaser/goreleaser-cross@sha256:61ecf9d14fc81b9c3e1f8dde4ba8c4f28a7d33005cd1b9bee13e8ed11860c4bb \
-            release --clean
+            -e MACOS_SIGN_P12 \
+            -e MACOS_SIGN_PASSWORD \
+            -e MACOS_NOTARY_KEY \
+            -e MACOS_NOTARY_KEY_ID \
+            -e MACOS_NOTARY_ISSUER_ID \
+            ghcr.io/goreleaser/goreleaser-cross@sha256:0cf2b7f757b40397d2bef5423adb88d0ac63899e88a9f0c4bbb370d3fb7b2fb5 \
+            release --clean --timeout 60m
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}

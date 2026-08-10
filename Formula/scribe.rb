@@ -73,27 +73,25 @@ class Scribe < Formula
                                       # use drag-and-drop from Finder if the
                                       # "+ / Cmd-Shift-G" flow fails to register
 
-      Heads-up: until scribe ships with Developer ID codesigning, the FDA grant
-      is tied to the Cellar path + binary cdhash (both change on every
-      `brew upgrade scribe`). After an upgrade, `scribe capture` will start
-      failing with "operation not permitted" — just re-run `scribe fda`.
-      `scribe doctor` flags this situation explicitly.
+      macOS release binaries are Developer ID signed, so in-place replacements
+      keep a stable code identity. Homebrew also changes the raw executable's
+      versioned Cellar path, which TCC records separately; after
+      `brew upgrade scribe`, run `scribe fda` to verify and re-grant if needed.
     EOS
   end
 
-  # post_install runs on fresh install and on `brew upgrade`. We use it to
-  # surface the FDA-is-now-broken message specifically on upgrade, since brew
-  # does not re-print `caveats` during upgrades and users otherwise hit a
-  # silent `capture` failure the next time cron fires.
+  # post_install runs on fresh install and on `brew upgrade`. Keep any
+  # already-installed LaunchAgents aligned with the new binary and job set.
   def post_install
     return unless OS.mac?
-    # The stable symlink at HOMEBREW_PREFIX/bin/scribe survives upgrades, but
-    # the Cellar target behind it (and its cdhash) changes. Any prior TCC
-    # grant is keyed to the *previous* Cellar inode and is therefore invalid.
     ohai "Homebrew upgraded scribe to #{version}."
-    ohai "If iMessage capture was working before, macOS Full Disk Access is now"
-    ohai "invalidated (TCC is keyed to the binary cdhash, not the install path)."
-    ohai "Re-run:  scribe fda"
+    ohai "If you use iMessage capture, run `scribe fda` to verify that the new"
+    ohai "versioned Cellar path has Full Disk Access."
+    begin
+      system bin/"scribe", "cron", "install", "--if-installed"
+    rescue => e
+      opoo "scribe cron install --if-installed failed: #{e.message} (run it manually)"
+    end
   end
 
   test do

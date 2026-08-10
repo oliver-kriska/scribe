@@ -161,33 +161,31 @@ func checkDeps(cfg *ScribeConfig) []check {
 		})
 	default:
 		// On modern macOS (10.15+) TCC tracks the *binary being
-		// executed* per inode+cdhash, not the parent Terminal, so the
-		// fix is always "grant FDA to the scribe binary itself", which
-		// `scribe fda` drives interactively.
-		chatDB := filepath.Join(os.Getenv("HOME"), "Library", "Messages", "chat.db")
-		if f, err := os.Open(chatDB); err == nil {
-			_ = f.Close()
+		// executed*, not the parent Terminal, so the fix is always
+		// "grant FDA to the scribe binary itself", which `scribe fda`
+		// drives interactively. Official release binaries carry a stable
+		// Developer ID designated requirement, so that grant survives
+		// later upgrades signed by the same team.
+		if live, reason := probeFDAIsolated(selfBinaryPath()); live {
 			out = append(out, check{Section: "deps", Name: "chat.db (FDA)", Status: statusOK, Detail: "readable"})
 		} else {
 			out = append(out, check{
 				Section: "deps", Name: "chat.db (FDA)", Status: statusFail,
-				Detail: "unreadable — `scribe capture` will fail",
+				Detail: "unreadable in launchd context — `scribe capture` will fail: " + reason,
 				Fix:    "run `scribe fda` (grants Full Disk Access to the scribe binary)",
 			})
 		}
 
-		// Warn about the Homebrew-Cellar / cdhash tax: the FDA grant
-		// is keyed to the exact binary inode. Every `brew upgrade
-		// scribe` replaces the Cellar-versioned binary, which
-		// invalidates the prior grant and makes capture silently start
-		// failing until the user re-runs `scribe fda`. Only relevant
-		// when capture is actually in use.
+		// Developer ID signing stabilizes the executable's code
+		// requirement, but TCC also records a raw CLI's resolved path.
+		// Homebrew changes that versioned Cellar path on every upgrade,
+		// so the new path must still be verified independently.
 		if exe, err := os.Executable(); err == nil {
 			if resolved, err := filepath.EvalSymlinks(exe); err == nil && strings.Contains(resolved, "/Cellar/scribe/") {
 				out = append(out, check{
 					Section: "deps", Name: "FDA (brew upgrade)", Status: statusWarn,
-					Detail: "running from " + resolved + " — the TCC grant is tied to this exact binary and will be invalidated by the next `brew upgrade scribe`",
-					Fix:    "re-run `scribe fda` after every upgrade (until signed builds ship)",
+					Detail: "running from versioned Homebrew path " + resolved + " — signing stabilizes code identity, but TCC also records this path",
+					Fix:    "run `scribe fda` after `brew upgrade scribe` to verify and re-grant the new Cellar path if needed",
 				})
 			}
 		}

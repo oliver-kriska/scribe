@@ -4,6 +4,33 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added — signed macOS releases stabilize Full Disk Access identity
+
+Darwin release binaries are now signed with a stable Developer ID identity and
+submitted to Apple's notary service before GoReleaser creates archives, SBOMs,
+or checksums. macOS can therefore key the chat.db Full Disk Access grant to the
+binary's designated requirement instead of a rebuild-specific ad-hoc cdhash, so
+the grant survives in-place replacements at the same registered path. The
+release workflow fails before publishing if any signing credential is absent
+rather than silently shipping an unsigned macOS artifact.
+
+`make install` applies the same stable `scribe` identifier when a Developer ID
+Application identity is available locally. Contributors without one still get
+an unsigned development install and the existing one-regrant-per-rebuild
+behavior. Homebrew remains a separate path-level case: TCC stores the resolved,
+versioned Cellar path for raw CLIs, so `scribe fda` still verifies the new path
+after `brew upgrade`.
+
+### Fixed — FDA verification can no longer inherit a parent's grant
+
+`scribe fda`, `scribe fda --verify`, and doctor's chat.db check now launch a
+one-shot probe through launchd, matching scheduled capture's parent context.
+Previously they opened chat.db directly, so TCC could attribute the request to
+an FDA-granted responsible parent such as Terminal or Amp and report GRANTED
+even while the scribe executable had an explicit denied TCC row. Each discovered
+binary path is now verified independently; the interactive poll uses the same
+isolated check.
+
 ### Added — doctor flags a coding agent that stopped being indexed
 
 `scribe doctor --section freshness` now reads ccrider's per-provider index

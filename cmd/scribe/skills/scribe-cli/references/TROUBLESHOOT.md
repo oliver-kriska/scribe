@@ -33,8 +33,10 @@ section with `scribe doctor --section <name>` when you're chasing one thing.
 
 ### "chat.db / iMessage capture fails" (macOS)
 - `scribe doctor --section deps` shows the chat.db (FDA) check. Full Disk Access
-  is dropped whenever the binary is **replaced** (`make install`, `brew
-  upgrade`). Fix: `scribe fda` (interactive grant), then re-check with `doctor`.
+  persists when a Developer-ID-signed binary is replaced at the same registered
+  path. Homebrew upgrades also change the versioned Cellar path TCC records, and
+  unsigned source builds still change identity. Fix: `scribe fda` (isolated
+  launchd verification + interactive grant), then re-check with `doctor`.
 - Confirm you're running the binary you think: `which scribe` + `scribe --version`.
 
 ### "ollama unreachable / local mode broken"

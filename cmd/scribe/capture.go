@@ -20,8 +20,8 @@ import (
 // chat.db, extract URLs (and free-form notes), write raw/articles/ stubs, and
 // optionally fetch URL content via fetch.go's three-tier pipeline.
 //
-// Requires Full Disk Access for the terminal running this command (macOS:
-// System Settings → Privacy & Security → Full Disk Access).
+// Requires Full Disk Access for the scribe executable (macOS: System
+// Settings → Privacy & Security → Full Disk Access).
 type CaptureCmd struct {
 	Since  string `help:"Capture from this date (YYYY-MM-DD). Defaults to last_capture from state file."`
 	Fetch  bool   `help:"Also fetch URL content via fetch.go (FxTwitter / trafilatura / Jina)."`

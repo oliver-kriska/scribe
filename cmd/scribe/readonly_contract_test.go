@@ -44,6 +44,9 @@ func TestCommandIsReadOnly(t *testing.T) {
 	}{
 		{"doctor is read-only", []string{"doctor"}, true},
 		{"status is read-only", []string{"status"}, true},
+		{"fda is read-only", []string{"fda"}, true},
+		{"fda verify is read-only", []string{"fda", "--verify"}, true},
+		{"fda direct probe is read-only", []string{"fda", "--verify", "--direct"}, true},
 		{"sync --dry-run is read-only", []string{"sync", "--dry-run"}, true},
 		{"sync (real) is not read-only", []string{"sync"}, false},
 		{"capture --dry-run is read-only (generic DryRun field)", []string{"capture", "--dry-run"}, true},

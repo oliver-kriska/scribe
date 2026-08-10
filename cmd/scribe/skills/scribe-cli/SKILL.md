@@ -69,10 +69,13 @@ than guessing flags.
 
 ## After upgrading the binary
 
-If the user rebuilt/reinstalled scribe (`make install`, `brew upgrade`), on
-macOS the chat.db Full Disk Access grant is dropped when the binary is replaced.
-Re-run `scribe fda` and confirm with `scribe doctor` (the `deps` section shows
-the chat.db/FDA check). Verify the live binary first: `which scribe` and
+Official macOS releases are Developer ID signed, so FDA survives an in-place
+replacement at the same registered path. Homebrew also moves the executable to
+a new versioned Cellar path that TCC records separately, so run `scribe fda`
+after `brew upgrade`. Source-built installs need a re-grant when unsigned;
+`make install` signs automatically when a Developer ID Application identity is
+available. Confirm with `scribe doctor` (the `deps` section shows the
+chat.db/FDA check), and verify the live binary first with `which scribe` and
 `scribe --version`.
 
 ## Safety rules
