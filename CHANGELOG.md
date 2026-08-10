@@ -4,6 +4,34 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added — doctor flags a coding agent that stopped being indexed
+
+`scribe doctor --section freshness` now reads ccrider's per-provider index
+state and warns when one agent's sessions stopped arriving while the others
+kept flowing. This is the failure that cost three weeks of Amp threads in
+2026-07: ccrider's Amp importer is gated behind `amp_enabled` in
+`~/.config/ccrider/config.toml`, and with the toggle off `ccrider sync` prints
+a line for every other provider and silently omits Amp. scribe reported healthy
+runs the whole time, because it only ever reads the index and an absent
+provider looks exactly like an idle one.
+
+Nothing in the index records *intent*, so the row can't separate "the importer
+broke" from "you stopped using that agent" — it states both readings rather
+than asserting one. Three guards keep it from crying wolf:
+
+- **A reference clock.** A provider is only judged while some other provider
+  was indexed within 48h. If ccrider indexed nothing recently the machine was
+  idle, and every provider looks stale for the same innocent reason.
+- **A floor.** Providers under 5 sessions are experiments, not habits; going
+  quiet says nothing about them.
+- **A ceiling.** Past 90 days a provider is abandoned, not broken. It drops to
+  the inventory line marked `(inactive)` instead of nagging every run about a
+  tool you deliberately stopped using.
+
+When all providers are healthy the section prints one row with each provider's
+newest session age. The Amp fix names `amp_enabled` directly, since that
+importer's silent-when-off behavior is the documented case.
+
 ### Added — Amp gets the KB handshake
 
 `scribe init` now installs its block in **`~/.config/amp/AGENTS.md`** alongside

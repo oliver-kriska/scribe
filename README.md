@@ -266,6 +266,8 @@ The `scribe watch` job (fsnotify watcher for ccrider's SQLite DB) is not cron-fr
 
 `scribe doctor` works the same on either OS: it reads `output/runs/*.jsonl` for freshness and recent errors, so you can verify scheduled jobs are firing regardless of how they're scheduled.
 
+The same section also watches the *input* side. `scribe doctor --section freshness` compares ccrider's newest indexed session per coding agent and warns when one agent goes quiet while the others keep flowing — the shape of an importer that broke rather than a machine that was idle. It can't know whether you simply stopped using that agent, so the row says both; it only fires while another provider was indexed in the last 48h, ignores agents with fewer than 5 sessions, and stops nagging after 90 days (that's an abandoned tool, not a broken one).
+
 ---
 
 ## Configuration

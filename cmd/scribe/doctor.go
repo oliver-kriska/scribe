@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // DoctorCmd is a read-only health check for a scribe KB checkout. It audits
@@ -79,6 +82,7 @@ func (c *DoctorCmd) Run() error {
 			all = append(all, checkState(root, cfg)...)
 		case "freshness":
 			all = append(all, checkFreshness(root, time.Now())...)
+			all = append(all, checkProviderMining(cfg, time.Now())...)
 		case "errors":
 			all = append(all, checkRecentErrors(root, time.Now(), c.ErrorWindow)...)
 		case "contradictions":
@@ -1367,6 +1371,195 @@ func checkFreshness(root string, now time.Time) []check {
 		out = append(out, ck)
 	}
 	return out
+}
+
+// Provider-staleness thresholds. A provider is only judged when it has
+// enough history to represent a habit rather than an experiment, and
+// only while ccrider is demonstrably still indexing *something* — the
+// freshest provider is the reference clock, so "my laptop was off for a
+// month" can't light the whole section up.
+// providerAbandonedAfter closes the alert window. A provider quiet for
+// two weeks while others flow is suspicious and worth one line; a
+// provider quiet for three months is a tool you stopped using, and
+// warning about it every run is noise nobody can act on. Between the two
+// bounds the row nags; past the far one it drops to the inventory.
+const (
+	providerMinSessions    = 5
+	providerStaleAfter     = 14 * 24 * time.Hour
+	providerAbandonedAfter = 90 * 24 * time.Hour
+	providerIndexActiveIn  = 48 * time.Hour
+)
+
+// ccriderProviderStat is one provider's slice of ccrider's index.
+type ccriderProviderStat struct {
+	Provider string
+	Sessions int
+	Newest   time.Time
+}
+
+// checkProviderMining flags a coding agent whose sessions stopped
+// arriving in ccrider's index while other agents kept flowing.
+//
+// This is the silent-failure class that cost three weeks of Amp threads
+// in 2026-07: ccrider's Amp importer is gated behind `amp_enabled` in
+// ~/.config/ccrider/config.toml, and with the toggle off `ccrider sync`
+// prints a per-provider line for everyone else and simply omits Amp —
+// no warning, no error, no zero count. scribe then reported healthy runs
+// while harvesting nothing, because scribe only ever reads the index and
+// an absent provider looks exactly like an idle one.
+//
+// The check can't distinguish "the importer broke" from "you stopped
+// using that agent" — nothing in the DB carries that intent — so the row
+// states both readings instead of asserting one. What makes it worth
+// printing is the comparison: a provider frozen for weeks *while another
+// provider indexed an hour ago* means ccrider is running and this
+// provider alone stopped, which is the shape of a real breakage.
+func checkProviderMining(cfg *ScribeConfig, now time.Time) []check {
+	if cfg == nil || !fileExists(cfg.CcriderDB) {
+		return nil // checkConfig already FAILs on a missing ccrider DB.
+	}
+	stats, err := loadCcriderProviderStats(cfg.CcriderDB)
+	if err != nil {
+		return []check{{
+			Section: "freshness", Name: "session providers", Status: statusWarn,
+			Detail: "could not read ccrider index: " + err.Error(),
+			Fix:    "check ~/.config/ccrider/sessions.db, or run `ccrider sync` once",
+		}}
+	}
+	if len(stats) == 0 {
+		return []check{{
+			Section: "freshness", Name: "session providers", Status: statusWarn,
+			Detail: "ccrider index has no sessions yet",
+			Fix:    "run `ccrider sync`",
+		}}
+	}
+
+	// Reference clock: the most recently indexed session across all
+	// providers. Without a live reference we can't tell a broken
+	// importer from a machine that simply wasn't used.
+	var newest time.Time
+	for _, s := range stats {
+		if s.Newest.After(newest) {
+			newest = s.Newest
+		}
+	}
+	indexActive := !newest.IsZero() && now.Sub(newest) <= providerIndexActiveIn
+
+	var stale []ccriderProviderStat
+	inventory := make([]string, 0, len(stats))
+	for _, s := range stats {
+		age := now.Sub(s.Newest)
+		label := fmt.Sprintf("%s %s", s.Provider, shortDuration(age))
+		if age >= providerAbandonedAfter {
+			label += " (inactive)"
+		}
+		inventory = append(inventory, label)
+		if s.Sessions >= providerMinSessions && age >= providerStaleAfter && age < providerAbandonedAfter {
+			stale = append(stale, s)
+		}
+	}
+
+	// Only one provider has ever been indexed: there's no second clock to
+	// compare against, so report the inventory and judge nothing.
+	if !indexActive || len(stats) < 2 || len(stale) == 0 {
+		return []check{{
+			Section: "freshness", Name: "session providers", Status: statusOK,
+			Detail: strings.Join(inventory, ", ") + " (newest session per provider)",
+		}}
+	}
+
+	out := make([]check, 0, len(stale))
+	for _, s := range stale {
+		out = append(out, check{
+			Section: "freshness", Name: "provider " + s.Provider, Status: statusWarn,
+			Detail: fmt.Sprintf("%d sessions, newest %s ago — but ccrider indexed another provider %s ago, so either its importer stopped or you stopped using it",
+				s.Sessions, shortDuration(now.Sub(s.Newest)), shortDuration(now.Sub(newest))),
+			Fix: providerMiningFix(s.Provider),
+		})
+	}
+	return out
+}
+
+// providerMiningFix names the importer knob for providers whose ingest
+// path is known to be gated. Amp is the documented case; every other
+// provider gets the generic re-sync advice.
+func providerMiningFix(provider string) string {
+	if strings.EqualFold(provider, "amp") {
+		return "if still using Amp: set `amp_enabled = true` in ~/.config/ccrider/config.toml (its importer is opt-in and silent when off), then `ccrider sync`"
+	}
+	return "if still using " + provider + ": run `ccrider sync` and confirm it prints a line for that provider"
+}
+
+// loadCcriderProviderStats reads ccrider's per-provider index state.
+// Read-only: scribe never writes to another tool's database.
+func loadCcriderProviderStats(dbPath string) ([]ccriderProviderStat, error) {
+	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// doctor is budgeted under a second; a GROUP BY over the sessions
+	// table is milliseconds, but the timeout keeps a locked or corrupt
+	// DB from hanging the whole health check.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	rows, err := db.QueryContext(ctx, `SELECT COALESCE(provider, 'claude'), COUNT(*), MAX(updated_at)
+		FROM sessions GROUP BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ccriderProviderStat
+	for rows.Next() {
+		var s ccriderProviderStat
+		var newest sql.NullString
+		if err := rows.Scan(&s.Provider, &s.Sessions, &newest); err != nil {
+			return nil, err
+		}
+		// A provider with no parseable timestamp can't be aged; keeping
+		// it with a zero time would read as "infinitely stale", so drop
+		// it rather than invent an alarm.
+		if !newest.Valid {
+			continue
+		}
+		ts, ok := parseCcriderTime(newest.String)
+		if !ok {
+			continue
+		}
+		s.Newest = ts
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Newest.After(out[j].Newest) })
+	return out, nil
+}
+
+// parseCcriderTime decodes ccrider's updated_at. It stores Go's
+// time.Time.String() output ("2026-08-10 08:23:54.349 +0000 UTC"), but
+// older rows and a future schema change could carry RFC3339, so the
+// layouts are tried in order rather than assuming one.
+func parseCcriderTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05 -0700 MST",
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+	} {
+		if ts, err := time.Parse(layout, s); err == nil {
+			return ts, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // ---- Formatting helpers ----

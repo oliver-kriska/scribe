@@ -512,6 +512,143 @@ func TestBlockReferencesKB(t *testing.T) {
 	}
 }
 
+// TestParseCcriderTime covers the formats ccrider's updated_at has worn.
+// The live DB stores Go's time.Time.String() output; RFC3339 is accepted
+// defensively so a schema change doesn't silently drop every provider
+// (an unparseable timestamp is skipped, which would read as "healthy").
+func TestParseCcriderTime(t *testing.T) {
+	for _, in := range []string{
+		"2026-08-10 08:23:54.349 +0000 UTC",
+		"2026-07-22 16:44:52 +0000 UTC",
+		"2026-08-10T08:23:54Z",
+		"2026-08-10T08:23:54.349Z",
+		"2026-08-10 08:23:54",
+	} {
+		if _, ok := parseCcriderTime(in); !ok {
+			t.Errorf("should parse %q", in)
+		}
+	}
+	for _, in := range []string{"", "   ", "not a time", "1754812834"} {
+		if _, ok := parseCcriderTime(in); ok {
+			t.Errorf("should not parse %q", in)
+		}
+	}
+}
+
+// TestCheckProviderMining pins the staleness row and — more importantly
+// — the three guards that keep it from crying wolf. The failure this
+// catches is real: ccrider's Amp importer went quiet on 2026-07-22 and
+// nothing surfaced it for three weeks.
+func TestCheckProviderMining(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	stamp := func(d time.Duration) string {
+		return now.Add(-d).Format("2006-01-02 15:04:05.999999999 -0700 MST")
+	}
+	// seed builds a fixture DB whose sessions carry the given provider,
+	// count and newest-timestamp, then runs the check against it.
+	seed := func(t *testing.T, rows []ccriderProviderStat, ages []time.Duration) []check {
+		t.Helper()
+		db, path := newCcriderDB(t)
+		for i, r := range rows {
+			for n := range r.Sessions {
+				//nolint:noctx // test fixture
+				if _, err := db.Exec(
+					`INSERT INTO sessions (session_id, project_path, updated_at, provider) VALUES (?, ?, ?, ?)`,
+					fmt.Sprintf("%s-%d", r.Provider, n), "/p", stamp(ages[i]), r.Provider); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		return checkProviderMining(&ScribeConfig{CcriderDB: path}, now)
+	}
+	warnsFor := func(out []check, provider string) *check {
+		for i := range out {
+			if out[i].Status == statusWarn && strings.Contains(out[i].Name, provider) {
+				return &out[i]
+			}
+		}
+		return nil
+	}
+
+	// The July incident: amp frozen for 19 days while claude indexed an
+	// hour ago. Both providers well past the min-session bar.
+	out := seed(t,
+		[]ccriderProviderStat{{Provider: "claude", Sessions: 20}, {Provider: "amp", Sessions: 42}},
+		[]time.Duration{time.Hour, 19 * 24 * time.Hour})
+	got := warnsFor(out, "amp")
+	if got == nil {
+		t.Fatalf("stale amp provider should WARN; got %+v", out)
+	}
+	if !strings.Contains(got.Detail, "42 sessions") || !strings.Contains(got.Detail, "stopped using it") {
+		t.Errorf("detail should carry the count and both readings; got %q", got.Detail)
+	}
+	if !strings.Contains(got.Fix, "amp_enabled") {
+		t.Errorf("amp fix should name the ccrider toggle; got %q", got.Fix)
+	}
+	if warnsFor(out, "claude") != nil {
+		t.Error("the fresh provider must not warn")
+	}
+
+	// Guard 1: a provider with almost no history is an experiment, not a
+	// habit — going quiet says nothing.
+	out = seed(t,
+		[]ccriderProviderStat{{Provider: "claude", Sessions: 20}, {Provider: "opencode", Sessions: 2}},
+		[]time.Duration{time.Hour, 40 * 24 * time.Hour})
+	if w := warnsFor(out, "opencode"); w != nil {
+		t.Errorf("provider under the min-session bar must not warn; got %+v", w)
+	}
+
+	// Guard 2: no live reference clock. If ccrider indexed nothing
+	// recently the machine was simply idle, and blaming one provider
+	// would be noise — the whole section stays OK.
+	out = seed(t,
+		[]ccriderProviderStat{{Provider: "claude", Sessions: 20}, {Provider: "amp", Sessions: 42}},
+		[]time.Duration{30 * 24 * time.Hour, 60 * 24 * time.Hour})
+	for _, ck := range out {
+		if ck.Status == statusWarn {
+			t.Errorf("stale index with no active reference must not warn; got %+v", ck)
+		}
+	}
+
+	// Guard 3: past the far bound the provider is abandoned, not broken.
+	// Warning every run about a tool you stopped using months ago is
+	// noise nobody can act on, so it drops to the inventory instead.
+	out = seed(t,
+		[]ccriderProviderStat{{Provider: "claude", Sessions: 20}, {Provider: "opencode", Sessions: 9}},
+		[]time.Duration{time.Hour, 120 * 24 * time.Hour})
+	if w := warnsFor(out, "opencode"); w != nil {
+		t.Errorf("provider past the abandoned bound must not warn; got %+v", w)
+	}
+	if len(out) != 1 || !strings.Contains(out[0].Detail, "opencode") || !strings.Contains(out[0].Detail, "(inactive)") {
+		t.Errorf("abandoned provider should still appear in the inventory, marked inactive; got %+v", out)
+	}
+
+	// Guard 4: everything fresh → one OK inventory row, no per-provider
+	// noise.
+	out = seed(t,
+		[]ccriderProviderStat{{Provider: "claude", Sessions: 20}, {Provider: "amp", Sessions: 42}},
+		[]time.Duration{time.Hour, 2 * time.Hour})
+	if len(out) != 1 || out[0].Status != statusOK {
+		t.Fatalf("healthy index should yield one OK row; got %+v", out)
+	}
+	if !strings.Contains(out[0].Detail, "claude") || !strings.Contains(out[0].Detail, "amp") {
+		t.Errorf("inventory should list every provider; got %q", out[0].Detail)
+	}
+}
+
+// TestCheckProviderMining_NoDB: a missing ccrider DB is checkConfig's
+// FAIL to report, not this row's — it must stay silent rather than
+// double-reporting the same problem in two sections.
+func TestCheckProviderMining_NoDB(t *testing.T) {
+	got := checkProviderMining(&ScribeConfig{CcriderDB: filepath.Join(t.TempDir(), "absent.db")}, time.Now())
+	if got != nil {
+		t.Errorf("missing DB should yield no rows, got %+v", got)
+	}
+	if got := checkProviderMining(nil, time.Now()); got != nil {
+		t.Errorf("nil config should yield no rows, got %+v", got)
+	}
+}
+
 // TestCheckAgentMDHandshake pins the four states the shared handshake
 // row reports, and that a foreign-KB block names the right agent — the
 // row is what tells a multi-KB machine which sessions are pointed where.
