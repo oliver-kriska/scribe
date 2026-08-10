@@ -56,6 +56,21 @@ reusable knowledge. Skip it with `--no-amp-md`; `scribe doctor` gains a WARN-onl
 - The three doctor handshake rows now share one `checkAgentMDHandshake` helper
   instead of a third copy of the same four-state check.
 
+### Fixed — pass-2 schema now requires `content` (root cause of the dropped entities)
+- `wikiEnvelopeSchema` adds `content` to each action's `required` set. Captured
+  evidence: **253 of 253** body-less replies omitted the `content` key
+  *entirely* — the model emitted `{op, path}`, exactly the old required set, and
+  used `notes` to describe the page it had not written. The schema permitted it,
+  so the corrective retries were powerless: 107 first attempts, 83 on retry 1,
+  63 on retry 2, all the same shape. Requiring the key makes a content-free
+  action structurally impossible under strict decoding, the way `minItems: 1`
+  killed the empty-`{}` escape in 0.4.3.
+- Require the **key**, never a `minLength`. Measured: `minLength` forces the
+  grammar to keep emitting once the model has nothing left to say — MiniMax M3
+  produced 62,528 chars over 326s and DeepSeek-V4-Flash 40,992, both unparseable
+  at `finish=length`. Requiring the key costs nothing; ops that ignore `Content`
+  satisfy it with `""`.
+
 ### Added — degenerate pass-2 replies are captured for post-mortem
 - When pass 2 returns a body-less envelope, the verbatim provider response is
   written to `$KB/output/absorb-failures/<ts>-<entity>-a<attempt>.json` (the
