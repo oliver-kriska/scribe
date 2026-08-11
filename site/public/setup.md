@@ -54,7 +54,7 @@ scribe --version 2>/dev/null || true
 
 If the intended KB directory already contains `scribe.yaml`, treat it as an
 existing KB. Do not run a fresh `scribe init --path …` over it and do not use
-`--force`. For an existing checkout, `cd` into it and run `scribe init --check --yes`
+`--force`. For an existing checkout, `cd` into it and run `scribe init --check`
 or the team-member recipe below.
 
 Do not paste API keys into a prompt, command history, committed `scribe.yaml`,
@@ -357,7 +357,7 @@ KB="$HOME/team-kb"
 git clone git@github.com:acme/team-kb.git "$KB"
 cd "$KB"
 
-scribe init --check --yes
+scribe init --check
 scribe config trust
 scribe kb add "$KB"
 scribe cron install
@@ -425,7 +425,7 @@ Use `-C` so every check names the intended KB explicitly:
 
 ```sh
 scribe --version
-scribe -C "$KB" init --check --yes
+scribe -C "$KB" init --check
 scribe -C "$KB" doctor
 scribe kb list
 scribe -C "$KB" projects list
@@ -434,8 +434,11 @@ scribe -C "$KB" skill install --check
 git -C "$KB" status --short
 ```
 
-`init --check` is read-only and non-interactive on its own; `--yes` is harmless
-belt-and-braces on older releases. Verify scheduling — `cron status` covers both
+`init --check` is read-only and non-interactive on its own — don't reach for
+`--yes` here. Without `--check`, `--yes` repoints the KB binding in your global
+agent files, so pairing the two teaches a habit that is one dropped flag away
+from rewriting state you didn't mean to touch. Verify scheduling — `cron status`
+covers both
 platforms (LaunchAgents on macOS, the crontab block on Linux):
 
 ```sh
@@ -455,7 +458,7 @@ git -C "$KB" remote -v
 Setup is complete when:
 
 - `scribe` resolves to the expected binary and reports a version.
-- `init --check --yes` finds the intended KB without prompts or writes.
+- `init --check` finds the intended KB without prompts or writes.
 - `doctor` has no unexplained hard failures; qmd is healthy, and Ollama is
   reachable with the chosen local model when that provider is selected.
 - The KB appears in `scribe kb list`, and cron is installed (or its Linux block
