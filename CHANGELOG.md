@@ -4,6 +4,19 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-11
+
+The first pull-adapter release. `scribe pull` ingests bookmarks from external
+accounts into the KB — Pinboard first, behind a generic `Source` interface that
+keeps the next adapter a single file against the same seam. Onboarding also gets
+platform-safe checks and a public setup runbook.
+
+**Upgrading:** `scribe cron install` now installs an hourly `pull-sources` job.
+With no integration configured it is a no-op, but it does run and record a
+result each hour; remove that job from your schedule if you do not intend to use
+pull adapters. Nothing else changes for existing KBs — no config migration, no
+new dependencies.
+
 ### Fixed — native macOS release signing and executable validation
 
 - macOS release artifacts are now built on an Apple Silicon GitHub runner and
@@ -17,19 +30,6 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   `SG_READ_ONLY` flag, and a successful `--version` execution (Intel under
   Rosetta). Linux CGO artifacts continue to cross-compile with pinned Zig
   glibc 2.17 targets.
-
-## [0.5.0] — 2026-08-11
-
-The first pull-adapter release. `scribe pull` ingests bookmarks from external
-accounts into the KB — Pinboard first, behind a generic `Source` interface that
-keeps the next adapter a single file against the same seam. Onboarding also gets
-platform-safe checks and a public setup runbook.
-
-**Upgrading:** `scribe cron install` now installs an hourly `pull-sources` job.
-With no integration configured it is a no-op, but it does run and record a
-result each hour; remove that job from your schedule if you do not intend to use
-pull adapters. Nothing else changes for existing KBs — no config migration, no
-new dependencies.
 
 ### Added — pull adapters (`scribe pull`), starting with Pinboard
 
