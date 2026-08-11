@@ -2,6 +2,7 @@
 /scribe
 /bin/
 /dist/
+/.zig-cache/
 
 # Editor / OS
 .DS_Store
