@@ -15,7 +15,7 @@ PUB="$REPO/site/public"
 # shellcheck source=_pins.sh
 source "$SKILL_DIR/scripts/_pins.sh"
 
-SURFACES=(index.html index.md llms.txt llms-full.txt)
+SURFACES=(index.html index.md llms.txt llms-full.txt setup.md)
 fatal=0
 
 echo "── version-pin scan ($PUB) ──"
