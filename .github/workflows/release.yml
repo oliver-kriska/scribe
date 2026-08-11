@@ -66,7 +66,7 @@ jobs:
           version: 0.15.2
 
       - name: Install syft v1.51.0 (SBOM generation)
-        uses: anchore/sbom-action/download-syft@43a17d6e7add2b5535efe4dcae9952337c479a93 # v0.24.0
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           syft-version: v1.51.0
 
