@@ -59,14 +59,14 @@ jobs:
       # goreleaser-cross bundles cosign but NOT syft. Install a pinned,
       # checksum-verified syft on the runner and mount it into the
       # container (static Go binary — runs fine in the debian image).
-      - name: Install syft v1.49.0 (SBOM generation)
+      - name: Install syft v1.51.0 (SBOM generation)
         run: |
-          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_linux_amd64.tar.gz
-          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_checksums.txt
-          grep ' syft_1.49.0_linux_amd64.tar.gz$' syft_1.49.0_checksums.txt | sha256sum -c -
-          tar -xzf syft_1.49.0_linux_amd64.tar.gz syft
+          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_linux_amd64.tar.gz
+          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_checksums.txt
+          grep ' syft_1.51.0_linux_amd64.tar.gz$' syft_1.51.0_checksums.txt | sha256sum -c -
+          tar -xzf syft_1.51.0_linux_amd64.tar.gz syft
           sudo install syft /usr/local/bin/syft
-          rm -f syft syft_1.49.0_linux_amd64.tar.gz syft_1.49.0_checksums.txt
+          rm -f syft syft_1.51.0_linux_amd64.tar.gz syft_1.51.0_checksums.txt
 
       # Never silently publish unsigned macOS artifacts. The notarize block in
       # .goreleaser.yml is conditionally disabled for local snapshots, so the
