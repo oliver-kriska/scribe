@@ -172,23 +172,50 @@ func (f *queueFields) applyDefaults() {
 	}
 }
 
+// queueLineReplacer flattens the line terminators that would break the
+// one-key-per-line queue format.
+var queueLineReplacer = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ")
+
+// queueLineValue makes a value safe to emit as a single `key: value` line.
+//
+// This is a security boundary, not cosmetics. Pull adapters feed REMOTE-
+// controlled strings (a bookmark title, which Pinboard's bookmarklet fills
+// from the page's own <title>) into this format, and parseQueueEntry is
+// line-based. A raw newline therefore lets that remote text inject its own
+// `url:` line and redirect what drainOne fetches and absorbs. Newlines become
+// spaces — every field using this is single-line by definition, so nothing
+// meaningful is lost. (Note: is exempt; it round-trips through
+// encodeQueueNote, which already escapes newlines rather than dropping them.)
+func queueLineValue(s string) string {
+	return strings.TrimSpace(queueLineReplacer.Replace(s))
+}
+
 // renderQueueEntry serializes a queue entry to the line-based `key: value`
-// format parseQueueEntry reads. Callers apply defaults first.
+// format parseQueueEntry reads. Callers apply defaults first. Every
+// single-line field goes through queueLineValue — see its doc for why.
 func renderQueueEntry(f queueFields) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "url: %s\n", f.URL)
-	if f.Title != "" {
-		fmt.Fprintf(&sb, "title: %s\n", f.Title)
+	fmt.Fprintf(&sb, "url: %s\n", queueLineValue(f.URL))
+	if title := queueLineValue(f.Title); title != "" {
+		fmt.Fprintf(&sb, "title: %s\n", title)
 	}
 	if len(f.Tags) > 0 {
-		fmt.Fprintf(&sb, "tags: %s\n", strings.Join(f.Tags, ", "))
+		tags := make([]string, 0, len(f.Tags))
+		for _, t := range f.Tags {
+			if t = queueLineValue(t); t != "" {
+				tags = append(tags, t)
+			}
+		}
+		if len(tags) > 0 {
+			fmt.Fprintf(&sb, "tags: %s\n", strings.Join(tags, ", "))
+		}
 	}
-	fmt.Fprintf(&sb, "domain: %s\n", f.Domain)
-	if f.Fetcher != "" && f.Fetcher != "auto" {
-		fmt.Fprintf(&sb, "fetcher: %s\n", f.Fetcher)
+	fmt.Fprintf(&sb, "domain: %s\n", queueLineValue(f.Domain))
+	if fetcher := queueLineValue(f.Fetcher); fetcher != "" && fetcher != "auto" {
+		fmt.Fprintf(&sb, "fetcher: %s\n", fetcher)
 	}
-	if f.Source != "" {
-		fmt.Fprintf(&sb, "source: %s\n", f.Source)
+	if source := queueLineValue(f.Source); source != "" {
+		fmt.Fprintf(&sb, "source: %s\n", source)
 	}
 	if f.Note != "" {
 		// The queue format is line-based, so the note is single-line encoded
@@ -597,6 +624,13 @@ func drainOne(root, queuePath string, dryRun bool) error {
 }
 
 // parseQueueEntry reads the simple "key: value\n" format.
+//
+// FIRST occurrence of a key wins. renderQueueEntry already strips the line
+// terminators that would let a value forge an extra line, so this is
+// belt-and-braces — but it is the half that protects entries this process did
+// not write (a hand-edited file, or a future producer that forgets to
+// sanitize): the real fields are emitted first, so anything appended later
+// cannot override them. Last-wins would invert exactly that.
 func parseQueueEntry(s string) map[string]string {
 	out := make(map[string]string)
 	for line := range strings.SplitSeq(s, "\n") {
@@ -609,8 +643,10 @@ func parseQueueEntry(s string) map[string]string {
 			continue
 		}
 		key := strings.TrimSpace(before)
-		val := strings.TrimSpace(after)
-		out[key] = val
+		if _, seen := out[key]; seen {
+			continue
+		}
+		out[key] = strings.TrimSpace(after)
 	}
 	return out
 }

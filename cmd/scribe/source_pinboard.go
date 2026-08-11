@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -113,7 +114,7 @@ func (p pinboardSource) Fetch(ctx context.Context, cfg *ScribeConfig, prev json.
 
 	next, err := json.Marshal(pinboardCursor{UpdateTime: upd})
 	if err != nil {
-		return nil, prev, fmt.Errorf("encode cursor: %w", err)
+		return nil, prev, pinboardError(token, "encode cursor: %v", err)
 	}
 	return items, next, nil
 }
@@ -225,7 +226,7 @@ func (p pinboardSource) postsUpdate(ctx context.Context, token string) (string, 
 		UpdateTime string `json:"update_time"`
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
-		return "", fmt.Errorf("posts/update decode: %w", err)
+		return "", pinboardError(token, "posts/update decode: %v", err)
 	}
 	return r.UpdateTime, nil
 }
@@ -237,7 +238,7 @@ func (p pinboardSource) postsAll(ctx context.Context, token string, q url.Values
 	}
 	var posts []pinboardPost
 	if err := json.Unmarshal(body, &posts); err != nil {
-		return nil, fmt.Errorf("posts/all decode: %w", err)
+		return nil, pinboardError(token, "posts/all decode: %v", err)
 	}
 	return posts, nil
 }
@@ -251,14 +252,81 @@ func (p pinboardSource) postsRecent(ctx context.Context, token string, count int
 		Posts []pinboardPost `json:"posts"`
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, fmt.Errorf("posts/recent decode: %w", err)
+		return nil, pinboardError(token, "posts/recent decode: %v", err)
 	}
 	return r.Posts, nil
+}
+
+// pinboardHTTPClient refuses cross-host redirects. The auth token travels in
+// the query string (Pinboard's documented form), so following a redirect to
+// another host would hand the credential to that host verbatim. Same-host
+// redirects stay allowed. The ctx deadline set by pullSource bounds every
+// request, so no client-level Timeout is needed.
+var pinboardHTTPClient = &http.Client{
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+			return fmt.Errorf("refusing cross-host redirect to %q (the auth token rides in the query string)", req.URL.Host)
+		}
+		return nil
+	},
+}
+
+// redactSecret removes an API token from any string that could reach a log
+// line, a run record, or a terminal.
+//
+// This is not belt-and-braces: Go's net/http builds transport failures as
+// *url.Error, and stripPassword only removes *userinfo* passwords — query
+// parameters are preserved verbatim. So a plain DNS or dial failure yields
+//
+//	Get "https://api.pinboard.in/v1/posts/update?format=json&auth_token=user:HEX": dial tcp ...
+//
+// which would otherwise land in output/runs/*.jsonl, /tmp/scribe-pull.log, and
+// `scribe doctor --section errors` output. A Pinboard token grants full
+// read+write on the account, so it must never survive into any of those.
+func redactSecret(s, token string) string {
+	for _, term := range secretRedactionTerms(token) {
+		s = strings.ReplaceAll(s, term, "REDACTED")
+	}
+	return s
+}
+
+// secretRedactionTerms lists every literal that must not survive redaction:
+// the whole `username:HEX` token, its URL-escaped form, and the HEX half on
+// its own (in case something splits the pair). Longest first, so the full
+// pair is replaced before either half can match inside it. The username half
+// is deliberately NOT redacted — it is not the secret, and blanking a short
+// username would mangle unrelated text.
+func secretRedactionTerms(token string) []string {
+	if strings.TrimSpace(token) == "" {
+		return nil
+	}
+	terms := []string{token, url.QueryEscape(token)}
+	if _, secret, ok := strings.Cut(token, ":"); ok && strings.TrimSpace(secret) != "" {
+		terms = append(terms, secret, url.QueryEscape(secret))
+	}
+	sort.Slice(terms, func(i, j int) bool { return len(terms[i]) > len(terms[j]) })
+	return terms
+}
+
+// pinboardError builds an error whose message is guaranteed free of the API
+// token. The chain is deliberately FLATTENED (errors.New, not %w): keeping the
+// original *url.Error reachable would keep the token reachable with it, since
+// any later caller doing errors.Unwrap(err).Error() would print the raw URL.
+// Nothing in the pull path does errors.Is/As on these, so no behavior is lost.
+func pinboardError(token, format string, args ...any) error {
+	return errors.New(redactSecret(fmt.Sprintf(format, args...), token))
 }
 
 // get issues one authenticated GET and returns the body. auth_token is kept
 // literal (its `username:HEX` colon is a legal query char per RFC 3986) so it
 // matches the documented form exactly; other params are URL-encoded.
+//
+// EVERY error path here runs through pinboardError — the request URL carries
+// the token, so an unsanitized error escaping this function is a credential
+// leak (see redactSecret).
 func (p pinboardSource) get(ctx context.Context, token, endpoint string, q url.Values) ([]byte, error) {
 	full := p.base() + endpoint + "?format=json&auth_token=" + token
 	if enc := q.Encode(); enc != "" {
@@ -266,26 +334,33 @@ func (p pinboardSource) get(ctx context.Context, token, endpoint string, q url.V
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
 	if err != nil {
-		return nil, err
+		// url.Parse failures embed the whole URL in the message.
+		return nil, pinboardError(token, "%s: build request: %v", endpoint, err)
 	}
 	req.Header.Set("User-Agent", "scribe-ingest/1.0")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := pinboardHTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s request: %w", endpoint, err)
+		// *url.Error — carries the token-bearing URL. Also the path a refused
+		// cross-host redirect takes.
+		return nil, pinboardError(token, "%s request: %v", endpoint, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("%s: rate limited (429) — try again later", endpoint)
+		return nil, pinboardError(token, "%s: rate limited (429) — try again later", endpoint)
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("%s: unauthorized (401) — check the API token", endpoint)
+		return nil, pinboardError(token, "%s: unauthorized (401) — check the API token", endpoint)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: status %d", endpoint, resp.StatusCode)
+		return nil, pinboardError(token, "%s: status %d", endpoint, resp.StatusCode)
 	}
 	// Guard against a runaway body; a full Pinboard archive is a few MB.
-	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err != nil {
+		return nil, pinboardError(token, "%s: read body: %v", endpoint, err)
+	}
+	return body, nil
 }
 
 // firstNonEmpty returns the first non-empty string, or "".
