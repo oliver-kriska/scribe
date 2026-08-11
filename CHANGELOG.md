@@ -46,6 +46,29 @@ stars…) is a small file against the same `Source` interface.
   tags (plus a `pinboard` provenance tag, and `to-read` for unread) carry into
   frontmatter. Zero new Go dependencies (Pinboard v1 is JSON over HTTPS).
 
+Four hardening fixes landed in review, all with regression tests:
+
+- **API tokens can no longer reach a log, a run record, or the terminal.** Go
+  builds transport failures as `*url.Error` and strips only *userinfo*
+  passwords — query parameters survive, so a plain DNS failure rendered
+  `auth_token=user:HEX` verbatim into `output/runs/*.jsonl`,
+  `/tmp/scribe-pull.log`, and `scribe doctor --section errors`. The adapter now
+  redacts every error leaving it (and flattens the chain, so the raw URL is not
+  reachable via `errors.Unwrap`), `writeRunRecord` redacts error text the same
+  way it already redacted args, and the redaction pattern now actually matches
+  prefixed parameter names like `auth_token`.
+- **A bookmark title can no longer forge a queue entry.** The `output/inbox/`
+  format is one `key: value` per line, and titles are remote-controlled
+  (Pinboard's bookmarklet fills them from the page's own `<title>`), so a
+  newline let a page inject its own `url:` line and redirect what `ingest
+  drain` fetched. Single-line fields are now flattened when written, and
+  `parseQueueEntry` takes the first occurrence of a key rather than the last.
+- **Cross-host redirects are refused** while the token rides in the query
+  string; same-host redirects still follow.
+- **Pull state is checkpointed every 25 queued items**, so an interrupted
+  `--all-history` backfill resumes instead of re-queuing everything it already
+  wrote. The cursor still advances only on a complete pass.
+
 ### Fixed
 - `scribe init --check` no longer prompts for scaffold values, preserving its
   documented read-only, non-interactive contract.

@@ -110,6 +110,34 @@ func loadSourceState(path string) (*sourceState, error) {
 	return &st, nil
 }
 
+// sourceCheckpointEvery is how many queued items pass between mid-run state
+// writes. CLAUDE.md requires checkpointed writes so an interrupted run doesn't
+// lose work; without this, a killed `--all-history` backfill that had already
+// written hundreds of inbox entries would persist no seen-set at all and
+// re-queue every one of them on the next run (duplicate articles, duplicate
+// absorb spend). 25 keeps the worst-case rework to 24 items while adding one
+// small write per 25 — negligible against the inbox writes themselves.
+const sourceCheckpointEvery = 25
+
+// saveSourceStateFn is a test seam (mirrors eachRunner in each.go) so tests can
+// observe mid-run checkpoints without killing the process.
+var saveSourceStateFn = saveSourceState
+
+// checkpointSourceState persists the seen-set mid-run.
+//
+// The cursor is deliberately NOT advanced here. It may only move on a
+// complete pass: if a crash left an advanced cursor behind, the next run's
+// cheap unchanged-since-last-run probe would short-circuit and the un-queued
+// remainder would be skipped for good. Persisting `seen` alone is monotonic —
+// it can only ever prevent duplicate work.
+func checkpointSourceState(path string, st *sourceState, seen map[string]bool) error {
+	return saveSourceStateFn(path, &sourceState{
+		Cursor:   st.Cursor,
+		Seen:     sortedKeys(seen),
+		LastPull: time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
 func saveSourceState(path string, st *sourceState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -232,6 +260,14 @@ func pullSource(root string, src Source, opts FetchOpts, maxItems int, dryRun bo
 		}
 		seen[id] = true
 		queued++
+
+		// Checkpoint so an interrupted backfill resumes instead of re-queuing
+		// everything it already wrote.
+		if queued%sourceCheckpointEvery == 0 {
+			if err := checkpointSourceState(statePath, state, seen); err != nil {
+				logMsg("pull", "%s: checkpoint failed: %v", src.Name(), err)
+			}
+		}
 	}
 
 	if dryRun {
@@ -252,7 +288,7 @@ func pullSource(root string, src Source, opts FetchOpts, maxItems int, dryRun bo
 	}
 	state.Seen = sortedKeys(seen)
 	state.LastPull = time.Now().UTC().Format(time.RFC3339)
-	if err := saveSourceState(statePath, state); err != nil {
+	if err := saveSourceStateFn(statePath, state); err != nil {
 		return queued, fmt.Errorf("save %s state: %w", src.Name(), err)
 	}
 

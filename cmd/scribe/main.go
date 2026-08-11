@@ -217,7 +217,14 @@ func redactArgs(args []string) []string {
 	return out
 }
 
-var urlTokenRE = regexp.MustCompile(`(?i)([?&])(token|api_key|apikey|access_token|auth|key|sig|signature)=[^&\s]+`)
+// The leading [a-z0-9_.-]* lets a PREFIXED parameter name match too. Without
+// it, `auth_token=` slipped through: the `auth` alternative needs `=` right
+// after it, and the `token` alternative needs `?`/`&` right before it, so a
+// Pinboard URL redacted to nothing. The value stops at a quote as well as at
+// `&`/whitespace, so a token quoted inside a Go *url.Error message
+// (`Get "https://…?auth_token=user:HEX": dial tcp …`) is fully replaced while
+// the rest of the message stays readable.
+var urlTokenRE = regexp.MustCompile(`(?i)([?&])([a-z0-9_.\-]*(?:token|api_key|apikey|access_token|auth|key|sig|signature))=[^&\s"]+`)
 
 func redactURLToken(s string) string {
 	return urlTokenRE.ReplaceAllString(s, "${1}${2}=REDACTED")
@@ -244,7 +251,14 @@ func writeRunRecord(cmdPath string, started time.Time, runErr error) {
 	errMsg := ""
 	if runErr != nil {
 		status = "error"
-		errMsg = runErr.Error()
+		// Redact BEFORE truncating: an error text is as likely to carry a
+		// token-bearing URL as an arg is (a failed HTTP call against any
+		// authenticated endpoint wraps the full request URL — Go only strips
+		// userinfo passwords, not query parameters). This file is read back by
+		// `scribe doctor --section errors`, which prints it. Producers should
+		// sanitize at their own seam; this is the catch-all that also covers
+		// every future source.
+		errMsg = redactURLToken(runErr.Error())
 		if len(errMsg) > 500 {
 			errMsg = errMsg[:500]
 		}
