@@ -1,18 +1,18 @@
 # goreleaser config for scribe.
 #
 # CGO is required because scribe depends on go-sqlite3 with the FTS5 build
-# tag. Cross-compiling CGO from a single host fails at the linker, so the
-# release pipeline (`.github/workflows/release.yml`) runs goreleaser inside
-# the `ghcr.io/goreleaser/goreleaser-cross` image, which ships the darwin
-# and linux C toolchains needed for all four target (GOOS, GOARCH) combos.
+# tag. The release runs on an Apple Silicon macOS runner: Apple's native
+# toolchain builds both Darwin architectures, while pinned Zig cross-compilers
+# build both Linux architectures. Darwin binaries are then signed and
+# notarized with Apple's native tools before GoReleaser archives them.
 #
-# Publish (inside the cross image — see the workflow):
+# Publish (see the release workflow for required tools and credentials):
 #   goreleaser release --clean
 #
-# Dry-run locally on a single host (native builds only, no publish;
-# skip sign+sbom too — cosign/syft are only guaranteed in the release
-# workflow):
-#   goreleaser release --snapshot --clean --skip=publish,sign,sbom
+# Dry-run locally on Apple Silicon with Zig installed (no publish; explicitly
+# opt out of Apple signing because release signing is fail-closed by default):
+#   SCRIBE_SKIP_APPLE_SIGNING=1 goreleaser release --snapshot --clean \
+#     --skip=publish,sign,sbom
 
 version: 2
 
@@ -39,51 +39,48 @@ builds:
     goarch:
       - amd64
       - arm64
-    # Per-target cross-compiler selection. goreleaser-cross ships all four
-    # C toolchains; without these overrides go build falls back to the host
-    # `gcc` which can't assemble arm64.
+    # Per-target compiler selection. The deployment flags prevent builds made
+    # with a new macOS SDK from accidentally requiring that new macOS version.
+    # Zig's explicit glibc 2.17 target keeps the Linux artifacts compatible
+    # with older distributions while still supporting CGO.
     overrides:
       - goos: darwin
         goarch: amd64
         env:
-          - CC=o64-clang
-          - CXX=o64-clang++
+          - CGO_ENABLED=1
+          - CC=clang
+          - CXX=clang++
+          - MACOSX_DEPLOYMENT_TARGET=12.0
+          - CGO_CFLAGS=-mmacosx-version-min=12.0
+          - CGO_LDFLAGS=-mmacosx-version-min=12.0
       - goos: darwin
         goarch: arm64
         env:
-          - CC=oa64-clang
-          - CXX=oa64-clang++
+          - CGO_ENABLED=1
+          - CC=clang
+          - CXX=clang++
+          - MACOSX_DEPLOYMENT_TARGET=12.0
+          - CGO_CFLAGS=-mmacosx-version-min=12.0
+          - CGO_LDFLAGS=-mmacosx-version-min=12.0
       - goos: linux
         goarch: amd64
         env:
-          - CC=x86_64-linux-gnu-gcc
-          - CXX=x86_64-linux-gnu-g++
+          - CGO_ENABLED=1
+          - CC=zig cc -target x86_64-linux-gnu.2.17
+          - CXX=zig c++ -target x86_64-linux-gnu.2.17
       - goos: linux
         goarch: arm64
         env:
-          - CC=aarch64-linux-gnu-gcc
-          - CXX=aarch64-linux-gnu-g++
-
-# Developer-ID-sign and notarize the raw Darwin binaries before GoReleaser
-# creates archives, SBOMs, or checksums. The cross-platform signer uses Quill
-# in-process, so this works inside the existing Linux cross-build container;
-# it touches only Darwin binary artifacts. Quill sets hardened runtime, uses
-# Apple's secure timestamp service, and derives the stable signing identifier
-# from the binary basename ("scribe"). Keep Makefile's local identifier aligned.
-notarize:
-  macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
-      ids:
-        - scribe
-      sign:
-        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
-        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
-      notarize:
-        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
-        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
-        key: "{{ .Env.MACOS_NOTARY_KEY }}"
-        wait: true
-        timeout: 30m
+          - CGO_ENABLED=1
+          - CC=zig cc -target aarch64-linux-gnu.2.17
+          - CXX=zig c++ -target aarch64-linux-gnu.2.17
+    # These hooks run before archives, SBOMs, checksums, and publication. The
+    # script is a no-op for Linux and fails closed for Darwin unless the caller
+    # explicitly sets SCRIBE_SKIP_APPLE_SIGNING=1 for a local snapshot.
+    hooks:
+      post:
+        - cmd: ./scripts/sign-notarize-darwin.sh "{{ .Path }}" "{{ .Target }}" "{{ .Os }}" "{{ .Arch }}"
+          output: true
 
 archives:
   - id: default
@@ -97,9 +94,8 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
-# SBOM per release archive via syft. goreleaser-cross does NOT bundle
-# syft — the release workflow installs a checksum-verified pinned syft
-# on the runner and mounts it into the container.
+# SBOM per release archive via syft. The release workflow installs a pinned,
+# checksum-verified syft binary before invoking GoReleaser.
 sboms:
   - artifacts: archive
 

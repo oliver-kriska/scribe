@@ -1,9 +1,9 @@
 # Release pipeline for scribe.
 #
-# Runs GoReleaser under the goreleaser-cross docker image, which ships the
-# C toolchains for darwin amd64/arm64 and linux amd64/arm64 needed because
-# scribe links go-sqlite3 (CGO + sqlite_fts5 build tag). Cross-compiling
-# CGO from a single host otherwise fails at the linker.
+# Runs GoReleaser natively on an Apple Silicon macOS runner. Apple's toolchain
+# builds and signs Darwin amd64/arm64; Zig cross-compiles Linux amd64/arm64.
+# This avoids cross-platform Mach-O signing while still supporting the CGO +
+# sqlite_fts5 build required by go-sqlite3.
 #
 # Triggered on tag push. Requires:
 #   - HOMEBREW_TAP_GITHUB_TOKEN repo secret (PAT with repo:write on
@@ -12,7 +12,7 @@
 #   - MACOS_SIGN_P12 + MACOS_SIGN_PASSWORD (Developer ID Application
 #     certificate exported as base64 PKCS#12 and its password).
 #   - MACOS_NOTARY_KEY + MACOS_NOTARY_KEY_ID + MACOS_NOTARY_ISSUER_ID
-#     (base64 App Store Connect API key and its identifiers).
+#     (raw or base64 App Store Connect .p8 key and its identifiers).
 
 name: release
 
@@ -28,7 +28,11 @@ on:
     inputs:
       tag:
         description: "Tag to release (e.g. v0.2.7)"
-        required: true
+        required: false
+      dry_run:
+        description: "Build, sign, notarize, and verify without publishing"
+        type: boolean
+        default: false
 
 # Read-only at the top level (Scorecard Token-Permissions). The write
 # scopes below are granted only to the one job that needs them.
@@ -37,7 +41,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: macos-26
     permissions:
       # GoReleaser creates the GitHub release and uploads the artifacts.
       contents: write
@@ -56,21 +60,41 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # goreleaser-cross bundles cosign but NOT syft. Install a pinned,
-      # checksum-verified syft on the runner and mount it into the
-      # container (static Go binary — runs fine in the debian image).
-      - name: Install syft v1.51.0 (SBOM generation)
-        run: |
-          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_linux_amd64.tar.gz
-          curl -sSfLO https://github.com/anchore/syft/releases/download/v1.51.0/syft_1.51.0_checksums.txt
-          grep ' syft_1.51.0_linux_amd64.tar.gz$' syft_1.51.0_checksums.txt | sha256sum -c -
-          tar -xzf syft_1.51.0_linux_amd64.tar.gz syft
-          sudo install syft /usr/local/bin/syft
-          rm -f syft syft_1.51.0_linux_amd64.tar.gz syft_1.51.0_checksums.txt
+      - name: Set up Zig 0.15.2 (Linux CGO cross-compilers)
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.15.2
 
-      # Never silently publish unsigned macOS artifacts. The notarize block in
-      # .goreleaser.yml is conditionally disabled for local snapshots, so the
-      # release workflow must enforce that every production credential exists.
+      - name: Install syft v1.51.0 (SBOM generation)
+        uses: anchore/sbom-action/download-syft@43a17d6e7add2b5535efe4dcae9952337c479a93 # v0.24.0
+        with:
+          syft-version: v1.51.0
+
+      - name: Install cosign v3.0.6 (checksum signature)
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Require a tag for a publishing dispatch
+        if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "A tag is required unless dry_run is enabled." >&2
+            exit 1
+          fi
+
+      - name: Ensure Rosetta can execute the Intel release
+        run: |
+          if ! arch -x86_64 /usr/bin/true; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          arch -x86_64 /usr/bin/true
+
+      # Never silently publish unsigned macOS artifacts. The GoReleaser hook
+      # also fails closed, but checking secrets here produces a clear error
+      # before any build work starts.
       - name: Require Apple signing credentials
         env:
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
@@ -96,38 +120,65 @@ jobs:
             exit 1
           fi
 
-      - name: Run GoReleaser in cross-compile container
-        # Image contains Go 1.26.5 + GoReleaser 2.17.1. Do not downgrade to
-        # 2.17.0: its Quill wait loop polls Apple's notarization API every 10ns
-        # instead of 10s and can fail releases with RATE_LIMIT responses.
-        #
-        # Image pinned by DIGEST (= tag v1.26.5-v2.17.1): this container runs
-        # with the Homebrew-tap PAT in its env, so a repointed tag would
-        # be a formula-compromise vector. To bump, resolve the new tag:
-        #   TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:goreleaser/goreleaser-cross:pull" | jq -r .token)
-        #   curl -sI -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.oci.image.index.v1+json" \
-        #     https://ghcr.io/v2/goreleaser/goreleaser-cross/manifests/<TAG> | grep -i docker-content-digest
-        run: |
-          docker run --rm \
-            -v "$PWD":/go/src/github.com/oliver-kriska/scribe \
-            -v /usr/local/bin/syft:/usr/local/bin/syft:ro \
-            -w /go/src/github.com/oliver-kriska/scribe \
-            -e GITHUB_TOKEN \
-            -e HOMEBREW_TAP_GITHUB_TOKEN \
-            -e ACTIONS_ID_TOKEN_REQUEST_URL \
-            -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
-            -e MACOS_SIGN_P12 \
-            -e MACOS_SIGN_PASSWORD \
-            -e MACOS_NOTARY_KEY \
-            -e MACOS_NOTARY_KEY_ID \
-            -e MACOS_NOTARY_ISSUER_ID \
-            ghcr.io/goreleaser/goreleaser-cross@sha256:0cf2b7f757b40397d2bef5423adb88d0ac63899e88a9f0c4bbb370d3fb7b2fb5 \
-            release --clean --timeout 60m
+      - name: Import Developer ID identity into a temporary Keychain
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/scribe-signing.keychain-db"
+          certificate="$RUNNER_TEMP/scribe-signing.p12"
+          notary_key="$RUNNER_TEMP/AuthKey.p8"
+          keychain_password=$(openssl rand -hex 24)
+
+          printf '%s' "$MACOS_SIGN_P12" | openssl base64 -d -A >"$certificate"
+          if [[ "$MACOS_NOTARY_KEY" == *"BEGIN PRIVATE KEY"* ]]; then
+            printf '%s' "$MACOS_NOTARY_KEY" >"$notary_key"
+          else
+            printf '%s' "$MACOS_NOTARY_KEY" | openssl base64 -d -A >"$notary_key"
+          fi
+          if ! grep -q 'BEGIN PRIVATE KEY' "$notary_key"; then
+            echo "MACOS_NOTARY_KEY is neither raw nor base64-encoded .p8 content." >&2
+            exit 1
+          fi
+          chmod 600 "$certificate" "$notary_key"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" \
+            -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          rm -f "$certificate"
+
+          identity=$(security find-identity -v -p codesigning "$keychain" \
+            | awk '/"Developer ID Application:/{print $2; exit}')
+          if [[ -z "$identity" ]]; then
+            echo "Imported PKCS#12 contains no Developer ID Application identity." >&2
+            exit 1
+          fi
+          echo "Imported Developer ID identity $identity"
+          echo "MACOS_SIGN_IDENTITY=$identity" >>"$GITHUB_ENV"
+          echo "MACOS_NOTARY_KEY_PATH=$notary_key" >>"$GITHUB_ENV"
+
+      - name: Run GoReleaser 2.17.1
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.17.1
+          args: ${{ inputs.dry_run && 'release --snapshot --clean --skip=publish,sign,sbom --timeout 60m' || 'release --clean --timeout 60m' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          MACOS_SIGN_TEAM_ID: AUL48LCR3Y
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+
+      - name: Remove temporary Apple credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/scribe-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/scribe-signing.p12" "$RUNNER_TEMP/AuthKey.p8"

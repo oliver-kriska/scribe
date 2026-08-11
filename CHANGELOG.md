@@ -4,6 +4,20 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Fixed — native macOS release signing and executable validation
+
+- macOS release artifacts are now built on an Apple Silicon GitHub runner and
+  signed with Apple's native `codesign` before native `notarytool` submission.
+  This replaces GoReleaser's cross-platform Quill signer, which produced an
+  Intel Mach-O whose `__DATA_CONST` segment lacked `SG_READ_ONLY`; Apple still
+  notarized that malformed binary, but macOS 26 aborted it under Rosetta.
+- The release now fails before publication unless both macOS architectures
+  have the expected Developer ID team and stable `scribe` identifier, hardened
+  runtime, secure timestamp, Apple notarization, macOS 12 deployment floor,
+  `SG_READ_ONLY` flag, and a successful `--version` execution (Intel under
+  Rosetta). Linux CGO artifacts continue to cross-compile with pinned Zig
+  glibc 2.17 targets.
+
 ## [0.5.0] — 2026-08-11
 
 The first pull-adapter release. `scribe pull` ingests bookmarks from external
