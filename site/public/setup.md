@@ -85,14 +85,19 @@ current dependency check still expects the Claude CLI to be present.
 For fully local inference, also install and start Ollama:
 
 ```sh
-brew install ollama
-ollama serve
+brew install --cask ollama-app
 ```
 
-On macOS the Ollama app/service may already be running; do not start a second
-server if `ollama list` works. When it is not running, start `ollama serve` in a
-dedicated terminal or OS service; a setup agent should not leave an
-uncontrolled foreground server attached to its command session.
+Use the **cask**, not the `ollama` formula. The formula is now built MLX-only
+(it depends on `mlx-c`) and no longer ships the GGUF/llama-server backend the
+local pipeline needs — a formula install looks successful and then fails to run
+the recommended models.
+
+On macOS the cask registers a launchd service, so the server is normally already
+running; do not start a second one if `ollama list` works. When it is not
+running, start `ollama serve` in a dedicated terminal or OS service; a setup
+agent should not leave an uncontrolled foreground server attached to its command
+session.
 
 ### Shell installer
 

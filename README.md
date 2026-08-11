@@ -381,9 +381,14 @@ As of 0.2.14, **every LLM-driven subcommand can run end-to-end against a local [
 **One-time setup:**
 
 ```sh
-brew install ollama
-# macOS: Ollama auto-registers as a launchd service, so `ollama serve` is already running.
+brew install --cask ollama-app
+# macOS: the app registers a launchd service, so `ollama serve` is already running.
 ```
+
+Use the **cask**, not the `ollama` formula. The Homebrew formula is now built
+MLX-only (it depends on `mlx-c`) and no longer ships the GGUF/llama-server
+backend scribe's local pipeline needs, so a formula install leaves the LLM
+subcommands unable to run the recommended models.
 
 **Flip the whole pipeline to local** — edit `scribe.yaml`:
 
