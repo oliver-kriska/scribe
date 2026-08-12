@@ -822,6 +822,53 @@ Run `scribe <cmd> --help` for the full flag set of each. A handful of internal p
 
 ---
 
+## One KB, several machines
+
+A desktop and a laptop, both yours, both syncing into the same KB. This is a
+*multi-writer* setup even though there is only one of you, and it runs on the
+same machinery as a team KB — the switch is `team: true` in `scribe.yaml`.
+
+The flag name is a misnomer here, and skipping it is the most common way to
+corrupt a second-machine setup. Three things are gated behind it, and none of
+them fail loudly when missing:
+
+| Gated on `team: true` | Without it |
+|---|---|
+| `scripts/projects.json` is gitignored | It's committed, but holds machine-local absolute paths, extracted SHAs, and approval decisions — each `sync --discover` rewrites it with the other machine's view |
+| Extraction-ledger writes | Both machines extract the same repo revision, pay the LLM bill twice, and write duplicate articles |
+| The `scripts/dream-lease.json` claim | Both run the weekly dream cycle at once — `lock_dir` is machine-local and cannot see across machines |
+
+Start a new KB with `scribe init --team` and this is already done. To convert a
+personal KB you have been using solo:
+
+```sh
+cd ~/your-kb
+# 1. add `team: true` to scribe.yaml
+# 2. stop sharing the per-machine manifest
+git rm --cached scripts/projects.json      # the file stays on disk
+printf 'scripts/projects.json\n' >> .gitignore
+# 3. re-record the now-enforcing trust snapshot
+scribe config trust
+git commit -am "chore: go multi-writer" && git push
+```
+
+A clone with no `scripts/projects.json` starts with an empty manifest and
+rebuilds it from `scribe sync --discover`, so nothing is lost.
+
+**Turning the flag on disables iMessage capture and pull integrations from the
+repo config.** That is deliberate — they are personal sources, and a pushed
+`enabled: true` must not switch them on for every machine reading the repo. Move
+both blocks verbatim into the gitignored `scribe.local.yaml` of the one machine
+that should run them. Pick exactly one: Messages is iCloud-synced, so capturing
+on two Macs double-ingests every URL and makes them fight over
+`scripts/imessage-state.json`.
+
+Full step-by-step, including onboarding the second machine and which scheduled
+jobs to throttle there, is in the
+[setup runbook](https://getscribe.dev/setup.md#one-kb-on-several-machines).
+
+---
+
 ## Shared team KBs
 
 scribe is single-user by design, but a small team (10–20 devs working on the same
@@ -1001,6 +1048,17 @@ competing claims.
   The global Claude/Codex/Amp handshake still points at one default KB at a time;
   the [setup runbook](https://getscribe.dev/setup.md#a-second-kb-on-one-machine)
   shows how to keep a personal default while registering a team KB.
+- **Only `dream` and extraction are coordinated across machines.** The lease
+  covers the weekly cycle and the ledger covers repo extraction, but the
+  maintenance jobs — `lint --fix`, `lint --duplicates`, `lint --resolve`,
+  `lint --identities`, `lint --apply-identities`, `ingest drain` — mutate shared
+  KB state with neither, and `scribe cron install` gives every machine the same
+  schedule, so they fire together. `ingest drain` is the sharpest edge, since
+  `ingest.inbox_path` sits inside the committed tree. Let one machine own
+  maintenance and throttle those jobs elsewhere with `each.cadence` in the
+  secondary machine's gitignored `scribe.local.yaml`; the
+  [setup runbook](https://getscribe.dev/setup.md#one-kb-on-several-machines)
+  has the block to paste.
 - **Concurrent edits to the same article can conflict** like any git repo. The
   append-heavy article layout keeps this rare; resolve by hand and re-run sync.
 - **Session transcripts never leave the machine.** Only the distilled wiki

@@ -33,6 +33,7 @@ entries.
 | Use Together, Groq, Fireworks, Hugging Face, or another `/v1` endpoint | [Hosted provider](#hosted-openai-compatible-provider) |
 | Create and publish a KB for a team | [Team owner](#team-owner-create-and-publish) |
 | Join an existing team KB | [Team member](#team-member-clone-and-onboard) |
+| Sync your own KB from a second machine (desktop + laptop) | [One KB on several machines](#one-kb-on-several-machines) |
 | Add a team KB while keeping a personal KB as default | [A second KB on one machine](#a-second-kb-on-one-machine) |
 | Linux scheduling | Use the same recipe, then follow [Linux cron](#linux-cron) |
 
@@ -349,6 +350,142 @@ discovery and approve repositories. Those approvals and absolute paths are not
 shared. The shared commands/flags live in committed `scribe.yaml`; the local
 manifest, credentials, subscriptions, capture handles, and additional source
 filters remain per-machine.
+
+## One KB on several machines
+
+A desktop and a laptop, both yours, both writing into one KB. Despite the name,
+this is the *team* recipe: `team: true` is scribe's multi-writer switch, not a
+headcount. One person with two machines needs every guarantee a team needs.
+
+Skipping the flag is the most common way to break a second-machine setup,
+because nothing fails loudly:
+
+| Gated on `team: true` | Without it |
+|---|---|
+| `scripts/projects.json` gitignored | Committed, but holds machine-local absolute paths, extracted SHAs, and approval decisions. Every `sync --discover` rewrites it with the other machine's view. |
+| Extraction-ledger writes | Both machines extract the same revision, pay the LLM bill twice, and write duplicate articles. |
+| `scripts/dream-lease.json` | Both run the weekly dream cycle at once. `lock_dir` is machine-local and cannot see across machines. |
+
+### Step 1 — prepare the KB (once, on the machine that has it)
+
+A KB created with `scribe init --team` is already prepared; skip to step 2. To
+convert a KB you have been running solo:
+
+```sh
+cd ~/your-kb
+# add `team: true` to scribe.yaml, then:
+git rm --cached scripts/projects.json      # the file stays on disk
+printf 'scripts/projects.json\n' >> .gitignore
+scribe config trust                        # re-record the now-enforcing snapshot
+scribe doctor                              # expect: "team KB — sensitive keys locked, no drift"
+git commit -am "chore: go multi-writer" && git push
+```
+
+Turning the flag on **hard-disables iMessage capture and pull integrations from
+the repo config** — they are personal sources, and a pushed `enabled: true` must
+not switch them on for every machine reading the repo. The trusted snapshot does
+not restore them either. Move both blocks verbatim into the gitignored
+`scribe.local.yaml` of the machine that should keep running them:
+
+```yaml
+# scribe.local.yaml — this machine only, always wins over scribe.yaml
+capture:
+  self_chat_handles:
+    - "+15551234567"
+integrations:
+  pinboard:
+    enabled: true
+```
+
+Give capture to exactly one machine. Messages is iCloud-synced, so every Mac on
+the same Apple ID sees identical messages; capturing on two double-ingests every
+URL and makes them fight over the committed `scripts/imessage-state.json`. The
+per-machine Full Disk Access grant is a useful forcing function — simply never
+run `scribe fda` on the second machine.
+
+Turning the flag on also activates the secret gate, which adds a whole-KB audit
+to `scribe doctor`. Pre-existing credential-shaped strings in old articles
+surface as a new warning; they are historical, not a regression. New articles
+containing one are held back from the commit — watch for `SECRET HELD:` in sync
+logs.
+
+### Step 2 — onboard the second machine
+
+Identical to [Team member](#team-member-clone-and-onboard): clone the same
+repository and run `scribe init --bind --yes` inside it. Do not pass `--path`,
+`--team`, `--kb-name`, `--allow`, or `--provider` — those choices are committed.
+
+```sh
+git clone git@github.com:you/your-kb.git ~/your-kb
+cd ~/your-kb
+git config user.name "Your Name" && git config user.email "you@example.com"
+
+scribe init --bind --yes
+scribe config trust
+scribe sync --discover
+scribe projects review
+scribe cron install
+scribe doctor
+```
+
+Add your provider key to `~/.config/scribe/config.yaml` on this machine —
+credentials live in user config or the environment, never in a KB.
+
+### Step 3 — stop the second machine fighting the first
+
+`scribe cron install` lays down the **same** schedule on every machine. Only two
+things are coordinated across machines: `dream` (through the lease) and project
+extraction (through the ledger). These jobs mutate shared KB state with neither,
+and will fire simultaneously on both machines:
+
+`lint --fix`, `lint --duplicates`, `lint --resolve`, `lint --identities`,
+`lint --apply-identities`, `ingest drain`
+
+`ingest drain` is the sharpest edge: the configured `ingest.inbox_path` is
+inside the committed tree, so both machines drain the same inbox.
+
+`scribe cron` has no per-job disable — only `install`, `status`, `uninstall`. The
+per-machine lever is `each.cadence`, which is read from the gitignored
+`scribe.local.yaml` and applied after trust enforcement, so it always wins. Let
+one machine own KB maintenance and throttle those jobs on every **other**
+machine:
+
+```yaml
+# scribe.local.yaml — secondary machine
+each:
+  cadence:
+    "lint --fix": "3650d"
+    "lint --duplicates": "3650d"
+    "lint --resolve": "3650d"
+    "lint --identities": "3650d"
+    "lint --apply-identities": "3650d"
+    "ingest drain": "3650d"
+```
+
+This is a throttle used as an off switch. It is reversible and survives
+`scribe cron install` re-running.
+
+Leave `dream` and `dream --hot` **enabled** everywhere: the lease makes them
+safe, and the weekly cycle still runs when your main machine is asleep. Keep
+`sync`, `sync --sessions`, `commit`, and `watch` too — that is the contribution
+path.
+
+### Expected on a fresh second machine
+
+Two readings look like failures and are not:
+
+- **`scripts/projects.json — 0 projects`.** Discovery only enrolls a path that
+  exists on disk. A new machine has the session history but not the
+  repositories, so every candidate is skipped. Clone the repositories you will
+  work on there, re-run `scribe sync --discover`, then `scribe projects review`
+  — new projects arrive as pending. `scribe projects add <path>` enrolls one
+  directly. Session mining stays at `0 pending` until projects exist.
+- **A lower qmd file count than the first machine.** Derived artifacts are
+  gitignored and do not clone. Compare against `git ls-files '*.md' | wc -l`,
+  not against the other machine's total.
+
+Freshness warnings reading `never run` clear themselves once cron has fired
+once on the new machine.
 
 ## A second KB on one machine
 
