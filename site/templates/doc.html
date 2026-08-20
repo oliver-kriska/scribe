@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>__TITLE__ — scribe</title>
+<meta name="description" content="__DESC__" />
+<link rel="canonical" href="https://getscribe.dev/__SLUG__" />
+<meta name="robots" content="index, follow" />
+<meta name="author" content="Oliver Kriška" />
+<meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#1a1d22" media="(prefers-color-scheme: dark)" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6feb'/%3E%3Ctext x='16' y='22' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif' font-size='20' font-weight='700' text-anchor='middle' fill='white'%3Es%3C/text%3E%3C/svg%3E" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="scribe" />
+<meta property="og:url" content="https://getscribe.dev/__SLUG__" />
+<meta property="og:title" content="__TITLE__ — scribe" />
+<meta property="og:description" content="__DESC__" />
+<meta property="og:image" content="https://getscribe.dev/og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@quatermain32" />
+<script>
+  // no-FOUC theme bootstrap — same key as the home page so a choice carries over
+  (function () {
+    try {
+      var stored = localStorage.getItem('scribe-theme');
+      if (stored === 'dark' || stored === 'light') {
+        document.documentElement.setAttribute('data-theme', stored);
+      }
+    } catch (_) { /* private mode etc. — fall back to system */ }
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: oklch(99% 0.002 240);
+    --bg-sub: oklch(97.5% 0.003 250);
+    --surface: oklch(100% 0 0);
+    --fg: oklch(18% 0.012 250);
+    --fg-soft: oklch(32% 0.012 250);
+    --muted: oklch(54% 0.012 250);
+    --border: oklch(92% 0.005 250);
+    --border-2: oklch(95% 0.004 250);
+    --border-hover: oklch(85% 0.007 250);
+    --accent: oklch(55% 0.18 255);
+    --accent-soft: oklch(96% 0.025 255);
+    --accent-on-soft: oklch(50% 0.18 255);
+    --accent-fg: oklch(99% 0 0);
+    --accent-hover: oklch(49% 0.18 255);
+    --warn: oklch(54% 0.13 75);
+    --btn-primary-hover: oklch(28% 0.014 250);
+    --nav-bg: oklch(99% 0.002 240 / 0.82);
+    --selection: oklch(58% 0.18 255 / 0.22);
+    --code-bg: oklch(97.5% 0.003 250);
+    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+    --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+    --r-xs: 4px; --r-sm: 6px; --r-md: 10px;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: oklch(14% 0.012 250);
+    --bg-sub: oklch(17% 0.013 250);
+    --surface: oklch(19.5% 0.014 250);
+    --fg: oklch(96% 0.005 250);
+    --fg-soft: oklch(82% 0.008 250);
+    --muted: oklch(62% 0.012 250);
+    --border: oklch(26% 0.014 250);
+    --border-2: oklch(22% 0.012 250);
+    --border-hover: oklch(36% 0.016 250);
+    --accent: oklch(70% 0.16 255);
+    --accent-soft: oklch(26% 0.06 255);
+    --accent-on-soft: oklch(70% 0.16 255);
+    --accent-fg: oklch(12% 0.012 250);
+    --accent-hover: oklch(76% 0.16 255);
+    --warn: oklch(78% 0.16 75);
+    --btn-primary-hover: oklch(86% 0.008 250);
+    --nav-bg: oklch(14% 0.012 250 / 0.82);
+    --selection: oklch(70% 0.16 255 / 0.32);
+    --code-bg: oklch(17% 0.013 250);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: oklch(14% 0.012 250);
+      --bg-sub: oklch(17% 0.013 250);
+      --surface: oklch(19.5% 0.014 250);
+      --fg: oklch(96% 0.005 250);
+      --fg-soft: oklch(82% 0.008 250);
+      --muted: oklch(62% 0.012 250);
+      --border: oklch(26% 0.014 250);
+      --border-2: oklch(22% 0.012 250);
+      --border-hover: oklch(36% 0.016 250);
+      --accent: oklch(70% 0.16 255);
+      --accent-soft: oklch(26% 0.06 255);
+      --accent-on-soft: oklch(70% 0.16 255);
+      --accent-fg: oklch(12% 0.012 250);
+      --accent-hover: oklch(76% 0.16 255);
+      --warn: oklch(78% 0.16 75);
+      --btn-primary-hover: oklch(86% 0.008 250);
+      --nav-bg: oklch(14% 0.012 250 / 0.82);
+      --selection: oklch(70% 0.16 255 / 0.32);
+      --code-bg: oklch(17% 0.013 250);
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--font-body);
+    font-size: clamp(15px, 0.92vw + 12px, 16.5px); line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--selection); }
+
+  /* ---- top bar ---- */
+  .bar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px max(20px, calc((100% - 1080px) / 2));
+    background: var(--nav-bg); backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: -0.014em; color: var(--fg); text-decoration: none; }
+  .brand__mark { width: 22px; height: 22px; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 14px; font-weight: 700; }
+  .bar__spacer { flex: 1; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 13.5px; font-weight: 500; letter-spacing: -0.008em;
+    padding: 6px 11px; border-radius: var(--r-sm);
+    border: 1px solid var(--border); background: var(--surface); color: var(--fg-soft);
+    text-decoration: none; cursor: pointer; font-family: inherit;
+    transition: border-color .14s ease, color .14s ease, background .14s ease;
+  }
+  .btn:hover { border-color: var(--border-hover); color: var(--fg); }
+  .btn:focus-visible, .brand:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+  .btn--md { background: var(--accent-soft); border-color: transparent; color: var(--accent-on-soft); }
+  .btn--md:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-on-soft); }
+  .btn svg { width: 14px; height: 14px; flex: none; }
+  @media (max-width: 620px) { .btn__label { display: none; } .btn { padding: 6px 9px; } }
+
+  /* ---- layout ---- */
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 96px; }
+  .doc { max-width: 74ch; }
+  .doc__kicker { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); margin: 40px 0 10px; }
+
+  /* ---- prose ---- */
+  .doc h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 3.2vw + 6px, 40px); line-height: 1.1; letter-spacing: -0.026em; margin: 0 0 14px; text-wrap: pretty; }
+  .doc h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(21px, 1.4vw + 14px, 26px); line-height: 1.2; letter-spacing: -0.02em; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--border-2); text-wrap: pretty; }
+  .doc h3 { font-family: var(--font-display); font-weight: 600; font-size: 17.5px; letter-spacing: -0.014em; margin: 30px 0 8px; }
+  .doc h4 { font-weight: 600; font-size: 15.5px; margin: 22px 0 6px; color: var(--fg-soft); }
+  .doc p { margin: 0 0 15px; }
+  .doc a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .14s ease; }
+  .doc a:hover { border-bottom-color: currentColor; }
+  .doc ul, .doc ol { margin: 0 0 15px; padding-left: 22px; }
+  .doc li { margin: 0 0 6px; }
+  .doc li > ul, .doc li > ol { margin-top: 6px; }
+  .doc strong { font-weight: 600; color: var(--fg); }
+  .doc hr { border: 0; border-top: 1px solid var(--border); margin: 36px 0; }
+  .doc blockquote { margin: 0 0 15px; padding: 10px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 var(--r-sm) var(--r-sm) 0; color: var(--fg-soft); }
+  .doc blockquote p:last-child { margin-bottom: 0; }
+
+  /* ---- code ---- */
+  .doc code { font-family: var(--font-mono); font-size: 0.875em; background: var(--code-bg); border: 1px solid var(--border-2); border-radius: var(--r-xs); padding: 0.12em 0.36em; }
+  .doc pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; overflow-x: auto; margin: 0 0 18px; }
+  .doc pre code { background: none; border: 0; padding: 0; font-size: 13px; line-height: 1.55; }
+
+  /* ---- tables: must scroll inside themselves, never the page ---- */
+  .table-scroll { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--border); border-radius: var(--r-md); }
+  .doc table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  .doc thead th { text-align: left; font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.045em; color: var(--muted); background: var(--bg-sub); padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .doc tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border-2); vertical-align: top; }
+  .doc tbody tr:last-child td { border-bottom: 0; }
+  .doc td code { white-space: nowrap; }
+
+  .foot { max-width: 74ch; margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  .foot a { color: var(--accent); text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/"><span class="brand__mark">s</span>scribe</a>
+  <span class="bar__spacer"></span>
+  <a class="btn btn--md" href="/__MD__" data-md>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/></svg>
+    <span class="btn__label">Markdown</span>
+  </a>
+  <button class="btn" type="button" id="theme" aria-label="Toggle colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <span class="btn__label">Theme</span>
+  </button>
+</header>
+<main class="wrap">
+  <p class="doc__kicker">__KICKER__</p>
+  <article class="doc">
+__BODY__
+  </article>
+  <footer class="foot">
+    <p>Source of truth for this page is <a href="/__MD__">__MD__</a> — the same file coding agents read. <a href="/">Back to scribe</a> · <a href="https://github.com/oliver-kriska/scribe">GitHub</a></p>
+  </footer>
+</main>
+<script>
+  (function () {
+    var btn = document.getElementById('theme');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var root = document.documentElement;
+      var isDark = root.getAttribute('data-theme') === 'dark' ||
+        (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var next = isDark ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('scribe-theme', next); } catch (_) {}
+    });
+  })();
+</script>
+</body>
+</html>

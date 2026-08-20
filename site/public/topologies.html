@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Topologies — scribe</title>
+<meta name="description" content="Every way to write to a scribe KB — one machine, several machines, a team — what each coordinates, and what it does not." />
+<link rel="canonical" href="https://getscribe.dev/topologies" />
+<meta name="robots" content="index, follow" />
+<meta name="author" content="Oliver Kriška" />
+<meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#1a1d22" media="(prefers-color-scheme: dark)" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6feb'/%3E%3Ctext x='16' y='22' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif' font-size='20' font-weight='700' text-anchor='middle' fill='white'%3Es%3C/text%3E%3C/svg%3E" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="scribe" />
+<meta property="og:url" content="https://getscribe.dev/topologies" />
+<meta property="og:title" content="Topologies — scribe" />
+<meta property="og:description" content="Every way to write to a scribe KB — one machine, several machines, a team — what each coordinates, and what it does not." />
+<meta property="og:image" content="https://getscribe.dev/og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@quatermain32" />
+<script>
+  // no-FOUC theme bootstrap — same key as the home page so a choice carries over
+  (function () {
+    try {
+      var stored = localStorage.getItem('scribe-theme');
+      if (stored === 'dark' || stored === 'light') {
+        document.documentElement.setAttribute('data-theme', stored);
+      }
+    } catch (_) { /* private mode etc. — fall back to system */ }
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: oklch(99% 0.002 240);
+    --bg-sub: oklch(97.5% 0.003 250);
+    --surface: oklch(100% 0 0);
+    --fg: oklch(18% 0.012 250);
+    --fg-soft: oklch(32% 0.012 250);
+    --muted: oklch(54% 0.012 250);
+    --border: oklch(92% 0.005 250);
+    --border-2: oklch(95% 0.004 250);
+    --border-hover: oklch(85% 0.007 250);
+    --accent: oklch(55% 0.18 255);
+    --accent-soft: oklch(96% 0.025 255);
+    --accent-on-soft: oklch(50% 0.18 255);
+    --accent-fg: oklch(99% 0 0);
+    --accent-hover: oklch(49% 0.18 255);
+    --warn: oklch(54% 0.13 75);
+    --btn-primary-hover: oklch(28% 0.014 250);
+    --nav-bg: oklch(99% 0.002 240 / 0.82);
+    --selection: oklch(58% 0.18 255 / 0.22);
+    --code-bg: oklch(97.5% 0.003 250);
+    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+    --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+    --r-xs: 4px; --r-sm: 6px; --r-md: 10px;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: oklch(14% 0.012 250);
+    --bg-sub: oklch(17% 0.013 250);
+    --surface: oklch(19.5% 0.014 250);
+    --fg: oklch(96% 0.005 250);
+    --fg-soft: oklch(82% 0.008 250);
+    --muted: oklch(62% 0.012 250);
+    --border: oklch(26% 0.014 250);
+    --border-2: oklch(22% 0.012 250);
+    --border-hover: oklch(36% 0.016 250);
+    --accent: oklch(70% 0.16 255);
+    --accent-soft: oklch(26% 0.06 255);
+    --accent-on-soft: oklch(70% 0.16 255);
+    --accent-fg: oklch(12% 0.012 250);
+    --accent-hover: oklch(76% 0.16 255);
+    --warn: oklch(78% 0.16 75);
+    --btn-primary-hover: oklch(86% 0.008 250);
+    --nav-bg: oklch(14% 0.012 250 / 0.82);
+    --selection: oklch(70% 0.16 255 / 0.32);
+    --code-bg: oklch(17% 0.013 250);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: oklch(14% 0.012 250);
+      --bg-sub: oklch(17% 0.013 250);
+      --surface: oklch(19.5% 0.014 250);
+      --fg: oklch(96% 0.005 250);
+      --fg-soft: oklch(82% 0.008 250);
+      --muted: oklch(62% 0.012 250);
+      --border: oklch(26% 0.014 250);
+      --border-2: oklch(22% 0.012 250);
+      --border-hover: oklch(36% 0.016 250);
+      --accent: oklch(70% 0.16 255);
+      --accent-soft: oklch(26% 0.06 255);
+      --accent-on-soft: oklch(70% 0.16 255);
+      --accent-fg: oklch(12% 0.012 250);
+      --accent-hover: oklch(76% 0.16 255);
+      --warn: oklch(78% 0.16 75);
+      --btn-primary-hover: oklch(86% 0.008 250);
+      --nav-bg: oklch(14% 0.012 250 / 0.82);
+      --selection: oklch(70% 0.16 255 / 0.32);
+      --code-bg: oklch(17% 0.013 250);
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--font-body);
+    font-size: clamp(15px, 0.92vw + 12px, 16.5px); line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--selection); }
+
+  /* ---- top bar ---- */
+  .bar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px max(20px, calc((100% - 1080px) / 2));
+    background: var(--nav-bg); backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: -0.014em; color: var(--fg); text-decoration: none; }
+  .brand__mark { width: 22px; height: 22px; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 14px; font-weight: 700; }
+  .bar__spacer { flex: 1; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 13.5px; font-weight: 500; letter-spacing: -0.008em;
+    padding: 6px 11px; border-radius: var(--r-sm);
+    border: 1px solid var(--border); background: var(--surface); color: var(--fg-soft);
+    text-decoration: none; cursor: pointer; font-family: inherit;
+    transition: border-color .14s ease, color .14s ease, background .14s ease;
+  }
+  .btn:hover { border-color: var(--border-hover); color: var(--fg); }
+  .btn:focus-visible, .brand:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+  .btn--md { background: var(--accent-soft); border-color: transparent; color: var(--accent-on-soft); }
+  .btn--md:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-on-soft); }
+  .btn svg { width: 14px; height: 14px; flex: none; }
+  @media (max-width: 620px) { .btn__label { display: none; } .btn { padding: 6px 9px; } }
+
+  /* ---- layout ---- */
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 96px; }
+  .doc { max-width: 74ch; }
+  .doc__kicker { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); margin: 40px 0 10px; }
+
+  /* ---- prose ---- */
+  .doc h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 3.2vw + 6px, 40px); line-height: 1.1; letter-spacing: -0.026em; margin: 0 0 14px; text-wrap: pretty; }
+  .doc h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(21px, 1.4vw + 14px, 26px); line-height: 1.2; letter-spacing: -0.02em; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--border-2); text-wrap: pretty; }
+  .doc h3 { font-family: var(--font-display); font-weight: 600; font-size: 17.5px; letter-spacing: -0.014em; margin: 30px 0 8px; }
+  .doc h4 { font-weight: 600; font-size: 15.5px; margin: 22px 0 6px; color: var(--fg-soft); }
+  .doc p { margin: 0 0 15px; }
+  .doc a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .14s ease; }
+  .doc a:hover { border-bottom-color: currentColor; }
+  .doc ul, .doc ol { margin: 0 0 15px; padding-left: 22px; }
+  .doc li { margin: 0 0 6px; }
+  .doc li > ul, .doc li > ol { margin-top: 6px; }
+  .doc strong { font-weight: 600; color: var(--fg); }
+  .doc hr { border: 0; border-top: 1px solid var(--border); margin: 36px 0; }
+  .doc blockquote { margin: 0 0 15px; padding: 10px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 var(--r-sm) var(--r-sm) 0; color: var(--fg-soft); }
+  .doc blockquote p:last-child { margin-bottom: 0; }
+
+  /* ---- code ---- */
+  .doc code { font-family: var(--font-mono); font-size: 0.875em; background: var(--code-bg); border: 1px solid var(--border-2); border-radius: var(--r-xs); padding: 0.12em 0.36em; }
+  .doc pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; overflow-x: auto; margin: 0 0 18px; }
+  .doc pre code { background: none; border: 0; padding: 0; font-size: 13px; line-height: 1.55; }
+
+  /* ---- tables: must scroll inside themselves, never the page ---- */
+  .table-scroll { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--border); border-radius: var(--r-md); }
+  .doc table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  .doc thead th { text-align: left; font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.045em; color: var(--muted); background: var(--bg-sub); padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .doc tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border-2); vertical-align: top; }
+  .doc tbody tr:last-child td { border-bottom: 0; }
+  .doc td code { white-space: nowrap; }
+
+  .foot { max-width: 74ch; margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  .foot a { color: var(--accent); text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/"><span class="brand__mark">s</span>scribe</a>
+  <span class="bar__spacer"></span>
+  <a class="btn btn--md" href="/topologies.md" data-md>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/></svg>
+    <span class="btn__label">Markdown</span>
+  </a>
+  <button class="btn" type="button" id="theme" aria-label="Toggle colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <span class="btn__label">Theme</span>
+  </button>
+</header>
+<main class="wrap">
+  <p class="doc__kicker">Reference</p>
+  <article class="doc">
+<h1
+id="topologies--who-writes-to-your-kb-and-what-that-costs">Topologies —
+who writes to your KB, and what that costs</h1>
+<p><code>scribe</code> is single-user by design, but a KB is a plain git
+repository, so more than one machine can write to it. This page covers
+every supported arrangement, what coordination each one needs, and what
+is still on you.</p>
+<p>For the exact commands, see the <a
+href="https://getscribe.dev/setup.md">setup runbook</a>. This page is
+the reference behind it.</p>
+<h2 id="the-only-question-that-matters">The only question that
+matters</h2>
+<p>Not how many people. <strong>How many machines write to one
+KB.</strong></p>
+<p>A solo developer with a desktop and a laptop has exactly the same
+coordination problem as a five-person team, because the thing being
+coordinated is concurrent git writes, not humans.
+<code>scribe.yaml</code> spells that switch <code>team: true</code>,
+which is a misleading name — read it as <em>multi-writer</em>.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Your situation</th>
+<th>Writers per KB</th>
+<th><code>team: true</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One machine, one KB</td>
+<td>1</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Desktop + laptop, both yours</td>
+<td>2</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>A team, one machine each</td>
+<td>N</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>A team where some people have two machines</td>
+<td>N</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>macOS and Linux writers mixed</td>
+<td>N</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>A personal KB <em>and</em> a team KB on one machine</td>
+<td>1 / N</td>
+<td>per-KB</td>
+</tr>
+</tbody>
+</table></div>
+<p>Only the last row is a different problem — see <a
+href="https://getscribe.dev/setup.md#a-second-kb-on-one-machine">A
+second KB on one machine</a>. Everything else is the same recipe.</p>
+<h2 id="single-writer">Single writer</h2>
+<p>Nothing to coordinate. <code>scribe init</code>,
+<code>scribe cron install</code>, done. A git remote is optional and
+serves as backup, not as a merge layer.</p>
+<p>Leave <code>team: true</code> unset. Turning it on costs you iMessage
+capture and pull integrations from <code>scribe.yaml</code> (see below)
+for no benefit.</p>
+<h2 id="more-than-one-writer">More than one writer</h2>
+<p>Follow <a
+href="https://getscribe.dev/setup.md#one-kb-on-several-machines">One KB
+on several machines</a> for a solo multi-device setup, or <a
+href="https://getscribe.dev/setup.md#team-owner-create-and-publish">Team
+owner</a> and <a
+href="https://getscribe.dev/setup.md#team-member-clone-and-onboard">Team
+member</a> for a shared KB. The mechanics are identical; only who runs
+step 1 differs.</p>
+<p>Three guarantees switch on with <code>team: true</code>, and each
+fails silently when it is missing:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Guarantee</th>
+<th>Mechanism</th>
+<th>Without it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Per-machine project manifest</td>
+<td><code>scripts/projects.json</code> gitignored</td>
+<td>It stays committed while holding machine-local absolute paths,
+extracted SHAs and approval decisions. Every
+<code>sync --discover</code> rewrites it with the other machine's
+view.</td>
+</tr>
+<tr>
+<td>One weekly consolidation</td>
+<td><code>scripts/dream-lease.json</code>, host + contributor keyed, 6h
+expiry, stealable</td>
+<td>Both run <code>dream</code> at once. <code>lock_dir</code> is
+machine-local and cannot see across machines.</td>
+</tr>
+<tr>
+<td>Config trust lock</td>
+<td>per-machine snapshot of sensitive keys</td>
+<td>A pushed change to source filters, ingestion dirs, capture, the
+credential gate, or LLM routing applies to every machine silently.</td>
+</tr>
+<tr>
+<td>Secret-scan commit gate</td>
+<td>credential-shaped values held back from commits</td>
+<td>Articles carrying a real-looking token commit straight into shared
+history.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Extraction dedup is not on this list.</strong>
+<code>scripts/extraction-ledger.json</code> works the same whether the
+flag is set or not — it is keyed on normalized remote URL plus HEAD SHA,
+and both the lookup and the semantic merge are unconditional. You get
+revision-level dedup on a solo KB too.</p>
+<p>One exception worth budgeting for: a machine that has never extracted
+a given repository takes the never-extracted branch <em>before</em> the
+ledger is consulted, so <strong>the first sync on a new machine
+re-extracts every approved repository once</strong>, at full model cost,
+even though a sibling machine already did that revision. After that
+first pass the ledger takes over. Preview it with
+<code>scribe sync --dry-run --estimate</code> before the first real
+run.</p>
+<h3 id="what-turning-it-on-takes-away">What turning it on takes
+away</h3>
+<p><code>team: true</code> hard-disables <strong>iMessage
+capture</strong> and <strong>pull integrations</strong> from the repo
+config. That is deliberate: they are personal sources, and a pushed
+<code>enabled: true</code> must not switch them on for every machine
+reading the repo. The trusted config snapshot does not restore them
+either.</p>
+<p>Move those blocks into the gitignored <code>scribe.local.yaml</code>
+of the one machine that should run them. Local config is applied after
+trust enforcement, so it always wins.</p>
+<p>It also locks sensitive config. Once a machine has trusted a
+<code>scribe.yaml</code>, later edits to source filters, ingestion dirs,
+capture, the credential gate or LLM routing do <strong>not</strong> take
+effect there — scribe keeps running on the trusted values and
+<code>doctor</code> reports drift until you run
+<code>scribe config diff</code> and <code>scribe config trust</code> on
+that machine. If you edit your own config freely, this is the friction
+you will notice most.</p>
+<p>It also activates the secret gate, which adds a whole-KB audit to
+<code>scribe doctor</code>. Pre-existing credential-shaped strings in
+old articles surface as a new warning — historical, not a regression.
+New articles containing one are held back from the commit; watch for
+<code>SECRET HELD:</code> in sync logs.</p>
+<h2 id="why-concurrency-is-the-normal-case-here">Why concurrency is the
+normal case here</h2>
+<p><code>scribe cron install</code> writes the <strong>same fixed
+wall-clock schedule</strong> on every machine. There is no jitter and no
+per-machine offset, so two machines fire the same job in the same
+minute:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Job (abridged)</th>
+<th>Runs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>commit</code></td>
+<td>hourly</td>
+</tr>
+<tr>
+<td><code>sync</code></td>
+<td>every 2 hours</td>
+</tr>
+<tr>
+<td><code>sync --sessions</code></td>
+<td>3× daily</td>
+</tr>
+<tr>
+<td><code>dream --hot</code></td>
+<td>daily</td>
+</tr>
+<tr>
+<td><code>lint</code></td>
+<td>daily</td>
+</tr>
+<tr>
+<td>the five <code>lint</code> mutators</td>
+<td>weekly, within one hour of each other</td>
+</tr>
+<tr>
+<td><code>dream</code></td>
+<td>weekly</td>
+</tr>
+</tbody>
+</table></div>
+<p>Plan for simultaneous writes as the default, not the exception.</p>
+<h2 id="what-is-coordinated-and-what-is-not">What is coordinated, and
+what is not</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Job</th>
+<th>Coordinated</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dream</code>, <code>dream --hot</code></td>
+<td><strong>yes</strong></td>
+<td>committed lease; others see the claim after their pull and skip</td>
+</tr>
+<tr>
+<td><code>sync</code> project extraction</td>
+<td><strong>yes</strong></td>
+<td>extraction ledger; a revision a teammate already did is skipped</td>
+</tr>
+<tr>
+<td><code>sync --sessions</code></td>
+<td>no</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>sync</code> file-inbox drain</td>
+<td>no</td>
+<td>both machines drain the committed <code>ingest.inbox_path</code>
+after a pull</td>
+</tr>
+<tr>
+<td><code>lint --fix</code>, <code>--duplicates</code>,
+<code>--resolve</code>, <code>--identities</code>,
+<code>--apply-identities</code></td>
+<td>no</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>commit</code></td>
+<td>no</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>capture</code></td>
+<td>no</td>
+<td>convention: one machine only</td>
+</tr>
+</tbody>
+</table></div>
+<p>Conflicts on scribe-managed shared files are handled by class:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>File</th>
+<th>On conflict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wiki/_index.md</code>, <code>wiki/_backlinks.json</code>,
+<code>wiki/_digest.md</code>, <code>wiki/_hot.md</code></td>
+<td>either side wins — content regenerates after the pull</td>
+</tr>
+<tr>
+<td><code>wiki/_sessions_log.json</code>,
+<code>wiki/_codex_sessions_log.json</code></td>
+<td>merged semantically — <code>processed</code> unions, later
+<code>last_scan</code> wins</td>
+</tr>
+<tr>
+<td><code>scripts/extraction-ledger.json</code></td>
+<td>merged semantically</td>
+</tr>
+<tr>
+<td><code>scripts/dream-lease.json</code></td>
+<td>merged semantically, remote wins the claim</td>
+</tr>
+<tr>
+<td><code>log.md</code></td>
+<td>union of both sides' lines</td>
+</tr>
+<tr>
+<td><code>scripts/projects.json</code></td>
+<td>never shared</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="known-limitations">Known limitations</h3>
+<p>Honest ones, current as of this writing:</p>
+<ul>
+<li><p><strong>Some accumulating files are still not
+merge-aware.</strong> <code>wiki/_unfetched-links.md</code>,
+<code>wiki/_identity-proposals.md</code>,
+<code>wiki/_absorb_log.json</code>,
+<code>wiki/_extraction_outcomes.json</code> and
+<code>wiki/_contextualized_log.json</code> are committed, grow from
+every machine, and have no registered conflict handler. The list is not
+exhaustive.</p>
+<p>An unregistered conflict aborts the rebase, and until it is resolved
+every later pull fails on the same conflict while local commits pile up
+— so resolve one promptly with the <a
+href="#divergence-is-normal">divergence recipe</a> rather than letting
+it sit. In practice these files change far less often than the session
+ledgers did, so collisions are occasional rather than daily.</p>
+<p>The two that <em>were</em> guaranteed to collide — the session-mining
+ledgers, whose <code>last_scan</code> field is rewritten on every
+<code>sync --sessions</code> run — now merge semantically, as does
+<code>wiki/_hot.md</code>. Make sure every writer is on a build that
+includes that fix.</p></li>
+<li><p><strong><code>scribe commit</code> does not inspect git state
+before committing.</strong> If a rebase is paused or <code>HEAD</code>
+is detached, cron will keep committing onto it and the branch will not
+advance. Never leave a rebase half-finished on a machine whose cron is
+running — see below.</p></li>
+<li><p><strong>The file inbox is shared and undeduplicated.</strong>
+<code>ingest.inbox_path</code> (default <code>raw/inbox</code>) is
+inside the committed tree, and every <code>scribe sync</code> drains it.
+Two machines that pull the same queued file before either has drained it
+will both convert it, producing duplicate articles. Drop files in on the
+maintenance machine, or accept the occasional duplicate. Note this is
+<em>not</em> what <code>scribe ingest drain</code> handles — that job
+works on <code>output/inbox</code>, which is gitignored and strictly
+machine-local, so it needs no coordination.</p></li>
+<li><p><strong><code>capture</code> is coordinated by convention
+only.</strong> Nothing stops two machines running it against the same
+KB.</p></li>
+</ul>
+<h2 id="operating-rules-for-a-multi-writer-kb">Operating rules for a
+multi-writer KB</h2>
+<ol type="1">
+<li><p><strong>One machine owns maintenance.</strong> Throttle the
+uncoordinated mutators everywhere else with <code>each.cadence</code> in
+that machine's gitignored <code>scribe.local.yaml</code>. The <a
+href="https://getscribe.dev/setup.md#one-kb-on-several-machines">runbook</a>
+has the block to paste. Leave <code>dream</code> enabled everywhere —
+the lease makes it safe, and the weekly cycle still runs when your main
+machine is asleep.</p></li>
+<li><p><strong>One machine owns capture.</strong> On macOS, Messages is
+synced across devices, so every Mac signed into the same account sees
+identical messages. Capturing on two double-ingests every URL. The
+per-machine Full Disk Access grant is a useful forcing function — simply
+never run <code>scribe fda</code> on the others.</p></li>
+<li><p><strong>Match git's pull behaviour to cron's.</strong> scribe
+always pulls with <code>--rebase --autostash</code>; a hand-run
+<code>git pull</code> does not, and fails on a diverged clone. On every
+writer:</p>
+<pre class="sh"><code>git config pull.rebase true
+git config rebase.autoStash true</code></pre></li>
+<li><p><strong>Stop cron before any manual git surgery.</strong>
+<code>scribe cron uninstall</code>, do the work, verify,
+<code>scribe cron install</code>. On Linux that command only removes
+macOS LaunchAgents — it prints success while cron keeps firing. Comment
+out the scribe block in <code>crontab -e</code> instead, and restore it
+afterwards. A paused rebase plus a live <code>commit</code> job is the
+one failure mode that compounds silently.</p></li>
+<li><p><strong>Credentials never go in a KB.</strong> Provider keys live
+in <code>~/.config/scribe/config.yaml</code> or the environment, per
+machine.</p></li>
+</ol>
+<h2 id="divergence-is-normal">Divergence is normal</h2>
+<p><code>git status</code> showing both ahead and behind on a second
+machine is the expected steady state, not damage. Reconcile with a
+rebase, and finish it in one sitting:</p>
+<pre class="sh"><code>scribe cron uninstall                     # nothing can commit while you work
+git branch backup/$(git rev-parse --short HEAD)   # free; do it before deciding
+git log --oneline origin/main..HEAD       # what is local-only
+git diff --stat origin/main...HEAD        # what it actually changed
+git status                                # uncommitted work? see the warning below</code></pre>
+<p>Rebase, and finish it in one sitting:</p>
+<pre class="sh"><code>git pull --rebase --autostash
+# if it pauses: git rebase --continue, or git rebase --abort</code></pre>
+<p>If the local commits turn out to be only bookkeeping, resetting is
+faster than rebasing:</p>
+<pre class="sh"><code>git reset --hard origin/main</code></pre>
+<p><strong>Read this before you reset.</strong> "Bookkeeping" means
+commits that touch <em>only</em> <code>wiki/_index.md</code>,
+<code>wiki/_backlinks.json</code>, <code>wiki/_digest.md</code>,
+<code>wiki/_hot.md</code>, the lease, the ledger, <code>log.md</code>,
+or a <code>last_scan</code> bump. A commit subject beginning
+<code>auto:</code> is <strong>not</strong> noise — that is where
+extracted articles land, and resetting past it destroys model output you
+already paid for. <code>reset --hard</code> also discards uncommitted
+tracked changes, which is where articles held back by the secret gate
+sit. When in doubt, rebase; the backup branch above is your undo either
+way.</p>
+<p>Verify before letting cron near it again:</p>
+<pre class="sh"><code>git symbolic-ref -q HEAD &gt;/dev/null &amp;&amp; echo &quot;HEAD attached&quot; || echo &quot;DETACHED — stop&quot;
+for d in rebase-merge rebase-apply; do
+  [ -d &quot;$(git rev-parse --git-path $d)&quot; ] &amp;&amp; echo &quot;REBASE STILL RUNNING — stop&quot;
+done
+git grep -l &#39;^&lt;&lt;&lt;&lt;&lt;&lt;&lt;&#39; || echo &quot;no conflict markers&quot;
+git push &amp;&amp; scribe doctor
+scribe cron install</code></pre>
+<h2 id="two-readings-that-look-like-failures-and-are-not">Two readings
+that look like failures and are not</h2>
+<ul>
+<li><strong><code>scripts/projects.json — 0 projects</code> on a new
+machine.</strong> Discovery only enrolls a path that exists on disk. A
+fresh machine has the session history but not the repositories. Clone
+the repositories you will work on there, re-run
+<code>scribe sync --discover</code>, then
+<code>scribe projects review</code>. Session mining stays at
+<code>0 pending</code> until projects exist.</li>
+<li><strong>A lower qmd file count than your other machine.</strong>
+Derived artifacts are gitignored and do not clone. Compare a clone
+against <code>git ls-files '*.md' | wc -l</code>, never against the
+other machine's total.</li>
+</ul>
+<p>Freshness warnings reading <code>never run</code> clear themselves
+once cron has fired once.</p>
+  </article>
+  <footer class="foot">
+    <p>Source of truth for this page is <a href="/topologies.md">topologies.md</a> — the same file coding agents read. <a href="/">Back to scribe</a> · <a href="https://github.com/oliver-kriska/scribe">GitHub</a></p>
+  </footer>
+</main>
+<script>
+  (function () {
+    var btn = document.getElementById('theme');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var root = document.documentElement;
+      var isDark = root.getAttribute('data-theme') === 'dark' ||
+        (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var next = isDark ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('scribe-theme', next); } catch (_) {}
+    });
+  })();
+</script>
+</body>
+</html>

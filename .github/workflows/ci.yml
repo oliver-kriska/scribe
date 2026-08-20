@@ -34,6 +34,22 @@ jobs:
       - name: Race detector
         run: make race
 
+  docs-fresh:
+    # site/public/{setup,topologies}.html are generated from the .md next to
+    # them and committed. Without this, editing a doc and forgetting to re-run
+    # the generator silently ships a stale page — the same hand-synced-surface
+    # drift the site already has to watch for elsewhere.
+    name: generated docs are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pandoc
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends pandoc
+
+      - name: Check generated HTML matches the markdown
+        run: ./site/build-docs.sh --check
+
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
