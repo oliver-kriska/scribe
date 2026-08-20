@@ -1,8 +1,8 @@
 # scribe — your knowledge base, written by your tools
 
-> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. It mines every provider indexed by ccrider — Claude Code, Codex CLI, Copilot CLI, OpenCode, Pi, Antigravity, and Amp when imported by ccrider. Project discovery covers Claude Code and Codex; the query-KB + write-drop-files handshake also reaches Amp. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend. In team mode, a small team points every machine at one git-backed KB — with a trust layer, a deterministic secret-scan commit gate, and per-git-remote approval keeping secrets, private client repos, and hostile config changes out of shared history.
+> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. It turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. It mines every provider indexed by ccrider — Claude Code, Codex CLI, Copilot CLI, OpenCode, Pi, Antigravity, and Amp when imported by ccrider. Project discovery covers Claude Code and Codex; the query-KB + write-drop-files handshake also reaches Amp. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend. In team mode, a small team points every machine at one git-backed KB — with a trust layer, a deterministic secret-scan commit gate, and per-git-remote approval keeping secrets, private client repos, and hostile config changes out of shared history.
 
-**License:** MIT · **Repo:** <https://github.com/oliver-kriska/scribe> · **Maintainer's KB:** 7,472 articles, zero typed by hand
+**License:** MIT · **Repo:** <https://github.com/oliver-kriska/scribe> · **Maintainer's KB:** 8,128 articles as of Aug 2026, zero typed by hand
 
 ---
 
@@ -80,9 +80,11 @@ Deeper differentiators against the broader memory-tool landscape:
 | **scribe** | yes (all ccrider providers + direct Codex) | yes (LaunchAgents) | yes (FTS5 triage) | yes (fan-out) | yes | yes (Ollama / llama.cpp) |
 | claude-memory-compiler | every session, no filter | opportunistic | no ($115/20min, issue #3) | no | no | no |
 | nvk/llm-wiki | no | one-shot `/wiki:assess` | n/a | no | no | no |
-| basic-memory | no (issue #669 since Mar) | cron suggested | n/a | no | yes (projects) | no |
+| basic-memory | no — open request #669, Mar 2026 | cron suggested | n/a | no | yes (projects) | no |
 | RAG (LangChain, LlamaIndex) | no | indexing only | n/a | chunks only | yes | varies |
 | Obsidian / Notion | manual | no | n/a | no | manual | n/a |
+
+Snapshot 2026-06-08. Everything moves; check each project's docs and issue tracker before deciding. Verdicts are pulled from public READMEs, issue trackers, and the scribe maintainer's tool evaluations.
 
 ## For teams
 
@@ -100,8 +102,8 @@ The trust boundary, concretely — what tries to cross into the shared KB and wh
 The mechanisms:
 
 - **Shared config is untrusted by default.** A trust layer pins the sensitive surface of a shared `scribe.yaml`: provider, model, ingest paths, and the secret scanner itself. A pushed change that would repoint inference to a new endpoint or drain a new directory into the KB reverts to the last trusted snapshot until a human approves it.
-- **Secrets never reach shared history.** scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path.
-- **Extraction is paid for once, not per laptop.** Every `scribe sync` pulls, merges, and reindexes before it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB.
+- **Secrets never reach shared history.** scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path. On a solo KB the gate is off and the KB pushes to a private remote you own; `team: true` is what turns it on — and it is a multi-writer switch, not a headcount, so one person with two machines can set it.
+- **Extraction is paid for once, not per laptop.** Every `scribe sync` pulls, merges, and reindexes before it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync re-extracts each approved repo once before the ledger takes over — preview it with `scribe sync --dry-run --estimate`.
 - **A teammate's unrelated repo never leaks in.** Discovered projects start pending. `allowed_remotes` and source filters gate discovery by git-remote identity, and `scribe projects {list,approve,ignore,review}` controls what enters the pipeline, so a side project or a client checkout never lands in the shared KB without an approve.
 - **Curate privately, promote deliberately.** `scribe promote <article> --to team-kb` copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.
 - **One machine consolidates, no server.** The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.
@@ -201,7 +203,7 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 
 ## The command surface
 
-78 command paths, one binary. The ones you'll actually type:
+79 command paths, one binary. The ones you'll actually type:
 
 ```
 scribe init --bind          # bootstrap a KB, wire the agent handshake
@@ -216,11 +218,11 @@ scribe relations migrate    # classify `related:` into typed edges
 scribe cron install / uninstall / status
 ```
 
-Run `scribe --help` to see all 78. `scribe cron install` puts the boring ones on a schedule so you never type them again.
+Run `scribe --help` to see all 79. `scribe cron install` puts the boring ones on a schedule so you never type them again.
 
 ## In practice
 
-Two real loops from the maintainer's normal use — concrete, not marketing:
+Two real loops from the maintainer's normal use — concrete, not marketing. On how long it takes to pay off: that KB started empty on 7 April 2026 and held **553 articles two weeks later** (753 files counting the verbatim raw sources beside them), with nothing typed by hand.
 
 - **Cross-project memory.** Evaluated a Phoenix translation library for one app; months later, started a different Phoenix project with the same problem. scribe had already absorbed the verdict from the prior session (skip DB-backed Gettext, weighed against `.po` files and managed services). When Claude Code opened the new repo and asked the KB, the "skip" verdict surfaced first with the reasoning attached — no re-research. Surfaced via `qmd query "phoenix translation library"` → `tools/kanta.md · verdict: skip`.
 - **Solved twice, written once.** Fixed an Oban idempotency bug in project A; months later the same shape appeared in project B. The fix (an idempotency-key strategy for an external-call worker) was captured automatically when the post-fix session was mined. When the race reappeared, the agent grepped the KB before guessing and proposed the exact prior pattern. The second fix took fifteen minutes instead of an afternoon.
@@ -284,7 +286,7 @@ Or via shell installer: `curl -fsSL https://raw.githubusercontent.com/oliver-kri
 A single-binary Go CLI that builds a personal, LLM-written knowledge base from your git repos, coding-agent sessions, and self-sent URLs. The pipeline runs on cron — set up once with `scribe init` + `scribe cron install`.
 
 **How is scribe different from RAG, Obsidian, or claude-memory-compiler?**
-RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.
+RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes (issue #3). Scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so they cost nothing.
 
 **Is this just another "second brain"?**
 No — and that's the point. A second brain is notes *you* read, connect, and think in; many people build one, stop reopening it, and end up with a graveyard of notes plus a monthly token bill. scribe is the opposite: memory your *agent* reads before it decides. It stores the reasoning behind a choice — not summaries that lower the quality of material you wanted to read in full. It pays off most where the expensive half of the job is rebuilding context rather than deciding — which is exactly developer work.
@@ -293,22 +295,28 @@ No — and that's the point. A second brain is notes *you* read, connect, and th
 No. Every LLM op in scribe — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining `claude -p` callsite in a normal `scribe sync`. A single line in `scribe.yaml` flips the whole pipeline: `llm.provider: ollama`. Per-op overrides still work if you want to keep some passes on Anthropic or a hosted API.
 
 **What does it cost to run?**
-Zero on the local-mode path (Ollama) for the entire pipeline. On a hosted OpenAI-compatible API, a full week of work ran ~$0.55 (Together); on the Anthropic path the same week was ~$103.57 ($104.12 across all three paths). The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. `scribe cost` reconciles every token to the cent across providers and KBs.
+Zero on the local-mode path (Ollama) for the entire pipeline. On a hosted OpenAI-compatible API, a full week of work billed ~$0.55 (Together); on the Anthropic path the same week billed ~$103.57 ($104.12 across all three paths) — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed $1.16. Routing is per-op in `scribe.yaml`, so the bill follows what you point at a paid provider, not how many KBs you run, and the paths handled different volumes — read each as what it actually billed, not a like-for-like race. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview any run with `scribe sync --dry-run --estimate`; `scribe cost` reconciles every token to the cent across providers and KBs.
 
 **Can a team share one KB safely?**
 Yes. A small team points every machine at one git-backed KB. A trust layer treats shared `scribe.yaml` as untrusted by default (config that repoints inference or widens ingest paths reverts until approved); a deterministic secret-scan gate holds credentials back before they hit shared git history; `allowed_remotes` keeps a teammate's unrelated or client repo out; `scribe promote` moves curated pages over with provenance; and a committed leader lease elects the single machine that runs the weekly consolidation — no server, no etcd.
 
+**How do I know what it writes is true?**
+You audit it the way you audit code, because it's shaped like code: markdown in git, diffable, deletable. Articles carry their provenance in frontmatter — the session or commit they came from — and the raw source stays verbatim under `raw/` next to the wiki page written from it. Wrongness gets mechanisms, not hope: `scribe contradictions list` surfaces articles that disagree with each other, `scribe stale list` tracks what has decayed, `scribe lint` enforces structure and frontmatter, and the weekly Dream cycle merges near-duplicates and prunes stubs instead of letting them pile up. When an article is wrong, `git rm` it — it's a file, not a row in a vector store.
+
+**What else does scribe need installed?**
+`git`, `sqlite`, and `ccrider` — the Homebrew formula pulls all three in for you. Search needs `qmd` (`npm i -g @tobilu/qmd`), and the dependency check still expects the Claude CLI even on the Ollama profile, where it's a check and not a spend. Local mode adds Ollama itself. `scribe doctor` verifies the whole set and names whatever is missing.
+
 **Does scribe work on Linux?**
-Yes. macOS gets LaunchAgents via `scribe cron install`; Linux gets paste-ready crontab lines from the same command. The iMessage capture step is macOS-only because it reads `chat.db`; everything else is portable. macOS release binaries are Developer ID signed and notarized, and `scribe fda` verifies `chat.db` access in the same launchd context scheduled capture uses.
+Yes. macOS gets LaunchAgents via `scribe cron install`; Linux gets paste-ready crontab lines from the same command. The fsnotify watcher (`scribe watch`) is not cron-friendly on either OS — run it under launchd `KeepAlive` on macOS or systemd-user on Linux. The iMessage capture step is macOS-only because it reads `chat.db`; everything else is portable. macOS release binaries are Developer ID signed and notarized, and `scribe fda` verifies `chat.db` access in the same launchd context scheduled capture uses.
 
 **Where does scribe store the knowledge base?**
 In a plain git repo of markdown files at whatever path you pass to `scribe init`. Push it to your own GitHub, Gitea, or Forgejo — there's no SaaS account, no cloud sync, no vendor lock-in. Open it in Obsidian, VS Code, vim, or mdbook.
 
 **What does the cron schedule look like?**
-Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine coding-agent sessions via ccrider — plus direct Codex CLI rollouts when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday with a daily hot-domain pass in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
+Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine coding-agent sessions via ccrider — plus direct Codex CLI rollouts when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, hourly pull of any configured bookmark integration (a no-op until you set one up), a weekly Dream cycle on Sunday with a daily hot-domain pass in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
 
 **Is scribe an alternative to RAG for a personal knowledge base?**
-Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, and the curated wiki stays small enough for an agent to read whole.
+Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, and the parts an agent reads up front — the digest and the index — stay small enough to read whole.
 
 **How is scribe different from Code Insights, AnythingLLM, or Obsidian?**
 Code Insights turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them — plus your git repos and self-sent URLs — into a portable markdown wiki in git that your agents read back before they decide. AnythingLLM is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. Obsidian is a manual notes tool you type into yourself — scribe writes the notes for you.
@@ -320,7 +328,7 @@ Yes. scribe is an AnythingLLM alternative for people who want an LLM wiki instea
 Yes. On cron, scribe mines every provider in ccrider's FTS5 index — including Amp sessions when imported by ccrider — plus direct Codex CLI rollouts when enabled. It scores each session with weighted FTS5 keyword matches to skip boilerplate before any LLM call, then extracts reusable knowledge into entity-first wiki articles.
 
 **Is scribe local-first, and does it work without an API key?**
-Yes. The entire pipeline can run 100% locally against an Ollama server with no Anthropic API key — a single line in `scribe.yaml` flips every LLM op to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync.
+Yes. The entire pipeline can run 100% locally against an Ollama server with no Anthropic API key — a single line in `scribe.yaml` flips every LLM op to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync. Worth naming for the default path too: the model mining your Claude Code sessions is the same provider that already ran them — scribe does not widen who sees your work, it just stops you from losing it.
 
 **Does scribe have full-text (BM25) search, and does it run on cron?**
 Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and semantic vector search, and because it's plain markdown you can also `grep` it from any terminal or query it from inside your agent. The whole pipeline runs unattended on macOS LaunchAgents or Linux cron.
@@ -329,4 +337,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-08-11
+**Last updated:** 2026-08-20

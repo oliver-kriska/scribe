@@ -29,7 +29,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
-<meta property="article:modified_time" content="2026-08-11T00:00:00Z" />
+<meta property="article:modified_time" content="2026-08-20T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -133,7 +133,7 @@
       "name": "How is scribe different from RAG, Obsidian, or claude-memory-compiler?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes. scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing."
+        "text": "RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session — one user burned $115 in 20 minutes. scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so they cost nothing."
       }
     },
     {
@@ -146,10 +146,26 @@
     },
     {
       "@type": "Question",
+      "name": "How do I know what it writes is true?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "You audit it the way you audit code, because it is shaped like code: markdown in git, diffable, deletable. Articles carry their provenance in frontmatter — the session or commit they came from — and the raw source stays verbatim under raw/ next to the wiki page written from it. Wrongness gets mechanisms, not hope: scribe contradictions list surfaces articles that disagree with each other, scribe stale list tracks what has decayed, scribe lint enforces structure and frontmatter, and the weekly Dream cycle merges near-duplicates and prunes stubs instead of letting them pile up. When an article is wrong, git rm it — it is a file, not a row in a vector store."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What else does scribe need installed?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "git, sqlite, and ccrider — the Homebrew formula pulls all three in for you. Search needs qmd (npm i -g @tobilu/qmd), and the dependency check still expects the Claude CLI even on the Ollama profile, where it is a check and not a spend. Local mode adds Ollama itself. scribe doctor verifies the whole set and names whatever is missing."
+      }
+    },
+    {
+      "@type": "Question",
       "name": "What does it cost to run?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Zero on the local-mode path (Ollama) for the entire pipeline — every claude -p callsite in a normal scribe sync, including per-project extraction and the weekly Dream cycle, runs locally. On the Anthropic-hosted path, contextualize costs roughly $0.0001 per article via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard prices. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend."
+        "text": "Zero on the local-mode path (Ollama) for the entire pipeline: per-project extraction, both absorb passes, and the weekly Dream cycle all run against your own server. On a hosted OpenAI-compatible API a full week of work billed $0.55 (Together). On the Anthropic path the same week billed $103.57 — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed $1.16. Routing is per-op in scribe.yaml, so the bill follows what you point at a paid provider, not how many KBs you run. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview any run with scribe sync --dry-run --estimate."
       }
     },
     {
@@ -181,7 +197,7 @@
       "name": "What does the cron schedule look like?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine coding-agent sessions via ccrider (plus direct Codex CLI rollouts when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
+        "text": "Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine coding-agent sessions via ccrider (plus direct Codex CLI rollouts when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, hourly pull of any configured bookmark integration (a no-op until you set one up), a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction."
       }
     },
     {
@@ -189,7 +205,7 @@
       "name": "Is scribe an alternative to RAG for a personal knowledge base?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, which is cheaper and more predictable than vector recall, and the curated wiki stays small enough for an agent to read whole."
+        "text": "Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front — the digest and the index — stay small enough to read whole."
       }
     },
     {
@@ -221,7 +237,7 @@
       "name": "Is scribe local-first, and does it work without an API key?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. The entire pipeline can run 100% locally against an Ollama server with no Anthropic API key — a single line in scribe.yaml flips every LLM op (extraction, absorb, dream, session-mine) to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync."
+        "text": "Yes. The entire pipeline can run 100% locally against an Ollama server with no Anthropic API key — a single line in scribe.yaml flips every LLM op (extraction, absorb, dream, session-mine) to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync. Worth naming for the default path too: the model mining your Claude Code sessions is the same provider that already ran them — scribe does not widen who sees your work, it just stops you from losing it."
       }
     },
     {
@@ -258,7 +274,7 @@
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
-  "dateModified": "2026-08-11T00:00:00+02:00",
+  "dateModified": "2026-08-20T00:00:00+02:00",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -1486,6 +1502,18 @@
     padding-right: 72px;
     white-space: pre-wrap;
   }
+  .code-note {
+    margin: 16px 0 0;
+    max-width: 74ch;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .code-note code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--fg);
+  }
   .code-panel .comment { color: var(--muted-2); }
   .code-panel .kw { color: var(--accent); font-weight: 500; }
   .code-panel .str { color: var(--code-str); }
@@ -2466,11 +2494,11 @@
       <a class="nav__link" href="#how">How it works</a>
       <a class="nav__link" href="#features">Features</a>
       <a class="nav__link" href="#compare">Compare</a>
-      <a class="nav__link" href="#teams">Teams</a>
       <a class="nav__link" href="#cost">Cost</a>
       <a class="nav__link" href="#cli">CLI</a>
       <a class="nav__link" href="#autonomous">Loop</a>
       <a class="nav__link" href="#faq">FAQ</a>
+      <a class="nav__link" href="#teams">Teams</a>
       <a class="nav__link" href="https://github.com/oliver-kriska/scribe">GitHub ↗</a>
     </nav>
     <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme" title="Toggle theme">
@@ -2545,8 +2573,8 @@
         </div>
         <div class="hero__stats">
           <div class="stat">
-            <div class="stat__num">7,472<span class="unit">documents</span></div>
-            <div class="stat__label">maintainer's KB · zero typed by hand</div>
+            <div class="stat__num">8,128<span class="unit">articles</span></div>
+            <div class="stat__label">maintainer's KB, Aug 2026 · zero typed by hand</div>
           </div>
           <div class="stat">
             <div class="stat__num">$0<span class="unit">/sync</span></div>
@@ -2670,7 +2698,7 @@
       <div class="step">
         <div class="step__index"><span>2</span> Triage &amp; extract</div>
         <h3 class="step__title">FTS5 first, LLM second.</h3>
-        <p class="step__body">Keyword-density scoring rejects boilerplate session candidates before any LLM call, so cheap sessions cost nothing. Sessions and project changes use bounded extraction envelopes; raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.</p>
+        <p class="step__body">Keyword-density scoring rejects boilerplate session candidates before any LLM call, so they cost nothing. Sessions and project changes use bounded extraction envelopes; raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.</p>
         <div class="step__tags">
           <span class="tag">FTS5 triage</span><span class="tag">two-pass</span><span class="tag">entity fan-out</span>
         </div>
@@ -2797,10 +2825,10 @@ advisory locks table-ambiguous under load.
     <div class="scope">
       <div class="scope__grid">
         <span class="scope__i"><b>4</b> input streams</span>
-        <span class="scope__i"><b>78</b> command paths</span>
+        <span class="scope__i"><b>79</b> command paths</span>
         <span class="scope__i"><b>10</b> typed-edge kinds</span>
         <span class="scope__i"><b>3</b> inference modes</span>
-        <span class="scope__i"><b>7</b> providers</span>
+        <span class="scope__i"><b>7</b> session providers</span>
         <span class="scope__i">two-pass absorb</span>
         <span class="scope__i"><b>0</b> vector DBs</span>
         <span class="scope__i"><b>0</b> required API keys</span>
@@ -2817,7 +2845,7 @@ advisory locks table-ambiguous under load.
     <header class="s__head">
       <div class="s__eyebrow">How it compares</div>
       <h2 class="s__title">Not RAG. Not Obsidian. Not another LLM-on-every-session burner.</h2>
-      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25, so there's nothing to embed and nothing to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that. It's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler): a curated wiki on top of raw sources kept verbatim, small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
+      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25, so there's nothing to embed and nothing to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that. It's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler): a curated wiki on top of raw sources kept verbatim, with a digest and index small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
     </header>
 
     <!-- buyer-intent comparison — head-to-head with the tools AI engines suggest instead of scribe -->
@@ -2941,7 +2969,7 @@ advisory locks table-ambiguous under load.
           </tr>
           <tr>
             <th scope="row">basic-memory<span class="cmp__note">MCP memory server</span></th>
-            <td><span class="cmp__partial">issue #669 since Mar</span></td>
+            <td><span class="cmp__partial">no &mdash; open request #669, Mar 2026</span></td>
             <td><span class="cmp__no">request-driven</span></td>
             <td><span class="cmp__no">none</span></td>
             <td><span class="cmp__no">single-pass</span></td>
@@ -3000,7 +3028,7 @@ advisory locks table-ambiguous under load.
         </div>
         <div class="cmp-card">
           <div class="cmp-card__name">basic-memory<small>MCP memory server</small></div>
-          <div class="cmp-card__row"><span class="cmp-card__label">Session mining</span><span class="cmp__partial">#669 since Mar</span></div>
+          <div class="cmp-card__row"><span class="cmp-card__label">Session mining</span><span class="cmp__partial">no &mdash; request #669</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Cron-driven</span><span class="cmp__no">request-driven</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Density pre-filter</span><span class="cmp__no">none</span></div>
           <div class="cmp-card__row"><span class="cmp-card__label">Two-pass absorb</span><span class="cmp__no">single-pass</span></div>
@@ -3039,162 +3067,6 @@ advisory locks table-ambiguous under load.
 </section>
 
 <!-- ============================ TEAMS ============================ -->
-<section class="s" id="teams">
-  <div class="wrap">
-    <header class="s__head">
-      <div class="s__eyebrow">For teams</div>
-      <h2 class="s__title">One KB. The whole team writes to it.</h2>
-      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB. The obvious fear with sharing agent sessions — a leaked secret, a private client repo, one teammate's config change reaching everyone — is exactly what the gates below are built to stop. Only knowledge you meant to keep crosses into the shared KB.</p>
-      <p class="s__sub"><a href="/setup.md">Run the exact team-owner and team-member setup commands →</a></p>
-    </header>
-
-    <figure class="video-embed video-embed--teams">
-      <video controls preload="none" playsinline poster="/scribe-explainer-teams-poster.jpg" width="1920" height="1080" aria-label="scribe for teams explainer video: one KB, the whole team writes to it">
-        <source src="https://assets.getscribe.dev/scribe-explainer-teams.mp4" type="video/mp4">
-        <track kind="captions" src="/scribe-explainer-teams.vtt" srclang="en" label="English" default>
-      </video>
-    </figure>
-    <p class="video-yt"><a href="https://youtu.be/iDa4n7wzUXg" target="_blank" rel="noopener">Watch on YouTube ↗</a></p>
-    <details class="transcript">
-      <summary>Transcript</summary>
-      <p>Now imagine that memory isn't just yours. A new teammate asks the question you answered six months ago. The decision is in your head, or in a session nobody can find. scribe scales to your team. Every engineer's agent sessions write to one shared, git-backed knowledge base. Every fix, every rejected library, every decision your team makes becomes context the whole team's agents read before they act. A new hire's first Claude Code session already knows why you chose what you chose. Shared memory is a trust problem, not a sync problem. A secret gate scans every commit, so no key ever leaks into the wiki. Allowed remotes lock which repos it reads. Every promoted note carries where it came from. Still plain markdown in a repo your team owns. scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev.</p>
-    </details>
-
-    <figure class="tb">
-      <svg viewBox="0 0 720 340" role="img" aria-labelledby="tb-title tb-desc">
-        <title id="tb-title">The shared-KB trust boundary</title>
-        <desc id="tb-desc">Four things approach the shared team knowledge base. An AWS key is stopped by the secret-scan gate, a private client repo by the remote allowlist, and a pushed config change by the trust layer — none cross. Only the reasoning behind a fix, promoted deliberately, crosses into the shared KB.</desc>
-        <defs>
-          <marker id="tb-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" class="tb__arrow"/>
-          </marker>
-        </defs>
-
-        <!-- shared team KB: the protected zone -->
-        <rect class="tb__kb" x="470" y="40" width="236" height="280" rx="14"/>
-        <text class="tb__kbtitle" x="588" y="72" text-anchor="middle">shared team KB</text>
-        <text class="tb__kbsub"   x="588" y="90" text-anchor="middle">git · what teammates see</text>
-        <rect class="tb__pill" x="518" y="114" width="140" height="26" rx="13"/>
-        <text class="tb__pilltxt" x="588" y="131" text-anchor="middle">decisions</text>
-        <rect class="tb__pill" x="518" y="150" width="140" height="26" rx="13"/>
-        <text class="tb__pilltxt" x="588" y="167" text-anchor="middle">patterns</text>
-        <rect class="tb__pill" x="518" y="186" width="140" height="26" rx="13"/>
-        <text class="tb__pilltxt" x="588" y="203" text-anchor="middle">solutions</text>
-
-        <!-- column headers -->
-        <text class="tb__hdr" x="119" y="20" text-anchor="middle">what tries to cross</text>
-        <text class="tb__hdr" x="354" y="20" text-anchor="middle">the gate that stops it</text>
-
-        <!-- lane 1: secret -> secret-scan gate -> held -->
-        <rect class="tb__src" x="14" y="69" width="210" height="30" rx="8"/>
-        <text class="tb__txt" x="119" y="88" text-anchor="middle">an AWS key in a transcript</text>
-        <line class="tb__wire tb__wire--held" x1="224" y1="84" x2="298" y2="84"/>
-        <rect class="tb__node" x="298" y="70" width="112" height="28" rx="7"/>
-        <text class="tb__gate" x="354" y="87.5" text-anchor="middle">secret-scan gate</text>
-        <line class="tb__wire tb__wire--held" x1="410" y1="84" x2="452" y2="84"/>
-        <line class="tb__stop" x1="452" y1="75" x2="452" y2="93"/>
-        <text class="tb__out" x="354" y="112" text-anchor="middle">held back — never committed</text>
-
-        <!-- lane 2: private repo -> remote allowlist -> held -->
-        <rect class="tb__src" x="14" y="135" width="210" height="30" rx="8"/>
-        <text class="tb__txt" x="119" y="154" text-anchor="middle">a teammate's client repo</text>
-        <line class="tb__wire tb__wire--held" x1="224" y1="150" x2="298" y2="150"/>
-        <rect class="tb__node" x="298" y="136" width="112" height="28" rx="7"/>
-        <text class="tb__gate" x="354" y="153.5" text-anchor="middle">remote allowlist</text>
-        <line class="tb__wire tb__wire--held" x1="410" y1="150" x2="452" y2="150"/>
-        <line class="tb__stop" x1="452" y1="141" x2="452" y2="159"/>
-        <text class="tb__out" x="354" y="178" text-anchor="middle">never ingested without an approve</text>
-
-        <!-- lane 3: config repoint -> trust layer -> held -->
-        <rect class="tb__src" x="14" y="201" width="210" height="30" rx="8"/>
-        <text class="tb__txt" x="119" y="220" text-anchor="middle">config that repoints the LLM</text>
-        <line class="tb__wire tb__wire--held" x1="224" y1="216" x2="298" y2="216"/>
-        <rect class="tb__node" x="298" y="202" width="112" height="28" rx="7"/>
-        <text class="tb__gate" x="354" y="219.5" text-anchor="middle">trust layer</text>
-        <line class="tb__wire tb__wire--held" x1="410" y1="216" x2="452" y2="216"/>
-        <line class="tb__stop" x1="452" y1="207" x2="452" y2="225"/>
-        <text class="tb__out" x="354" y="244" text-anchor="middle">reverted to the last trusted snapshot</text>
-
-        <!-- lane 4: a decision -> curated extract -> crosses -->
-        <rect class="tb__src" x="14" y="267" width="210" height="30" rx="8"/>
-        <text class="tb__txt" x="119" y="286" text-anchor="middle">the reasoning behind a fix</text>
-        <line class="tb__wire tb__wire--pass" x1="224" y1="282" x2="298" y2="282"/>
-        <rect class="tb__node" x="298" y="268" width="112" height="28" rx="7"/>
-        <text class="tb__gate" x="354" y="285.5" text-anchor="middle">curated extract</text>
-        <line class="tb__wire tb__wire--pass" x1="410" y1="282" x2="484" y2="282" marker-end="url(#tb-arrow)"/>
-        <text class="tb__ok" x="500" y="286">✓</text>
-        <text class="tb__out" x="354" y="310" text-anchor="middle">promoted · provenance kept</text>
-      </svg>
-      <figcaption>Sensitive material stops at the commit gate. Only knowledge you deliberately keep crosses into the shared KB — and every gate here is a mechanism in the code, not a policy in a doc.</figcaption>
-    </figure>
-
-    <div class="team-grid">
-      <article class="feature">
-        <h3>Shared config is untrusted by default</h3>
-        <p>A trust layer pins the sensitive surface of a shared <code>scribe.yaml</code>: provider, model, ingest paths, and the secret scanner itself. A pushed change that would repoint inference to a new endpoint or drain a new directory into the KB reverts to the last trusted snapshot until a human approves it.</p>
-      </article>
-
-      <article class="feature">
-        <h3>Secrets never reach shared history</h3>
-        <p>scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path.</p>
-      </article>
-
-      <article class="feature">
-        <h3>Extraction is paid for once, not per laptop</h3>
-        <p>Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB.</p>
-      </article>
-
-      <article class="feature">
-        <h3>A teammate's unrelated repo never leaks in</h3>
-        <p>Discovered projects start pending. <code>allowed_remotes</code> and source filters gate discovery by git-remote identity, and <code>scribe projects {list,approve,ignore,review}</code> controls what enters the pipeline, so a side project or a client checkout never lands in the shared KB without an approve.</p>
-      </article>
-
-      <article class="feature">
-        <h3>Curate privately, promote deliberately</h3>
-        <p><code>scribe promote &lt;article&gt; --to team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.</p>
-      </article>
-
-      <article class="feature">
-        <h3>One machine consolidates, no server</h3>
-        <p>The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.</p>
-      </article>
-    </div>
-
-    <aside class="teams-early" aria-labelledby="teams-early-title">
-      <div class="teams-early__grid">
-        <div class="teams-early__copy">
-          <div class="s__eyebrow">Early access</div>
-          <h3 id="teams-early-title">A paid team edition, on Git you own.</h3>
-          <p>The trust gates, secret scanning, and provenance above already exist. This is a demand check for packaging and support around a paid Scribe for Teams edition &mdash; not a hosted product. Two numbers help decide whether to build it.</p>
-        </div>
-        <form class="teams-interest" id="teamsInterest" method="get" action="https://github.com/oliver-kriska/scribe/discussions/new" target="_blank" rel="noopener">
-          <label>
-            Team size
-            <select name="team_size" required>
-              <option value="" selected disabled>Select a range</option>
-              <option value="2–5">2&ndash;5</option>
-              <option value="6–15">6&ndash;15</option>
-              <option value="16–50">16&ndash;50</option>
-              <option value="51+">51+</option>
-            </select>
-          </label>
-          <label>
-            Expected monthly price
-            <input name="monthly_price" type="text" inputmode="decimal" placeholder="$100 / month" required />
-          </label>
-          <input name="category" type="hidden" value="general" />
-          <input name="title" type="hidden" value="Scribe for Teams early access" />
-          <input name="body" type="hidden" value="" />
-          <div class="teams-interest__action">
-            <button class="btn btn--accent" type="submit">Share interest via GitHub&nbsp;↗</button>
-            <span class="teams-interest__note">Opens a prefilled public Discussion draft for you to review before posting.</span>
-          </div>
-        </form>
-      </div>
-    </aside>
-  </div>
-</section>
-
 <!-- ============================ INFERENCE & COST ============================ -->
 <section class="s" id="cost">
   <div class="wrap">
@@ -3254,7 +3126,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
 
       <div class="cost__local">
         <span class="local__pill">100% Ollama</span>
-        <p>On the local path there's no <code>claude -p</code> callsite in a normal <code>scribe sync</code>: per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, and relations migrate all fire through bounded JSON-envelope subtasks against your Ollama server. A full weekly sync: <strong>0 errors, $0.00, ~68s</strong>, 7,447 → 7,472 articles. One line in <code>scribe.yaml</code> flips the whole pipeline.</p>
+        <p>On the local path there's no <code>claude -p</code> callsite in a normal <code>scribe sync</code>: per-project extraction, two-pass absorb, the weekly Dream cycle, assess, deep, session-mine, and relations migrate all fire through bounded JSON-envelope subtasks against your Ollama server. A full weekly sync — the whole pipeline, not just the Dream pass: <strong>0 errors, $0.00, ~68s</strong>, 7,447 → 7,472 articles. One line in <code>scribe.yaml</code> flips the whole pipeline.</p>
       </div>
     </div>
   </div>
@@ -3311,7 +3183,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
     <header class="s__head">
       <div class="s__eyebrow">In practice</div>
       <h2 class="s__title">What it actually feels like.</h2>
-      <p class="s__sub">Two real loops from the maintainer's normal use: concrete, not marketing.</p>
+      <p class="s__sub">Two real loops from the maintainer's normal use: concrete, not marketing. On how long it takes to pay off: that KB started empty on 7 April 2026 and held <strong>553 articles two weeks later</strong> (753 files counting the verbatim raw sources beside them), with nothing typed by hand.</p>
     </header>
 
     <div class="feels">
@@ -3421,6 +3293,7 @@ Finish with the runbook's verification checklist and report what passed and what
     <span class="kw">model</span>: <span class="str">qwen3:30b-a3b</span>       <span class="comment"># quality-critical (MoE, fast)</span>
   <span class="kw">pass2</span>:
     <span class="kw">model</span>: <span class="str">qwen3:30b-a3b</span>       <span class="comment"># highest-quality writes</span></pre>
+        <p class="code-note">Plan for RAM: <code>gemma3:12b</code> wants ~10&nbsp;GB resident and <code>qwen3:30b-a3b</code> (4-bit MoE) ~20&nbsp;GB, so the pair above assumes 32&nbsp;GB or more. On 16&nbsp;GB, run <code>gemma3:4b</code> as the cross-op default and keep <code>gemma3:12b</code> for <code>contextualize</code> and <code>pass2</code> only &mdash; slower and blunter, still $0.</p>
       </div>
 
       <div class="code-panel" data-tab="hosted" id="panel-hosted" role="tabpanel" aria-labelledby="tab-hosted" tabindex="0">
@@ -3538,7 +3411,7 @@ scribe doctor <span class="flag">--section</span> localmode
           <h3>Sunday 02:00: the Dream cycle</h3>
           <span class="stage__pill">100% Ollama</span>
         </div>
-        <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Runs entirely on local Ollama: no token spend, no third party touches your notes. The KB stays small enough to fit in an agent's context window for years.</p>
+        <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Runs entirely on local Ollama: no token spend, no third party touches your notes. The digest and index stay small enough for an agent to read whole; everything else is one <code>qmd</code> query away.</p>
         <div class="stage__src">cmd/scribe/cron.go: weekly entry @ <code>Sun 02:00</code> → cmd/scribe/dream.go: <code>DreamCmd.Run()</code> → <code>prompts/dream-ollama.md</code> on gemma3:12b</div>
       </article>
     </div>
@@ -3551,7 +3424,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <section class="s" id="commands">
   <div class="wrap">
     <header class="s__head">
-      <h2 class="s__title">78 command paths. One binary.</h2>
+      <h2 class="s__title">79 command paths. One binary.</h2>
       <p class="s__sub">Here are the ones you'll actually type. Everything else is <code>scribe doctor</code>-discoverable.</p>
     </header>
 
@@ -3577,7 +3450,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe cron</span> <span class="cmd-arg">install</span> / <span class="cmd-arg">uninstall</span> / <span class="cmd-arg">status</span>
 </code></pre>
       </div>
-      <p class="commands__caption">Run <code>scribe --help</code> to see all 78. <code>scribe cron install</code> puts the boring ones on a schedule so you never type them again.</p>
+      <p class="commands__caption">Run <code>scribe --help</code> to see all 79. <code>scribe cron install</code> puts the boring ones on a schedule so you never type them again.</p>
     </div>
   </div>
 </section>
@@ -3643,7 +3516,7 @@ scribe doctor <span class="flag">--section</span> localmode
     <div class="faq">
       <details class="q">
         <summary>How is scribe different from RAG, Obsidian, or claude-memory-compiler?</summary>
-        <div class="answer">RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session; one user burned <strong>$115 in 20 minutes</strong> (issue #3). scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so cheap sessions cost nothing.</div>
+        <div class="answer">RAG stores chunks with no curation layer. Obsidian and Notion expect you to write the notes yourself. claude-memory-compiler runs an LLM call on every Claude Code session; one user burned <strong>$115 in 20 minutes</strong> (issue #3). scribe sits between them: it watches your work and writes the notes for you, but uses SQLite FTS5 keyword scoring to skip boilerplate sessions before any LLM call, so they cost nothing.</div>
       </details>
 
       <details class="q">
@@ -3652,8 +3525,18 @@ scribe doctor <span class="flag">--section</span> localmode
       </details>
 
       <details class="q">
+        <summary>How do I know what it writes is true?</summary>
+        <div class="answer">You audit it the way you audit code, because it&rsquo;s shaped like code: <strong>markdown in git</strong>, diffable, deletable. Articles carry their provenance in frontmatter &mdash; the session or commit they came from &mdash; and the raw source stays verbatim under <code>raw/</code> next to the wiki page written from it. Wrongness gets mechanisms, not hope: <code>scribe contradictions list</code> surfaces articles that disagree with each other, <code>scribe stale list</code> tracks what has decayed, <code>scribe lint</code> enforces structure and frontmatter, and the weekly Dream cycle merges near-duplicates and prunes stubs instead of letting them pile up. When an article is wrong, <code>git rm</code> it &mdash; it&rsquo;s a file, not a row in a vector store.</div>
+      </details>
+
+      <details class="q">
+        <summary>What else does scribe need installed?</summary>
+        <div class="answer"><code>git</code>, <code>sqlite</code>, and <code>ccrider</code> &mdash; the Homebrew formula pulls all three in for you. Search needs <code>qmd</code> (<code>npm i -g @tobilu/qmd</code>), and the dependency check still expects the Claude CLI even on the Ollama profile, where it&rsquo;s a check and not a spend. Local mode adds Ollama itself. <code>scribe doctor</code> verifies the whole set and names whatever is missing.</div>
+      </details>
+
+      <details class="q">
         <summary>What does it cost to run?</summary>
-        <div class="answer"><strong>Zero</strong> on the local-mode path (Ollama) for the entire pipeline: every <code>claude -p</code> callsite in a normal <code>scribe sync</code>, including per-project extraction and the weekly Dream cycle, runs locally. On the Anthropic-hosted path, contextualize costs roughly <strong>$0.0001 per article</strong> via Claude Haiku; project extraction, pass-2, and dream use Sonnet at standard prices. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend.</div>
+        <div class="answer"><strong>Zero</strong> on the local-mode path (Ollama) for the entire pipeline: per-project extraction, both absorb passes, and the weekly Dream cycle all run against your own server. On a hosted OpenAI-compatible API a full week of work billed <strong>$0.55</strong> (Together). On the Anthropic path the same week billed <strong>$103.57</strong> — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed <strong>$1.16</strong>. Routing is per-op in <code>scribe.yaml</code>, so the bill follows what you point at a paid provider, not how many KBs you run. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview any run with <code>scribe sync --dry-run --estimate</code>.</div>
       </details>
 
       <details class="q">
@@ -3673,12 +3556,12 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>What does the cron schedule look like?</summary>
-        <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine coding-agent sessions via ccrider (plus direct Codex CLI rollouts when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
+        <div class="answer">Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, 3×/day mine coding-agent sessions via ccrider (plus direct Codex CLI rollouts when opted in), every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, hourly pull of any configured bookmark integration (a no-op until you set one up), a weekly Dream cycle on Sunday at 02:00 for memory consolidation with a lighter hot-domain pass daily in between, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.</div>
       </details>
 
       <details class="q">
         <summary>Is scribe an alternative to RAG for a personal knowledge base?</summary>
-        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong>: it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the curated wiki stays small enough for an agent to read whole.</div>
+        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong>: it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front &mdash; the digest and the index &mdash; stay small enough to read whole.</div>
       </details>
 
       <details class="q">
@@ -3698,7 +3581,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>Is scribe local-first, and does it work without an API key?</summary>
-        <div class="answer">Yes. The entire pipeline can run <strong>100% locally against an Ollama server</strong> with no Anthropic API key: a single line in <code>scribe.yaml</code> flips every LLM op (extraction, absorb, dream, session-mine) to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync.</div>
+        <div class="answer">Yes. The entire pipeline can run <strong>100% locally against an Ollama server</strong> with no Anthropic API key: a single line in <code>scribe.yaml</code> flips every LLM op (extraction, absorb, dream, session-mine) to local. Your knowledge base is a plain git repo of markdown on your own machine, with no SaaS account and no cloud sync. Worth naming for the default path too: the model mining your Claude Code sessions is the same provider that already ran them &mdash; scribe does not widen who sees your work, it just stops you from losing it.</div>
       </details>
 
       <details class="q">
@@ -3710,6 +3593,162 @@ scribe doctor <span class="flag">--section</span> localmode
 </section>
 
 <!-- ============================ CTA END ============================ -->
+<section class="s" id="teams">
+  <div class="wrap">
+    <header class="s__head">
+      <div class="s__eyebrow">For teams</div>
+      <h2 class="s__title">One KB. The whole team writes to it.</h2>
+      <p class="s__sub">scribe is single-user by default and stays that way. But a small team on the same codebases can point every machine at one git-backed KB. The obvious fear with sharing agent sessions — a leaked secret, a private client repo, one teammate's config change reaching everyone — is exactly what the gates below are built to stop. Only knowledge you meant to keep crosses into the shared KB.</p>
+      <p class="s__sub"><a href="/setup.md">Run the exact team-owner and team-member setup commands →</a></p>
+    </header>
+
+    <figure class="video-embed video-embed--teams">
+      <video controls preload="none" playsinline poster="/scribe-explainer-teams-poster.jpg" width="1920" height="1080" aria-label="scribe for teams explainer video: one KB, the whole team writes to it">
+        <source src="https://assets.getscribe.dev/scribe-explainer-teams.mp4" type="video/mp4">
+        <track kind="captions" src="/scribe-explainer-teams.vtt" srclang="en" label="English" default>
+      </video>
+    </figure>
+    <p class="video-yt"><a href="https://youtu.be/iDa4n7wzUXg" target="_blank" rel="noopener">Watch on YouTube ↗</a></p>
+    <details class="transcript">
+      <summary>Transcript</summary>
+      <p>Now imagine that memory isn't just yours. A new teammate asks the question you answered six months ago. The decision is in your head, or in a session nobody can find. scribe scales to your team. Every engineer's agent sessions write to one shared, git-backed knowledge base. Every fix, every rejected library, every decision your team makes becomes context the whole team's agents read before they act. A new hire's first Claude Code session already knows why you chose what you chose. Shared memory is a trust problem, not a sync problem. A secret gate scans every commit, so no key ever leaks into the wiki. Allowed remotes lock which repos it reads. Every promoted note carries where it came from. Still plain markdown in a repo your team owns. scribe. One knowledge base, the whole team writes to it. Single-user by default, team-ready when you are. Install at getscribe.dev.</p>
+    </details>
+
+    <figure class="tb">
+      <svg viewBox="0 0 720 340" role="img" aria-labelledby="tb-title tb-desc">
+        <title id="tb-title">The shared-KB trust boundary</title>
+        <desc id="tb-desc">Four things approach the shared team knowledge base. An AWS key is stopped by the secret-scan gate, a private client repo by the remote allowlist, and a pushed config change by the trust layer — none cross. Only the reasoning behind a fix, promoted deliberately, crosses into the shared KB.</desc>
+        <defs>
+          <marker id="tb-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="tb__arrow"/>
+          </marker>
+        </defs>
+
+        <!-- shared team KB: the protected zone -->
+        <rect class="tb__kb" x="470" y="40" width="236" height="280" rx="14"/>
+        <text class="tb__kbtitle" x="588" y="72" text-anchor="middle">shared team KB</text>
+        <text class="tb__kbsub"   x="588" y="90" text-anchor="middle">git · what teammates see</text>
+        <rect class="tb__pill" x="518" y="114" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="131" text-anchor="middle">decisions</text>
+        <rect class="tb__pill" x="518" y="150" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="167" text-anchor="middle">patterns</text>
+        <rect class="tb__pill" x="518" y="186" width="140" height="26" rx="13"/>
+        <text class="tb__pilltxt" x="588" y="203" text-anchor="middle">solutions</text>
+
+        <!-- column headers -->
+        <text class="tb__hdr" x="119" y="20" text-anchor="middle">what tries to cross</text>
+        <text class="tb__hdr" x="354" y="20" text-anchor="middle">the gate that stops it</text>
+
+        <!-- lane 1: secret -> secret-scan gate -> held -->
+        <rect class="tb__src" x="14" y="69" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="88" text-anchor="middle">an AWS key in a transcript</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="84" x2="298" y2="84"/>
+        <rect class="tb__node" x="298" y="70" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="87.5" text-anchor="middle">secret-scan gate</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="84" x2="452" y2="84"/>
+        <line class="tb__stop" x1="452" y1="75" x2="452" y2="93"/>
+        <text class="tb__out" x="354" y="112" text-anchor="middle">held back — never committed</text>
+
+        <!-- lane 2: private repo -> remote allowlist -> held -->
+        <rect class="tb__src" x="14" y="135" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="154" text-anchor="middle">a teammate's client repo</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="150" x2="298" y2="150"/>
+        <rect class="tb__node" x="298" y="136" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="153.5" text-anchor="middle">remote allowlist</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="150" x2="452" y2="150"/>
+        <line class="tb__stop" x1="452" y1="141" x2="452" y2="159"/>
+        <text class="tb__out" x="354" y="178" text-anchor="middle">never ingested without an approve</text>
+
+        <!-- lane 3: config repoint -> trust layer -> held -->
+        <rect class="tb__src" x="14" y="201" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="220" text-anchor="middle">config that repoints the LLM</text>
+        <line class="tb__wire tb__wire--held" x1="224" y1="216" x2="298" y2="216"/>
+        <rect class="tb__node" x="298" y="202" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="219.5" text-anchor="middle">trust layer</text>
+        <line class="tb__wire tb__wire--held" x1="410" y1="216" x2="452" y2="216"/>
+        <line class="tb__stop" x1="452" y1="207" x2="452" y2="225"/>
+        <text class="tb__out" x="354" y="244" text-anchor="middle">reverted to the last trusted snapshot</text>
+
+        <!-- lane 4: a decision -> curated extract -> crosses -->
+        <rect class="tb__src" x="14" y="267" width="210" height="30" rx="8"/>
+        <text class="tb__txt" x="119" y="286" text-anchor="middle">the reasoning behind a fix</text>
+        <line class="tb__wire tb__wire--pass" x1="224" y1="282" x2="298" y2="282"/>
+        <rect class="tb__node" x="298" y="268" width="112" height="28" rx="7"/>
+        <text class="tb__gate" x="354" y="285.5" text-anchor="middle">curated extract</text>
+        <line class="tb__wire tb__wire--pass" x1="410" y1="282" x2="484" y2="282" marker-end="url(#tb-arrow)"/>
+        <text class="tb__ok" x="500" y="286">✓</text>
+        <text class="tb__out" x="354" y="310" text-anchor="middle">promoted · provenance kept</text>
+      </svg>
+      <figcaption>Sensitive material stops at the commit gate. Only knowledge you deliberately keep crosses into the shared KB — and every gate here is a mechanism in the code, not a policy in a doc.</figcaption>
+    </figure>
+
+    <div class="team-grid">
+      <article class="feature">
+        <h3>Shared config is untrusted by default</h3>
+        <p>A trust layer pins the sensitive surface of a shared <code>scribe.yaml</code>: provider, model, ingest paths, and the secret scanner itself. A pushed change that would repoint inference to a new endpoint or drain a new directory into the KB reverts to the last trusted snapshot until a human approves it.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Secrets never reach shared history</h3>
+        <p>scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path. On a solo KB the gate is off and the KB pushes to a private remote you own; <code>team: true</code> is what turns it on — and it is a multi-writer switch, not a headcount, so one person with two machines can set it.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Extraction is paid for once, not per laptop</h3>
+        <p>Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync re-extracts each approved repo once before the ledger takes over — preview it with <code>scribe sync --dry-run --estimate</code>.</p>
+      </article>
+
+      <article class="feature">
+        <h3>A teammate's unrelated repo never leaks in</h3>
+        <p>Discovered projects start pending. <code>allowed_remotes</code> and source filters gate discovery by git-remote identity, and <code>scribe projects {list,approve,ignore,review}</code> controls what enters the pipeline, so a side project or a client checkout never lands in the shared KB without an approve.</p>
+      </article>
+
+      <article class="feature">
+        <h3>Curate privately, promote deliberately</h3>
+        <p><code>scribe promote &lt;article&gt; --to team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.</p>
+      </article>
+
+      <article class="feature">
+        <h3>One machine consolidates, no server</h3>
+        <p>The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.</p>
+      </article>
+    </div>
+
+    <aside class="teams-early" aria-labelledby="teams-early-title">
+      <div class="teams-early__grid">
+        <div class="teams-early__copy">
+          <div class="s__eyebrow">Early access</div>
+          <h3 id="teams-early-title">A paid team edition, on Git you own.</h3>
+          <p>The trust gates, secret scanning, and provenance above already exist. This is a demand check for packaging and support around a paid Scribe for Teams edition &mdash; not a hosted product. Two numbers help decide whether to build it.</p>
+        </div>
+        <form class="teams-interest" id="teamsInterest" method="get" action="https://github.com/oliver-kriska/scribe/discussions/new" target="_blank" rel="noopener">
+          <label>
+            Team size
+            <select name="team_size" required>
+              <option value="" selected disabled>Select a range</option>
+              <option value="2–5">2&ndash;5</option>
+              <option value="6–15">6&ndash;15</option>
+              <option value="16–50">16&ndash;50</option>
+              <option value="51+">51+</option>
+            </select>
+          </label>
+          <label>
+            Expected monthly price
+            <input name="monthly_price" type="text" inputmode="decimal" placeholder="$100 / month" required />
+          </label>
+          <input name="category" type="hidden" value="general" />
+          <input name="title" type="hidden" value="Scribe for Teams early access" />
+          <input name="body" type="hidden" value="" />
+          <div class="teams-interest__action">
+            <button class="btn btn--accent" type="submit">Share interest via GitHub&nbsp;↗</button>
+            <span class="teams-interest__note">Opens a prefilled public Discussion draft for you to review before posting.</span>
+          </div>
+        </form>
+      </div>
+    </aside>
+  </div>
+</section>
+
 <section class="s cta-end" id="install">
   <div class="wrap">
     <h2>Install, approve sources, verify.</h2>

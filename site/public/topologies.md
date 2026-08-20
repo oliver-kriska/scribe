@@ -105,6 +105,7 @@ same job in the same minute:
 | `lint` | daily |
 | the five `lint` mutators | weekly, within one hour of each other |
 | `dream` | weekly |
+| `pull` | hourly at :17 |
 
 Plan for simultaneous writes as the default, not the exception.
 
@@ -119,13 +120,14 @@ Plan for simultaneous writes as the default, not the exception.
 | `lint --fix`, `--duplicates`, `--resolve`, `--identities`, `--apply-identities` | no | — |
 | `commit` | no | — |
 | `capture` | no | convention: one machine only |
+| `pull` (bookmark integrations) | no | machine-local cursor in `output/sources/`; convention: one machine only |
 
 Conflicts on scribe-managed shared files are handled by class:
 
 | File | On conflict |
 |---|---|
 | `wiki/_index.md`, `wiki/_backlinks.json`, `wiki/_digest.md`, `wiki/_hot.md` | either side wins — content regenerates after the pull |
-| `wiki/_sessions_log.json`, `wiki/_codex_sessions_log.json` | merged semantically — `processed` unions, later `last_scan` wins |
+| `wiki/_sessions_log.json`, `wiki/_codex_sessions_log.json` | merged semantically — `processed` unions, later `last_scan` wins — **on `main`; not in a released build yet** |
 | `scripts/extraction-ledger.json` | merged semantically |
 | `scripts/dream-lease.json` | merged semantically, remote wins the claim |
 | `log.md` | union of both sides' lines |
@@ -133,7 +135,7 @@ Conflicts on scribe-managed shared files are handled by class:
 
 ### Known limitations
 
-Honest ones, current as of this writing:
+Honest ones, accurate as of 2026-08-20:
 
 - **Some accumulating files are still not merge-aware.**
   `wiki/_unfetched-links.md`, `wiki/_identity-proposals.md`,
@@ -147,10 +149,12 @@ Honest ones, current as of this writing:
   letting it sit. In practice these files change far less often than the session
   ledgers did, so collisions are occasional rather than daily.
 
-  The two that *were* guaranteed to collide — the session-mining ledgers, whose
-  `last_scan` field is rewritten on every `sync --sessions` run — now merge
-  semantically, as does `wiki/_hot.md`. Make sure every writer is on a build
-  that includes that fix.
+  The two that *were* guaranteed to collide are the session-mining ledgers,
+  whose `last_scan` field is rewritten on every `sync --sessions` run. A semantic
+  merge for them — and a regenerate-either-side rule for `wiki/_hot.md` — is on
+  `main` and lands in the next release. **Until every writer runs a build that
+  includes it, expect this conflict and resolve it with the recipe below.** If
+  you installed from Homebrew or the shell installer, you do not have it yet.
 - **`scribe commit` does not inspect git state before committing.** If a rebase
   is paused or `HEAD` is detached, cron will keep committing onto it and the
   branch will not advance. Never leave a rebase half-finished on a machine whose

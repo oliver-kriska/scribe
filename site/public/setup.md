@@ -38,6 +38,12 @@ entries.
 | Linux scheduling | Use the same recipe, then follow [Linux cron](#linux-cron) |
 | Not sure which applies, or want the conflict details | [Topologies reference](https://getscribe.dev/topologies.md) |
 
+Before you pick, know what each profile costs. `--provider ollama` bills
+nothing and runs at your hardware's speed. A hosted `/v1` endpoint ran a full
+week of one KB's work for well under a dollar. The Anthropic path is the
+expensive one and scales with how much you actually mine — preview any run with
+`scribe sync --dry-run --estimate` before you let cron loose on it.
+
 The deciding question is how many machines write to one KB, not how many
 people. Two machines owned by one person need the same coordination as a
 five-person team; [Topologies](https://getscribe.dev/topologies.md) explains
@@ -99,6 +105,14 @@ Use the **cask**, not the `ollama` formula. The formula is now built MLX-only
 (it depends on `mlx-c`) and no longer ships the GGUF/llama-server backend the
 local pipeline needs — a formula install looks successful and then fails to run
 the recommended models.
+
+Plan for RAM before you pick models. `gemma3:12b` — the recommended cross-op
+default — wants roughly 10 GB resident, and `qwen3:30b-a3b` at 4-bit, used for
+`contextualize` and `pass2`, wants roughly 20 GB. The recommended pair therefore
+assumes 32 GB or more. On 16 GB, set `gemma3:4b` as the cross-op default and
+keep `gemma3:12b` for the two quality-critical ops only: slower and blunter,
+still $0. Below 16 GB, use a hosted `/v1` endpoint instead — the local path will
+swap and every cron job will overrun its window.
 
 On macOS the cask registers a launchd service, so the server is normally already
 running; do not start a second one if `ollama list` works. When it is not
@@ -200,8 +214,10 @@ iMessage capture disabled.
 
 ## Hosted OpenAI-compatible provider
 
-The init flag accepts `anthropic` or `ollama`; hosted routing is configured
-after scaffolding. A personal user starts with the Anthropic personal recipe
+**There is no `--provider together`.** `scribe init` accepts only `anthropic`
+or `ollama`; every other OpenAI-compatible endpoint is configured by editing
+`scribe.yaml` after scaffolding. Scaffold with the closest profile, then replace
+the `llm:` block before you publish the config. A personal user starts with the Anthropic personal recipe
 above. A team owner starts with the team-owner recipe below. In either case,
 replace the generated top-level `llm:` block with the chosen provider's real
 model and endpoint policy before publishing the configuration. Example:
@@ -602,10 +618,8 @@ scribe -C "$KB" skill install --check
 git -C "$KB" status --short
 ```
 
-`init --check` is read-only and non-interactive on its own — don't reach for
-`--yes` here. Without `--check`, `--yes` repoints the KB binding in your global
-agent files, so pairing the two teaches a habit that is one dropped flag away
-from rewriting state you didn't mean to touch. Verify scheduling — `cron status`
+`init --check` is read-only; never pair it with `--yes`, which without
+`--check` repoints the KB binding in your global agent files. Verify scheduling — `cron status`
 covers both
 platforms (LaunchAgents on macOS, the crontab block on Linux):
 

@@ -10,6 +10,9 @@ mirrors it. Keep them in lockstep — a search engine or an LLM may read any one
 | `llms.txt` | Short llms.txt-spec index (intro blockquote + resource links). | Mirror only the high-level claims (intro line, the one-paragraph summary). Not every sentence. |
 | `llms-full.txt` | Full content for large-context LLMs. | **Exact copy of `index.md`.** Regenerate with `cp index.md llms-full.txt` — never hand-edit. |
 | `og.png` | 1200×630 social card, text baked into pixels. | Regenerate from `assets/og.svg.tmpl` via `scripts/regen_og.sh` only if the eyebrow tagline or the one-line lede changed. Never a version. |
+| `setup.md` | The install/verification runbook served at `/setup.md`. | Standalone. Not a mirror of `index.html` — but any claim it shares with the page (costs, dependencies, cron schedule) must agree. |
+| `topologies.md` | Canonical multi-writer reference served at `/topologies.md`. | Standalone, and the **only** place the per-file conflict classes are stated — link to it from other surfaces rather than restating its tables. |
+| `setup.html`, `topologies.html` | Human-readable renders of the two `.md` docs. | **Generated.** Never hand-edit: run `site/build-docs.sh` after changing either source, and `site/build-docs.sh --check` in CI proves they are fresh. |
 
 ## Editing order
 
@@ -27,11 +30,22 @@ mirrors it. Keep them in lockstep — a search engine or an LLM may read any one
 
 ## Freshness fields (dates, not versions — keep current, never remove)
 
-- `sitemap.xml` → `<lastmod>YYYY-MM-DD</lastmod>`
-- `index.html` JSON-LD → `"dateModified": "YYYY-MM-DD"`
-- `index.md` → `**Last updated:** YYYY-MM-DD`
+There are **five**, and they have drifted apart twice because only three were
+listed here. Bump every one in the same edit:
 
-Set all three to `date +%F` whenever you change content.
+- `sitemap.xml` → **every** `<lastmod>YYYY-MM-DD</lastmod>` (there are several;
+  `grep -c lastmod` and check they all match)
+- `index.html` `<head>` → `<meta property="article:modified_time" content="…">`
+- `index.html` JSON-LD → `"dateModified": "YYYY-MM-DDT00:00:00+02:00"`
+- `index.html` footer → `MIT · last updated YYYY-MM-DD`
+- `index.md` → `**Last updated:** YYYY-MM-DD` (then re-`cp` to `llms-full.txt`)
+
+Set all five to `date +%F` whenever you change content. Verify with:
+
+```sh
+grep -rn 'dateModified\|modified_time\|last updated\|Last updated' site/public/index.html site/public/index.md
+grep -o '<lastmod>[^<]*' site/public/sitemap.xml | sort -u
+```
 
 ## JSON-LD specifics
 

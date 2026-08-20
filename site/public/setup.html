@@ -281,6 +281,13 @@ reference</a></td>
 </tr>
 </tbody>
 </table></div>
+<p>Before you pick, know what each profile costs.
+<code>--provider ollama</code> bills nothing and runs at your hardware's
+speed. A hosted <code>/v1</code> endpoint ran a full week of one KB's
+work for well under a dollar. The Anthropic path is the expensive one
+and scales with how much you actually mine — preview any run with
+<code>scribe sync --dry-run --estimate</code> before you let cron loose
+on it.</p>
 <p>The deciding question is how many machines write to one KB, not how
 many people. Two machines owned by one person need the same coordination
 as a five-person team; <a
@@ -327,6 +334,15 @@ The formula is now built MLX-only (it depends on <code>mlx-c</code>) and
 no longer ships the GGUF/llama-server backend the local pipeline needs —
 a formula install looks successful and then fails to run the recommended
 models.</p>
+<p>Plan for RAM before you pick models. <code>gemma3:12b</code> — the
+recommended cross-op default — wants roughly 10 GB resident, and
+<code>qwen3:30b-a3b</code> at 4-bit, used for <code>contextualize</code>
+and <code>pass2</code>, wants roughly 20 GB. The recommended pair
+therefore assumes 32 GB or more. On 16 GB, set <code>gemma3:4b</code> as
+the cross-op default and keep <code>gemma3:12b</code> for the two
+quality-critical ops only: slower and blunter, still $0. Below 16 GB,
+use a hosted <code>/v1</code> endpoint instead — the local path will
+swap and every cron job will overrun its window.</p>
 <p>On macOS the cask registers a launchd service, so the server is
 normally already running; do not start a second one if
 <code>ollama list</code> works. When it is not running, start
@@ -399,10 +415,14 @@ init</h3>
 <code>--handle</code> to leave optional iMessage capture disabled.</p>
 <h2 id="hosted-openai-compatible-provider">Hosted OpenAI-compatible
 provider</h2>
-<p>The init flag accepts <code>anthropic</code> or <code>ollama</code>;
-hosted routing is configured after scaffolding. A personal user starts
-with the Anthropic personal recipe above. A team owner starts with the
-team-owner recipe below. In either case, replace the generated top-level
+<p><strong>There is no <code>--provider together</code>.</strong>
+<code>scribe init</code> accepts only <code>anthropic</code> or
+<code>ollama</code>; every other OpenAI-compatible endpoint is
+configured by editing <code>scribe.yaml</code> after scaffolding.
+Scaffold with the closest profile, then replace the <code>llm:</code>
+block before you publish the config. A personal user starts with the
+Anthropic personal recipe above. A team owner starts with the team-owner
+recipe below. In either case, replace the generated top-level
 <code>llm:</code> block with the chosen provider's real model and
 endpoint policy before publishing the configuration. Example:</p>
 <pre class="yaml"><code>llm:
@@ -775,11 +795,9 @@ scribe -C &quot;$KB&quot; projects list
 scribe -C &quot;$KB&quot; sync --dry-run --estimate
 scribe -C &quot;$KB&quot; skill install --check
 git -C &quot;$KB&quot; status --short</code></pre>
-<p><code>init --check</code> is read-only and non-interactive on its own
-— don't reach for <code>--yes</code> here. Without <code>--check</code>,
-<code>--yes</code> repoints the KB binding in your global agent files,
-so pairing the two teaches a habit that is one dropped flag away from
-rewriting state you didn't mean to touch. Verify scheduling —
+<p><code>init --check</code> is read-only; never pair it with
+<code>--yes</code>, which without <code>--check</code> repoints the KB
+binding in your global agent files. Verify scheduling —
 <code>cron status</code> covers both platforms (LaunchAgents on macOS,
 the crontab block on Linux):</p>
 <pre class="sh"><code>scribe cron status
