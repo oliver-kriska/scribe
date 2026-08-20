@@ -207,7 +207,7 @@ func (s *SyncCmd) pullPhase(root string, cfg *ScribeConfig) (pulledRemote, pulle
 	preP := gitSHA(root)
 	ok, pulled, pErr := pullRebase(root)
 	if pErr != nil {
-		logMsg("sync", "pull skipped: %s (continuing)", pErr)
+		logPhaseDegraded("sync", "pull", "pull skipped: %s (continuing)", pErr)
 		return false, false
 	}
 	if !ok || !pulled {

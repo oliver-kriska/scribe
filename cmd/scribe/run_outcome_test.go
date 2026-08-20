@@ -51,6 +51,25 @@ func TestRecordDegraded_IgnoresNilAndEmpty(t *testing.T) {
 	}
 }
 
+func TestRecordDegraded_TrimsIndentation(t *testing.T) {
+	resetRunOutcome()
+	t.Cleanup(resetRunOutcome)
+
+	// Per-project log lines are indented (" [proj] …"); doctor renders the
+	// stored message inline after "partial failure in <phase>: ", where a
+	// leading space would show up as a double space mid-sentence.
+	logPhaseDegraded("sync", "project extraction", " [proj] extraction failed: %v", errors.New("boom"))
+	recordDegradedMsg("whitespace only", "   \n\t  ")
+
+	_, msgs := degradedPhases()
+	if got := msgs["project extraction"]; got != "[proj] extraction failed: boom" {
+		t.Fatalf("msg = %q, want it trimmed", got)
+	}
+	if _, ok := msgs["whitespace only"]; ok {
+		t.Errorf("an all-whitespace message should record nothing, got %v", msgs)
+	}
+}
+
 func TestRecordDegraded_RedactsTokens(t *testing.T) {
 	resetRunOutcome()
 	t.Cleanup(resetRunOutcome)

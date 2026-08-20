@@ -237,7 +237,7 @@ scribe cron uninstall   # removes agents
 
 macOS cron runs under `launchd` without a login Aqua session, so it can't reach the login keychain — which breaks `claude -p`. `scribe cron install` installs the jobs as user LaunchAgents in the `gui/<uid>` domain instead, which do have keychain access.
 
-The agents are **KB-agnostic**: each one runs `scribe each`, which iterates every KB in the `kbs:` registry (`~/.config/scribe/config.yaml`) and runs the job in each, with per-KB failure isolation — one machine-level agent set serves every KB, so installing from a second KB no longer clobbers the first's schedule. To pace an individual KB without per-KB plist schedules, give its `scribe.yaml` an `each.cadence` block: `scribe each` skips a job in that KB whenever its last ok run (`output/runs/*.jsonl`) is younger than the configured interval (e.g. `"sync --sessions": 6h`, `dream: 7d`).
+The agents are **KB-agnostic**: each one runs `scribe each`, which iterates every KB in the `kbs:` registry (`~/.config/scribe/config.yaml`) and runs the job in each, with per-KB failure isolation — one machine-level agent set serves every KB, so installing from a second KB no longer clobbers the first's schedule. To pace an individual KB without per-KB plist schedules, give its `scribe.yaml` an `each.cadence` block: `scribe each` skips a job in that KB whenever its last run (`output/runs/*.jsonl` — one that fired, whether it finished clean or degraded) is younger than the configured interval (e.g. `"sync --sessions": 6h`, `dream: 7d`).
 
 #### Full Disk Access for `scribe capture`
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -39,7 +40,13 @@ func recordDegradedMsg(phase, msg string) {
 	if phase == "" || msg == "" {
 		return
 	}
-	msg = redactURLToken(msg)
+	// Trim first: several call sites indent their log line (" [proj] …")
+	// and that leading space would otherwise land mid-sentence in
+	// doctor's "partial failure in <phase>: <msg>" rendering.
+	msg = strings.TrimSpace(redactURLToken(msg))
+	if msg == "" {
+		return
+	}
 	if len(msg) > degradedMsgMax {
 		msg = msg[:degradedMsgMax]
 	}

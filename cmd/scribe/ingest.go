@@ -128,7 +128,7 @@ func contextualizeThenAbsorb(root, rawPath string) error {
 	sha, _ := sha256File(rawPath)
 	absorbLog[filepath.Base(rawPath)] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
 	if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
-		logMsg("ingest", "warn: could not update _absorb_log.json: %v", err)
+		logPhaseDegraded("ingest", "absorb log", "could not update _absorb_log.json: %v", err)
 	}
 
 	logMsg("ingest", "done: %s absorbed", filepath.Base(rawPath))
@@ -142,7 +142,7 @@ func markContextualized(root, rawBase string) {
 	m := loadJSONMap(logPath)
 	m[rawBase] = time.Now().UTC().Format(time.RFC3339)
 	if err := saveJSONMap(logPath, m); err != nil {
-		logMsg("ingest", "warn: could not persist _contextualized_log.json: %v", err)
+		logPhaseDegraded("ingest", "contextualize log", "could not persist _contextualized_log.json: %v", err)
 	}
 }
 

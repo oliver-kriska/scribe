@@ -207,8 +207,8 @@ func TestClassifyFreshness(t *testing.T) {
 		wantSub string // substring the detail must contain
 	}{
 		{"never ran", time.Time{}, 6 * time.Hour, statusWarn, "never run"},
-		{"fresh — within gap", now.Add(-1 * time.Hour), 6 * time.Hour, statusOK, "last ok 1h ago"},
-		{"right at edge", now.Add(-6 * time.Hour), 6 * time.Hour, statusOK, "last ok 6h ago"},
+		{"fresh — within gap", now.Add(-1 * time.Hour), 6 * time.Hour, statusOK, "last run 1h ago"},
+		{"right at edge", now.Add(-6 * time.Hour), 6 * time.Hour, statusOK, "last run 6h ago"},
 		{"stale — over gap", now.Add(-7 * time.Hour), 6 * time.Hour, statusWarn, "expected ≤ 6h"},
 		{"very stale — days", now.Add(-72 * time.Hour), 48 * time.Hour, statusWarn, "3d"},
 	}

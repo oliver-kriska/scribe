@@ -259,7 +259,7 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 
 	if manifestDirty && !s.DryRun {
 		if err := manifest.save(); err != nil {
-			logMsg("sync", "manifest save failed: %v", err)
+			logPhaseFailure("sync", "manifest save", err)
 		}
 	}
 
@@ -427,7 +427,7 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 			ledger := loadLedger(root)
 			ledger.record(key, currentSHA, resolveContributor(root))
 			if err := ledger.save(); err != nil {
-				logMsg("sync", " [%s] extraction ledger save failed: %v", pname, err)
+				logPhaseDegraded("sync", "extraction ledger save", " [%s] extraction ledger save failed: %v", pname, err)
 			}
 		}
 	}

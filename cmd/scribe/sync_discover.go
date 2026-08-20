@@ -74,7 +74,7 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 				if !s.DryRun {
 					existing.MergeDiscoveredFrom("claude")
 					if err := manifest.save(); err != nil {
-						logMsg("sync", "manifest save failed: %v", err)
+						logPhaseFailure("sync", "manifest save", err)
 					}
 				}
 			}
@@ -99,7 +99,7 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 			Status:         status,
 		}
 		if err := manifest.save(); err != nil {
-			logMsg("sync", "manifest save failed: %v", err)
+			logPhaseFailure("sync", "manifest save", err)
 		}
 
 		// Create .repo.yaml in the project's wiki directory — approved
@@ -112,7 +112,7 @@ func (s *SyncCmd) discover(root string, manifest *Manifest, cfg *ScribeConfig) (
 
 	codexCount, err := s.discoverCodex(root, manifest, cfg)
 	if err != nil {
-		logMsg("sync", "codex discovery failed (continuing): %v", err)
+		logPhaseFailure("sync", "codex discovery", err)
 	}
 	discovered += codexCount
 
@@ -154,7 +154,7 @@ func (s *SyncCmd) foldWorktree(root string, manifest *Manifest, cfg *ScribeConfi
 		}
 		logMsg("sync", " [%s] %s — recorded for drop/research collection", existing.Name, describeWorktreeFold(worktree, main))
 		if err := manifest.save(); err != nil {
-			logMsg("sync", "manifest save failed: %v", err)
+			logPhaseFailure("sync", "manifest save", err)
 		}
 		return 0, true
 	}
@@ -178,7 +178,7 @@ func (s *SyncCmd) foldWorktree(root string, manifest *Manifest, cfg *ScribeConfi
 		Worktrees:      []string{worktree},
 	}
 	if err := manifest.save(); err != nil {
-		logMsg("sync", "manifest save failed: %v", err)
+		logPhaseFailure("sync", "manifest save", err)
 	}
 	if status != statusPending {
 		ensureRepoYAML(root, main, mname, domain)
@@ -443,7 +443,7 @@ func (s *SyncCmd) collectOneResearchFile(f researchFile, destDir, domain, pname 
 	}
 
 	if err := os.WriteFile(dest, []byte(content), 0o644); err != nil {
-		logMsg("sync", " [%s] failed to write %s: %v", pname, destName, err)
+		logPhaseDegraded("sync", "research collection", " [%s] failed to write %s: %v", pname, destName, err)
 		return collectFailed
 	}
 
@@ -524,7 +524,7 @@ func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 			manifestMu.Lock()
 			entry.LastResearchScanned = time.Now().UTC().Format(time.RFC3339)
 			if err := manifest.save(); err != nil {
-				logMsg("sync", "warn: manifest save failed: %v", err)
+				logPhaseFailure("sync", "manifest save", err)
 			}
 			manifestMu.Unlock()
 		}

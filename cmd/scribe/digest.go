@@ -95,7 +95,7 @@ func writeDigestFile(root string, cfg *ScribeConfig) {
 	content := buildDigest(root, cfg, 7)
 	path := filepath.Join(root, "wiki", "_digest.md")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		logMsg("sync", "digest write failed: %v", err)
+		logPhaseFailure("sync", "digest write", err)
 		return
 	}
 	logMsg("sync", "regenerated wiki/_digest.md")

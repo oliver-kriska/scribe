@@ -10,13 +10,30 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   deliberately logs and continues when one phase fails, so a run where session
   mining or absorb died was recorded as `ok` and looked identical afterwards to
   a run where nothing went wrong. Such a run is now recorded as `degraded`, with
-  the failing phase names and their first error, across every seam that logs and
-  continues: reindex, ingest, project extraction, session mining, absorb, commit
-  (including a commit the secret gate held back), and push. The process still
+  the failing phase names and their first error. The rule, rather than a list
+  that drifts: a seam records degraded when a **unit of work** is lost,
+  repeated, or deferred. That covers a phase that failed (pull, project and
+  codex discovery, reindex, ingest, extraction, contextualize, session mining,
+  absorb, commit — including one the secret gate held back — and push), a
+  single item inside a phase that failed (a project, a session, an article, a
+  research file), a checkpoint that failed mid-batch, and a ledger write whose
+  loss makes the next run redo or re-scan (manifest, extraction ledger, absorb
+  log, contextualize log, session log, inbox state, digest, outcomes, pending
+  queue). It also covers a pass-2 entity that was dropped after its corrective
+  retries: `runPass2` only errors when *every* entity produced nothing, so a
+  partial loss still stamps the absorb log and that entity is never retried —
+  gone, not deferred. Retry machinery *inside* a unit stays out, because
+  marking a run degraded for something it recovered from is how a status
+  becomes noise: a chaptered-pass1 fallback (falls back to whole-article), a
+  corrective pass2 retry that then succeeded, a per-entity sub-step that
+  applied some actions and reported the rest in its own result. The process still
   exits 0 — cron resilience is the point — and the readers were updated in the
   same change: `doctor` freshness and the dream hot/full cycle count a degraded
   run as proof the job fired, while `doctor --section errors` and `scribe status`
-  surface the partial failure that was previously invisible.
+  surface the partial failure that was previously invisible. Because "the job
+  fired" no longer implies "everything succeeded", `doctor` freshness and
+  `scribe each`'s cadence skip now say **last run** where they used to say
+  *last ok* — the word was about to start lying.
 
 ### Fixed
 

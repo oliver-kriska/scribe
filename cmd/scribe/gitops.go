@@ -87,7 +87,7 @@ func gitListFiles(repoPath string, patterns []string) ([]string, bool) {
 		// directory — dubious-ownership under cron, a corrupt index. The
 		// caller silently falls back to the filesystem walk, which
 		// reintroduces the #86 overcount; say so, or it is undiagnosable.
-		logMsg("sync", "git ls-files failed in %s (%v) — falling back to a filesystem walk, which ignores .gitignore", repoPath, err)
+		logMsg("git", "git ls-files failed in %s (%v) — falling back to a filesystem walk, which ignores .gitignore", repoPath, err)
 		return nil, false
 	}
 

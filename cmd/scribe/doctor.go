@@ -1144,7 +1144,9 @@ func checkJSONFile(root, rel, fix string) check {
 // ---- Freshness ----
 
 // freshnessSpec maps a monitored command to its max allowable gap since the
-// last successful run. A nil/zero LastOk always yields a WARN — we prefer a
+// last run that fired at all — a degraded run counts, because the question
+// here is "did cron fire", not "did everything inside it succeed"; the errors
+// section answers the latter. A nil/zero LastOk always yields a WARN — we prefer a
 // loud "never ran" to silent drift.
 type freshnessSpec struct {
 	Command string // command path as written by writeRunRecord (e.g. "sync", "ingest drain")
@@ -1248,9 +1250,9 @@ func classifyFreshness(lastOk time.Time, now time.Time, gap time.Duration) (chec
 	}
 	age := now.Sub(lastOk)
 	if age > gap {
-		return statusWarn, fmt.Sprintf("last ok %s ago — expected ≤ %s", shortDuration(age), shortDuration(gap))
+		return statusWarn, fmt.Sprintf("last run %s ago — expected ≤ %s", shortDuration(age), shortDuration(gap))
 	}
-	return statusOK, "last ok " + shortDuration(age) + " ago"
+	return statusOK, "last run " + shortDuration(age) + " ago"
 }
 
 // runError captures the latest error timestamp + message for one command key.

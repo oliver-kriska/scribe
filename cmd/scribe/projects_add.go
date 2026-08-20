@@ -283,7 +283,7 @@ func retrustAfterConfigEdit(root string) {
 		return
 	}
 	if err := saveTrustRecord(root, trustRecord{Sensitive: sv, ApprovedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
-		logMsg("config", "could not update trust record after add: %v", err)
+		logPhaseDegraded("config", "trust record", "could not update trust record after add: %v", err)
 	}
 }
 

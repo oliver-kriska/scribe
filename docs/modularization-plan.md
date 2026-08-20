@@ -44,15 +44,28 @@ files reachable without the I/O", which is the same work as extracting packages.
 
 24 parallel call sites across 1,159 tests is not timidity; it is a correct
 response to shared mutable state. Scanning every package-level `var` for
-assignment inside a function body finds 46 candidates, most of them
-`regexp.MustCompile` in a `var (…)` block — immutable in practice. The ones that
-genuinely mutate at runtime are few, and one dominates:
+assignment inside a function body finds 44 candidates, most of them
+`regexp.MustCompile` in a `var (…)` block — immutable in practice (they are
+counted because a lazy-init or cache assignment shares the shape). Reproduce:
+
+```sh
+cd cmd/scribe
+ls *.go | grep -v _test.go | xargs awk \
+  '/^var \(/{b=1;next} b&&/^\)/{b=0;next} b&&/^\t[a-zA-Z_]/{print $1;next} /^var [a-zA-Z_]/{print $2}' \
+  | sort -u | while read -r v; do
+      ls *.go | grep -v _test.go \
+        | xargs grep -lqE "^[[:space:]]+$v(\[[^]]*\])?[[:space:]]*(=|\+=)[^=]" && echo "$v"
+    done | wc -l
+```
+
+The ones that genuinely mutate at runtime are few, and one dominates (writer
+counts are that same `grep -l` per name, file-counted):
 
 | Global | Declared | Runtime writers | Risk |
 | --- | --- | ---: | --- |
 | `runStats map[string]any` | `main.go:24` | **14 files** | unguarded map; concurrent writes are a hard race |
 | `globalRoot` | `main.go:20` | 1 | set once from the CLI root flag |
-| `version` | `main.go` | 4 | build stamp |
+| `version` | `main.go:17` | 0 | set at link time by `-X main.version=…`, never assigned in a body |
 | `logLevel` | `logging.go:13` | 1 | set once at startup |
 | `ollamaReadyCache` | `llm.go:446` | 1 | memoized probe |
 | `promptFallbackOnce` | `claude.go:341` | 1 | `sync.Once`-style latch |

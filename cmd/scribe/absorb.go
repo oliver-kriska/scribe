@@ -145,7 +145,7 @@ func (c *AbsorbCmd) Run() error {
 	sha, _ := sha256File(rawPath)
 	absorbLog[filepath.Base(rawPath)] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
 	if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
-		logMsg("absorb", "warn: could not update _absorb_log.json: %v", err)
+		logPhaseDegraded("absorb", "absorb log", "could not update _absorb_log.json: %v", err)
 	}
 
 	logMsg("absorb", "done: %s absorbed", filepath.Base(rawPath))

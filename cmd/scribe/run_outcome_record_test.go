@@ -37,6 +37,7 @@ func decodeDegradedRecord(t *testing.T, root string) struct {
 func TestWriteRunRecord_DegradedStatusAndFields(t *testing.T) {
 	root := testKB(t, "")
 	t.Setenv("SCRIBE_KB", root)
+	globalRoot = "" // kbDir() checks globalRoot first; don't inherit a leak
 	resetRunOutcome()
 	t.Cleanup(resetRunOutcome)
 
@@ -64,6 +65,7 @@ func TestWriteRunRecord_DegradedStatusAndFields(t *testing.T) {
 func TestWriteRunRecord_CleanRunStaysOK(t *testing.T) {
 	root := testKB(t, "")
 	t.Setenv("SCRIBE_KB", root)
+	globalRoot = "" // kbDir() checks globalRoot first; don't inherit a leak
 	resetRunOutcome()
 	t.Cleanup(resetRunOutcome)
 
@@ -82,6 +84,7 @@ func TestWriteRunRecord_CleanRunStaysOK(t *testing.T) {
 func TestWriteRunRecord_ErrorOutranksDegraded(t *testing.T) {
 	root := testKB(t, "")
 	t.Setenv("SCRIBE_KB", root)
+	globalRoot = "" // kbDir() checks globalRoot first; don't inherit a leak
 	resetRunOutcome()
 	t.Cleanup(resetRunOutcome)
 
@@ -94,6 +97,14 @@ func TestWriteRunRecord_ErrorOutranksDegraded(t *testing.T) {
 	}
 	if rec.Error != "lock held" {
 		t.Errorf("error = %q", rec.Error)
+	}
+	// The status is error, but the partial failure that preceded it is
+	// still evidence — writeRunRecord attaches it independent of status.
+	if !slices.Contains(rec.Degraded, "absorb") {
+		t.Errorf("degraded phases dropped from an error record: %v", rec.Degraded)
+	}
+	if rec.DegErrors["absorb"] != "ollama refused" {
+		t.Errorf("degraded_errors = %v", rec.DegErrors)
 	}
 }
 
@@ -172,7 +183,14 @@ func TestLoadRunErrors_DegradedWithNoPhasesDoesNotDangle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadRunErrors: %v", err)
 	}
-	if msg := got["sync"].Msg; strings.HasSuffix(msg, "in ") || strings.HasSuffix(msg, ", ") {
-		t.Fatalf("message dangles with no phases: %q", msg)
+	// Assert the record still surfaces, and with the chosen wording: a
+	// zero-value entry would pass a suffix check trivially while meaning
+	// the reader had dropped the run entirely.
+	e, ok := got["sync"]
+	if !ok {
+		t.Fatalf("degraded record with no phases was dropped entirely: %v", got)
+	}
+	if e.Msg != "partial failure (phases not recorded)" {
+		t.Fatalf("msg = %q, want the no-phases wording", e.Msg)
 	}
 }

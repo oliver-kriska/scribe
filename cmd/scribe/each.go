@@ -14,7 +14,8 @@ import (
 // EachConfig is this KB's cadence policy for the KB-agnostic scheduler
 // (issue #26). `scribe each` runs every job in every registered KB on
 // each launchd tick; Cadence lets a KB opt a job out of a tick when its
-// last successful run (read from output/runs/*.jsonl) is younger than the
+// last run that fired (read from output/runs/*.jsonl — ok or degraded) is
+// younger than the
 // configured interval. Empty = run every tick (the original behavior, so
 // existing KBs are unaffected). NOT trust-locked: a pushed cadence only
 // shapes HOW OFTEN a job runs, never what it ingests or where data goes.
@@ -122,7 +123,7 @@ func cadenceSkipReason(kb string, args []string, now time.Time) string {
 		return ""
 	}
 	if age := now.Sub(last); age < interval {
-		return fmt.Sprintf("last ok %s ago < cadence %s", shortDuration(age), shortDuration(interval))
+		return fmt.Sprintf("last run %s ago < cadence %s", shortDuration(age), shortDuration(interval))
 	}
 	return ""
 }

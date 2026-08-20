@@ -255,7 +255,7 @@ func (d *DeepCmd) checkpointManifest(root string, manifest *Manifest, entry *Pro
 			ledger := loadLedger(root)
 			ledger.record(key, entry.LastSHA, resolveContributor(root))
 			if err := ledger.save(); err != nil {
-				logMsg("deep", "warning: extraction ledger save failed: %v", err)
+				logPhaseFailure("deep", "extraction ledger save", err)
 			}
 		}
 	}

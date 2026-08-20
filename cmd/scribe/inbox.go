@@ -152,7 +152,7 @@ func drainFileInbox(root string) (int, error) {
 		logMsg("inbox", "ingested: %s", name)
 	}
 	if err := state.persist(inbox); err != nil {
-		logMsg("inbox", "could not persist state: %v", err)
+		logPhaseDegraded("inbox", "inbox state", "could not persist state: %v", err)
 	}
 	return processed, nil
 }

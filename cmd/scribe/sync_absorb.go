@@ -80,7 +80,7 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 			// duplicate raw file (no-knowledge-deletion rule).
 			absorbLog[entry.Name()] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
 			if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
-				logMsg("sync", "warn: could not persist _absorb_log.json: %v", err)
+				logPhaseDegraded("sync", "absorb log", "could not persist _absorb_log.json: %v", err)
 			}
 			continue
 		case absorbDecisionRunRefresh:
@@ -105,7 +105,7 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 			}
 			absorbLog[entry.Name()] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
 			if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
-				logMsg("sync", "warn: could not persist _absorb_log.json: %v", err)
+				logPhaseDegraded("sync", "absorb log", "could not persist _absorb_log.json: %v", err)
 			}
 			continue
 		}
@@ -147,14 +147,14 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 				logMsg("sync", "daily anthropic budget ceiling reached during absorb — stopping cleanly (%v)", absorbErr)
 				break
 			}
-			logMsg("sync", "absorb failed for %s: %v", entry.Name(), absorbErr)
+			logPhaseDegraded("sync", "absorb", "absorb failed for %s: %v", entry.Name(), absorbErr)
 			continue
 		}
 
 		// Mark as absorbed (with sha so the next run can detect drift).
 		absorbLog[entry.Name()] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
 		if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
-			logMsg("sync", "warn: could not persist _absorb_log.json: %v", err)
+			logPhaseDegraded("sync", "absorb log", "could not persist _absorb_log.json: %v", err)
 		}
 
 		absorbed++
@@ -622,9 +622,11 @@ func correctiveSuffixFor(err error) string {
 // provider, retry with a corrective prompt on a parse failure or a bodyless
 // envelope, then apply the resulting envelope. Returns the number of actions
 // applied. ErrRateLimit and ErrDailyBudgetExhausted (stop-the-world) propagate
-// unchanged; every other failure is logged and returns (0, nil) so a partial
-// absorb beats losing the whole source — the caller's zero-applied guard is
-// what stops a total failure from being recorded as success.
+// unchanged; every other failure returns (0, nil) so a partial absorb beats
+// losing the whole source — the caller's zero-applied guard is what stops a
+// TOTAL failure from being recorded as success. A partial one has no such
+// guard: the article is stamped absorbed and this entity is never retried,
+// so the failure marks the run degraded rather than only writing a log line.
 func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent absorbEntity, prompt string) (int, error) {
 	env, raw, err := runPass2JSONOnce(gctx, run.provider, prompt, run.timeout)
 	if err == nil && envelopeAllBodyless(env) {
@@ -666,7 +668,10 @@ func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent abs
 			}
 		}
 		if err != nil {
-			logMsg("sync", "pass2 entity %q: all %d corrective retries failed: %v", ent.Label, maxCorrectiveRetries, err)
+			// Dropped, not deferred: runPass2 only errors when EVERY entity
+			// produced nothing, so a partial loss still stamps _absorb_log and
+			// this entity is never retried. That is a unit of work lost.
+			logPhaseDegraded("sync", "absorb entity", "pass2 entity %q dropped after %d corrective retries: %v", ent.Label, maxCorrectiveRetries, err)
 			return 0, nil
 		}
 	}
@@ -691,7 +696,7 @@ func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent abs
 		ValidFactIDs:          validIDs,
 	})
 	if err != nil {
-		logMsg("sync", "pass2 entity %q: apply actions: %v", ent.Label, err)
+		logPhaseDegraded("sync", "absorb entity", "pass2 entity %q dropped, apply actions: %v", ent.Label, err)
 		return 0, nil
 	}
 	if len(res.Errors) > 0 {
@@ -711,9 +716,10 @@ func (s *SyncCmd) runPass2ToolsEntity(gctx context.Context, run pass2Run, ent ab
 		if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
 			return err
 		}
-		logMsg("sync", "pass2 failed for entity %q: %v", ent.Label, err)
+		logPhaseDegraded("sync", "absorb entity", "pass2 entity %q dropped: %v", ent.Label, err)
 		// Continue on non-rate-limit errors — partial absorb is better
-		// than losing the whole source.
+		// than losing the whole source. The entity itself is gone for
+		// good, though, which is why this degrades the run.
 	}
 	return nil
 }

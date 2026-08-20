@@ -109,7 +109,7 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 			if err != nil {
 				// Leave it unmarked so a future run retries — a
 				// transient model failure shouldn't lose the session.
-				logMsg("sync", "codex envelope %s failed after retry: %v", c.id, err)
+				logPhaseDegraded("sync", "codex session mining", "codex envelope %s failed after retry: %v", c.id, err)
 				continue
 			}
 		}
@@ -118,7 +118,7 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 		// transcript must not overwrite an existing curated doc.
 		res, applyErr := applyWikiActions(root, env, entityWriterApplyOptions())
 		if applyErr != nil {
-			logMsg("sync", "codex envelope %s apply error: %v", c.id, applyErr)
+			logPhaseDegraded("sync", "codex session mining", "codex envelope %s apply error: %v", c.id, applyErr)
 			continue
 		}
 		if len(res.Errors) > 0 {

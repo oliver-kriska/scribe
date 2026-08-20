@@ -307,7 +307,7 @@ func (s *SyncCmd) mineSessionBatchesEnvelope(root string, sessionIDs []string, p
 			continue
 		}
 		if r.err != nil {
-			logMsg("sync", "%s envelope: %s failed: %v", label, r.sid, r.err)
+			logPhaseDegraded("sync", "session mining", "%s envelope: %s failed: %v", label, r.sid, r.err)
 			continue
 		}
 		total++
@@ -318,11 +318,11 @@ func (s *SyncCmd) mineSessionBatchesEnvelope(root string, sessionIDs []string, p
 		if since >= checkpointInterval && total < len(sessionIDs) {
 			since = 0
 			if err := s.rebuildAndReindex(root); err != nil {
-				logMsg("sync", "checkpoint reindex error: %v", err)
+				logPhaseFailure("sync", "checkpoint reindex", err)
 			}
 			committed, err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, total))
 			if err != nil {
-				logMsg("sync", "checkpoint commit error: %v", err)
+				logPhaseFailure("sync", "checkpoint commit", err)
 			} else if committed {
 				recordBatchOutcome(root, label, batchIDs)
 				batchIDs = nil

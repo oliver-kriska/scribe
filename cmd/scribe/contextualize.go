@@ -135,7 +135,7 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 
 		logMap[e.Name()] = time.Now().UTC().Format(time.RFC3339)
 		if err := saveJSONMap(logPath, logMap); err != nil {
-			logMsg("contextualize", "warn: could not persist log: %v", err)
+			logPhaseDegraded("contextualize", "contextualize log", "could not persist _contextualized_log.json: %v", err)
 		}
 		processed++
 
@@ -150,7 +150,7 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 	// retrofits).
 	if !dryRun {
 		if err := saveJSONMap(logPath, logMap); err != nil {
-			logMsg("contextualize", "warn: could not persist log: %v", err)
+			logPhaseDegraded("contextualize", "contextualize log", "could not persist _contextualized_log.json: %v", err)
 		}
 	}
 	if processed > 0 {
@@ -210,7 +210,7 @@ func contextualizeWikiArticles(root string, limit int, model string, dryRun, for
 
 		logMap[relKey] = time.Now().UTC().Format(time.RFC3339)
 		if err := saveJSONMap(logPath, logMap); err != nil {
-			logMsg("contextualize", "warn: could not persist log: %v", err)
+			logPhaseDegraded("contextualize", "contextualize log", "could not persist _contextualized_log.json: %v", err)
 		}
 		processed++
 		time.Sleep(contextualizePaceDelay)
@@ -218,7 +218,7 @@ func contextualizeWikiArticles(root string, limit int, model string, dryRun, for
 
 	if !dryRun {
 		if err := saveJSONMap(logPath, logMap); err != nil {
-			logMsg("contextualize", "warn: could not persist log: %v", err)
+			logPhaseDegraded("contextualize", "contextualize log", "could not persist _contextualized_log.json: %v", err)
 		}
 	}
 	if processed > 0 {

@@ -315,7 +315,7 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 				if !s.DryRun {
 					existing.MergeDiscoveredFrom("codex")
 					if err := manifest.save(); err != nil {
-						logMsg("sync", "manifest save failed: %v", err)
+						logPhaseFailure("sync", "manifest save", err)
 					}
 				}
 			}
@@ -340,7 +340,7 @@ func (s *SyncCmd) discoverCodex(root string, manifest *Manifest, cfg *ScribeConf
 			Status:         status,
 		}
 		if err := manifest.save(); err != nil {
-			logMsg("sync", "manifest save failed: %v", err)
+			logPhaseFailure("sync", "manifest save", err)
 		}
 
 		if status != statusPending {

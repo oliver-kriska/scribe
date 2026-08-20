@@ -379,7 +379,7 @@ func recordBatchOutcome(root, label string, sessionIDs []string) {
 		}
 		data["entries"] = append(entries, entry)
 	}); err != nil {
-		logMsg("sync", "warn: could not update outcomes.json: %v", err)
+		logPhaseDegraded("sync", "outcomes ledger", "could not update _extraction_outcomes.json: %v", err)
 	}
 }
 
@@ -846,7 +846,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 	// cleared on read so entries are not reused.
 	pendingEntries, err := readAndClearPendingEntries()
 	if err != nil {
-		logMsg("sync", "pending queue read error (continuing): %v", err)
+		logPhaseFailure("sync", "pending queue read", err)
 	}
 	if len(pendingEntries) > 0 {
 		// Drop anything already extracted before. A hook might enqueue a
@@ -899,7 +899,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 						}
 					}
 				}); err != nil {
-					logMsg("sync", "warn: could not update _sessions_log.json: %v", err)
+					logPhaseDegraded("sync", "session log update", "could not update _sessions_log.json: %v", err)
 				}
 			}
 			return kept
@@ -945,6 +945,6 @@ func (s *SyncCmd) updateScanTimestamp(sessionsLog string) {
 	if err := updateJSONFile(sessionsLog, func(data map[string]any) {
 		data["last_scan"] = time.Now().UTC().Format(time.RFC3339)
 	}); err != nil {
-		logMsg("sync", "warn: could not update last_scan in _sessions_log.json: %v", err)
+		logPhaseDegraded("sync", "session log update", "could not update last_scan in _sessions_log.json: %v", err)
 	}
 }
