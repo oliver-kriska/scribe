@@ -47,10 +47,18 @@ var specialKBFiles = map[string]specialFileSpec{
 	"wiki/_index.md":       {Class: classDerivedRegenerable},
 	"wiki/_backlinks.json": {Class: classDerivedRegenerable},
 	"wiki/_digest.md":      {Class: classDerivedRegenerable},
+	// Regenerated wholesale by `scribe hot` on every sync, so a
+	// conflict here carries no information either.
+	"wiki/_hot.md": {Class: classDerivedRegenerable},
 
 	"scripts/extraction-ledger.json": {Class: classSemanticMerge, Merge: mergeLedgerContent, AutoStage: true},
 	"scripts/dream-lease.json":       {Class: classSemanticMerge, Merge: mergeLeaseContent},
 	"log.md":                         {Class: classSemanticMerge, Merge: mergeUnionLines, AutoStage: true},
+	// Session-mining ledgers. One shape, two surfaces (codex_log.go).
+	// Each machine mines its own sessions, so `processed` unions cleanly;
+	// the colliding line is `last_scan`, rewritten every run.
+	"wiki/_sessions_log.json":       {Class: classSemanticMerge, Merge: mergeSessionsLogContent},
+	"wiki/_codex_sessions_log.json": {Class: classSemanticMerge, Merge: mergeSessionsLogContent},
 
 	"scripts/projects.json": {Class: classMachineLocal, AutoStage: true},
 }

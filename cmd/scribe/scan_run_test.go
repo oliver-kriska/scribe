@@ -165,6 +165,7 @@ func TestScanRun_MixExsDepsSection(t *testing.T) {
 	if err := os.MkdirAll(proj, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
+	//nolint:dupword // consecutive `end` keywords are valid Elixir, not prose
 	mixExs := `defmodule Phoenixapp.MixProject do
   use Mix.Project
 

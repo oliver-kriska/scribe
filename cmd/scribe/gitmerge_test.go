@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -329,4 +331,104 @@ func TestAutoResolveNoopOnCleanRepo(t *testing.T) {
 	if resolved, err := autoResolveDerivedConflicts(repo); resolved || err != nil {
 		t.Errorf("auto-resolve on clean repo = (%v, %v), want (false, nil)", resolved, err)
 	}
+}
+
+// TestPullRebaseMergesSessionsLogConflict: the case that wedged a
+// two-machine KB. Both sides mined different sessions and both bumped
+// last_scan; the union must keep every processed id and the later scan.
+func TestPullRebaseMergesSessionsLogConflict(t *testing.T) {
+	clone := setupCloneContentConflict(t, "wiki/_sessions_log.json",
+		`{"last_scan":"2026-06-10T09:00:00Z","processed":{}}`+"\n",
+		`{"last_scan":"2026-06-10T10:00:00Z","processed":{"sess-a":{"extracted":"2026-06-10T10:00:00Z","project":"alpha"}}}`+"\n",
+		`{"last_scan":"2026-06-10T11:00:00Z","processed":{"sess-b":{"extracted":"2026-06-10T11:00:00Z","project":"beta"}}}`+"\n")
+
+	ok, _, err := pullRebase(clone)
+	if err != nil {
+		t.Fatalf("sessions-log conflict must merge, got: %v", err)
+	}
+	if !ok || rebaseInProgress(clone) {
+		t.Fatalf("pull did not complete cleanly (ok=%v)", ok)
+	}
+	v, err := loadSessionsLogView(clone)
+	if err != nil {
+		t.Fatalf("load merged sessions log: %v", err)
+	}
+	if _, found := v.processed["sess-a"]; !found {
+		t.Error("remote side's session lost in merge")
+	}
+	if _, found := v.processed["sess-b"]; !found {
+		t.Error("local side's session lost in merge")
+	}
+	if got, _ := v.raw["last_scan"].(string); got != "2026-06-10T11:00:00Z" {
+		t.Errorf("last_scan = %q, want the later of the two sides", got)
+	}
+}
+
+// The codex ledger shares the shape, so it shares the handler.
+func TestPullRebaseMergesCodexSessionsLogConflict(t *testing.T) {
+	clone := setupCloneContentConflict(t, "wiki/_codex_sessions_log.json",
+		`{"processed":{}}`+"\n",
+		`{"processed":{"cdx-a":{"extracted":"2026-06-10T10:00:00Z"}}}`+"\n",
+		`{"processed":{"cdx-b":{"extracted":"2026-06-10T11:00:00Z"}}}`+"\n")
+
+	if _, _, err := pullRebase(clone); err != nil {
+		t.Fatalf("codex sessions-log conflict must merge, got: %v", err)
+	}
+	ids := loadProcessedCodexIDs(clone)
+	if !ids["cdx-a"] || !ids["cdx-b"] {
+		t.Errorf("codex merge lost an id: %v", ids)
+	}
+}
+
+func TestMergeSessionsLogContent(t *testing.T) {
+	t.Run("legacy bare-string entries survive", func(t *testing.T) {
+		out := mergeSessionsLogContent(
+			[]byte(`{"processed":{"old":"2026-01-01T00:00:00Z"}}`),
+			[]byte(`{"processed":{"new":{"extracted":"2026-02-01T00:00:00Z"}}}`))
+		var doc struct {
+			Processed map[string]json.RawMessage `json:"processed"`
+		}
+		if err := json.Unmarshal(out, &doc); err != nil {
+			t.Fatalf("merged output is not valid JSON: %v", err)
+		}
+		if len(doc.Processed) != 2 {
+			t.Errorf("want both entries, got %d: %s", len(doc.Processed), out)
+		}
+	})
+
+	t.Run("same id keeps the newer extraction", func(t *testing.T) {
+		out := mergeSessionsLogContent(
+			[]byte(`{"processed":{"x":{"extracted":"2026-01-01T00:00:00Z","project":"old"}}}`),
+			[]byte(`{"processed":{"x":{"extracted":"2026-03-01T00:00:00Z","project":"new"}}}`))
+		if !strings.Contains(string(out), `"new"`) {
+			t.Errorf("newer entry did not win: %s", out)
+		}
+	})
+
+	t.Run("unknown top-level keys are preserved", func(t *testing.T) {
+		out := mergeSessionsLogContent(
+			[]byte(`{"processed":{},"future_field":{"a":1}}`),
+			[]byte(`{"processed":{}}`))
+		if !strings.Contains(string(out), "future_field") {
+			t.Errorf("unknown key dropped: %s", out)
+		}
+	})
+
+	t.Run("garbage on one side does not lose the other", func(t *testing.T) {
+		out := mergeSessionsLogContent(
+			[]byte(`{"processed":{"keep":{"extracted":"2026-01-01T00:00:00Z"}}}`),
+			[]byte(`not json at all`))
+		if !strings.Contains(string(out), "keep") {
+			t.Errorf("valid side lost: %s", out)
+		}
+	})
+
+	t.Run("output is deterministic", func(t *testing.T) {
+		a := []byte(`{"last_scan":"2026-01-01T00:00:00Z","processed":{"a":{"extracted":"2026-01-01T00:00:00Z"}}}`)
+		b := []byte(`{"last_scan":"2026-02-01T00:00:00Z","processed":{"b":{"extracted":"2026-02-01T00:00:00Z"}}}`)
+		first, second := mergeSessionsLogContent(a, b), mergeSessionsLogContent(a, b)
+		if !bytes.Equal(first, second) {
+			t.Errorf("merge is not deterministic:\n%s\n---\n%s", first, second)
+		}
+	})
 }

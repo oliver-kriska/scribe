@@ -124,7 +124,8 @@ Conflicts on scribe-managed shared files are handled by class:
 
 | File | On conflict |
 |---|---|
-| `wiki/_index.md`, `wiki/_backlinks.json`, `wiki/_digest.md` | either side wins — content regenerates after the pull |
+| `wiki/_index.md`, `wiki/_backlinks.json`, `wiki/_digest.md`, `wiki/_hot.md` | either side wins — content regenerates after the pull |
+| `wiki/_sessions_log.json`, `wiki/_codex_sessions_log.json` | merged semantically — `processed` unions, later `last_scan` wins |
 | `scripts/extraction-ledger.json` | merged semantically |
 | `scripts/dream-lease.json` | merged semantically, remote wins the claim |
 | `log.md` | union of both sides' lines |
@@ -134,23 +135,22 @@ Conflicts on scribe-managed shared files are handled by class:
 
 Honest ones, current as of this writing:
 
-- **Some accumulating files are not yet merge-aware, and this one recurs.**
-  `wiki/_sessions_log.json`, `wiki/_codex_sessions_log.json`,
-  `wiki/_unfetched-links.md`, `wiki/_identity-proposals.md` and `wiki/_hot.md`
-  are committed, grow from every machine, and have no registered conflict
-  handler. The list is not exhaustive.
-
-  `wiki/_sessions_log.json` is the most exposed, and not for the reason you
-  might expect: differing session IDs often merge cleanly, but `last_scan` is a
-  single line rewritten on **every** `sync --sessions` run whether or not
-  anything was mined. Both machines run that job at the same three times a day
-  and commit hourly, so the same line conflicts from both sides.
+- **Some accumulating files are still not merge-aware.**
+  `wiki/_unfetched-links.md`, `wiki/_identity-proposals.md`,
+  `wiki/_absorb_log.json`, `wiki/_extraction_outcomes.json` and
+  `wiki/_contextualized_log.json` are committed, grow from every machine, and
+  have no registered conflict handler. The list is not exhaustive.
 
   An unregistered conflict aborts the rebase, and until it is resolved every
-  later pull fails on it while local commits pile up. Expect to run the
-  [divergence recipe](#divergence-is-normal) roughly daily on an active pair.
-  This keeps recurring until a release registers a merge handler for these
-  files — it is not a one-time cleanup.
+  later pull fails on the same conflict while local commits pile up — so resolve
+  one promptly with the [divergence recipe](#divergence-is-normal) rather than
+  letting it sit. In practice these files change far less often than the session
+  ledgers did, so collisions are occasional rather than daily.
+
+  The two that *were* guaranteed to collide — the session-mining ledgers, whose
+  `last_scan` field is rewritten on every `sync --sessions` run — now merge
+  semantically, as does `wiki/_hot.md`. Make sure every writer is on a build
+  that includes that fix.
 - **`scribe commit` does not inspect git state before committing.** If a rebase
   is paused or `HEAD` is detached, cron will keep committing onto it and the
   branch will not advance. Never leave a rebase half-finished on a machine whose

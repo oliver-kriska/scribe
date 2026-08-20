@@ -132,8 +132,12 @@ func TestPromoteValidation(t *testing.T) {
 func TestPromoteRefusesDerivedFiles(t *testing.T) {
 	src, target := setupPromoteKBs(t)
 
-	// Registry-known derived artifacts (special_files.go).
-	for _, rel := range []string{"wiki/_index.md", "wiki/_backlinks.json", "wiki/_digest.md"} {
+	// Registry-known artifacts (special_files.go) — both the
+	// derived-regenerable ones and the semantic-merge ledgers.
+	for _, rel := range []string{
+		"wiki/_index.md", "wiki/_backlinks.json", "wiki/_digest.md", "wiki/_hot.md",
+		"wiki/_sessions_log.json", "wiki/_codex_sessions_log.json",
+	} {
 		writeKBFile(t, src, rel, "stale derived content\n")
 		c := &PromoteCmd{Article: rel, To: target, Force: true, NoGit: true}
 		if err := c.Run(); err == nil || !strings.Contains(err.Error(), "scribe-managed") {
@@ -142,7 +146,7 @@ func TestPromoteRefusesDerivedFiles(t *testing.T) {
 	}
 
 	// Underscore convention beyond the registry.
-	for _, rel := range []string{"wiki/_hot.md", "wiki/_sessions_log.json", "patterns/_scratch.md"} {
+	for _, rel := range []string{"wiki/_identity-proposals.md", "patterns/_scratch.md"} {
 		writeKBFile(t, src, rel, "derived\n")
 		c := &PromoteCmd{Article: rel, To: target, Force: true, NoGit: true}
 		if err := c.Run(); err == nil || !strings.Contains(err.Error(), "must not be promoted") {

@@ -4,6 +4,24 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Fixed
+
+- **Multi-writer KBs no longer wedge on the session-mining ledgers.**
+  `wiki/_sessions_log.json` and `wiki/_codex_sessions_log.json` are committed
+  and grow on every machine, but had no registered conflict handler. The
+  colliding field is `last_scan`, rewritten on *every* `sync --sessions` run
+  whether or not anything was mined — and cron fires that job at identical
+  wall-clock slots on every machine. The resulting conflict aborted the rebase,
+  after which every later pull failed on the same conflict while local commits
+  piled up. Both files now merge semantically: `processed` unions across
+  machines (each mines its own sessions), the newer entry wins a same-id
+  collision, the later `last_scan` survives, and unknown top-level keys are
+  preserved so a newer scribe on one machine cannot lose fields to an older one
+  on another.
+- `wiki/_hot.md` is registered as derived-regenerable. It is rebuilt wholesale
+  on every sync, so a conflict on it carried no information yet still aborted
+  the rebase.
+
 ## [0.5.0] — 2026-08-11
 
 The first pull-adapter release. `scribe pull` ingests bookmarks from external
