@@ -28,14 +28,29 @@
 /sitemap.xml
   Cache-Control: public, max-age=3600
 
+# Text surfaces must declare charset explicitly. Workers Assets serves
+# these as `text/markdown` / `text/plain` with NO charset parameter, and a
+# client that then falls back to Latin-1 renders every UTF-8 multi-byte
+# character as mojibake — an em dash becomes "a<80><94>", U+00D7 becomes
+# "A-". index.html is unaffected because it carries <meta charset>; raw
+# .md and .txt have no in-band way to say it, so it must come from here.
+
 /llms.txt
+  Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=3600
 
 /llms-full.txt
+  Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=3600
 
 /setup.md
+  Content-Type: text/markdown; charset=utf-8
   Cache-Control: public, max-age=3600
 
 /index.md
+  Content-Type: text/markdown; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/topologies.md
+  Content-Type: text/markdown; charset=utf-8
   Cache-Control: public, max-age=3600
