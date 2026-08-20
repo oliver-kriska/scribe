@@ -828,6 +828,11 @@ A desktop and a laptop, both yours, both syncing into the same KB. This is a
 *multi-writer* setup even though there is only one of you, and it runs on the
 same machinery as a team KB — the switch is `team: true` in `scribe.yaml`.
 
+The deciding question is never how many people, only **how many machines write
+to one KB**. Two of your own machines need exactly what a five-person team
+needs. [Topologies](https://getscribe.dev/topologies.md) is the reference for
+every arrangement, what each one coordinates, and what it does not.
+
 The flag name is a misnomer here, and skipping it is the most common way to
 corrupt a second-machine setup. Three things are gated behind it, and none of
 them fail loudly when missing:

@@ -18,6 +18,7 @@ The product is the curated wiki, not raw chunks. Every dense source fans out int
 
 - [Marketing site](https://getscribe.dev/): overview, features, install, comparison table
 - [Setup runbook](https://getscribe.dev/setup.md): prompt-compatible personal, Ollama, hosted-provider, team-owner, team-member, one-KB-several-machines, second-KB, Linux cron, and verification recipes
+- [Topologies reference](https://getscribe.dev/topologies.md): which arrangement you need (one machine, several machines, team, mixed OS), what each coordinates, what is not coordinated, and the operating rules for a multi-writer KB
 - [Marketing site as markdown](https://getscribe.dev/index.md): same content, plain text
 - [Full content concatenated](https://getscribe.dev/llms-full.txt): everything in one file for large-context LLMs, including both explainer-video transcripts
 - [Explainer video, 60s](https://assets.getscribe.dev/scribe-explainer.mp4): the whole pitch — scribe reads your git history, Claude Code/Codex sessions, and saved links, and writes a plain-markdown KB your agents read before they act; local, cron-driven, not RAG (full transcript in llms-full.txt; also on YouTube: https://youtu.be/f2jV9PnzRzI)

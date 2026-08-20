@@ -36,6 +36,12 @@ entries.
 | Sync your own KB from a second machine (desktop + laptop) | [One KB on several machines](#one-kb-on-several-machines) |
 | Add a team KB while keeping a personal KB as default | [A second KB on one machine](#a-second-kb-on-one-machine) |
 | Linux scheduling | Use the same recipe, then follow [Linux cron](#linux-cron) |
+| Not sure which applies, or want the conflict details | [Topologies reference](https://getscribe.dev/topologies.md) |
+
+The deciding question is how many machines write to one KB, not how many
+people. Two machines owned by one person need the same coordination as a
+five-person team; [Topologies](https://getscribe.dev/topologies.md) explains
+what is coordinated and what is not.
 
 ## Before changing anything
 
