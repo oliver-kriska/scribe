@@ -369,8 +369,17 @@ because nothing fails loudly:
 | Gated on `team: true` | Without it |
 |---|---|
 | `scripts/projects.json` gitignored | Committed, but holds machine-local absolute paths, extracted SHAs, and approval decisions. Every `sync --discover` rewrites it with the other machine's view. |
-| Extraction-ledger writes | Both machines extract the same revision, pay the LLM bill twice, and write duplicate articles. |
 | `scripts/dream-lease.json` | Both run the weekly dream cycle at once. `lock_dir` is machine-local and cannot see across machines. |
+| Config trust lock | A pushed change to sensitive keys applies everywhere silently. |
+| Secret-scan commit gate | Credential-shaped values commit into shared history. |
+
+Extraction dedup via `scripts/extraction-ledger.json` is **not** gated — it works
+the same on a solo KB. Budget for one exception: a machine that has never
+extracted a repository re-extracts it once at full model cost, because the
+never-extracted case is decided before the ledger is consulted. Run
+`scribe sync --dry-run --estimate` before the first real sync on a new machine.
+[Topologies](https://getscribe.dev/topologies.md) is the canonical reference for
+what is and is not coordinated.
 
 ### Step 1 — prepare the KB (once, on the machine that has it)
 
@@ -445,10 +454,13 @@ extraction (through the ledger). These jobs mutate shared KB state with neither,
 and will fire simultaneously on both machines:
 
 `lint --fix`, `lint --duplicates`, `lint --resolve`, `lint --identities`,
-`lint --apply-identities`, `ingest drain`
+`lint --apply-identities`
 
-`ingest drain` is the sharpest edge: the configured `ingest.inbox_path` is
-inside the committed tree, so both machines drain the same inbox.
+`scribe sync` additionally drains the committed `ingest.inbox_path` (default
+`raw/inbox`) on every machine with no dedup, so two machines that pull the same
+queued file before either drains it will both convert it. There is no separate
+job to disable — queue files on the maintenance machine, or accept the
+occasional duplicate article.
 
 `scribe cron` has no per-job disable — only `install`, `status`, `uninstall`. The
 per-machine lever is `each.cadence`, which is read from the gitignored
@@ -465,11 +477,19 @@ each:
     "lint --resolve": "3650d"
     "lint --identities": "3650d"
     "lint --apply-identities": "3650d"
-    "ingest drain": "3650d"
 ```
 
 This is a throttle used as an off switch. It is reversible and survives
-`scribe cron install` re-running.
+`scribe cron install` re-running, with one wrinkle: cadence is measured from the
+job's last successful run on *that* machine, and run records are machine-local.
+A job with no record yet fails open, so each throttled job still fires **once**
+on the secondary after `cron install` — and a job that keeps failing is never
+throttled at all.
+
+Do not throttle `ingest drain`. It processes `output/inbox`, which is gitignored
+and machine-local, so it never collides. The inbox that *is* shared —
+`ingest.inbox_path`, default `raw/inbox` — is drained by `scribe sync` itself and
+has no separate job to disable.
 
 Leave `dream` and `dream --hot` **enabled** everywhere: the lease makes them
 safe, and the weekly cycle still runs when your main machine is asleep. Keep

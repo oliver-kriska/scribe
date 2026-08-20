@@ -23,7 +23,7 @@ a misleading name — read it as *multi-writer*.
 | A team, one machine each | N | **yes** |
 | A team where some people have two machines | N | **yes** |
 | macOS and Linux writers mixed | N | **yes** |
-| A personal KB *and* a team KB on one machine | 1 each | per-KB |
+| A personal KB *and* a team KB on one machine | 1 / N | per-KB |
 
 Only the last row is a different problem — see
 [A second KB on one machine](https://getscribe.dev/setup.md#a-second-kb-on-one-machine).
@@ -51,8 +51,21 @@ is missing:
 | Guarantee | Mechanism | Without it |
 |---|---|---|
 | Per-machine project manifest | `scripts/projects.json` gitignored | It stays committed while holding machine-local absolute paths, extracted SHAs and approval decisions. Every `sync --discover` rewrites it with the other machine's view. |
-| Extraction dedup | `scripts/extraction-ledger.json`, keyed on normalized remote + HEAD SHA | Both machines extract the same revision, pay the model bill twice, and write duplicate articles. |
 | One weekly consolidation | `scripts/dream-lease.json`, host + contributor keyed, 6h expiry, stealable | Both run `dream` at once. `lock_dir` is machine-local and cannot see across machines. |
+| Config trust lock | per-machine snapshot of sensitive keys | A pushed change to source filters, ingestion dirs, capture, the credential gate, or LLM routing applies to every machine silently. |
+| Secret-scan commit gate | credential-shaped values held back from commits | Articles carrying a real-looking token commit straight into shared history. |
+
+**Extraction dedup is not on this list.** `scripts/extraction-ledger.json` works
+the same whether the flag is set or not — it is keyed on normalized remote URL
+plus HEAD SHA, and both the lookup and the semantic merge are unconditional. You
+get revision-level dedup on a solo KB too.
+
+One exception worth budgeting for: a machine that has never extracted a given
+repository takes the never-extracted branch *before* the ledger is consulted, so
+**the first sync on a new machine re-extracts every approved repository once**,
+at full model cost, even though a sibling machine already did that revision.
+After that first pass the ledger takes over. Preview it with
+`scribe sync --dry-run --estimate` before the first real run.
 
 ### What turning it on takes away
 
@@ -65,6 +78,13 @@ Move those blocks into the gitignored `scribe.local.yaml` of the one machine
 that should run them. Local config is applied after trust enforcement, so it
 always wins.
 
+It also locks sensitive config. Once a machine has trusted a `scribe.yaml`,
+later edits to source filters, ingestion dirs, capture, the credential gate or
+LLM routing do **not** take effect there — scribe keeps running on the trusted
+values and `doctor` reports drift until you run `scribe config diff` and
+`scribe config trust` on that machine. If you edit your own config freely, this
+is the friction you will notice most.
+
 It also activates the secret gate, which adds a whole-KB audit to
 `scribe doctor`. Pre-existing credential-shaped strings in old articles surface
 as a new warning — historical, not a regression. New articles containing one are
@@ -76,9 +96,8 @@ held back from the commit; watch for `SECRET HELD:` in sync logs.
 machine. There is no jitter and no per-machine offset, so two machines fire the
 same job in the same minute:
 
-| Job | Runs |
+| Job (abridged) | Runs |
 |---|---|
-| `ingest drain` | every 30 minutes |
 | `commit` | hourly |
 | `sync` | every 2 hours |
 | `sync --sessions` | 3× daily |
@@ -96,7 +115,7 @@ Plan for simultaneous writes as the default, not the exception.
 | `dream`, `dream --hot` | **yes** | committed lease; others see the claim after their pull and skip |
 | `sync` project extraction | **yes** | extraction ledger; a revision a teammate already did is skipped |
 | `sync --sessions` | no | — |
-| `ingest drain` | no | — |
+| `sync` file-inbox drain | no | both machines drain the committed `ingest.inbox_path` after a pull |
 | `lint --fix`, `--duplicates`, `--resolve`, `--identities`, `--apply-identities` | no | — |
 | `commit` | no | — |
 | `capture` | no | convention: one machine only |
@@ -115,17 +134,34 @@ Conflicts on scribe-managed shared files are handled by class:
 
 Honest ones, current as of this writing:
 
-- **Some accumulating files are not yet merge-aware.**
-  `wiki/_sessions_log.json`, `wiki/_unfetched-links.md`,
-  `wiki/_identity-proposals.md` and `wiki/_hot.md` are committed and grow from
-  every machine, but have no registered conflict handler. Concurrent writes can
-  produce a hard conflict that must be resolved by hand once.
-  `wiki/_sessions_log.json` is the most exposed, because `sync --sessions` fires
-  at the same times on every machine and each machine adds different session IDs.
+- **Some accumulating files are not yet merge-aware, and this one recurs.**
+  `wiki/_sessions_log.json`, `wiki/_codex_sessions_log.json`,
+  `wiki/_unfetched-links.md`, `wiki/_identity-proposals.md` and `wiki/_hot.md`
+  are committed, grow from every machine, and have no registered conflict
+  handler. The list is not exhaustive.
+
+  `wiki/_sessions_log.json` is the most exposed, and not for the reason you
+  might expect: differing session IDs often merge cleanly, but `last_scan` is a
+  single line rewritten on **every** `sync --sessions` run whether or not
+  anything was mined. Both machines run that job at the same three times a day
+  and commit hourly, so the same line conflicts from both sides.
+
+  An unregistered conflict aborts the rebase, and until it is resolved every
+  later pull fails on it while local commits pile up. Expect to run the
+  [divergence recipe](#divergence-is-normal) roughly daily on an active pair.
+  This keeps recurring until a release registers a merge handler for these
+  files — it is not a one-time cleanup.
 - **`scribe commit` does not inspect git state before committing.** If a rebase
   is paused or `HEAD` is detached, cron will keep committing onto it and the
   branch will not advance. Never leave a rebase half-finished on a machine whose
   cron is running — see below.
+- **The file inbox is shared and undeduplicated.** `ingest.inbox_path`
+  (default `raw/inbox`) is inside the committed tree, and every `scribe sync`
+  drains it. Two machines that pull the same queued file before either has
+  drained it will both convert it, producing duplicate articles. Drop files in
+  on the maintenance machine, or accept the occasional duplicate. Note this is
+  *not* what `scribe ingest drain` handles — that job works on `output/inbox`,
+  which is gitignored and strictly machine-local, so it needs no coordination.
 - **`capture` is coordinated by convention only.** Nothing stops two machines
   running it against the same KB.
 
@@ -151,7 +187,9 @@ Honest ones, current as of this writing:
    ```
 
 4. **Stop cron before any manual git surgery.** `scribe cron uninstall`, do the
-   work, verify, `scribe cron install`. A paused rebase plus a live `commit` job
+   work, verify, `scribe cron install`. On Linux that command only removes macOS
+   LaunchAgents — it prints success while cron keeps firing. Comment out the
+   scribe block in `crontab -e` instead, and restore it afterwards. A paused rebase plus a live `commit` job
    is the one failure mode that compounds silently.
 5. **Credentials never go in a KB.** Provider keys live in
    `~/.config/scribe/config.yaml` or the environment, per machine.
@@ -163,30 +201,43 @@ steady state, not damage. Reconcile with a rebase, and finish it in one sitting:
 
 ```sh
 scribe cron uninstall                     # nothing can commit while you work
+git branch backup/$(git rev-parse --short HEAD)   # free; do it before deciding
 git log --oneline origin/main..HEAD       # what is local-only
 git diff --stat origin/main...HEAD        # what it actually changed
+git status                                # uncommitted work? see the warning below
 ```
 
-If the local commits are only scheduled noise, discard them:
+Rebase, and finish it in one sitting:
+
+```sh
+git pull --rebase --autostash
+# if it pauses: git rebase --continue, or git rebase --abort
+```
+
+If the local commits turn out to be only bookkeeping, resetting is faster than
+rebasing:
 
 ```sh
 git reset --hard origin/main
 ```
 
-Otherwise rebase behind a backup branch:
-
-```sh
-git branch backup/$(git rev-parse --short HEAD)
-git pull --rebase --autostash
-# if it pauses: git rebase --continue, or git rebase --abort
-```
+**Read this before you reset.** "Bookkeeping" means commits that touch *only*
+`wiki/_index.md`, `wiki/_backlinks.json`, `wiki/_digest.md`, `wiki/_hot.md`,
+the lease, the ledger, `log.md`, or a `last_scan` bump. A commit subject
+beginning `auto:` is **not** noise — that is where extracted articles land, and
+resetting past it destroys model output you already paid for. `reset --hard`
+also discards uncommitted tracked changes, which is where articles held back by
+the secret gate sit. When in doubt, rebase; the backup branch above is your
+undo either way.
 
 Verify before letting cron near it again:
 
 ```sh
 git symbolic-ref -q HEAD >/dev/null && echo "HEAD attached" || echo "DETACHED — stop"
-[ -d "$(git rev-parse --git-path rebase-merge)" ] && echo "REBASE STILL RUNNING — stop"
-grep -rl '<<<<<<< ' wiki raw 2>/dev/null | head
+for d in rebase-merge rebase-apply; do
+  [ -d "$(git rev-parse --git-path $d)" ] && echo "REBASE STILL RUNNING — stop"
+done
+git grep -l '^<<<<<<<' || echo "no conflict markers"
 git push && scribe doctor
 scribe cron install
 ```

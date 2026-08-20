@@ -840,8 +840,12 @@ them fail loudly when missing:
 | Gated on `team: true` | Without it |
 |---|---|
 | `scripts/projects.json` is gitignored | It's committed, but holds machine-local absolute paths, extracted SHAs, and approval decisions — each `sync --discover` rewrites it with the other machine's view |
-| Extraction-ledger writes | Both machines extract the same repo revision, pay the LLM bill twice, and write duplicate articles |
 | The `scripts/dream-lease.json` claim | Both run the weekly dream cycle at once — `lock_dir` is machine-local and cannot see across machines |
+| Config trust lock | A pushed change to sensitive keys applies on every machine silently |
+| Secret-scan commit gate | Credential-shaped values commit straight into shared history |
+
+Extraction dedup is **not** gated — `scripts/extraction-ledger.json` works the
+same on a solo KB.
 
 Start a new KB with `scribe init --team` and this is already done. To convert a
 personal KB you have been using solo:
@@ -1056,10 +1060,10 @@ competing claims.
 - **Only `dream` and extraction are coordinated across machines.** The lease
   covers the weekly cycle and the ledger covers repo extraction, but the
   maintenance jobs — `lint --fix`, `lint --duplicates`, `lint --resolve`,
-  `lint --identities`, `lint --apply-identities`, `ingest drain` — mutate shared
-  KB state with neither, and `scribe cron install` gives every machine the same
-  schedule, so they fire together. `ingest drain` is the sharpest edge, since
-  `ingest.inbox_path` sits inside the committed tree. Let one machine own
+  `lint --identities`, `lint --apply-identities` — mutate shared KB state with
+  neither, and `scribe cron install` gives every machine the same schedule, so
+  they fire together. `scribe sync` also drains the committed
+  `ingest.inbox_path` on every machine with no dedup. Let one machine own
   maintenance and throttle those jobs elsewhere with `each.cadence` in the
   secondary machine's gitignored `scribe.local.yaml`; the
   [setup runbook](https://getscribe.dev/setup.md#one-kb-on-several-machines)
