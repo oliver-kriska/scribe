@@ -30,7 +30,17 @@ func gitRemoteURL(repoPath string) string {
 // gitChangedFiles returns files changed between two SHAs (or all files if oldSHA is empty).
 func gitChangedFiles(repoPath, oldSHA string, patterns []string) []string {
 	if oldSHA == "" {
-		// Never synced: list all matching files
+		// Never synced: list every matching file. Ask git, not the
+		// filesystem — findFiles skips only a fixed dir list and knows
+		// nothing about .gitignore, so a gitignored dependency tree
+		// (`.venv/**/site-packages` is full of *.md and *.txt) inflates
+		// the count until it trips sync.max_extract_files and the
+		// project is skipped on every run forever. See issue #86.
+		// The incremental path below never had this problem: `git diff`
+		// only ever reports tracked files.
+		if files, ok := gitListFiles(repoPath, patterns); ok {
+			return files
+		}
 		return findFiles(repoPath, patterns)
 	}
 
@@ -49,6 +59,46 @@ func gitChangedFiles(repoPath, oldSHA string, patterns []string) []string {
 		}
 	}
 	return files
+}
+
+// gitListFiles lists the files git would consider part of repoPath —
+// tracked plus untracked-but-not-ignored — filtered by pathspec. It is the
+// .gitignore-aware counterpart to findFiles, used for a project's first
+// extraction where there is no old SHA to diff against.
+//
+// Returns ok=false when repoPath has no `.git` directory or git fails, so
+// the caller can fall back to a plain filesystem walk. An empty result with
+// ok=true is meaningful: the repo genuinely has no matching files.
+func gitListFiles(repoPath string, patterns []string) ([]string, bool) {
+	if !hasGit(repoPath) {
+		return nil, false
+	}
+
+	args := make([]string, 0, 8+len(patterns))
+	args = append(args, "-C", repoPath, "ls-files",
+		"--cached", "--others", "--exclude-standard", "-z", "--")
+	args = append(args, patterns...)
+
+	// -z because git quotes unusual filenames on the default line-based
+	// output; NUL separation keeps them byte-exact.
+	out, err := runCmdRaw("", "git", args...)
+	if err != nil {
+		// hasGit said yes, so this is a real git failure, not a plain
+		// directory — dubious-ownership under cron, a corrupt index. The
+		// caller silently falls back to the filesystem walk, which
+		// reintroduces the #86 overcount; say so, or it is undiagnosable.
+		logMsg("sync", "git ls-files failed in %s (%v) — falling back to a filesystem walk, which ignores .gitignore", repoPath, err)
+		return nil, false
+	}
+
+	var files []string
+	for _, name := range strings.Split(string(out), "\x00") {
+		if name == "" {
+			continue
+		}
+		files = append(files, filepath.Join(repoPath, name))
+	}
+	return files, true
 }
 
 // gitShowBytes reads a blob by revision spec (`:path` = index,

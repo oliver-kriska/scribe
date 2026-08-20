@@ -44,8 +44,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install pandoc
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends pandoc
+      # Pinned, not apt: --check compares the committed HTML byte-for-byte, and
+      # Ubuntu's packaged pandoc is both older than the flags this script uses
+      # and free to change under us. The version here must match PANDOC_PIN in
+      # site/build-docs.sh.
+      - name: Install pandoc 3.10.2
+        run: |
+          curl -fsSL -o /tmp/pandoc.deb \
+            https://github.com/jgm/pandoc/releases/download/3.10.2/pandoc-3.10.2-1-amd64.deb
+          sudo dpkg -i /tmp/pandoc.deb
+          pandoc --version | head -1
 
       - name: Check generated HTML matches the markdown
         run: ./site/build-docs.sh --check

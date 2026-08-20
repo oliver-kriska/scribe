@@ -249,6 +249,14 @@ func writeRunRecord(cmdPath string, started time.Time, runErr error) {
 
 	status := "ok"
 	errMsg := ""
+	degraded, degradedMsgs := degradedPhases()
+	if runErr == nil && len(degraded) > 0 {
+		// The command completed and exits 0 — cron resilience is the
+		// point — but at least one phase failed and was logged over.
+		// Without this, `scribe doctor` cannot tell that run apart from
+		// a clean one.
+		status = "degraded"
+	}
 	if runErr != nil {
 		status = "error"
 		// Redact BEFORE truncating: an error text is as likely to carry a
@@ -273,6 +281,10 @@ func writeRunRecord(cmdPath string, started time.Time, runErr error) {
 	}
 	if errMsg != "" {
 		record["error"] = errMsg
+	}
+	if len(degraded) > 0 {
+		record["degraded"] = degraded
+		record["degraded_errors"] = degradedMsgs
 	}
 	maps.Copy(record, runStats)
 

@@ -481,7 +481,7 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 			continue
 		}
 		if r.err != nil {
-			logMsg("sync", "%s: %s failed: %v", label, r.sessionID, r.err)
+			logPhaseDegraded("sync", "session mining", "%s: %s failed: %v", label, r.sessionID, r.err)
 			continue
 		}
 
@@ -494,11 +494,11 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 		if sinceCheckpoint >= checkpointInterval && totalMined < len(sessionIDs) {
 			sinceCheckpoint = 0
 			if err := s.rebuildAndReindex(root); err != nil {
-				logMsg("sync", "checkpoint reindex error: %v", err)
+				logPhaseFailure("sync", "checkpoint reindex", err)
 			}
 			committed, err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, totalMined))
 			if err != nil {
-				logMsg("sync", "checkpoint commit error: %v", err)
+				logPhaseFailure("sync", "checkpoint commit", err)
 			} else if committed {
 				// Only attribute the batch when a commit actually
 				// happened — on the debounce/nothing-staged paths the
@@ -532,7 +532,7 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 		}
 		prompt, err := loadPrompt(promptName, vars)
 		if err != nil {
-			logMsg("sync", "load prompt error: %v", err)
+			logPhaseFailure("sync", "session mining", err)
 			continue
 		}
 
@@ -543,7 +543,7 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 				logMsg("sync", "%s: rate limited — will resume next run (%d mined)", label, totalMined)
 				return totalMined, true
 			}
-			logMsg("sync", "%s: %s failed: %v", label, sid, err)
+			logPhaseDegraded("sync", "session mining", "%s: %s failed: %v", label, sid, err)
 			continue
 		}
 
@@ -554,11 +554,11 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 		// Checkpoint.
 		if totalMined%checkpointInterval == 0 && i < len(sessionIDs)-1 {
 			if err := s.rebuildAndReindex(root); err != nil {
-				logMsg("sync", "checkpoint reindex error: %v", err)
+				logPhaseFailure("sync", "checkpoint reindex", err)
 			}
 			committed, err := s.commitAndPush(root, fmt.Sprintf("sync: %s checkpoint (%d sessions)", label, totalMined))
 			if err != nil {
-				logMsg("sync", "checkpoint commit error: %v", err)
+				logPhaseFailure("sync", "checkpoint commit", err)
 			} else if committed {
 				recordBatchOutcome(root, label, batchIDs)
 				batchIDs = nil

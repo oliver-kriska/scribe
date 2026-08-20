@@ -156,7 +156,7 @@ func (s *SyncCmd) Run() error {
 	produced := counters.extracted > 0 || counters.sessionsScanned > 0 || counters.absorbed > 0
 	if !s.DryRun && (produced || (pulledRemote && !pulledReindexed)) {
 		if err := s.rebuildAndReindex(root); err != nil {
-			logMsg("sync", "reindex error: %v", err)
+			logPhaseFailure("sync", "reindex", err)
 		}
 	}
 
@@ -221,7 +221,7 @@ func (s *SyncCmd) pullPhase(root string, cfg *ScribeConfig) (pulledRemote, pulle
 	// those checks run — or every member re-creates pages the pull just
 	// delivered.
 	if err := s.rebuildAndReindex(root); err != nil {
-		logMsg("sync", "post-pull reindex error: %v", err)
+		logPhaseFailure("sync", "post-pull reindex", err)
 		return true, false
 	}
 	return true, true
@@ -277,14 +277,14 @@ func (s *SyncCmd) ingestPhase(root string) {
 	// conversions land in raw/inbox/.failed/<slug>/ with err.log so the user
 	// can inspect without losing the source file.
 	if drained, err := drainFileInbox(root); err != nil {
-		logMsg("sync", "file-inbox drain error: %v", err)
+		logPhaseFailure("sync", "file-inbox drain", err)
 	} else if drained > 0 {
 		logMsg("sync", "%d file(s) ingested from inbox", drained)
 	}
 
 	// Phase 1.6: Drain ingest inbox (queued URLs → raw/articles/).
 	if err := drainInbox(root, 0, false); err != nil {
-		logMsg("sync", "inbox drain error: %v", err)
+		logPhaseFailure("sync", "url-inbox drain", err)
 	}
 
 	// Phase 1.7: Contextualize newly-ingested raw articles so qmd's embedding
@@ -295,7 +295,7 @@ func (s *SyncCmd) ingestPhase(root string) {
 	cx := loadConfig(root).Absorb.Contextualize
 	if cx.Enabled != nil && *cx.Enabled {
 		if err := contextualizeRawArticles(root, cx.MaxPerRun, cx.Model, false, false); err != nil {
-			logMsg("sync", "contextualize error: %v", err)
+			logPhaseFailure("sync", "contextualize", err)
 		}
 	}
 }
@@ -308,7 +308,7 @@ func (s *SyncCmd) extractPhase(root string, manifest *Manifest, cfg *ScribeConfi
 	// Phase 2: Extract changed projects.
 	extracted, err := s.extract(root, manifest)
 	if err != nil {
-		logMsg("sync", "extraction error: %v", err)
+		logPhaseFailure("sync", "project extraction", err)
 	}
 	counters.extracted = extracted
 
@@ -316,7 +316,7 @@ func (s *SyncCmd) extractPhase(root string, manifest *Manifest, cfg *ScribeConfi
 	if s.Sessions {
 		mined, err := s.mineSessions(root)
 		if err != nil {
-			logMsg("sync", "session mining error: %v", err)
+			logPhaseFailure("sync", "session mining", err)
 		}
 		counters.sessionsScanned = mined
 	}
@@ -329,7 +329,7 @@ func (s *SyncCmd) extractPhase(root string, manifest *Manifest, cfg *ScribeConfi
 	if s.Sessions && cfg.Codex.Mine {
 		cmined, cerr := s.mineCodexSessions(root, cfg)
 		if cerr != nil {
-			logMsg("sync", "codex session mining error: %v", cerr)
+			logPhaseFailure("sync", "codex session mining", cerr)
 		}
 		counters.sessionsScanned += cmined
 	}
@@ -337,7 +337,7 @@ func (s *SyncCmd) extractPhase(root string, manifest *Manifest, cfg *ScribeConfi
 	// Phase 2.6: Absorb raw articles.
 	absorbed, err := s.absorbRaw(root)
 	if err != nil {
-		logMsg("sync", "absorb error: %v", err)
+		logPhaseFailure("sync", "absorb", err)
 	}
 	counters.absorbed = absorbed
 }
@@ -352,7 +352,7 @@ func (s *SyncCmd) commitPhase(root string, counters syncCounters) {
 	}
 	msg := fmt.Sprintf("sync: auto-extract %s (%d projects)", time.Now().Format("2006-01-02"), counters.extracted)
 	if !gitAddWiki(root) {
-		logMsg("sync", "commit skipped: a detected secret could not be held back — resolve and rerun")
+		logPhaseDegraded("sync", "commit", "commit skipped: a detected secret could not be held back — resolve and rerun")
 		return
 	}
 	// If gitAddWiki staged nothing (dirty files all outside staging scope),
@@ -361,13 +361,13 @@ func (s *SyncCmd) commitPhase(root string, counters syncCounters) {
 		return
 	}
 	if err := gitCommit(root, msg); err != nil {
-		logMsg("sync", "commit failed: %v", err)
+		logPhaseFailure("sync", "commit", err)
 		return
 	}
 	logMsg("sync", "committed")
 	if gitRemoteURL(root) != "" {
 		if err := gitPush(root); err != nil {
-			logMsg("sync", "push failed: %v", err)
+			logPhaseFailure("sync", "push", err)
 		} else {
 			logMsg("sync", "pushed")
 		}
@@ -420,7 +420,7 @@ func (s *SyncCmd) commitAndPush(root, message string) (bool, error) {
 		return false, nil
 	}
 	if !gitAddWiki(root) {
-		logMsg("sync", "commit skipped: a detected secret could not be held back — resolve and rerun")
+		logPhaseDegraded("sync", "commit", "commit skipped: a detected secret could not be held back — resolve and rerun")
 		return false, nil
 	}
 	// After staging, verify that the scope we stage (wiki dirs + log.md etc)
@@ -436,7 +436,7 @@ func (s *SyncCmd) commitAndPush(root, message string) (bool, error) {
 	logMsg("sync", "committed")
 	if gitRemoteURL(root) != "" {
 		if err := gitPush(root); err != nil {
-			logMsg("sync", "push failed (offline?)")
+			logPhaseDegraded("sync", "push", "push failed (offline?)")
 		} else {
 			logMsg("sync", "pushed")
 		}

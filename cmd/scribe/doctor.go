@@ -1174,7 +1174,7 @@ type runRecord struct {
 }
 
 // loadRunRecords scans output/runs/*.jsonl and returns, for each command key,
-// the newest "ok" timestamp. Keys are either the bare command path ("sync")
+// the newest "ok"-or-"degraded" timestamp. Keys are either the bare command path ("sync")
 // or "<command> <flag>" ("sync --sessions") so the freshness specs can
 // distinguish the two modes that share the same command path.
 //
@@ -1205,7 +1205,11 @@ func loadRunRecords(root string) (map[string]time.Time, error) {
 			if err := json.Unmarshal(scanner.Bytes(), &r); err != nil {
 				continue
 			}
-			if r.Status != "ok" || r.Command == "" {
+			// "degraded" means the command ran and exited 0 with a phase
+			// failure logged over. For freshness the question is only
+			// whether the job fired, so it counts exactly like "ok" —
+			// the failure itself surfaces in the errors section.
+			if (r.Status != "ok" && r.Status != "degraded") || r.Command == "" {
 				continue
 			}
 			ts, err := time.Parse(time.RFC3339, r.Timestamp)
@@ -1258,8 +1262,10 @@ type runError struct {
 	Args []string
 }
 
-// loadRunErrors scans output/runs/*.jsonl and returns the newest `status:"error"`
-// record per command key within `since`. A command is keyed by its base command
+// loadRunErrors scans output/runs/*.jsonl and returns the newest failing
+// record per command key within `since` — `status:"error"` (the command
+// itself failed) and `status:"degraded"` (it exited 0 with a phase failure
+// logged over; the message is synthesized from the recorded phase names). A command is keyed by its base command
 // name (e.g. "sync", "capture") so a cron running the same command every hour
 // folds into one error line, not dozens.
 func loadRunErrors(root string, since time.Time) (map[string]runError, error) {
@@ -1284,17 +1290,37 @@ func loadRunErrors(root string, since time.Time) (map[string]runError, error) {
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		for scanner.Scan() {
 			var r struct {
-				Command   string   `json:"command"`
-				Status    string   `json:"status"`
-				Timestamp string   `json:"timestamp"`
-				Error     string   `json:"error"`
-				Args      []string `json:"args"`
+				Command   string            `json:"command"`
+				Status    string            `json:"status"`
+				Timestamp string            `json:"timestamp"`
+				Error     string            `json:"error"`
+				Args      []string          `json:"args"`
+				Degraded  []string          `json:"degraded"`
+				DegErrors map[string]string `json:"degraded_errors"`
 			}
 			if err := json.Unmarshal(scanner.Bytes(), &r); err != nil {
 				continue
 			}
-			if r.Status != "error" || r.Command == "" {
+			if r.Status != "error" && r.Status != "degraded" {
 				continue
+			}
+			if r.Command == "" {
+				continue
+			}
+			if r.Status == "degraded" {
+				// The process exited 0; the failure is in named phases.
+				// Surface it here or a partial failure is invisible on
+				// every doctor surface.
+				if len(r.Degraded) == 0 {
+					// Only reachable from a hand-edited record; without
+					// this the message renders as "partial failure in ".
+					r.Error = "partial failure (phases not recorded)"
+				} else {
+					r.Error = "partial failure in " + strings.Join(r.Degraded, ", ")
+					if msg, ok := r.DegErrors[r.Degraded[0]]; ok && msg != "" {
+						r.Error += ": " + msg
+					}
+				}
 			}
 			ts, err := time.Parse(time.RFC3339, r.Timestamp)
 			if err != nil || ts.Before(since) {

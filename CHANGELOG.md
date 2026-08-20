@@ -4,7 +4,34 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Changed
+
+- **Run records distinguish a partial failure from a clean run.** `sync`
+  deliberately logs and continues when one phase fails, so a run where session
+  mining or absorb died was recorded as `ok` and looked identical afterwards to
+  a run where nothing went wrong. Such a run is now recorded as `degraded`, with
+  the failing phase names and their first error, across every seam that logs and
+  continues: reindex, ingest, project extraction, session mining, absorb, commit
+  (including a commit the secret gate held back), and push. The process still
+  exits 0 — cron resilience is the point — and the readers were updated in the
+  same change: `doctor` freshness and the dream hot/full cycle count a degraded
+  run as proof the job fired, while `doctor --section errors` and `scribe status`
+  surface the partial failure that was previously invisible.
+
 ### Fixed
+
+- **`sync` no longer skips a project forever because of its `.gitignore`.**
+  On a project's first extraction there is no old SHA to diff against, so
+  `gitChangedFiles` fell back to a filesystem walk that skipped only a fixed
+  directory list and never consulted `.gitignore`. A gitignored dependency tree
+  (`.venv/**/site-packages` is full of `*.md` and `*.txt`, both scanned) inflated
+  the count until it tripped `sync.max_extract_files`, and `status` then re-held
+  the project on every run — a newly approved project never extracted without
+  manual intervention. First extraction now lists files the way git sees them
+  (`ls-files --cached --others --exclude-standard`), falling back to the walk
+  only for a directory that is not a git repository. Two real repositories in
+  the report counted 287 and 887 files; honoring ignores they are 38 and 24.
+  ([#86](https://github.com/oliver-kriska/scribe/issues/86))
 
 - **Multi-writer KBs no longer wedge on the session-mining ledgers.**
   `wiki/_sessions_log.json` and `wiki/_codex_sessions_log.json` are committed
@@ -21,6 +48,14 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 - `wiki/_hot.md` is registered as derived-regenerable. It is rebuilt wholesale
   on every sync, so a conflict on it carried no information yet still aborted
   the rebase.
+
+### Security
+
+- **Go toolchain bumped to 1.26.6**, closing two standard-library advisories
+  `govulncheck` reported against the previous 1.26.5 pin: `GO-2026-6090`
+  (unbounded post-handshake messages in `crypto/tls`) and `GO-2026-5972`
+  (missing recursion-depth limit in `encoding/asn1`). Both were reachable from
+  `scribe` — the traces run through `kong.FatalIfErrorf` and `setupLogger`.
 
 ## [0.5.0] — 2026-08-11
 

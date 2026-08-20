@@ -21,6 +21,17 @@ CHECK=0
 
 command -v pandoc >/dev/null || { echo "pandoc not found — brew install pandoc" >&2; exit 1; }
 
+# The committed HTML is compared byte-for-byte in --check mode, so the renderer
+# is part of the contract: two pandoc versions produce different markup from the
+# same markdown and the check would fail for a reason nobody could see. CI
+# installs this exact version (see .github/workflows/ci.yml); keep the two in
+# lockstep, and bump both in the same commit as the regenerated HTML.
+PANDOC_PIN="3.10.2"
+PANDOC_HAVE="$(pandoc --version | head -1 | awk '{print $2}')"
+if [[ "$PANDOC_HAVE" != "$PANDOC_PIN" ]]; then
+  echo "warning: pandoc $PANDOC_HAVE, pinned $PANDOC_PIN — output may differ from CI" >&2
+fi
+
 # slug | source .md | kicker | <title> (page name only) | meta description
 DOCS=$(cat <<'LIST'
 setup|setup.md|Runbook|Setup runbook|Zero-to-running setup for scribe: personal, Ollama, hosted provider, team, several machines, and Linux scheduling.
@@ -54,6 +65,8 @@ while IFS='|' read -r slug md kicker title desc; do
   if [[ $CHECK -eq 1 ]]; then
     if ! printf '%s\n' "$rendered" | diff -q - "$out" >/dev/null 2>&1; then
       echo "STALE: $out is out of date — run ./site/build-docs.sh" >&2
+      [[ "$PANDOC_HAVE" != "$PANDOC_PIN" ]] && \
+        echo "       (rendered with pandoc $PANDOC_HAVE; the committed HTML was built with $PANDOC_PIN — mismatched versions alone can cause this)" >&2
       status=1
     else
       echo "ok  $out"

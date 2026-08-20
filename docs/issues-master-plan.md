@@ -1,7 +1,31 @@
-# Open-issues master plan (2026-07-02)
+# Open-issues master plan (2026-07-02) — SUPERSEDED
 
-Backlog sweep of all 23 open GitHub issues: triage, priority order, batching, and the
-merge/release strategy. Per-issue deep plans live in `docs/issue-NN-*-plan.md`.
+> **This plan is finished. Do not implement from it.**
+>
+> **Status as of 2026-08-20.** Every issue in the "Implementable now" table below
+> shipped and is closed as completed: #42, #19, #5, #28, #21, #22, #8, #23, #24, #26,
+> plus the umbrellas #4 and #6. #3 (branch protection) closed as *not planned*, per
+> the recorded Scorecard posture decision.
+>
+> Seven issues are open, and only one of them is new work — the rest are the same
+> parked items this plan already declined to touch:
+>
+> | Issue | State |
+> | ----- | ----- |
+> | #86 | sync skips projects on first extraction (`.gitignore` ignored) — **the only active bug** |
+> | #40 | OKF export — parked, still gated on OKF adoption + a consumer |
+> | #14 | `scribe neighbors` — parked by maintainer verdict |
+> | #12 | tracking issue for accepted edge cases — no action |
+> | #11 | review-branch mode — parked product decision |
+> | #10 | verification/freshness stamps — parked product decision |
+> | #7  | TUI — parked (verdict 2026-06-11: not now) |
+>
+> Treat everything below as a historical record of how that backlog was triaged and
+> merged, not as a queue. `gh issue list --state open` is the live one.
+
+Backlog sweep of all 23 open GitHub issues *as they stood on 2026-07-02*: triage,
+priority order, batching, and the merge/release strategy. Per-issue deep plans live in
+`docs/issue-NN-*-plan.md`.
 
 Base commit: `49bfd53`.
 

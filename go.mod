@@ -6,7 +6,7 @@ module github.com/oliver-kriska/scribe
 // (crypto/x509). CI reads this via setup-go's `go-version-file: go.mod`;
 // GOTOOLCHAIN=auto fetches it for local and release-container builds. Bump
 // here and everything follows.
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/alecthomas/kong v1.16.1

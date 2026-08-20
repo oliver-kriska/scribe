@@ -133,7 +133,11 @@ func dreamRunHistory(root string) (lastFull, lastHot time.Time) {
 			if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
 				continue
 			}
-			if s, _ := row["status"].(string); s != "ok" {
+			// "degraded" means the run happened and exited 0 with a phase
+			// failure logged over (see run_outcome.go). For advancing the
+			// hot/full cycle the question is whether the dream ran, so it
+			// counts like "ok" — matching doctor's freshness reader.
+			if s, _ := row["status"].(string); s != "ok" && s != "degraded" {
 				continue
 			}
 			if c, _ := row["command"].(string); c != "dream" {

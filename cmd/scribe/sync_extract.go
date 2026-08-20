@@ -125,7 +125,7 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 					mu.Unlock()
 					return err
 				}
-				logMsg("sync", " [%s] extraction failed: %v", entry.Name, err)
+				logPhaseDegraded("sync", "project extraction", " [%s] extraction failed: %v", entry.Name, err)
 				return nil
 			}
 
