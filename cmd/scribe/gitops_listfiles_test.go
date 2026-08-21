@@ -118,6 +118,47 @@ func TestGitChangedFiles_FirstExtractionIgnoresGitignored(t *testing.T) {
 	}
 }
 
+// A linked worktree's .git is a regular file, not a directory, so a
+// hasGit stat reads it as "not a repo" and drops first extraction back to
+// findFiles — reinstating this bug for exactly the worktree entries
+// scripts/projects.json still carries from before discovery folded them
+// into their main checkout.
+func TestGitListFiles_LinkedWorktreeIsStillAGitRepo(t *testing.T) {
+	repo := buildIgnoreRepo(t)
+	wt := filepath.Join(t.TempDir(), "wt")
+	gitRun(t, repo, "worktree", "add", "-q", "-b", "probe", wt)
+
+	if hasGit(wt) {
+		t.Fatal("fixture no longer reproduces: a linked worktree's .git should be a file, not a directory")
+	}
+
+	// The worktree only carries the tracked files; give it its own
+	// ignored tree and its own uncommitted doc so both halves of the
+	// rule are exercised where the checkout actually is.
+	writeTestArticle(t, wt, ".venv/lib/site-packages/pkg/README.md", "x")
+	writeTestArticle(t, wt, "docs/new-in-worktree.md", "# fresh")
+
+	got, ok := gitListFiles(wt, extractScanPatterns)
+	if !ok {
+		t.Fatalf("linked worktree should be listable by git")
+	}
+
+	rel := make([]string, 0, len(got))
+	for _, f := range got {
+		r, err := filepath.Rel(wt, f)
+		if err != nil {
+			t.Fatalf("Rel(%q): %v", f, err)
+		}
+		rel = append(rel, filepath.ToSlash(r))
+	}
+	slices.Sort(rel)
+
+	want := []string{"README.md", "docs/design.md", "docs/new-in-worktree.md", "notes.txt"}
+	if !slices.Equal(rel, want) {
+		t.Fatalf("gitListFiles in worktree = %v, want %v", rel, want)
+	}
+}
+
 func TestGitListFiles_NonRepoFallsBack(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte("x"), 0o644); err != nil {
