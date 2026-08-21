@@ -19,8 +19,9 @@ Be selective. Large sessions contain mostly routine code changes. Extract only h
 Write or update wiki articles in {{KB_DIR}} following frontmatter conventions.
 Set sources to include session:{{SESSION_ID}}.
 For learnings and decisions, append to rolling memory files (projects/{name}/learnings.md, decisions-log.md).
-Update wiki/_sessions_log.json — add the processed session ID to the 'processed' object with timestamp, project, and summary.
 Rebuild _index.md and _backlinks.json.
+
+Do NOT touch wiki/_sessions_log.json — scribe records processed sessions itself after this run.
 
 Do NOT git commit.
 You are running non-interactively. Never ask questions — decide and act.

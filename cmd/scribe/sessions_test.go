@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"os"
@@ -521,5 +522,68 @@ func TestQuickScoreSession(t *testing.T) {
 
 	if got := quickScoreSession(db, "ghost"); got != 0 {
 		t.Errorf("unknown session score = %d, want 0", got)
+	}
+}
+
+// TestRecordSessionProcessed pins the legacy-path fix: Go itself records a
+// mined session in wiki/_sessions_log.json (previously delegated to the
+// model's own file write, which raced across parallel claude -p processes
+// and silently lost updates). Records must land and be idempotent.
+func TestRecordSessionProcessed(t *testing.T) {
+	root := sessionsTestKB(t, "")
+	if err := os.MkdirAll(filepath.Join(root, "wiki"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	recordSessionProcessed(root, "sess-alpha")
+	recordSessionProcessed(root, "sess-beta")
+	recordSessionProcessed(root, "sess-alpha") // idempotent re-record must not duplicate
+
+	raw, err := os.ReadFile(filepath.Join(root, "wiki", "_sessions_log.json"))
+	if err != nil {
+		t.Fatalf("sessions log not written: %v", err)
+	}
+	var logFile struct {
+		Processed map[string]string `json:"processed"`
+	}
+	if err := json.Unmarshal(raw, &logFile); err != nil {
+		t.Fatalf("parse _sessions_log.json: %v\n%s", err, raw)
+	}
+	if _, ok := logFile.Processed["sess-alpha"]; !ok {
+		t.Errorf("sess-alpha not recorded: %s", raw)
+	}
+	if _, ok := logFile.Processed["sess-beta"]; !ok {
+		t.Errorf("sess-beta not recorded: %s", raw)
+	}
+	if len(logFile.Processed) != 2 {
+		t.Errorf("re-recording sess-alpha should be idempotent; got %d entries: %s", len(logFile.Processed), raw)
+	}
+}
+
+// TestUpdateJSONFileRefusesCorruptFile pins the data-loss guard: a state file
+// that exists but won't parse must abort the update, not get silently reset to
+// only the new entry (which for _sessions_log.json would wipe all history).
+func TestUpdateJSONFileRefusesCorruptFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	if err := updateJSONFile(path, func(d map[string]any) { d["a"] = "1" }); err != nil {
+		t.Fatalf("valid update failed: %v", err)
+	}
+
+	corrupt := []byte(`{"a": "1"`) // truncated JSON (simulates a partial write)
+	if err := os.WriteFile(path, corrupt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := updateJSONFile(path, func(d map[string]any) { d["b"] = "2" }); err == nil {
+		t.Fatal("expected updateJSONFile to refuse a corrupt file, got nil error")
+	}
+	if raw, _ := os.ReadFile(path); !bytes.Equal(raw, corrupt) {
+		t.Errorf("corrupt file was overwritten (data loss): %q", raw)
+	}
+
+	// A missing file is still a legitimate empty start, not an error.
+	if err := updateJSONFile(filepath.Join(dir, "fresh.json"), func(d map[string]any) { d["x"] = "y" }); err != nil {
+		t.Fatalf("missing file should initialize cleanly: %v", err)
 	}
 }
