@@ -66,11 +66,12 @@ func gitChangedFiles(repoPath, oldSHA string, patterns []string) []string {
 // .gitignore-aware counterpart to findFiles, used for a project's first
 // extraction where there is no old SHA to diff against.
 //
-// Returns ok=false when repoPath has no `.git` directory or git fails, so
-// the caller can fall back to a plain filesystem walk. An empty result with
-// ok=true is meaningful: the repo genuinely has no matching files.
+// Returns ok=false when repoPath is not inside a git work tree, or git
+// fails, so the caller can fall back to a plain filesystem walk. An empty
+// result with ok=true is meaningful: the repo genuinely has no matching
+// files.
 func gitListFiles(repoPath string, patterns []string) ([]string, bool) {
-	if !hasGit(repoPath) {
+	if !insideGitWorkTree(repoPath) {
 		return nil, false
 	}
 
@@ -83,8 +84,9 @@ func gitListFiles(repoPath string, patterns []string) ([]string, bool) {
 	// output; NUL separation keeps them byte-exact.
 	out, err := runCmdRaw("", "git", args...)
 	if err != nil {
-		// hasGit said yes, so this is a real git failure, not a plain
-		// directory — dubious-ownership under cron, a corrupt index. The
+		// The work-tree probe said yes, so this is a real git failure,
+		// not a plain directory — dubious-ownership under cron, a
+		// corrupt index. The
 		// caller silently falls back to the filesystem walk, which
 		// reintroduces the #86 overcount; say so, or it is undiagnosable.
 		logMsg("git", "git ls-files failed in %s (%v) — falling back to a filesystem walk, which ignores .gitignore", repoPath, err)
@@ -482,4 +484,17 @@ func findFiles(root string, patterns []string) []string {
 // hasGit returns true if path contains a .git directory.
 func hasGit(path string) bool {
 	return dirExists(filepath.Join(path, ".git"))
+}
+
+// insideGitWorkTree reports whether git treats path as part of a work
+// tree. Deliberately broader than hasGit, which stats for a .git
+// *directory*: a linked worktree's .git is a regular file and a
+// subdirectory of a checkout has no .git at all, yet git lists both
+// correctly. Worktree paths do reach extraction — discovery folds them
+// into the main checkout now, but scripts/projects.json still carries
+// entries enrolled before it did — and a false negative there is not
+// harmless: it silently reinstates the issue #86 filesystem walk that
+// counts gitignored dependency trees.
+func insideGitWorkTree(path string) bool {
+	return runCmd(path, "git", "rev-parse", "--is-inside-work-tree") == "true"
 }
