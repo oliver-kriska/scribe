@@ -1396,11 +1396,14 @@ func TestTargetIsFreshForDecay(t *testing.T) {
 	root := t.TempDir()
 	today := time.Now().Format("2006-01-02")
 	stale := time.Now().AddDate(0, 0, -decayStaleDays-30).Format("2006-01-02")
-	// One day inside the window is unambiguously fresh; one day past it is
-	// unambiguously stale. The exact cutoff day is intentionally untested —
-	// it depends on time.Now()'s time-of-day, and the guard inherits that
-	// fuzz from dreamStaleCandidates on purpose (see targetIsFreshForDecay).
-	justInside := time.Now().AddDate(0, 0, -decayStaleDays+1).Format("2006-01-02")
+	// Both fixtures sit comfortably inside/outside the window, never at its
+	// edge. The exact cutoff day is intentionally untested: the guard parses
+	// `updated:` as UTC midnight but derives its cutoff from local time.Now(),
+	// so there's a sub-day (up to ~1 day) UTC-vs-local skew it inherits from
+	// dreamStaleCandidates on purpose (see targetIsFreshForDecay). Asserting
+	// at now-decayStaleDays+1 made this test flip on certain calendar days;
+	// +10 clears the skew with margin to spare.
+	wellInside := time.Now().AddDate(0, 0, -decayStaleDays+10).Format("2006-01-02")
 
 	cases := []struct {
 		name    string
@@ -1409,7 +1412,7 @@ func TestTargetIsFreshForDecay(t *testing.T) {
 	}{
 		{"updated-today", today, true},
 		{"updated-90d-ago", stale, false},
-		{"just-inside-window", justInside, true},
+		{"well-inside-window", wellInside, true},
 		{"no-updated-field", "", false},
 		{"malformed-date", "not-a-date", false},
 	}
