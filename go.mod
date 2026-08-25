@@ -10,7 +10,7 @@ go 1.26.6
 
 require (
 	github.com/alecthomas/kong v1.16.1
-	github.com/mattn/go-sqlite3 v1.14.49
+	github.com/mattn/go-sqlite3 v1.14.50
 	gopkg.in/yaml.v3 v3.0.1
 )
 
