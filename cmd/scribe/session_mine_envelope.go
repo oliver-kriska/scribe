@@ -142,7 +142,7 @@ func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, pr
 		// Empty / unreadable transcript: record the session as
 		// processed via a direct meta apply so the next run doesn't
 		// re-queue it. Skip the LLM entirely.
-		_ = applyMetaAction(root, MetaAction{Op: "sessions_log_append", SessionID: sessionID}, ApplyOptions{})
+		recordSessionProcessed(root, sessionID)
 		return false, nil
 	}
 	projectPath := lookupSessionProjectPath(dbPath, sessionID)
@@ -184,7 +184,7 @@ func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, pr
 	// idempotent — re-recording an existing entry just updates the
 	// timestamp.
 	if !envelopeIncludesSessionLog(env, sessionID) {
-		_ = applyMetaAction(root, MetaAction{Op: "sessions_log_append", SessionID: sessionID}, ApplyOptions{})
+		recordSessionProcessed(root, sessionID)
 	}
 	return false, nil
 }
