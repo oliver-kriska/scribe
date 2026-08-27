@@ -2,7 +2,16 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
-## [Unreleased]
+## [0.5.1] — 2026-08-27
+
+A reliability patch for session mining. The headline: the processed-mark for a
+mined session was still written by the model itself, raced across parallel
+extractions, and silently lost — so the same sessions were re-mined on every
+cron fire at full LLM cost. Go owns that write now. Also in this release: the
+linked-worktree first-extraction fix, semantic merges for the multi-writer
+session ledgers, and run records that finally distinguish a partial failure
+from a clean run. No new config, commands, or scheduled jobs — upgrade is a
+plain binary swap.
 
 ### Changed
 
@@ -37,6 +46,26 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Fixed
 
+- **Session mining no longer re-mines already-processed sessions.** Both
+  session-extract prompts told the mined model to update
+  `wiki/_sessions_log.json` itself, and `sync.parallel_extractions` (default 3)
+  ran those `claude -p` subprocesses concurrently — N uncoordinated
+  read-modify-writes of one JSON file. On a live KB the `processed` set never
+  advanced: every already-mined session stayed in the candidate pool and was
+  re-mined on the next cron fire, at full LLM cost. Go now records the
+  processed-mark itself after each successful mine, under the same in-process
+  lock as every other writer to the file; both prompts drop the instruction,
+  and the tool-granting `claude -p` invocation carries a
+  `--disallowedTools "Edit(wiki/_sessions_log.json)"` deny — measured against
+  Claude Code 2.1.236, not assumed: it blocks the Write tool and a Bash
+  redirect at that path, and stays file-scoped so sibling wiki writes still
+  land. Two hardenings ride along: a state file that exists but won't parse
+  now aborts the update instead of silently resetting the whole processed set
+  to the one new entry, and a failed processed-mark — in the sessions lane and
+  the codex lane both — records the run degraded, because the unit of work
+  will be repeated. ([#89](https://github.com/oliver-kriska/scribe/issues/89),
+  [#90](https://github.com/oliver-kriska/scribe/pull/90))
+
 - **`sync` no longer skips a project forever because of its `.gitignore`.**
   On a project's first extraction there is no old SHA to diff against, so
   `gitChangedFiles` fell back to a filesystem walk that skipped only a fixed
@@ -49,6 +78,18 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   only for a directory that is not a git repository. Two real repositories in
   the report counted 287 and 887 files; honoring ignores they are 38 and 24.
   ([#86](https://github.com/oliver-kriska/scribe/issues/86))
+
+- **A linked worktree's first extraction asks git too.** The #86 fix gated its
+  git-aware file listing on `hasGit`, which stats for a `.git` *directory* — but
+  a linked worktree's `.git` is a regular file, so exactly those projects fell
+  back to the old filesystem walk: the gitignored dependency tree was counted
+  again, `sync.max_extract_files` tripped again, and `status` re-held the
+  project on every run, silently. The gate is now
+  `git rev-parse --is-inside-work-tree`, the question actually being asked —
+  true for a repo root, a linked worktree, and a subdirectory of either, which
+  also stops a monorepo subdirectory falling back to the walk. The stat-based
+  `hasGit` keeps its other call sites: they ask "may I write git state here", a
+  different question. ([#88](https://github.com/oliver-kriska/scribe/pull/88))
 
 - **Multi-writer KBs no longer wedge on the session-mining ledgers.**
   `wiki/_sessions_log.json` and `wiki/_codex_sessions_log.json` are committed
