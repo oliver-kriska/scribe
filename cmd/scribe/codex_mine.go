@@ -80,14 +80,14 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 			// Empty/unreadable: record so we don't re-evaluate it
 			// every run. A resumed session writes a new rollout with
 			// a fresh id, so this never strands real content.
-			_ = markCodexProcessed(root, c.id, c.cwd, "empty or unreadable transcript")
+			recordCodexProcessed(root, c.id, c.cwd, "empty or unreadable transcript")
 			continue
 		}
 
 		rendered := renderTranscriptForPrompt(turns, cfg.SessionMine.TranscriptMaxChars)
 		score := scoreText(keywords, weights, rendered)
 		if score < cc.MinScore {
-			_ = markCodexProcessed(root, c.id, c.cwd,
+			recordCodexProcessed(root, c.id, c.cwd,
 				fmt.Sprintf("below MinScore (%d < %d)", score, cc.MinScore))
 			continue
 		}
@@ -127,7 +127,7 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 		} else {
 			logMsg("sync", "codex envelope %s: applied %d action(s)", c.id, len(res.Applied))
 		}
-		_ = markCodexProcessed(root, c.id, c.cwd, "")
+		recordCodexProcessed(root, c.id, c.cwd, "")
 		mined++
 	}
 

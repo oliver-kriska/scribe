@@ -59,3 +59,17 @@ func markCodexProcessed(root, id, cwd, reason string) error {
 		processed[id] = rec
 	})
 }
+
+// recordCodexProcessed is markCodexProcessed with the error reported
+// as degraded instead of discarded: an unrecorded session is
+// re-scanned next run — re-scored for a skip, re-mined at full LLM
+// cost after a successful mine — so the seam repeats a unit of work
+// while the run would otherwise record ok. Phase groups every write
+// to wiki/_codex_sessions_log.json, mirroring "session log update"
+// for wiki/_sessions_log.json.
+func recordCodexProcessed(root, id, cwd, reason string) {
+	if err := markCodexProcessed(root, id, cwd, reason); err != nil {
+		logPhaseDegraded("sync", "codex log update",
+			"could not record codex session %s as processed (it will be re-scanned): %v", id, err)
+	}
+}
