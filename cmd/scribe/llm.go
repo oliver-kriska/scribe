@@ -199,7 +199,7 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		default:
 			entry.ErrKind = "other"
 		}
-		return tailLines(combined, 15), fmt.Errorf("claude -p: %w", err)
+		return tailLines(combined, 15), fmt.Errorf("claude -p: %w\n%s", err, tailLines(combined, 15))
 	}
 
 	env, ok := parseClaudeResult(stdoutStr)
