@@ -560,3 +560,78 @@ func TestRunHotDream_DryRunMakesNoLLMCallsOrCommits(t *testing.T) {
 		t.Errorf("git log changed under --dry-run: before=%q after=%q", beforeLog, afterLog)
 	}
 }
+
+// An anthropic op with no model anywhere in the config resolved to
+// `--model ""`, which the Claude CLI rejects with
+// `API Error: 400 model: String should have at least 1 character`.
+// The KB ships `llm: {provider: anthropic, model: ""}` and no `dream:`
+// section, so every dream --hot run failed on it. inheritLLMOpBase now
+// backstops the model the same way it already backstops the provider.
+func TestInheritLLMOpBase_AnthropicNeverYieldsEmptyModel(t *testing.T) {
+	ops := map[string]func(LLMConfig) string{
+		"dream": func(llm LLMConfig) string {
+			c := DreamConfig{}
+			applyDreamDefaults(&c, llm)
+			return c.Model
+		},
+		"assess": func(llm LLMConfig) string {
+			c := AssessConfig{}
+			applyAssessDefaults(&c, llm)
+			return c.Model
+		},
+		"deep_ingest": func(llm LLMConfig) string {
+			c := DeepIngestConfig{}
+			applyDeepIngestDefaults(&c, llm)
+			return c.Model
+		},
+		"extract": func(llm LLMConfig) string {
+			c := ExtractConfig{}
+			applyExtractDefaults(&c, llm)
+			return c.Model
+		},
+		"relations": func(llm LLMConfig) string {
+			c := RelationsConfig{}
+			applyRelationsDefaults(&c, llm)
+			return c.Model
+		},
+		"session_mine": func(llm LLMConfig) string {
+			c := SessionMineConfig{}
+			applySessionMineDefaults(&c, llm)
+			return c.Model
+		},
+	}
+
+	// The exact shape of the maintainer KB's scribe.yaml.
+	llm := LLMConfig{Provider: "anthropic", Model: ""}
+	for name, resolve := range ops {
+		if got := resolve(llm); got == "" {
+			t.Errorf("%s: model resolved to \"\" — would send --model \"\" and 400", name)
+		}
+	}
+
+	// A wholly empty LLMConfig also lands on anthropic (provider
+	// fallback), so it must get a model too.
+	for name, resolve := range ops {
+		if got := resolve(LLMConfig{}); got == "" {
+			t.Errorf("%s: empty LLMConfig resolved model to \"\"", name)
+		}
+	}
+
+	// An explicit model is never overridden.
+	for name, resolve := range ops {
+		if got := resolve(LLMConfig{Provider: "anthropic", Model: "haiku"}); got != "haiku" {
+			t.Errorf("%s: model = %q, want %q (explicit config must win)", name, got, "haiku")
+		}
+	}
+
+	// The anthropic default must not leak onto ollama: an ollama op with
+	// no model is coerceProviderModel's job and must land on the
+	// recommended ollama model, never a Claude alias. Guards the
+	// EqualFold(provider, "anthropic") condition — drop it and every
+	// ollama-only KB silently starts asking Ollama for "sonnet".
+	for name, resolve := range ops {
+		if got := resolve(LLMConfig{Provider: "ollama", Model: ""}); got != ollamaRecommendedModel {
+			t.Errorf("%s: ollama model = %q, want %q (anthropic default must not leak)", name, got, ollamaRecommendedModel)
+		}
+	}
+}

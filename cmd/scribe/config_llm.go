@@ -364,6 +364,18 @@ func inheritLLMOpBase(provider, model, ollamaURL *string, llm LLMConfig) {
 	if *model == "" {
 		*model = llm.Model
 	}
+	// Backstop the model the same way the provider is backstopped above.
+	// An anthropic op that reaches the backend with model=="" sends
+	// `--model ""`, which the Claude CLI rejects with `API Error: 400
+	// model: String should have at least 1 character` — and because the
+	// per-op config inherits an empty top-level llm.model, that failure
+	// is silent and permanent (it broke `dream --hot` on every run).
+	// Only anthropic gets a literal default: ollama is handled by
+	// coerceProviderModel, and guessing a model id for a hosted provider
+	// would trade a clear 400 for a confusing one.
+	if *model == "" && strings.EqualFold(*provider, "anthropic") {
+		*model = defaultAnthropicModel
+	}
 	if *ollamaURL == "" {
 		*ollamaURL = llm.OllamaURL
 	}
@@ -550,6 +562,11 @@ const ollamaRecommendedModel = "gemma3:4b"
 // fallback whenever neither a per-op block nor the top-level llm block
 // sets ollama_url.
 const defaultOllamaURL = "http://localhost:11434"
+
+// defaultAnthropicModel is the last-resort model for an anthropic op
+// whose model is unset at every config level. Matches the
+// `default_model` seeded by init (config.go).
+const defaultAnthropicModel = "sonnet"
 
 // claudeModelAliases are the model names `claude -p` accepts. Anything in
 // this list is a red flag when the provider is ollama — the user probably
