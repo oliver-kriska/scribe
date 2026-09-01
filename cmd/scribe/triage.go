@@ -21,6 +21,7 @@ type TriageCmd struct {
 	Sort         string `help:"Sort order: score (default) or date (newest first)." default:"score" enum:"score,date"`
 	MessageLimit int    `help:"Only include sessions with at most N messages (0=no limit)." name:"message-limit" default:"0"`
 	MinMessages  int    `help:"Only include sessions with at least N messages." name:"min-messages" default:"0"`
+	InScope      bool   `name:"in-scope" help:"Only sessions this KB could actually mine (drops ignored, too-shallow, out-of-sources and unapproved projects). Used by sync so undrainable sessions cannot occupy admission slots."`
 	IDs          bool   `name:"ids" help:"Output session IDs only (for piping)."`
 	Stats        bool   `help:"Show score distribution stats."`
 	JSON         bool   `help:"Output JSON."`
@@ -143,6 +144,76 @@ type triageResult struct {
 	Date      string  `json:"date"`
 	Hours     float64 `json:"hours"`
 	Summary   string  `json:"summary"`
+
+	// rawPath is s.project_path verbatim, unstripped and unexported so it
+	// never reaches --json output. --in-scope needs the real path: the
+	// `project` column above has the ~/Projects prefix removed for display.
+	rawPath string
+}
+
+// inScopeOverfetch is how many rows --in-scope reads per row it intends to
+// return. The predicate runs in Go (path depth, ignore list, sources
+// globs, manifest approval — none of it expressible in this query), so the
+// blockers have to be read before they can be dropped.
+//
+// 20x rather than a smaller constant because the blockers are not randomly
+// distributed: a mount root that collapses many repos into one shallow
+// path tends to score HIGH (long, dense sessions) and so clusters at the
+// exact top of the ordering the miner reads. On the KB this was written
+// for, 10 of the top 11 were undrainable. The cap keeps the worst case
+// bounded on a large ccrider DB.
+const (
+	inScopeOverfetch    = 20
+	inScopeOverfetchCap = 2000
+)
+
+// scanLimit is the SQL LIMIT: t.Top normally, over-fetched under
+// --in-scope so keepInScope can drop blockers and still fill t.Top.
+func (t *TriageCmd) scanLimit() int {
+	if !t.InScope {
+		return t.Top
+	}
+	n := t.Top * inScopeOverfetch
+	if n > inScopeOverfetchCap {
+		n = inScopeOverfetchCap
+	}
+	// Floor applied AFTER the cap on purpose: the cap bounds the
+	// over-fetch, never the request. `--all` sets Top to 99999, and
+	// returning 2000 rows for it would silently truncate.
+	if n < t.Top {
+		n = t.Top
+	}
+	return n
+}
+
+// keepInScope drops sessions the miner could never process and trims back
+// to t.Top. Without --in-scope it is a no-op, so the human-facing `scribe
+// triage` still shows everything (seeing the blockers ranked first is how
+// you diagnose a stalled queue).
+//
+// The predicate is sessionDropReason — the same one preFilterSessions
+// applies after admission. Sharing it is the point: when triage ranked a
+// session the pre-filter then dropped unmarked, that session kept its slot
+// forever and admissible work behind it never ran.
+func (t *TriageCmd) keepInScope(root string, cfg *ScribeConfig, results []triageResult) []triageResult {
+	if !t.InScope {
+		return results
+	}
+	// Fails open on a manifest read error, matching preFilterSessions:
+	// mining a session that should have been skipped is recoverable,
+	// mining nothing is not.
+	manifest, _ := loadManifest(root)
+	kept := make([]triageResult, 0, min(len(results), t.Top))
+	for _, r := range results {
+		if sessionDropReason(cfg, manifest, root, r.rawPath) != "" {
+			continue
+		}
+		kept = append(kept, r)
+		if len(kept) == t.Top {
+			break
+		}
+	}
+	return kept
 }
 
 func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error {
@@ -167,6 +238,7 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 	SELECT
 		s.session_id,
 		REPLACE(s.project_path, '%s', '') as project,
+		s.project_path as raw_project_path,
 		s.message_count as msgs,
 		%s as total_score,
 		%s,
@@ -188,7 +260,7 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 	ORDER BY %s
 	LIMIT %d`,
 		ctes, homeProjects, scoreExpr, selectCols, anyHitExpr,
-		excludeClause, kbExcludeClause, projectClause, t.messageLimitClause(), t.orderClause(), t.Top)
+		excludeClause, kbExcludeClause, projectClause, t.messageLimitClause(), t.orderClause(), t.scanLimit())
 
 	rows, err := db.Query(query) //nolint:noctx // CLI top-level, no ctx in scope
 	if err != nil {
@@ -201,7 +273,7 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 		var r triageResult
 		var date, summary sql.NullString
 		var hours sql.NullFloat64
-		err := rows.Scan(&r.SessionID, &r.Project, &r.Msgs, &r.Score,
+		err := rows.Scan(&r.SessionID, &r.Project, &r.rawPath, &r.Msgs, &r.Score,
 			&r.Dec, &r.Arch, &r.Res, &r.Learn, &r.Eval, &r.Deep,
 			&date, &hours, &summary)
 		if err != nil {
@@ -215,6 +287,7 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate scoring rows: %w", err)
 	}
+	results = t.keepInScope(root, cfg, results)
 
 	if t.Interactive {
 		// Build fzf input: "session_id\tscore\tproject\tmsgs\tdate\tsummary"

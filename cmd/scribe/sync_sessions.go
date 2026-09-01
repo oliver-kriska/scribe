@@ -120,6 +120,50 @@ func filterSessionsByScope(root, dbPath string, sessionIDs []string) []string {
 	return kept
 }
 
+// Drop reasons returned by sessionDropReason. Empty string means the
+// session is admissible.
+const (
+	dropReasonKB      = "kb"      // session was spent inside a scribe KB
+	dropReasonScope   = "scope"   // ignored, too shallow, or excluded by sources
+	dropReasonPending = "pending" // project exists but is not approved yet
+)
+
+// sessionDropReason is the single definition of "the miner cannot process
+// a session from this project", covering every drop that leaves the
+// session UNMARKED — i.e. still a candidate on the next run. The
+// mechanical/thin gate is deliberately not here: those are marked
+// processed and leave the pool for good.
+//
+// Two callers share it, and they must agree or the admission window
+// starves. preFilterSessions applies it after triage has already picked
+// the top N; `triage --in-scope` applies it while picking, so a session
+// this returns non-empty for never consumes one of those N slots. When
+// they disagreed, a project deep enough to be approved but shallow enough
+// to be ignored (every repo directly under a mount root: /Volumes/X/repo
+// is 3 segments, isIgnored wants 4) produced a permanent deadlock —
+// status counted the sessions as pending, triage ranked them top, the
+// pre-filter dropped them unmarked, and they ranked top again forever
+// while admissible sessions never got a slot. See issue #86's sibling.
+func sessionDropReason(cfg *ScribeConfig, manifest *Manifest, root, projectPath string) string {
+	if sessionInKB(root, projectPath) {
+		return dropReasonKB
+	}
+	if !projectScopeAllowed(cfg, manifest, projectPath) {
+		return dropReasonScope
+	}
+	// entryForPath rather than a keyed lookup: a session run inside a
+	// pending project's WORKTREE must inherit the pending status (the
+	// worktree's basename is not a manifest key), and a basename
+	// collision must not let one project's approval state govern
+	// another's sessions.
+	if manifest != nil && projectPath != "" {
+		if entry := manifest.entryForPath(projectPath); entry != nil && !entry.IsApproved() {
+			return dropReasonPending
+		}
+	}
+	return ""
+}
+
 // preFilterSessions removes sessions that are too mechanical to be worth
 // extracting, and — independently — sessions that were spent inside the KB
 // itself (mining those re-emits the wiki's own content). Queries ccrider DB
@@ -159,32 +203,23 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 			kept = append(kept, sid) // On error, keep the session.
 			continue
 		}
-		if sessionInKB(root, stats.ProjectPath) {
-			// Drop silently (not into `skipped`): the caller marks
-			// skipped IDs as mechanically processed, which would be the
-			// wrong reason. KB sessions can't resurface anyway — triage
-			// now excludes them and the hook no longer queues them.
+		// Every branch here drops SILENTLY (not into `skipped`): the
+		// caller marks skipped IDs as mechanically processed, which
+		// would be the wrong reason, and a scope/approval drop must stay
+		// re-mineable if the KB's scope later widens. Because they stay
+		// unmarked they also keep ranking, which is why `triage
+		// --in-scope` applies the same predicate while picking — see
+		// sessionDropReason.
+		switch sessionDropReason(cfg, manifest, root, stats.ProjectPath) {
+		case dropReasonKB:
 			kbSkipped++
 			continue
-		}
-		if !projectScopeAllowed(cfg, manifest, stats.ProjectPath) {
-			// Out-of-scope for this KB (ignored or excluded by sources).
-			// Drop silently like KB sessions: marking them processed would
-			// lie, and they must stay re-mineable if the KB's scope later
-			// widens to include the project.
+		case dropReasonScope:
 			scopeSkipped++
 			continue
-		}
-		if manifest != nil && stats.ProjectPath != "" {
-			// entryForPath rather than a keyed lookup: a session run
-			// inside a pending project's WORKTREE must inherit the
-			// pending status (the worktree's basename is not a manifest
-			// key), and a basename collision must not let one project's
-			// approval state govern another's sessions.
-			if entry := manifest.entryForPath(stats.ProjectPath); entry != nil && !entry.IsApproved() {
-				pendingSkipped++
-				continue
-			}
+		case dropReasonPending:
+			pendingSkipped++
+			continue
 		}
 		if stats.filterVerdict() != "" {
 			skipped = append(skipped, sid)
@@ -913,7 +948,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 	// every slot and starve approved projects indefinitely (they rank
 	// N+1 forever). Priority-lane admission (admitForPool) handles the
 	// trim to SessionsMax internally, after the filter below runs.
-	triagedNormal := s.triageSessionsScored(s.SessionsMax*3, "--message-limit", "300")
+	triagedNormal := s.triageSessionsScored(s.SessionsMax*3, "--in-scope", "--message-limit", "300")
 	normalIDs := admitForPool(pendingNormal, triagedNormal, s.SessionsMax, cfg.PriorityLanes,
 		func(ids []string) []string {
 			kept, skipped := preFilterSessions(root, cfg.CcriderDB, ids)
@@ -960,7 +995,7 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 		// normal-pool over-fetch rationale — otherwise the 70/30 split
 		// silently collapses to 100% Normal whenever Hot's candidate pool
 		// is thin (see docs/issue-22-priority-lanes-plan.md §3.5).
-		triagedLarge := s.triageSessionsScored(largeMax*3, "--min-messages", "301")
+		triagedLarge := s.triageSessionsScored(largeMax*3, "--in-scope", "--min-messages", "301")
 		largeIDs := admitForPool(pendingLarge, triagedLarge, largeMax, cfg.PriorityLanes,
 			func(ids []string) []string { return filterSessionsByScope(root, cfg.CcriderDB, ids) })
 		if len(largeIDs) > 0 {
