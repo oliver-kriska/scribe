@@ -598,9 +598,10 @@ machine-local and cannot see across machines.</td>
 </table></div>
 <p>Extraction dedup via <code>scripts/extraction-ledger.json</code> is
 <strong>not</strong> gated — it works the same on a solo KB. Budget for
-one exception: a machine that has never extracted a repository
-re-extracts it once at full model cost, because the never-extracted case
-is decided before the ledger is consulted. Run
+one exception: a machine that has never extracted a repository lists it
+through git — tracked and untracked files, with <code>.gitignore</code>
+honored — then extracts it once at full model cost, because the
+never-extracted case is decided before the ledger is consulted. Run
 <code>scribe sync --dry-run --estimate</code> before the first real sync
 on a new machine. <a
 href="https://getscribe.dev/topologies.md">Topologies</a> is the
@@ -696,11 +697,13 @@ each:
     &quot;lint --apply-identities&quot;: &quot;3650d&quot;</code></pre>
 <p>This is a throttle used as an off switch. It is reversible and
 survives <code>scribe cron install</code> re-running, with one wrinkle:
-cadence is measured from the job's last successful run on <em>that</em>
-machine, and run records are machine-local. A job with no record yet
-fails open, so each throttled job still fires <strong>once</strong> on
-the secondary after <code>cron install</code> — and a job that keeps
-failing is never throttled at all.</p>
+cadence is measured from the job's last run on <em>that</em> machine —
+clean or degraded — and run records are machine-local. A job with no
+record yet fails open, so each throttled job still fires
+<strong>once</strong> on the secondary after <code>cron install</code>.
+A degraded run counts as proof the job fired while still surfacing the
+partial failure in <code>scribe status</code> and
+<code>scribe doctor --section errors</code>.</p>
 <p>Do not throttle <code>ingest drain</code>. It processes
 <code>output/inbox</code>, which is gitignored and machine-local, so it
 never collides. The inbox that <em>is</em> shared —

@@ -391,7 +391,8 @@ because nothing fails loudly:
 
 Extraction dedup via `scripts/extraction-ledger.json` is **not** gated — it works
 the same on a solo KB. Budget for one exception: a machine that has never
-extracted a repository re-extracts it once at full model cost, because the
+extracted a repository lists it through git — tracked and untracked files, with
+`.gitignore` honored — then extracts it once at full model cost, because the
 never-extracted case is decided before the ledger is consulted. Run
 `scribe sync --dry-run --estimate` before the first real sync on a new machine.
 [Topologies](https://getscribe.dev/topologies.md) is the canonical reference for
@@ -497,10 +498,11 @@ each:
 
 This is a throttle used as an off switch. It is reversible and survives
 `scribe cron install` re-running, with one wrinkle: cadence is measured from the
-job's last successful run on *that* machine, and run records are machine-local.
+job's last run on *that* machine — clean or degraded — and run records are machine-local.
 A job with no record yet fails open, so each throttled job still fires **once**
-on the secondary after `cron install` — and a job that keeps failing is never
-throttled at all.
+on the secondary after `cron install`. A degraded run counts as proof the job
+fired while still surfacing the partial failure in `scribe status` and
+`scribe doctor --section errors`.
 
 Do not throttle `ingest drain`. It processes `output/inbox`, which is gitignored
 and machine-local, so it never collides. The inbox that *is* shared —

@@ -24,13 +24,13 @@ Three stages, one pipeline:
 
 1. **Capture** — four input streams, all on cron: git repos, coding-agent sessions, iMessage self-chat URLs, drop files.
 2. **Triage** — FTS5 keyword-density scoring rejects boilerplate session candidates before any LLM call. Cheap sessions cost nothing, so the inference bill scales with signal, not session count.
-3. **Extract + absorb** — sessions and project changes use bounded extraction envelopes; raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.
+3. **Extract + absorb** — sessions and project changes use bounded extraction envelopes; after each successful session mine, Go checkpoints its processed mark so the next run skips it. Raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.
 4. **Compile + index** — auto-generated wikilinks, backlinks JSON, retrieval-context paragraphs spliced into every article. `qmd` reindexes, and the next agent session reads what scribe just wrote (`CLAUDE.md` / `AGENTS.md`).
 
 ## What makes scribe different
 
 - **Your agents become context-aware across sessions.** `scribe init` writes maintained handshake blocks into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.config/amp/AGENTS.md` that tell Claude Code, Codex, and Amp to query your KB before recommending a library, proposing an architecture, or reproducing a pattern.
-- **Runs itself on cron.** Hourly auto-commits, 2-hourly project extraction, 3×/day session mining, a weekly Dream cycle for consolidation with a daily hot-domain pass in between. launchd on macOS, systemd/crontab on Linux.
+- **Runs itself on cron.** Hourly auto-commits, 2-hourly project extraction, 3×/day session mining, a weekly Dream cycle for consolidation with a daily hot-domain pass in between. launchd on macOS, systemd/crontab on Linux. Run records distinguish clean runs from degraded ones where a unit of work was lost, repeated, or deferred.
 - **Knowledge compounds across projects.** One cross-project KB, not siloed per repo. Solve the oban idempotency bug in project A on Monday; the agent finds your fix on Friday when the same shape comes up in project B.
 - **Fully local-capable — 100% Ollama.** Every LLM op — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining `claude -p` callsite in the normal sync flow. A single line in `scribe.yaml` flips the whole pipeline: `llm.provider: ollama`. Zero API spend.
 - **Plain markdown you own.** A git repo of plain markdown files with YAML frontmatter. Push to your own GitHub, Gitea, or Forgejo. Open in Obsidian, VS Code, vim, or mdbook. No SaaS, no vendor lock-in.
@@ -103,7 +103,7 @@ The mechanisms:
 
 - **Shared config is untrusted by default.** A trust layer pins the sensitive surface of a shared `scribe.yaml`: provider, model, ingest paths, and the secret scanner itself. A pushed change that would repoint inference to a new endpoint or drain a new directory into the KB reverts to the last trusted snapshot until a human approves it.
 - **Secrets never reach shared history.** scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path. On a solo KB the gate is off and the KB pushes to a private remote you own; `team: true` is what turns it on — and it is a multi-writer switch, not a headcount, so one person with two machines can set it.
-- **Extraction is paid for once, not per laptop.** Every `scribe sync` pulls, merges, and reindexes before it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync re-extracts each approved repo once before the ledger takes over — preview it with `scribe sync --dry-run --estimate`.
+- **Extraction is paid for once, not per laptop.** Every `scribe sync` pulls, merges, and reindexes before it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync lists each approved repo through git — tracked and untracked files, with `.gitignore` honored — and extracts it once before the ledger takes over. Preview it with `scribe sync --dry-run --estimate`.
 - **A teammate's unrelated repo never leaks in.** Discovered projects start pending. `allowed_remotes` and source filters gate discovery by git-remote identity, and `scribe projects {list,approve,ignore,review}` controls what enters the pipeline, so a side project or a client checkout never lands in the shared KB without an approve.
 - **Curate privately, promote deliberately.** `scribe promote <article> --to team-kb` copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.
 - **One machine consolidates, no server.** The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.
@@ -337,4 +337,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-08-20
+**Last updated:** 2026-09-02

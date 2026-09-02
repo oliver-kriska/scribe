@@ -64,7 +64,9 @@ One exception worth budgeting for: a machine that has never extracted a given
 repository takes the never-extracted branch *before* the ledger is consulted, so
 **the first sync on a new machine re-extracts every approved repository once**,
 at full model cost, even though a sibling machine already did that revision.
-After that first pass the ledger takes over. Preview it with
+That first pass asks git for tracked and untracked files with `.gitignore`
+honored, so ignored dependency trees do not inflate the estimate. After that
+first pass the ledger takes over. Preview it with
 `scribe sync --dry-run --estimate` before the first real run.
 
 ### What turning it on takes away
@@ -127,7 +129,7 @@ Conflicts on scribe-managed shared files are handled by class:
 | File | On conflict |
 |---|---|
 | `wiki/_index.md`, `wiki/_backlinks.json`, `wiki/_digest.md`, `wiki/_hot.md` | either side wins — content regenerates after the pull |
-| `wiki/_sessions_log.json`, `wiki/_codex_sessions_log.json` | merged semantically — `processed` unions, later `last_scan` wins — **on `main`; not in a released build yet** |
+| `wiki/_sessions_log.json`, `wiki/_codex_sessions_log.json` | merged semantically — `processed` unions, later `last_scan` wins |
 | `scripts/extraction-ledger.json` | merged semantically |
 | `scripts/dream-lease.json` | merged semantically, remote wins the claim |
 | `log.md` | union of both sides' lines |
@@ -135,7 +137,7 @@ Conflicts on scribe-managed shared files are handled by class:
 
 ### Known limitations
 
-Honest ones, accurate as of 2026-08-20:
+Honest ones, accurate as of 2026-09-02:
 
 - **Some accumulating files are still not merge-aware.**
   `wiki/_unfetched-links.md`, `wiki/_identity-proposals.md`,
@@ -149,12 +151,9 @@ Honest ones, accurate as of 2026-08-20:
   letting it sit. In practice these files change far less often than the session
   ledgers did, so collisions are occasional rather than daily.
 
-  The two that *were* guaranteed to collide are the session-mining ledgers,
-  whose `last_scan` field is rewritten on every `sync --sessions` run. A semantic
-  merge for them — and a regenerate-either-side rule for `wiki/_hot.md` — is on
-  `main` and lands in the next release. **Until every writer runs a build that
-  includes it, expect this conflict and resolve it with the recipe below.** If
-  you installed from Homebrew or the shell installer, you do not have it yet.
+  The session-mining ledgers, whose `last_scan` field is rewritten on every
+  `sync --sessions` run, now merge semantically: processed IDs union and the
+  later scan time survives. `wiki/_hot.md` is regenerated from either side.
 - **`scribe commit` does not inspect git state before committing.** If a rebase
   is paused or `HEAD` is detached, cron will keep committing onto it and the
   branch will not advance. Never leave a rebase half-finished on a machine whose

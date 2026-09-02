@@ -329,8 +329,10 @@ revision-level dedup on a solo KB too.</p>
 a given repository takes the never-extracted branch <em>before</em> the
 ledger is consulted, so <strong>the first sync on a new machine
 re-extracts every approved repository once</strong>, at full model cost,
-even though a sibling machine already did that revision. After that
-first pass the ledger takes over. Preview it with
+even though a sibling machine already did that revision. That first pass
+asks git for tracked and untracked files with <code>.gitignore</code>
+honored, so ignored dependency trees do not inflate the estimate. After
+that first pass the ledger takes over. Preview it with
 <code>scribe sync --dry-run --estimate</code> before the first real
 run.</p>
 <h3 id="what-turning-it-on-takes-away">What turning it on takes
@@ -481,8 +483,7 @@ one machine only</td>
 <td><code>wiki/_sessions_log.json</code>,
 <code>wiki/_codex_sessions_log.json</code></td>
 <td>merged semantically — <code>processed</code> unions, later
-<code>last_scan</code> wins — <strong>on <code>main</code>; not in a
-released build yet</strong></td>
+<code>last_scan</code> wins</td>
 </tr>
 <tr>
 <td><code>scripts/extraction-ledger.json</code></td>
@@ -503,7 +504,7 @@ released build yet</strong></td>
 </tbody>
 </table></div>
 <h3 id="known-limitations">Known limitations</h3>
-<p>Honest ones, accurate as of 2026-08-20:</p>
+<p>Honest ones, accurate as of 2026-09-02:</p>
 <ul>
 <li><p><strong>Some accumulating files are still not
 merge-aware.</strong> <code>wiki/_unfetched-links.md</code>,
@@ -519,14 +520,10 @@ every later pull fails on the same conflict while local commits pile up
 href="#divergence-is-normal">divergence recipe</a> rather than letting
 it sit. In practice these files change far less often than the session
 ledgers did, so collisions are occasional rather than daily.</p>
-<p>The two that <em>were</em> guaranteed to collide are the
-session-mining ledgers, whose <code>last_scan</code> field is rewritten
-on every <code>sync --sessions</code> run. A semantic merge for them —
-and a regenerate-either-side rule for <code>wiki/_hot.md</code> — is on
-<code>main</code> and lands in the next release. <strong>Until every
-writer runs a build that includes it, expect this conflict and resolve
-it with the recipe below.</strong> If you installed from Homebrew or the
-shell installer, you do not have it yet.</p></li>
+<p>The session-mining ledgers, whose <code>last_scan</code> field is
+rewritten on every <code>sync --sessions</code> run, now merge
+semantically: processed IDs union and the later scan time survives.
+<code>wiki/_hot.md</code> is regenerated from either side.</p></li>
 <li><p><strong><code>scribe commit</code> does not inspect git state
 before committing.</strong> If a rebase is paused or <code>HEAD</code>
 is detached, cron will keep committing onto it and the branch will not

@@ -31,7 +31,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
-<meta property="article:modified_time" content="2026-08-20T00:00:00Z" />
+<meta property="article:modified_time" content="2026-09-02T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -276,7 +276,7 @@
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og-v4.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
-  "dateModified": "2026-08-20T00:00:00+02:00",
+  "dateModified": "2026-09-02T00:00:00+02:00",
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -2701,7 +2701,7 @@
       <div class="step">
         <div class="step__index"><span>2</span> Triage &amp; extract</div>
         <h3 class="step__title">FTS5 first, LLM second.</h3>
-        <p class="step__body">Keyword-density scoring rejects boilerplate session candidates before any LLM call, so they cost nothing. Sessions and project changes use bounded extraction envelopes; raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.</p>
+        <p class="step__body">Keyword-density scoring rejects boilerplate session candidates before any LLM call, so they cost nothing. Sessions and project changes use bounded extraction envelopes; after each successful session mine, Go checkpoints its processed mark so the next run skips it. Raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.</p>
         <div class="step__tags">
           <span class="tag">FTS5 triage</span><span class="tag">two-pass</span><span class="tag">entity fan-out</span>
         </div>
@@ -2736,7 +2736,7 @@
       <article class="feature">
         <div class="feature__kicker">launchd · systemd</div>
         <h3>Runs itself on cron</h3>
-        <p>Hourly auto-commits. Every 2 hours: project extraction. 3×/day: session mining. Every 30 minutes: queued URLs. Every 4 hours: self-iMessaged links. Sundays at 02:00: the full Dream consolidation, with a lighter hot-domain pass daily in between.</p>
+        <p>Hourly auto-commits. Every 2 hours: project extraction. 3×/day: session mining. Every 30 minutes: queued URLs. Every 4 hours: self-iMessaged links. Sundays at 02:00: the full Dream consolidation, with a lighter hot-domain pass daily in between. Run records distinguish clean runs from degraded ones where a unit of work was lost, repeated, or deferred.</p>
       </article>
 
       <article class="feature">
@@ -3224,7 +3224,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
         <dt>Hygiene</dt><dd>frontmatter validate &middot; structural lint &middot; staleness ledger &middot; contradiction ledger &middot; Dream 4-phase consolidation</dd>
         <dt>Governance</dt><dd>trust layer &middot; secret-scan commit gate &middot; <code>allowed_remotes</code> &middot; promote-with-provenance &middot; committed leader lease</dd>
         <dt>Inference</dt><dd>local / hosted / Anthropic &middot; per-op model routing &middot; daily spend ceiling &middot; <code>scribe cost</code> reconciliation</dd>
-        <dt>Agents &amp; ops</dt><dd>CLAUDE.md + AGENTS.md handshake &middot; qmd MCP + shell query &middot; launchd / systemd &middot; checkpointed writes &middot; run records &middot; <code>scribe doctor</code></dd>
+        <dt>Agents &amp; ops</dt><dd>CLAUDE.md + AGENTS.md handshake &middot; qmd MCP + shell query &middot; launchd / systemd &middot; checkpointed writes &middot; clean / degraded run records &middot; <code>scribe doctor</code></dd>
       </dl>
     </details>
   </div>
@@ -3351,7 +3351,7 @@ scribe doctor
 <span class="comment"># validate just the local-mode pipeline</span>
 scribe doctor <span class="flag">--section</span> localmode
 
-<span class="comment"># inspect what the last sync did</span>
+<span class="comment"># inspect clean/degraded phase status from the last sync</span>
 <span class="kw">cat</span> output/runs/$(date +%Y-%m-%d).jsonl | <span class="kw">tail</span> <span class="flag">-n</span> <span class="num">5</span></pre>
       </div>
     </div>
@@ -3698,7 +3698,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <article class="feature">
         <h3>Extraction is paid for once, not per laptop</h3>
-        <p>Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync re-extracts each approved repo once before the ledger takes over — preview it with <code>scribe sync --dry-run --estimate</code>.</p>
+        <p>Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync lists each approved repo through git &mdash; tracked and untracked files, with <code>.gitignore</code> honored &mdash; and extracts it once before the ledger takes over. Preview it with <code>scribe sync --dry-run --estimate</code>.</p>
       </article>
 
       <article class="feature">
@@ -3799,7 +3799,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT · last updated 2026-08-20</span>
+      <span>MIT · last updated 2026-09-02</span>
       <span>github.com/oliver-kriska/scribe</span>
     </div>
   </div>
