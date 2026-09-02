@@ -43,7 +43,7 @@ The maintainer triggered it on purpose — don't stop midway to ask permission.
 `0.2.x`, no `softwareVersion` in JSON-LD, no `Phase 4X` internal codenames, and
 none of the version-pinned phrasings — `as of vX`, `since vX`, `complete in
 vX`, `in vX+`, `Phase 4D (vX)`. The eyebrow, footer, stat labels, feature
-cards, FAQ (visible `<dl>` *and* the FAQPage JSON-LD), and the `og.png` social
+cards, FAQ (visible `<dl>` *and* the FAQPage JSON-LD), and the versioned social
 card pixels are the usual offenders. `scripts/audit.sh` greps for all of these;
 treat any hit as a defect to fix, not to annotate.
 
@@ -78,11 +78,12 @@ refactors with no surface-copy impact can be skipped.
 bash "$REPO/.claude/skills/getscribe-site-sync/scripts/audit.sh"
 ```
 
-This greps all four text surfaces + `og.png` metadata for version pins and
-prints every hit, and cross-checks the page's hard counts (subcommands,
-LaunchAgents) against the actual code. It exits non-zero if anything is wrong.
-A clean exit means no pins and no count drift — but it cannot judge prose, so
-step 3 still runs.
+This greps every registered text surface and the social-card template for
+version pins, verifies that all fetchable icon/logo assets exist, checks that
+active metadata uses a cache-busted social card and a square Organization
+logo, and cross-checks the page's command-path count against the actual binary.
+It exits non-zero if anything is wrong. A clean exit means no pins or
+deterministic drift — but it cannot judge prose, so step 3 still runs.
 
 ### 3. Reconcile the copy (LLM judgement)
 
@@ -96,18 +97,24 @@ makes false, incomplete, or stale, and rewrite them to describe what scribe
 does *now*, in the present tense, with no version reference. Mirror every change
 across the surfaces in the order `surface-map.md` specifies. Regenerate
 `llms-full.txt` as an exact copy of `index.md` (it is literally `cp`). If the
-release changes anything stated on the social card (the eyebrow tagline or the
-one-line lede — never a version), regenerate it:
+release changes anything visible on the social card, regenerate it:
 
 ```sh
 bash "$REPO/.claude/skills/getscribe-site-sync/scripts/regen_og.sh"
 ```
 
+The script writes the next unused `og-vN.png`; it never overwrites a cached
+card. Inspect the PNG, then update homepage and document-template
+`og:image`/`twitter:image` plus `TechArticle.image` to that exact path.
+`Organization.logo` remains the square `logo-512.png` — never point it at the
+rectangular social card.
+
 ### 4. Freshness stamps
 
-Set sitemap.xml `<lastmod>`, the `index.html` JSON-LD `dateModified`, and the
-`index.md` "Last updated:" line to today (`date +%F`). These are dates, not
-versions — keep them current, don't remove them.
+Set every freshness field listed in `references/surface-map.md` to today
+(`date +%F`): sitemap `<lastmod>` values, homepage modified-time metadata and
+JSON-LD, the visible footer, and the `index.md` "Last updated:" line. These are
+dates, not versions — keep them current, don't remove them.
 
 ### 5. Deploy + verify
 
@@ -118,10 +125,10 @@ bash "$REPO/.claude/skills/getscribe-site-sync/scripts/deploy_verify.sh"
 This runs the Cloudflare deploy (RTK-safe, credentials sourced from the
 repo-root `.env`, wrangler is the global install — never `npm install`
 anything in this repo) and then verifies the *live* site: zero version pins,
-the new capability strings present, and `og.png` byte-identical to the local
-file. It prints the Cloudflare Version ID and fails loudly if verification
-does not pass. Read its log if it fails; do not declare success on a failed
-verify.
+the new capability strings present, and the active cache-busted social card
+byte-identical to its local file. It prints the Cloudflare Version ID and fails
+loudly if verification does not pass. Read its log if it fails; do not declare
+success on a failed verify.
 
 ### 6. Commit
 
@@ -163,8 +170,10 @@ Details and the chain-safe install behaviour are in
   or `.wrangler/`. Source-only HTML/CSS + final assets.
 - **Credentials only from repo-root `.env`** (gitignored). Never echo,
   print, or commit its contents.
-- **Only `site/` files in the sync commit.** If the working tree has unrelated
-  changes, stage paths explicitly — do not `git add -A`.
+- **Only `site/` files in an ordinary release-sync commit.** If this skill's
+  scripts or references themselves are the requested change, stage only those
+  explicit `.claude/skills/getscribe-site-sync/` paths alongside `site/`.
+  Never use `git add -A`.
 - **No absolute user paths in committed files.** Everything resolves via
   `git rev-parse --show-toplevel`; the scripts already do this.
 - **Never deploy from a git hook or any unattended trigger.** Deploying

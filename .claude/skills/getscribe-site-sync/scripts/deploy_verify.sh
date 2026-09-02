@@ -54,13 +54,14 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 fetch "/" "$tmp/index.html"
 fetch "/llms.txt" "$tmp/llms.txt"
 
-# The social-card asset is cache-busted by renaming (og.png → og-v2.png → …),
-# so its path changes between releases. Derive it from the page's og:image meta
-# instead of hardcoding it — a stale literal here would 404 and, under set -e,
-# abort the whole verify before the pin check ever ran.
+# The social-card asset is cache-busted by renaming, so its path changes when
+# the card changes. Derive it from the page's og:image meta instead of
+# hardcoding it — a stale literal here would 404 and hide metadata drift.
 OG_PATH="$(grep -oE 'og:image"[^>]*content="https?://[^"]+"' "$PUB/index.html" \
   | grep -oE 'content="https?://[^"]+"' | sed -E 's#.*://[^/]+##; s/"$//' | head -1)"
-[ -n "$OG_PATH" ] || OG_PATH="/og.png"
+[ -n "$OG_PATH" ] || { echo "FATAL: index.html has no absolute og:image"; exit 1; }
+printf '%s' "$OG_PATH" | grep -Eq '^/og-v[0-9]+\.png$' || {
+  echo "FATAL: og:image is not a cache-busted /og-vN.png path: $OG_PATH"; exit 1; }
 
 verify_fail=0
 

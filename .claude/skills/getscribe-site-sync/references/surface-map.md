@@ -1,7 +1,8 @@
 # Surface map — what to edit and in what order
 
-All paths under `site/public/`. `index.html` is canonical; everything else
-mirrors it. Keep them in lockstep — a search engine or an LLM may read any one.
+Paths are under `site/public/` unless named otherwise. `index.html` is
+canonical; everything else mirrors it. Keep them in lockstep — a search engine
+or an LLM may read any one.
 
 | Surface | What it is | How it relates |
 |---|---|---|
@@ -9,10 +10,11 @@ mirrors it. Keep them in lockstep — a search engine or an LLM may read any one
 | `index.md` | Prose mirror of the page for the `/index.md` route. | Mirror every prose change from the HTML. |
 | `llms.txt` | Short llms.txt-spec index (intro blockquote + resource links). | Mirror only the high-level claims (intro line, the one-paragraph summary). Not every sentence. |
 | `llms-full.txt` | Full content for large-context LLMs. | **Exact copy of `index.md`.** Regenerate with `cp index.md llms-full.txt` — never hand-edit. |
-| `og.png` | 1200×630 social card, text baked into pixels. | Regenerate from `assets/og.svg.tmpl` via `scripts/regen_og.sh` only if the eyebrow tagline or the one-line lede changed. Never a version. |
+| `og-vN.png` | 1200×630 social card, text baked into pixels. | Regenerate from `assets/og.svg.tmpl` via `scripts/regen_og.sh` when the visible card changes. The script emits a new cache-busted filename; update Open Graph, Twitter, and TechArticle refs to it. Never overwrite an old card or put a release version in the pixels. |
+| `favicon.svg`, `favicon-32.png`, `favicon.ico`, `apple-touch-icon.png`, `logo-512.png` | Fetchable square brand assets, all using the same fixed-path `s` tile. | Keep these in sync with the nav mark. `Organization.logo` uses `logo-512.png`; social metadata uses the rectangular `og-vN.png` card. |
 | `setup.md` | The install/verification runbook served at `/setup.md`. | Standalone. Not a mirror of `index.html` — but any claim it shares with the page (costs, dependencies, cron schedule) must agree. |
 | `topologies.md` | Canonical multi-writer reference served at `/topologies.md`. | Standalone, and the **only** place the per-file conflict classes are stated — link to it from other surfaces rather than restating its tables. |
-| `setup.html`, `topologies.html` | Human-readable renders of the two `.md` docs. | **Generated.** Never hand-edit: run `site/build-docs.sh` after changing either source, and `site/build-docs.sh --check` in CI proves they are fresh. |
+| `setup.html`, `topologies.html` | Human-readable renders of the two `.md` docs. | **Generated.** Never hand-edit: run `site/build-docs.sh` after changing either source or `site/templates/doc.html`, and `site/build-docs.sh --check` proves they are fresh. |
 
 ## Editing order
 
@@ -26,7 +28,7 @@ mirrors it. Keep them in lockstep — a search engine or an LLM may read any one
 3. `llms.txt` — update the intro blockquote + summary paragraph if the
    high-level pitch changed.
 4. `llms-full.txt` — `cp index.md llms-full.txt`.
-5. `og.png` — `scripts/regen_og.sh` if the card's text changed.
+5. `og-vN.png` — run `scripts/regen_og.sh` if the card's text or mark changed, inspect the generated image, then update every active metadata reference to the new filename.
 
 ## Freshness fields (dates, not versions — keep current, never remove)
 
@@ -53,5 +55,7 @@ grep -o '<lastmod>[^<]*' site/public/sitemap.xml | sort -u
   one back, don't — the audit treats it as a pin.
 - `SoftwareApplication.description`, `Article.description`, and every
   `FAQPage` answer are evergreen prose — same rules as visible copy.
+- `og:image`, `twitter:image`, and `TechArticle.image` must use the current
+  versioned social card. `Organization.logo` must use the square logo instead.
 - The `HowTo` install steps reference `brew`/`scribe init`/`scribe cron
   install` — only touch them if a release actually changes the install flow.

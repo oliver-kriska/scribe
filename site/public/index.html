@@ -14,9 +14,11 @@
 <meta name="author" content="Oliver Kriška" />
 <meta name="keywords" content="knowledge base, CLI, Claude Code, Codex, Amp, git, BM25, Ollama, local LLM, developer tools, scribe" />
 
-<!-- favicon (inline SVG, matches the .brand__mark in the nav) -->
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6feb'/%3E%3Ctext x='16' y='22' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif' font-size='20' font-weight='700' text-anchor='middle' fill='white'%3Es%3C/text%3E%3C/svg%3E" />
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%232f6feb'/%3E%3Ctext x='90' y='124' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif' font-size='112' font-weight='700' text-anchor='middle' fill='white'%3Es%3C/text%3E%3C/svg%3E" />
+<!-- fetchable brand assets for browsers, crawlers, and home screens -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -24,7 +26,7 @@
 <meta property="og:url" content="https://getscribe.dev/" />
 <meta property="og:title" content="scribe — your knowledge base, written by your tools" />
 <meta property="og:description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Runs on cron. Fully local-capable." />
-<meta property="og:image" content="https://getscribe.dev/og.png" />
+<meta property="og:image" content="https://getscribe.dev/og-v4.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
@@ -38,7 +40,7 @@
 <meta name="twitter:url" content="https://getscribe.dev/" />
 <meta name="twitter:title" content="scribe — your knowledge base, written by your tools" />
 <meta name="twitter:description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, searchable knowledge base. Runs on cron. Local-capable." />
-<meta name="twitter:image" content="https://getscribe.dev/og.png" />
+<meta name="twitter:image" content="https://getscribe.dev/og-v4.png" />
 <meta name="twitter:image:alt" content="scribe — over 7,400 docs, $0/sync, ~70s per run." />
 
 <!-- JSON-LD: SoftwareApplication -->
@@ -272,7 +274,7 @@
   "headline": "scribe — the compiled, LLM-written knowledge base for AI coding sessions",
   "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your coding-agent sessions, git repos, and self-sent URLs into a curated, BM25-searchable wiki your agents read before they decide. Local-first and capable of running 100% on Ollama.",
   "url": "https://getscribe.dev/",
-  "image": "https://getscribe.dev/og.png",
+  "image": "https://getscribe.dev/og-v4.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
   "dateModified": "2026-08-20T00:00:00+02:00",
   "inLanguage": "en",
@@ -299,7 +301,7 @@
   "name": "scribe",
   "alternateName": "getscribe",
   "url": "https://getscribe.dev",
-  "logo": "https://getscribe.dev/og.png",
+  "logo": "https://getscribe.dev/logo-512.png",
   "description": "scribe is the compiled, LLM-written knowledge base — a single-binary Go CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, searchable wiki your AI agents read before they act.",
   "sameAs": [
     "https://github.com/oliver-kriska/scribe",
@@ -726,6 +728,7 @@
     font-weight: 700;
     font-size: 12.5px;
   }
+  .brand__mark svg { width: 100%; height: 100%; }
   .nav__links {
     display: flex;
     align-items: center;
@@ -2487,7 +2490,7 @@
 <header class="nav" id="nav">
   <div class="wrap nav__inner">
     <a href="/" class="brand">
-      <span class="brand__mark">s</span>
+      <span class="brand__mark"><svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" transform="translate(17.5 45.5) scale(1.35)" d="M17.266-20.313c1.668 1.067 2.625 2.903 2.871 5.508H14.57c-.078-.715-.281-1.281-.605-1.699-.613-.754-1.652-1.133-3.125-1.133-1.211 0-2.074.188-2.59.567-.512.379-.77.82-.77 1.328 0 .637.274 1.102.821 1.387.547.301 2.48.813 5.8 1.543 2.216.52 3.876 1.309 4.981 2.363 1.094 1.067 1.64 2.402 1.64 4.004 0 2.11-.784 3.832-2.355 5.164C16.801.055 14.375.723 11.094.723c-3.348 0-5.817-.708-7.414-2.122C2.086-2.808 1.289-4.609 1.289-6.797h5.645c.117.989.371 1.692.761 2.11.692.742 1.965 1.113 3.828 1.113 1.094 0 1.961-.164 2.61-.489.644-.324.964-.812.964-1.464 0-.625-.261-1.102-.78-1.426-.52-.324-2.454-.887-5.802-1.68-2.41-.598-4.109-1.348-5.097-2.246-.988-.887-1.484-2.16-1.484-3.828 0-1.965.769-3.656 2.316-5.066 1.543-1.414 3.711-2.122 6.512-2.122 2.656 0 4.824.528 6.504 1.582z"/></svg></span>
       <span>scribe</span>
     </a>
     <nav class="nav__links" aria-label="Primary">
@@ -2546,7 +2549,7 @@
     <div class="hero__grid">
       <div class="hero__copy">
         <span class="hero__eyebrow">
-          <span class="brand__mark" style="width:18px;height:18px;border-radius:var(--r-xs);font-size:11px;">s</span>
+          <span class="brand__mark" style="width:18px;height:18px;border-radius:var(--r-xs);"><svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" transform="translate(17.5 45.5) scale(1.35)" d="M17.266-20.313c1.668 1.067 2.625 2.903 2.871 5.508H14.57c-.078-.715-.281-1.281-.605-1.699-.613-.754-1.652-1.133-3.125-1.133-1.211 0-2.074.188-2.59.567-.512.379-.77.82-.77 1.328 0 .637.274 1.102.821 1.387.547.301 2.48.813 5.8 1.543 2.216.52 3.876 1.309 4.981 2.363 1.094 1.067 1.64 2.402 1.64 4.004 0 2.11-.784 3.832-2.355 5.164C16.801.055 14.375.723 11.094.723c-3.348 0-5.817-.708-7.414-2.122C2.086-2.808 1.289-4.609 1.289-6.797h5.645c.117.989.371 1.692.761 2.11.692.742 1.965 1.113 3.828 1.113 1.094 0 1.961-.164 2.61-.489.644-.324.964-.812.964-1.464 0-.625-.261-1.102-.78-1.426-.52-.324-2.454-.887-5.802-1.68-2.41-.598-4.109-1.348-5.097-2.246-.988-.887-1.484-2.16-1.484-3.828 0-1.965.769-3.656 2.316-5.066 1.543-1.414 3.711-2.122 6.512-2.122 2.656 0 4.824.528 6.504 1.582z"/></svg></span>
           Single Go binary · runs on cron · self-hosted
         </span>
         <h1>
@@ -3767,7 +3770,7 @@ scribe doctor <span class="flag">--section</span> localmode
     <div class="footer__grid">
       <div class="footer__brand">
         <a href="/" class="brand">
-          <span class="brand__mark">s</span>
+          <span class="brand__mark"><svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" transform="translate(17.5 45.5) scale(1.35)" d="M17.266-20.313c1.668 1.067 2.625 2.903 2.871 5.508H14.57c-.078-.715-.281-1.281-.605-1.699-.613-.754-1.652-1.133-3.125-1.133-1.211 0-2.074.188-2.59.567-.512.379-.77.82-.77 1.328 0 .637.274 1.102.821 1.387.547.301 2.48.813 5.8 1.543 2.216.52 3.876 1.309 4.981 2.363 1.094 1.067 1.64 2.402 1.64 4.004 0 2.11-.784 3.832-2.355 5.164C16.801.055 14.375.723 11.094.723c-3.348 0-5.817-.708-7.414-2.122C2.086-2.808 1.289-4.609 1.289-6.797h5.645c.117.989.371 1.692.761 2.11.692.742 1.965 1.113 3.828 1.113 1.094 0 1.961-.164 2.61-.489.644-.324.964-.812.964-1.464 0-.625-.261-1.102-.78-1.426-.52-.324-2.454-.887-5.802-1.68-2.41-.598-4.109-1.348-5.097-2.246-.988-.887-1.484-2.16-1.484-3.828 0-1.965.769-3.656 2.316-5.066 1.543-1.414 3.711-2.122 6.512-2.122 2.656 0 4.824.528 6.504 1.582z"/></svg></span>
           <span>scribe</span>
         </a>
         <p>Your knowledge base, written by your tools. Built and maintained by <a href="https://hodinovycto.sk" rel="me noopener" target="_blank">Oliver Kriška</a>.</p>

@@ -10,15 +10,19 @@
 <meta name="author" content="Oliver Kriška" />
 <meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#1a1d22" media="(prefers-color-scheme: dark)" />
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6feb'/%3E%3Ctext x='16' y='22' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif' font-size='20' font-weight='700' text-anchor='middle' fill='white'%3Es%3C/text%3E%3C/svg%3E" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 <meta property="og:type" content="article" />
 <meta property="og:site_name" content="scribe" />
 <meta property="og:url" content="https://getscribe.dev/__SLUG__" />
 <meta property="og:title" content="__TITLE__ — scribe" />
 <meta property="og:description" content="__DESC__" />
-<meta property="og:image" content="https://getscribe.dev/og.png" />
+<meta property="og:image" content="https://getscribe.dev/og-v4.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:site" content="@quatermain32" />
+<meta name="twitter:image" content="https://getscribe.dev/og-v4.png" />
 <script>
   // no-FOUC theme bootstrap — same key as the home page so a choice carries over
   (function () {
@@ -125,6 +129,7 @@
   }
   .brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: -0.014em; color: var(--fg); text-decoration: none; }
   .brand__mark { width: 22px; height: 22px; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 14px; font-weight: 700; }
+  .brand__mark svg { width: 100%; height: 100%; }
   .bar__spacer { flex: 1; }
   .btn {
     display: inline-flex; align-items: center; gap: 7px;
@@ -182,7 +187,7 @@
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="/"><span class="brand__mark">s</span>scribe</a>
+  <a class="brand" href="/"><span class="brand__mark"><svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" transform="translate(17.5 45.5) scale(1.35)" d="M17.266-20.313c1.668 1.067 2.625 2.903 2.871 5.508H14.57c-.078-.715-.281-1.281-.605-1.699-.613-.754-1.652-1.133-3.125-1.133-1.211 0-2.074.188-2.59.567-.512.379-.77.82-.77 1.328 0 .637.274 1.102.821 1.387.547.301 2.48.813 5.8 1.543 2.216.52 3.876 1.309 4.981 2.363 1.094 1.067 1.64 2.402 1.64 4.004 0 2.11-.784 3.832-2.355 5.164C16.801.055 14.375.723 11.094.723c-3.348 0-5.817-.708-7.414-2.122C2.086-2.808 1.289-4.609 1.289-6.797h5.645c.117.989.371 1.692.761 2.11.692.742 1.965 1.113 3.828 1.113 1.094 0 1.961-.164 2.61-.489.644-.324.964-.812.964-1.464 0-.625-.261-1.102-.78-1.426-.52-.324-2.454-.887-5.802-1.68-2.41-.598-4.109-1.348-5.097-2.246-.988-.887-1.484-2.16-1.484-3.828 0-1.965.769-3.656 2.316-5.066 1.543-1.414 3.711-2.122 6.512-2.122 2.656 0 4.824.528 6.504 1.582z"/></svg></span>scribe</a>
   <span class="bar__spacer"></span>
   <a class="btn btn--md" href="/__MD__" data-md>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/></svg>

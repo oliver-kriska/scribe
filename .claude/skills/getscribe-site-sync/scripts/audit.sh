@@ -2,7 +2,7 @@
 # Deterministic site audit. No LLM judgement — pure pattern checks.
 #
 # FATAL (exit 1): any version pin on any text surface, or a version pin in the
-#   og.png SVG template. These are the cardinal-invariant violations.
+#   social-card SVG template. These are the cardinal-invariant violations.
 # FATAL (exit 1): a command-path count on the page that disagrees with the
 #   binary. Kong's root --help already prints every full command path, so this
 #   is an exact comparison, not a heuristic — a stale count is the one defect
@@ -31,7 +31,7 @@ for f in "${SURFACES[@]}"; do
   fi
 done
 
-echo "── og.png social card ──"
+echo "── brand and social-card assets ──"
 TMPL="$SKILL_DIR/assets/og.svg.tmpl"
 if [ ! -f "$TMPL" ]; then
   echo "PIN  missing og template ($TMPL) — cannot regenerate an evergreen card"
@@ -42,6 +42,45 @@ elif tmpl_hits="$(pin_scan "$TMPL")"; then
   fatal=1
 else
   echo "ok   og template present and version-free"
+fi
+
+active_og="$(grep -oE 'og:image"[^>]*content="https://getscribe.dev/og-v[0-9]+\.png"' "$PUB/index.html" \
+  | grep -oE 'og-v[0-9]+\.png' | head -1 || true)"
+if [ -z "$active_og" ]; then
+  echo "DRIFT homepage og:image is not a cache-busted og-vN.png"
+  fatal=1
+elif [ ! -f "$PUB/$active_og" ]; then
+  echo "DRIFT homepage references missing social card: $active_og"
+  fatal=1
+else
+  echo "ok   active social card exists ($active_og)"
+fi
+
+if grep -nE '(content=|"image":)[^>]*og\.png' "$PUB/index.html" "$REPO/site/templates/doc.html" >/dev/null 2>&1; then
+  echo "DRIFT active metadata still references legacy og.png:"
+  grep -nE '(content=|"image":)[^>]*og\.png' "$PUB/index.html" "$REPO/site/templates/doc.html" | sed 's/^/     /'
+  fatal=1
+elif [ -n "$active_og" ] && ! grep -qF "https://getscribe.dev/$active_og" "$REPO/site/templates/doc.html"; then
+  echo "DRIFT document template does not use the active social card ($active_og)"
+  fatal=1
+else
+  echo "ok   homepage and document metadata use the versioned social card"
+fi
+
+for asset in favicon.svg favicon-32.png favicon.ico apple-touch-icon.png logo-512.png; do
+  if [ -s "$PUB/$asset" ]; then
+    echo "ok   fetchable brand asset present ($asset)"
+  else
+    echo "DRIFT missing or empty brand asset: $asset"
+    fatal=1
+  fi
+done
+
+if ! grep -qF '"logo": "https://getscribe.dev/logo-512.png"' "$PUB/index.html"; then
+  echo "DRIFT Organization.logo must point at the square logo-512.png"
+  fatal=1
+else
+  echo "ok   Organization.logo uses the square logo"
 fi
 
 # Command-path count. Kong prints every full command path in the root help at
@@ -108,7 +147,7 @@ fi
 
 echo
 if [ "$fatal" -ne 0 ]; then
-  echo "AUDIT: FAIL — version pins and/or count drift (see PIN/DRIFT lines above)."
+  echo "AUDIT: FAIL — version pins, brand drift, and/or count drift (see PIN/DRIFT lines above)."
   exit 1
 fi
 echo "AUDIT: clean (no pins, command-path count matches). Verify any advisory claims above before declaring done."

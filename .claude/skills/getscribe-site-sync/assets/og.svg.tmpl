@@ -1,59 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
-  <!-- getscribe.dev social card. EVERGREEN: this file must never contain a
-       version string — it is rasterised into og.png and platforms cache the
-       pixels. The eyebrow is a tagline, never "vX.Y.Z". -->
-  <defs>
-    <radialGradient id="g1" cx="20%" cy="0%" r="80%">
-      <stop offset="0%" stop-color="#ffb86b" stop-opacity="0.18"/>
-      <stop offset="60%" stop-color="#ffb86b" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="g2" cx="100%" cy="100%" r="70%">
-      <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.14"/>
-      <stop offset="60%" stop-color="#7dd3fc" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
+  <!-- Evergreen getscribe.dev social card. Keep it version-free and regenerate
+       to a new og-vN.png whenever the visible copy or mark changes. -->
+  <rect width="1200" height="630" fill="#fafafb"/>
 
-  <rect width="1200" height="630" fill="#0e0f12"/>
-  <rect width="1200" height="630" fill="url(#g1)"/>
-  <rect width="1200" height="630" fill="url(#g2)"/>
+  <!-- Quiet notebook rules: structural, not decorative gradients. -->
+  <path d="M0 80h1200M0 550h1200" stroke="#e4e7eb"/>
+  <path d="M620 80v470" stroke="#edf0f2"/>
 
-  <!-- Decorative graph nodes + edges in upper-right corner -->
-  <g stroke="#ffb86b" stroke-width="1.5" opacity="0.18">
-    <line x1="950" y1="90" x2="1040" y2="160"/>
-    <line x1="1040" y1="160" x2="1110" y2="100"/>
-    <line x1="1040" y1="160" x2="990" y2="240"/>
-    <line x1="990" y1="240" x2="900" y2="200"/>
-    <line x1="900" y1="200" x2="950" y2="90"/>
-    <line x1="1110" y1="100" x2="1130" y2="190"/>
+  <!-- Canonical s tile: fixed vector path, never font-rendered. -->
+  <rect x="72" y="78" width="56" height="56" rx="11" fill="#2f6feb"/>
+  <path fill="#fff" transform="translate(87.3125 117.8125) scale(1.18125)" d="M17.266-20.313c1.668 1.067 2.625 2.903 2.871 5.508H14.57c-.078-.715-.281-1.281-.605-1.699-.613-.754-1.652-1.133-3.125-1.133-1.211 0-2.074.188-2.59.567-.512.379-.77.82-.77 1.328 0 .637.274 1.102.821 1.387.547.301 2.48.813 5.8 1.543 2.216.52 3.876 1.309 4.981 2.363 1.094 1.067 1.64 2.402 1.64 4.004 0 2.11-.784 3.832-2.355 5.164C16.801.055 14.375.723 11.094.723c-3.348 0-5.817-.708-7.414-2.122C2.086-2.808 1.289-4.609 1.289-6.797h5.645c.117.989.371 1.692.761 2.11.692.742 1.965 1.113 3.828 1.113 1.094 0 1.961-.164 2.61-.489.644-.324.964-.812.964-1.464 0-.625-.261-1.102-.78-1.426-.52-.324-2.454-.887-5.802-1.68-2.41-.598-4.109-1.348-5.097-2.246-.988-.887-1.484-2.16-1.484-3.828 0-1.965.769-3.656 2.316-5.066 1.543-1.414 3.711-2.122 6.512-2.122 2.656 0 4.824.528 6.504 1.582z"/>
+  <text x="146" y="119" font-family="-apple-system, BlinkMacSystemFont, Inter, Arial, sans-serif" font-size="34" font-weight="600" letter-spacing="-1" fill="#15181d">scribe</text>
+
+  <text x="72" y="188" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="1.7" fill="#69707a">SINGLE GO BINARY · RUNS ON CRON · SELF-HOSTED</text>
+
+  <text x="72" y="280" font-family="-apple-system, BlinkMacSystemFont, Inter, Arial, sans-serif" font-size="64" font-weight="600" letter-spacing="-2.4" fill="#15181d">Your knowledge base,</text>
+  <text x="72" y="352" font-family="-apple-system, BlinkMacSystemFont, Inter, Arial, sans-serif" font-size="64" font-weight="600" letter-spacing="-2.4" fill="#2f6feb">written by your tools.</text>
+  <text x="72" y="408" font-family="-apple-system, BlinkMacSystemFont, Inter, Arial, sans-serif" font-size="22" fill="#545b66">Git history, coding-agent sessions, and saved links</text>
+  <text x="72" y="440" font-family="-apple-system, BlinkMacSystemFont, Inter, Arial, sans-serif" font-size="22" fill="#545b66">compiled into a private, searchable markdown wiki.</text>
+
+  <!-- Capture → Triage → Compile. -->
+  <g font-family="-apple-system, BlinkMacSystemFont, Inter, Arial, sans-serif">
+    <rect x="672" y="150" width="456" height="100" rx="14" fill="#eef4ff" stroke="#9bbcff"/>
+    <text x="704" y="188" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#2f6feb">01</text>
+    <text x="754" y="189" font-size="24" font-weight="600" fill="#1d63d8">Capture</text>
+    <text x="754" y="220" font-size="16" fill="#626a75">commits · sessions · links</text>
+
+    <rect x="672" y="266" width="456" height="100" rx="14" fill="#fff" stroke="#dfe3e8"/>
+    <text x="704" y="304" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#717781">02</text>
+    <text x="754" y="305" font-size="24" font-weight="600" fill="#15181d">Triage</text>
+    <text x="754" y="336" font-size="16" fill="#626a75">filter noise before inference</text>
+
+    <rect x="672" y="382" width="456" height="100" rx="14" fill="#fff" stroke="#dfe3e8"/>
+    <text x="704" y="420" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#717781">03</text>
+    <text x="754" y="421" font-size="24" font-weight="600" fill="#15181d">Compile</text>
+    <text x="754" y="452" font-size="16" fill="#626a75">plain markdown · qmd search</text>
   </g>
-  <g fill="#ffb86b" opacity="0.65">
-    <circle cx="950" cy="90" r="5"/>
-    <circle cx="1040" cy="160" r="6"/>
-    <circle cx="1110" cy="100" r="4"/>
-    <circle cx="990" cy="240" r="5"/>
-    <circle cx="900" cy="200" r="4"/>
-    <circle cx="1130" cy="190" r="3"/>
-  </g>
 
-  <!-- Eyebrow — tagline only, NEVER a version -->
-  <text x="80" y="155" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="22" letter-spacing="3" fill="#6b6f78">SCRIBE — SINGLE-BINARY GO CLI</text>
-
-  <!-- Headline -->
-  <text x="80" y="270" font-family="Iowan Old Style, Palatino, Georgia, serif"
-        font-size="86" font-weight="400" fill="#e6e8ec">Your knowledge base,</text>
-  <text x="80" y="370" font-family="Iowan Old Style, Palatino, Georgia, serif"
-        font-size="86" font-style="italic" font-weight="400" fill="#ffb86b">written by your tools.</text>
-
-  <!-- Lede -->
-  <text x="80" y="440" font-family="-apple-system, Helvetica, Arial, sans-serif"
-        font-size="26" fill="#9ba0aa">A single-binary CLI that mines your git repos,</text>
-  <text x="80" y="478" font-family="-apple-system, Helvetica, Arial, sans-serif"
-        font-size="26" fill="#9ba0aa">coding-agent sessions &amp; self-sent links</text>
-  <text x="80" y="516" font-family="-apple-system, Helvetica, Arial, sans-serif"
-        font-size="26" fill="#9ba0aa">into a curated, semantically searchable wiki.</text>
-
-  <!-- Footer URL -->
-  <text x="80" y="585" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="22" fill="#ffb86b">getscribe.dev</text>
+  <text x="72" y="590" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#343a43">getscribe.dev</text>
+  <text x="1128" y="590" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#69707a">OPEN SOURCE · LOCAL-FIRST · MIT</text>
 </svg>
