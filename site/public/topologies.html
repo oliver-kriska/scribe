@@ -23,6 +23,7 @@
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:site" content="@quatermain32" />
 <meta name="twitter:image" content="https://getscribe.dev/og-v4.png" />
+
 <script>
   // no-FOUC theme bootstrap — same key as the home page so a choice carries over
   (function () {
@@ -149,6 +150,8 @@
   /* ---- layout ---- */
   .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 96px; }
   .doc { max-width: 74ch; }
+  .doc--vs { max-width: none; }
+  .doc--vs > h1, .doc--vs > h2, .doc--vs > p { max-width: 74ch; }
   .doc__kicker { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); margin: 40px 0 10px; }
 
   /* ---- prose ---- */
@@ -175,6 +178,7 @@
   /* ---- tables: must scroll inside themselves, never the page ---- */
   .table-scroll { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--border); border-radius: var(--r-md); }
   .doc table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  .doc--vs table { min-width: 900px; }
   .doc thead th { text-align: left; font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.045em; color: var(--muted); background: var(--bg-sub); padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   .doc tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border-2); vertical-align: top; }
   .doc tbody tr:last-child td { border-bottom: 0; }
@@ -183,6 +187,7 @@
   .foot { max-width: 74ch; margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
   .foot a { color: var(--accent); text-decoration: none; }
   .foot a:hover { text-decoration: underline; }
+  @media (max-width: 620px) { .bar .btn { min-width: 44px; min-height: 44px; justify-content: center; } }
 </style>
 </head>
 <body>
@@ -200,7 +205,7 @@
 </header>
 <main class="wrap">
   <p class="doc__kicker">Reference</p>
-  <article class="doc">
+  <article class="doc doc--topologies">
 <h1
 id="topologies--who-writes-to-your-kb-and-what-that-costs">Topologies —
 who writes to your KB, and what that costs</h1>

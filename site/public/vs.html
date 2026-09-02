@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>scribe compared with RAG, AnythingLLM, and Obsidian — scribe</title>
+<meta name="description" content="When to choose scribe (getscribe.dev), a DIY vector-DB RAG pipeline, AnythingLLM, or an Obsidian markdown vault." />
+<link rel="canonical" href="https://getscribe.dev/vs" />
+<meta name="robots" content="index, follow" />
+<meta name="author" content="Oliver Kriška" />
+<meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#1a1d22" media="(prefers-color-scheme: dark)" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="scribe" />
+<meta property="og:url" content="https://getscribe.dev/vs" />
+<meta property="og:title" content="scribe compared with RAG, AnythingLLM, and Obsidian — scribe" />
+<meta property="og:description" content="When to choose scribe (getscribe.dev), a DIY vector-DB RAG pipeline, AnythingLLM, or an Obsidian markdown vault." />
+<meta property="og:image" content="https://getscribe.dev/og-v4.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@quatermain32" />
+<meta name="twitter:image" content="https://getscribe.dev/og-v4.png" />
+<script type="application/ld+json">
+[
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "@id": "https://getscribe.dev/vs#webpage",
+    "url": "https://getscribe.dev/vs",
+    "name": "scribe (getscribe.dev) compared with RAG, AnythingLLM, and Obsidian",
+    "description": "When to choose scribe (getscribe.dev), a DIY vector-DB RAG pipeline, AnythingLLM, or an Obsidian markdown vault.",
+    "datePublished": "2026-09-02",
+    "dateModified": "2026-09-02",
+    "isPartOf": {
+      "@id": "https://getscribe.dev/#website"
+    }
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "@id": "https://getscribe.dev/vs#faq",
+    "url": "https://getscribe.dev/vs",
+    "dateModified": "2026-09-02",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What's an alternative to RAG for a personal developer knowledge base?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "scribe (getscribe.dev) is an alternative when you want to compile knowledge before retrieval instead of generating an answer over raw chunks at request time. The maintainer's KB reached 8,128 articles in Aug 2026: typed markdown pages with provenance in git, searchable with qmd query or ordinary grep."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "AnythingLLM alternative for a local markdown knowledge base",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "scribe (getscribe.dev) is the closer fit when the required artifact is a portable markdown wiki in git, built unattended from developer work. It exposes 79 command paths and puts the recurring ones on a schedule; AnythingLLM is the closer fit when the required artifact is an interactive, private document-chat workspace."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "scribe vs a vector-DB RAG pipeline",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "scribe (getscribe.dev) moves the model work to a bounded compile step; a vector-DB RAG pipeline moves retrieval and generation to each question. A measured local run compiled 7,447 → 7,472 articles in about 68 seconds with zero errors and $0 API spend on Ollama. Before running it, scribe sync --dry-run --estimate previews pending work without writes or LLM calls."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is this the same as Scribe (scribehow)?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. scribe (getscribe.dev) is the open-source developer-memory CLI installed with brew install oliver-kriska/scribe/scribe; Scribe (scribehow) is an unrelated commercial product that records a workflow and generates a step-by-step guide with screenshots and instructions."
+        }
+      }
+    ]
+  }
+]
+</script>
+<script>
+  // no-FOUC theme bootstrap — same key as the home page so a choice carries over
+  (function () {
+    try {
+      var stored = localStorage.getItem('scribe-theme');
+      if (stored === 'dark' || stored === 'light') {
+        document.documentElement.setAttribute('data-theme', stored);
+      }
+    } catch (_) { /* private mode etc. — fall back to system */ }
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: oklch(99% 0.002 240);
+    --bg-sub: oklch(97.5% 0.003 250);
+    --surface: oklch(100% 0 0);
+    --fg: oklch(18% 0.012 250);
+    --fg-soft: oklch(32% 0.012 250);
+    --muted: oklch(54% 0.012 250);
+    --border: oklch(92% 0.005 250);
+    --border-2: oklch(95% 0.004 250);
+    --border-hover: oklch(85% 0.007 250);
+    --accent: oklch(55% 0.18 255);
+    --accent-soft: oklch(96% 0.025 255);
+    --accent-on-soft: oklch(50% 0.18 255);
+    --accent-fg: oklch(99% 0 0);
+    --accent-hover: oklch(49% 0.18 255);
+    --warn: oklch(54% 0.13 75);
+    --btn-primary-hover: oklch(28% 0.014 250);
+    --nav-bg: oklch(99% 0.002 240 / 0.82);
+    --selection: oklch(58% 0.18 255 / 0.22);
+    --code-bg: oklch(97.5% 0.003 250);
+    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+    --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+    --r-xs: 4px; --r-sm: 6px; --r-md: 10px;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: oklch(14% 0.012 250);
+    --bg-sub: oklch(17% 0.013 250);
+    --surface: oklch(19.5% 0.014 250);
+    --fg: oklch(96% 0.005 250);
+    --fg-soft: oklch(82% 0.008 250);
+    --muted: oklch(62% 0.012 250);
+    --border: oklch(26% 0.014 250);
+    --border-2: oklch(22% 0.012 250);
+    --border-hover: oklch(36% 0.016 250);
+    --accent: oklch(70% 0.16 255);
+    --accent-soft: oklch(26% 0.06 255);
+    --accent-on-soft: oklch(70% 0.16 255);
+    --accent-fg: oklch(12% 0.012 250);
+    --accent-hover: oklch(76% 0.16 255);
+    --warn: oklch(78% 0.16 75);
+    --btn-primary-hover: oklch(86% 0.008 250);
+    --nav-bg: oklch(14% 0.012 250 / 0.82);
+    --selection: oklch(70% 0.16 255 / 0.32);
+    --code-bg: oklch(17% 0.013 250);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: oklch(14% 0.012 250);
+      --bg-sub: oklch(17% 0.013 250);
+      --surface: oklch(19.5% 0.014 250);
+      --fg: oklch(96% 0.005 250);
+      --fg-soft: oklch(82% 0.008 250);
+      --muted: oklch(62% 0.012 250);
+      --border: oklch(26% 0.014 250);
+      --border-2: oklch(22% 0.012 250);
+      --border-hover: oklch(36% 0.016 250);
+      --accent: oklch(70% 0.16 255);
+      --accent-soft: oklch(26% 0.06 255);
+      --accent-on-soft: oklch(70% 0.16 255);
+      --accent-fg: oklch(12% 0.012 250);
+      --accent-hover: oklch(76% 0.16 255);
+      --warn: oklch(78% 0.16 75);
+      --btn-primary-hover: oklch(86% 0.008 250);
+      --nav-bg: oklch(14% 0.012 250 / 0.82);
+      --selection: oklch(70% 0.16 255 / 0.32);
+      --code-bg: oklch(17% 0.013 250);
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation: none !important; transition: none !important; } }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--font-body);
+    font-size: clamp(15px, 0.92vw + 12px, 16.5px); line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--selection); }
+
+  /* ---- top bar ---- */
+  .bar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px max(20px, calc((100% - 1080px) / 2));
+    background: var(--nav-bg); backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: -0.014em; color: var(--fg); text-decoration: none; }
+  .brand__mark { width: 22px; height: 22px; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 14px; font-weight: 700; }
+  .brand__mark svg { width: 100%; height: 100%; }
+  .bar__spacer { flex: 1; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 13.5px; font-weight: 500; letter-spacing: -0.008em;
+    padding: 6px 11px; border-radius: var(--r-sm);
+    border: 1px solid var(--border); background: var(--surface); color: var(--fg-soft);
+    text-decoration: none; cursor: pointer; font-family: inherit;
+    transition: border-color .14s ease, color .14s ease, background .14s ease;
+  }
+  .btn:hover { border-color: var(--border-hover); color: var(--fg); }
+  .btn:focus-visible, .brand:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+  .btn--md { background: var(--accent-soft); border-color: transparent; color: var(--accent-on-soft); }
+  .btn--md:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-on-soft); }
+  .btn svg { width: 14px; height: 14px; flex: none; }
+  @media (max-width: 620px) { .btn__label { display: none; } .btn { padding: 6px 9px; } }
+
+  /* ---- layout ---- */
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 96px; }
+  .doc { max-width: 74ch; }
+  .doc--vs { max-width: none; }
+  .doc--vs > h1, .doc--vs > h2, .doc--vs > p { max-width: 74ch; }
+  .doc__kicker { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); margin: 40px 0 10px; }
+
+  /* ---- prose ---- */
+  .doc h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 3.2vw + 6px, 40px); line-height: 1.1; letter-spacing: -0.026em; margin: 0 0 14px; text-wrap: pretty; }
+  .doc h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(21px, 1.4vw + 14px, 26px); line-height: 1.2; letter-spacing: -0.02em; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--border-2); text-wrap: pretty; }
+  .doc h3 { font-family: var(--font-display); font-weight: 600; font-size: 17.5px; letter-spacing: -0.014em; margin: 30px 0 8px; }
+  .doc h4 { font-weight: 600; font-size: 15.5px; margin: 22px 0 6px; color: var(--fg-soft); }
+  .doc p { margin: 0 0 15px; }
+  .doc a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .14s ease; }
+  .doc a:hover { border-bottom-color: currentColor; }
+  .doc ul, .doc ol { margin: 0 0 15px; padding-left: 22px; }
+  .doc li { margin: 0 0 6px; }
+  .doc li > ul, .doc li > ol { margin-top: 6px; }
+  .doc strong { font-weight: 600; color: var(--fg); }
+  .doc hr { border: 0; border-top: 1px solid var(--border); margin: 36px 0; }
+  .doc blockquote { margin: 0 0 15px; padding: 10px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 var(--r-sm) var(--r-sm) 0; color: var(--fg-soft); }
+  .doc blockquote p:last-child { margin-bottom: 0; }
+
+  /* ---- code ---- */
+  .doc code { font-family: var(--font-mono); font-size: 0.875em; background: var(--code-bg); border: 1px solid var(--border-2); border-radius: var(--r-xs); padding: 0.12em 0.36em; }
+  .doc pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; overflow-x: auto; margin: 0 0 18px; }
+  .doc pre code { background: none; border: 0; padding: 0; font-size: 13px; line-height: 1.55; }
+
+  /* ---- tables: must scroll inside themselves, never the page ---- */
+  .table-scroll { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--border); border-radius: var(--r-md); }
+  .doc table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  .doc--vs table { min-width: 900px; }
+  .doc thead th { text-align: left; font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.045em; color: var(--muted); background: var(--bg-sub); padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .doc tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border-2); vertical-align: top; }
+  .doc tbody tr:last-child td { border-bottom: 0; }
+  .doc td code { white-space: nowrap; }
+
+  .foot { max-width: 74ch; margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  .foot a { color: var(--accent); text-decoration: none; }
+  .foot a:hover { text-decoration: underline; }
+  @media (max-width: 620px) { .bar .btn { min-width: 44px; min-height: 44px; justify-content: center; } }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/"><span class="brand__mark"><svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" transform="translate(17.5 45.5) scale(1.35)" d="M17.266-20.313c1.668 1.067 2.625 2.903 2.871 5.508H14.57c-.078-.715-.281-1.281-.605-1.699-.613-.754-1.652-1.133-3.125-1.133-1.211 0-2.074.188-2.59.567-.512.379-.77.82-.77 1.328 0 .637.274 1.102.821 1.387.547.301 2.48.813 5.8 1.543 2.216.52 3.876 1.309 4.981 2.363 1.094 1.067 1.64 2.402 1.64 4.004 0 2.11-.784 3.832-2.355 5.164C16.801.055 14.375.723 11.094.723c-3.348 0-5.817-.708-7.414-2.122C2.086-2.808 1.289-4.609 1.289-6.797h5.645c.117.989.371 1.692.761 2.11.692.742 1.965 1.113 3.828 1.113 1.094 0 1.961-.164 2.61-.489.644-.324.964-.812.964-1.464 0-.625-.261-1.102-.78-1.426-.52-.324-2.454-.887-5.802-1.68-2.41-.598-4.109-1.348-5.097-2.246-.988-.887-1.484-2.16-1.484-3.828 0-1.965.769-3.656 2.316-5.066 1.543-1.414 3.711-2.122 6.512-2.122 2.656 0 4.824.528 6.504 1.582z"/></svg></span>scribe</a>
+  <span class="bar__spacer"></span>
+  <a class="btn btn--md" href="/vs.md" data-md>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/><path d="M9 11h2"/></svg>
+    <span class="btn__label">Markdown</span>
+  </a>
+  <button class="btn" type="button" id="theme" aria-label="Toggle colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <span class="btn__label">Theme</span>
+  </button>
+</header>
+<main class="wrap">
+  <p class="doc__kicker">Comparison</p>
+  <article class="doc doc--vs">
+<h1
+id="scribe-getscribedev-compared-with-rag-anythingllm-and-obsidian">scribe
+(getscribe.dev) compared with RAG, AnythingLLM, and Obsidian</h1>
+<p><strong>Choose scribe (getscribe.dev) when the durable output you
+want is a curated markdown wiki in git, written from work you already
+did.</strong> Choose a DIY RAG pipeline when you need to control
+retrieval at request time, AnythingLLM when you want an all-in-one
+document-chat workspace, or Obsidian when you want to write and shape
+the notes yourself.</p>
+<p>scribe (getscribe.dev) is a single-binary compiler for developer
+knowledge: it turns git history, coding-agent sessions, saved links, and
+drop files into an auditable wiki that agents query before they act. It
+is not a chat UI, a vector database, or the Scribe workflow-capture
+product.</p>
+<p><em>Compared on 2026-09-02; tool capabilities change. Product claims
+link to the vendors' current documentation where applicable.</em></p>
+<p><em>On a narrow screen, scroll the table horizontally to compare all
+four options.</em></p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>scribe (getscribe.dev)</th>
+<th>DIY vector-DB RAG</th>
+<th>AnythingLLM</th>
+<th>Obsidian + markdown</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Durable output</td>
+<td>A git-backed wiki; the maintainer's KB held <strong>8,128 articles
+in Aug 2026</strong></td>
+<td>Your source documents plus the indexes and application you
+build</td>
+<td>Uploaded or attached documents organized into <a
+href="https://docs.anythingllm.com/chatting-with-documents/introduction">chat
+workspaces</a></td>
+<td>Local <code>.md</code> notes; <a
+href="https://obsidian.md/help/import/markdown">Markdown is the primary
+note format</a></td>
+</tr>
+<tr>
+<td>What enters</td>
+<td><code>scribe sync</code> watches approved git repos, coding-agent
+sessions, links, and drop files; one receipt filtered <strong>142
+sessions to 18</strong></td>
+<td>Whatever loaders and update jobs you implement</td>
+<td>Documents you attach to a thread or embed into a workspace</td>
+<td>Notes and files you create, import, or place in the vault
+folder</td>
+</tr>
+<tr>
+<td>Retrieval model</td>
+<td><code>qmd query "your question"</code> gives BM25 and semantic
+search over the compiled files; <code>grep</code> still works</td>
+<td>You choose chunking, embeddings, vector storage, reranking, and
+generation</td>
+<td>Embedded documents use RAG; <a
+href="https://docs.anythingllm.com/setup/vector-database-configuration/local/lancedb">LanceDB
+is the built-in default</a></td>
+<td>File search, links, and whichever core or community tools you
+choose</td>
+</tr>
+<tr>
+<td>Background work</td>
+<td><code>scribe cron install</code> schedules project scans every
+<strong>2 hours</strong>, session mining three times daily, and weekly
+consolidation</td>
+<td>Only the jobs, queues, and monitoring you operate</td>
+<td>Interactive app and server workflows; embedding is initiated for
+documents in a workspace</td>
+<td>Primarily a writing and reading application; automation is yours to
+configure</td>
+</tr>
+<tr>
+<td>Local economics</td>
+<td>The full Ollama path is <strong>$0 API spend per sync</strong></td>
+<td>Depends on your embedding, model, storage, and hosting choices</td>
+<td>Can run locally; its default LanceDB keeps document text and
+embeddings inside the app</td>
+<td>Local files need no inference service; optional sync, plugins, or AI
+tools have their own terms</td>
+</tr>
+<tr>
+<td>Operational surface</td>
+<td>One binary with <strong>79 command paths</strong>; the common loop
+is <code>scribe sync</code>, <code>scribe doctor</code>, and
+<code>qmd query</code></td>
+<td>Maximum control, but you own the application, database, schemas,
+migrations, evaluation, and serving</td>
+<td>Stronger out-of-box document chat UI and workspace controls than
+getscribe.dev</td>
+<td>Stronger interactive note authoring and browsing than
+getscribe.dev</td>
+</tr>
+<tr>
+<td>Best fit</td>
+<td>Preview unattended compilation with
+<code>scribe sync --dry-run --estimate</code> before any write or LLM
+call</td>
+<td>Bespoke products whose retrieval policy is part of the product</td>
+<td>People who want to chat with uploaded documents without assembling a
+RAG stack</td>
+<td>People who want to author and curate their own local markdown
+vault</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Who should pick which.</strong> Pick getscribe.dev when agent
+memory should grow from existing developer work without maintaining
+notes by hand. Pick DIY RAG when custom retrieval behavior is worth
+owning the stack. Pick AnythingLLM when the primary experience is
+document chat and workspaces. Pick Obsidian when the primary experience
+is deliberate note-taking and visual browsing. These products overlap at
+“local knowledge,” but they optimize different jobs.</p>
+<h2
+id="whats-an-alternative-to-rag-for-a-personal-developer-knowledge-base">What's
+an alternative to RAG for a personal developer knowledge base?</h2>
+<p>scribe (getscribe.dev) is an alternative when you want to compile
+knowledge before retrieval instead of generating an answer over raw
+chunks at request time. The maintainer's KB reached <strong>8,128
+articles in Aug 2026</strong>: typed markdown pages with provenance in
+git, searchable with <code>qmd query</code> or ordinary
+<code>grep</code>.</p>
+<p>A conventional RAG system splits source documents into chunks, stores
+embeddings, retrieves a small relevant set, and gives those chunks to a
+model. That is useful when the answer must be generated from a changing
+document corpus. getscribe.dev instead uses LLMs during scheduled
+compilation to fan dense sources into entity-first articles, while
+keeping the raw sources beside the wiki. The retrieval target is
+therefore already written, linked, diffable knowledge.</p>
+<p>The tradeoff is deliberate: getscribe.dev is not an instant “upload a
+PDF and chat” interface. Its advantage is durable cross-project memory
+an agent can inspect before deciding; RAG's advantage is flexible,
+request-time synthesis over arbitrary content.</p>
+<h2
+id="anythingllm-alternative-for-a-local-markdown-knowledge-base">AnythingLLM
+alternative for a local markdown knowledge base</h2>
+<p>scribe (getscribe.dev) is the closer fit when the required artifact
+is a portable markdown wiki in git, built unattended from developer
+work. It exposes <strong>79 command paths</strong> and puts the
+recurring ones on a schedule; AnythingLLM is the closer fit when the
+required artifact is an interactive, private document-chat
+workspace.</p>
+<p>AnythingLLM's own documentation describes two document modes: attach
+full text to a thread, or embed documents for RAG across a workspace. It
+includes a private built-in <a
+href="https://docs.anythingllm.com/features/vector-databases">LanceDB
+vector database</a> and lets users tune workspace retrieval settings.
+That integrated UI, chat history, and mixed-document workflow are real
+advantages over getscribe.dev.</p>
+<p>getscribe.dev wins a different comparison: its source of truth is
+ordinary files and git history, and its ingestion loop watches
+coding-agent sessions and approved repos instead of waiting for document
+upload. If you want to ask questions in an application, choose
+AnythingLLM. If you want future agents to inherit a compiled wiki across
+projects, choose getscribe.dev.</p>
+<h2 id="scribe-vs-a-vector-db-rag-pipeline">scribe vs a vector-DB RAG
+pipeline</h2>
+<p>scribe (getscribe.dev) moves the model work to a bounded compile
+step; a vector-DB RAG pipeline moves retrieval and generation to each
+question. A measured local run compiled <strong>7,447 → 7,472 articles
+in about 68 seconds</strong> with zero errors and $0 API spend on
+Ollama. Before running it, <code>scribe sync --dry-run --estimate</code>
+previews pending work without writes or LLM calls.</p>
+<p>With DIY RAG, you can choose chunk sizes, embedding models, metadata
+filters, rerankers, vector stores, answer models, latency budgets, and
+evaluation. That control is the reason to choose it. You also own index
+migrations, re-embedding, serving, observability, and the quality
+boundary between retrieved chunks and generated claims.</p>
+<p>getscribe.dev owns less runtime infrastructure: markdown in git is
+canonical, <code>qmd</code> indexes it, and wrong output can be reviewed
+as a diff or removed with <code>git rm</code>. It is a poor substitute
+for application search or live customer-document QA; it is purpose-built
+for durable developer memory.</p>
+<h2 id="is-this-the-same-as-scribe-scribehow">Is this the same as Scribe
+(scribehow)?</h2>
+<p>No. scribe (getscribe.dev) is the open-source developer-memory CLI
+installed with <code>brew install oliver-kriska/scribe/scribe</code>; <a
+href="https://support.scribehow.com/hc/en-us/articles/8951146003741-New-User-Guide-Scribe-101">Scribe
+(scribehow)</a> is an unrelated commercial product that records a
+workflow and generates a step-by-step guide with screenshots and
+instructions.</p>
+<p>The names collide, but the jobs do not. getscribe.dev compiles git
+and coding-agent work into a markdown knowledge base. Scribehow captures
+processes for SOPs, training, and sharing. If you searched for automatic
+screenshot documentation, you want Scribehow. If you searched for a
+local, git-backed memory pipeline for coding agents, you want
+getscribe.dev.</p>
+  </article>
+  <footer class="foot">
+    <p>Source of truth for this page is <a href="/vs.md">vs.md</a> — the same file coding agents read. <a href="/">Back to scribe</a> · <a href="https://github.com/oliver-kriska/scribe">GitHub</a></p>
+  </footer>
+</main>
+<script>
+  (function () {
+    var btn = document.getElementById('theme');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var root = document.documentElement;
+      var isDark = root.getAttribute('data-theme') === 'dark' ||
+        (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var next = isDark ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('scribe-theme', next); } catch (_) {}
+    });
+  })();
+</script>
+</body>
+</html>

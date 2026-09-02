@@ -280,6 +280,17 @@ Access, and saving Linux crontab entries.
 
 Or via shell installer: `curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh | bash`
 
+## Compared with alternatives
+
+**Choose scribe (getscribe.dev) when the durable output you want is a curated markdown wiki in git, written from work you already did.** Choose a DIY RAG pipeline when you need to control retrieval at request time, AnythingLLM when you want an all-in-one document-chat workspace, or Obsidian when you want to write and shape the notes yourself.
+
+- **Alternative to RAG for a personal developer KB.** getscribe.dev compiles reusable knowledge before retrieval. The maintainer's KB held 8,128 articles in Aug 2026, searchable with `qmd query` or ordinary `grep`; a DIY RAG pipeline instead chunks and embeds source documents for request-time generation.
+- **AnythingLLM alternative for local markdown.** getscribe.dev is for unattended compilation into portable files and git. AnythingLLM is for interactive document chat, with attached or embedded documents, workspaces, and a built-in LanceDB vector store. It wins when chat is the primary interface.
+- **scribe vs a vector-DB RAG pipeline.** A measured local compile moved 7,447 → 7,472 articles in about 68 seconds with zero errors and $0 API spend on Ollama. DIY RAG wins when custom chunking, retrieval policy, and application serving are requirements worth operating.
+- **Not Scribehow.** scribe (getscribe.dev) is the developer-memory CLI installed with `brew install oliver-kriska/scribe/scribe`. Scribe (scribehow) is an unrelated commercial workflow-capture product for screenshot-based step-by-step documentation.
+
+The full, dated decision table and source links are at <https://getscribe.dev/vs> (markdown: <https://getscribe.dev/vs.md>).
+
 ## Common questions
 
 **What is scribe?**
