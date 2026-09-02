@@ -857,7 +857,7 @@
   /* -------------------- hero -------------------- */
   .hero {
     position: relative;
-    padding-block: clamp(56px, 8vw, 120px) clamp(48px, 7vw, 96px);
+    padding-block: clamp(48px, 5.5vw, 80px) clamp(44px, 4.5vw, 64px);
   }
   .hero .wrap { position: relative; z-index: 1; }
   .hero__grid {
@@ -887,6 +887,11 @@
     margin-left: 4px;
   }
   .hero__eyebrow strong { color: var(--fg-soft); font-weight: 600; }
+  .hero__mark {
+    width: 18px;
+    height: 18px;
+    border-radius: var(--r-xs);
+  }
   .hero h1 {
     font-size: clamp(34px, 5.4vw, 68px);
     letter-spacing: -0.032em;
@@ -940,12 +945,15 @@
      can't be run — Web Share sends the page URL to the reader's desktop. */
   .hero__share { display: none; }
   .hero__stats {
-    margin-top: 36px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 32px 40px;
-    padding-top: 26px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 32px;
     border-top: 1px solid var(--border);
+  }
+  .hero__stats .stat { padding: 22px 24px 0 0; }
+  .hero__stats .stat + .stat {
+    padding-left: 24px;
+    border-left: 1px solid var(--border);
   }
   .stat__num {
     font-family: var(--font-mono);
@@ -1019,6 +1027,17 @@
   .terminal__body .out-em { color: var(--term-fg); font-weight: 600; }
 
   .term-line { display: block; white-space: pre-wrap; }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
   .caret {
     display: inline-block;
     width: 7px; height: 14px;
@@ -1372,6 +1391,15 @@
     letter-spacing: -0.024em;
     line-height: 1.12;
     text-wrap: balance;
+  }
+  .teams-early__label {
+    margin-bottom: 10px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
   }
   .teams-early__copy p {
     margin-top: 14px;
@@ -2330,8 +2358,20 @@
     margin-top: 16px;
     font-size: 17px;
   }
+  .cta-end__commands {
+    display: grid;
+    gap: 10px;
+    width: min(100%, 590px);
+    margin: 28px auto 0;
+    text-align: left;
+  }
+  .cta-end__commands .hero__install {
+    width: 100%;
+    max-width: none;
+    margin-top: 0;
+  }
   .cta-end__buttons {
-    margin-top: 28px;
+    margin-top: 22px;
     display: inline-flex;
     flex-wrap: wrap;
     gap: 10px;
@@ -2359,7 +2399,7 @@
     font-size: 13px;
     line-height: 1.55;
   }
-  .footer__col h4 {
+  .footer__col h3 {
     font-family: var(--font-mono);
     font-size: 11.5px;
     text-transform: uppercase;
@@ -2399,7 +2439,7 @@
     .hero__grid { grid-template-columns: minmax(0, 1fr); }
     .hero__copy, .hero__visual { min-width: 0; }
     .terminal { min-width: 0; max-width: 100%; }
-    .hero { padding-block: 56px 64px; }
+    .hero { padding-block: 48px 56px; }
     .terminal__body { font-size: 12.5px; min-height: 300px; max-height: 340px; overflow: hidden; }
     .steps { grid-template-columns: 1fr; }
     .step { min-height: 0; }
@@ -2417,8 +2457,12 @@
     .features, .audience, .team-grid { grid-template-columns: 1fr; }
     .footer__grid { grid-template-columns: 1fr 1fr; gap: 28px; }
     .hero h1 { font-size: clamp(34px, 9vw, 44px); }
-    .hero__stats { gap: 22px 28px; }
-    .terminal__body { font-size: 11.75px; min-height: 280px; }
+    .hero__stats .stat { padding: 18px 10px 0 0; }
+    .hero__stats .stat + .stat { padding-left: 12px; }
+    .stat__num { font-size: 22px; }
+    .stat__num .unit, .stat__label { font-size: 12.5px; }
+    .terminal__body { font-size: 12.5px; min-height: 255px; }
+    .cost__lines { font-size: 12.5px; }
     .hero__share { display: inline-flex; }
   }
   @media (max-width: 420px) {
@@ -2549,14 +2593,14 @@
     <div class="hero__grid">
       <div class="hero__copy">
         <span class="hero__eyebrow">
-          <span class="brand__mark" style="width:18px;height:18px;border-radius:var(--r-xs);"><svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" transform="translate(17.5 45.5) scale(1.35)" d="M17.266-20.313c1.668 1.067 2.625 2.903 2.871 5.508H14.57c-.078-.715-.281-1.281-.605-1.699-.613-.754-1.652-1.133-3.125-1.133-1.211 0-2.074.188-2.59.567-.512.379-.77.82-.77 1.328 0 .637.274 1.102.821 1.387.547.301 2.48.813 5.8 1.543 2.216.52 3.876 1.309 4.981 2.363 1.094 1.067 1.64 2.402 1.64 4.004 0 2.11-.784 3.832-2.355 5.164C16.801.055 14.375.723 11.094.723c-3.348 0-5.817-.708-7.414-2.122C2.086-2.808 1.289-4.609 1.289-6.797h5.645c.117.989.371 1.692.761 2.11.692.742 1.965 1.113 3.828 1.113 1.094 0 1.961-.164 2.61-.489.644-.324.964-.812.964-1.464 0-.625-.261-1.102-.78-1.426-.52-.324-2.454-.887-5.802-1.68-2.41-.598-4.109-1.348-5.097-2.246-.988-.887-1.484-2.16-1.484-3.828 0-1.965.769-3.656 2.316-5.066 1.543-1.414 3.711-2.122 6.512-2.122 2.656 0 4.824.528 6.504 1.582z"/></svg></span>
+          <span class="brand__mark hero__mark"><svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" transform="translate(17.5 45.5) scale(1.35)" d="M17.266-20.313c1.668 1.067 2.625 2.903 2.871 5.508H14.57c-.078-.715-.281-1.281-.605-1.699-.613-.754-1.652-1.133-3.125-1.133-1.211 0-2.074.188-2.59.567-.512.379-.77.82-.77 1.328 0 .637.274 1.102.821 1.387.547.301 2.48.813 5.8 1.543 2.216.52 3.876 1.309 4.981 2.363 1.094 1.067 1.64 2.402 1.64 4.004 0 2.11-.784 3.832-2.355 5.164C16.801.055 14.375.723 11.094.723c-3.348 0-5.817-.708-7.414-2.122C2.086-2.808 1.289-4.609 1.289-6.797h5.645c.117.989.371 1.692.761 2.11.692.742 1.965 1.113 3.828 1.113 1.094 0 1.961-.164 2.61-.489.644-.324.964-.812.964-1.464 0-.625-.261-1.102-.78-1.426-.52-.324-2.454-.887-5.802-1.68-2.41-.598-4.109-1.348-5.097-2.246-.988-.887-1.484-2.16-1.484-3.828 0-1.965.769-3.656 2.316-5.066 1.543-1.414 3.711-2.122 6.512-2.122 2.656 0 4.824.528 6.504 1.582z"/></svg></span>
           Single Go binary · runs on cron · self-hosted
         </span>
         <h1>
           Your knowledge base, <span class="accent">written by your tools.</span>
         </h1>
         <p class="hero__sub">
-          <strong>scribe reads your git history, coding-agent sessions, and self-sent URLs, then writes the wiki for you</strong> &mdash; so the next agent session already knows what you decided and why. It&rsquo;s memory your agents read before they act, not a second brain you maintain and never reopen: plain markdown in git, cross-project, cron-driven, and able to run <strong>100% locally on Ollama</strong> for zero API spend.
+          <strong>scribe turns git history, coding-agent sessions, and saved links into a private markdown wiki your next agent reads before it acts.</strong> It runs across projects, on cron, and fully locally on Ollama for zero API spend.
         </p>
         <div class="hero__install">
           <span class="hero__install-sigil" aria-hidden="true">$</span>
@@ -2574,20 +2618,6 @@
             View on GitHub
           </a>
         </div>
-        <div class="hero__stats">
-          <div class="stat">
-            <div class="stat__num">8,128<span class="unit">articles</span></div>
-            <div class="stat__label">maintainer's KB, Aug 2026 · zero typed by hand</div>
-          </div>
-          <div class="stat">
-            <div class="stat__num">$0<span class="unit">/sync</span></div>
-            <div class="stat__label">verified on 100% Ollama path</div>
-          </div>
-          <div class="stat">
-            <div class="stat__num">~70<span class="unit">s</span></div>
-            <div class="stat__label">weekly Dream cycle, gemma3:12b</div>
-          </div>
-        </div>
       </div>
 
       <div class="hero__visual">
@@ -2599,8 +2629,32 @@
             <div class="terminal__title">~/projects/scriptorium — zsh</div>
             <div style="width:40px;"></div>
           </div>
-          <div class="terminal__body" id="term"></div>
+          <div class="terminal__body" id="term">
+            <span class="term-line"><span class="prompt-user">oliver</span><span class="prompt-at">@</span><span class="prompt-host">mac</span> <span class="prompt-path">~/projects/scriptorium</span> <span class="prompt-sigil">$</span> scribe sync</span>
+            <span class="term-line"><span class="out-dim">discovery .........</span> 41 projects, manifest fresh</span>
+            <span class="term-line"><span class="out-dim">triage (FTS5) .....</span> 142 sessions / <span class="out-em">18 kept</span> / 124 skipped</span>
+            <span class="term-line"><span class="out-dim">absorb pass 1 ....</span> grounding atomic facts</span>
+            <span class="term-line"><span class="out-dim">absorb pass 2 ....</span> fan-out → <span class="out-em">24 entity pages</span></span>
+            <span class="term-line"><span class="out-dim">retrieval splice .</span> 24 articles enriched</span>
+            <span class="term-line"><span class="out-dim">qmd reindex ......</span> 7,447 → <span class="out-em">7,472 articles</span></span>
+            <span class="term-line"><span class="out-ok">ok</span>  0 errors  <span class="out-em">$0.00</span>  68.4s</span>
+          </div>
         </div>
+        <p class="visually-hidden">A successful scribe sync discovers 41 projects, filters 142 sessions down to 18, writes 24 entity pages, reindexes the knowledge base from 7,447 to 7,472 articles, and finishes with zero errors and zero API spend.</p>
+      </div>
+    </div>
+    <div class="hero__stats">
+      <div class="stat">
+        <div class="stat__num">8,128<span class="unit">articles</span></div>
+        <div class="stat__label">maintainer's KB, Aug 2026 · zero typed by hand</div>
+      </div>
+      <div class="stat">
+        <div class="stat__num">$0<span class="unit">/sync</span></div>
+        <div class="stat__label">verified on 100% Ollama path</div>
+      </div>
+      <div class="stat">
+        <div class="stat__num">~70<span class="unit">s</span></div>
+        <div class="stat__label">weekly Dream cycle, gemma3:12b</div>
       </div>
     </div>
   </div>
@@ -3720,7 +3774,7 @@ scribe doctor <span class="flag">--section</span> localmode
     <aside class="teams-early" aria-labelledby="teams-early-title">
       <div class="teams-early__grid">
         <div class="teams-early__copy">
-          <div class="s__eyebrow">Early access</div>
+          <div class="teams-early__label">Early access</div>
           <h3 id="teams-early-title">A paid team edition, on Git you own.</h3>
           <p>The trust gates, secret scanning, and provenance above already exist. This is a demand check for packaging and support around a paid Scribe for Teams edition &mdash; not a hosted product. Two numbers help decide whether to build it.</p>
         </div>
@@ -3756,6 +3810,18 @@ scribe doctor <span class="flag">--section</span> localmode
   <div class="wrap">
     <h2>Install, approve sources, verify.</h2>
     <p>Use the personal, local Ollama, hosted-provider, or team recipe. The same runbook can be pasted into Claude Code or Codex so it performs the setup and proves what works.</p>
+    <div class="cta-end__commands">
+      <div class="hero__install">
+        <span class="hero__install-sigil" aria-hidden="true">$</span>
+        <code id="code-cta-install">brew install oliver-kriska/scribe/scribe</code>
+        <button class="copy-btn" data-copy-target="code-cta-install" aria-label="Copy install command">copy</button>
+      </div>
+      <div class="hero__install">
+        <span class="hero__install-sigil" aria-hidden="true">$</span>
+        <code id="code-cta-init">scribe init --path ~/my-kb --bind</code>
+        <button class="copy-btn" data-copy-target="code-cta-init" aria-label="Copy initialization command">copy</button>
+      </div>
+    </div>
     <div class="cta-end__buttons">
       <a class="btn btn--accent" href="/setup.md">Open the setup runbook</a>
       <a class="btn btn--ghost" href="https://github.com/oliver-kriska/scribe">View source on GitHub →</a>
@@ -3776,14 +3842,14 @@ scribe doctor <span class="flag">--section</span> localmode
         <p>Your knowledge base, written by your tools. Built and maintained by <a href="https://hodinovycto.sk" rel="me noopener" target="_blank">Oliver Kriška</a>.</p>
       </div>
       <div class="footer__col">
-        <h4>Product</h4>
+        <h3>Product</h3>
         <a href="#how">How it works</a>
         <a href="#features">Features</a>
         <a href="#cost">Inference &amp; cost</a>
         <a href="#cli">CLI</a>
       </div>
       <div class="footer__col">
-        <h4>Resources</h4>
+        <h3>Resources</h3>
         <a href="https://github.com/oliver-kriska/scribe">GitHub repo</a>
         <a href="/setup">Setup runbook</a>
         <a href="/topologies">Topologies</a>
@@ -3791,7 +3857,7 @@ scribe doctor <span class="flag">--section</span> localmode
         <a href="#faq">FAQ</a>
       </div>
       <div class="footer__col">
-        <h4>Ecosystem</h4>
+        <h3>Ecosystem</h3>
         <a href="https://github.com/oliver-kriska/qmd">qmd (search)</a>
         <a href="https://ollama.com">Ollama</a>
         <a href="https://claude.com/code">Claude Code</a>
@@ -3936,39 +4002,6 @@ scribe doctor <span class="flag">--section</span> localmode
     targets.forEach(t => io.observe(t));
   })();
 
-  // ---------- hero stat count-up ----------
-  (() => {
-    const target = document.querySelector('.hero__stats .stat:first-child .stat__num');
-    if (!target) return;
-    const finalText = target.firstChild ? target.firstChild.nodeValue : '';
-    const finalNum = parseInt(finalText.replace(/[^\d]/g, ''), 10);
-    if (!finalNum) return;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduced) return; // leave the formatted final value untouched
-    const fmt = (n) => n.toLocaleString('en-US');
-    const dur = 1200;
-    const ease = t => 1 - Math.pow(1 - t, 3); // easeOutCubic
-    let start = 0;
-    const setNum = (n) => { target.firstChild.nodeValue = fmt(n); };
-    setNum(0);
-    const step = (ts) => {
-      if (!start) start = ts;
-      const t = Math.min(1, (ts - start) / dur);
-      setNum(Math.round(ease(t) * finalNum));
-      if (t < 1) requestAnimationFrame(step);
-      else setNum(finalNum);
-    };
-    const io = new IntersectionObserver((entries, obs) => {
-      entries.forEach(e => {
-        if (e.isIntersecting) {
-          requestAnimationFrame(step);
-          obs.disconnect();
-        }
-      });
-    }, { threshold: 0.4 });
-    io.observe(target);
-  })();
-
   // ---------- code tabs (WAI-ARIA tabs pattern) ----------
   const tabBar = document.getElementById('tabs');
   const panels = document.querySelectorAll('.code-panel');
@@ -4095,7 +4128,7 @@ scribe doctor <span class="flag">--section</span> localmode
   ];
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let line = ''; // working buffer for current cmd typing
+  const staticTerminal = window.matchMedia('(max-width: 720px)').matches;
 
   function el(html) {
     const span = document.createElement('span');
@@ -4139,41 +4172,25 @@ scribe doctor <span class="flag">--section</span> localmode
     term.innerHTML = '';
   }
 
-  async function loop() {
-    if (reducedMotion) {
-      // static render: just show one scene
-      const s = SCENES[0];
-      term.innerHTML = '';
-      writeStatic(PROMPT + s.cmd);
-      s.out.forEach(o => writeStatic(o));
-      return;
-    }
-    while (true) {
-      for (const scene of SCENES) {
-        reset();
-        await runScene(scene);
-      }
-    }
-  }
+  if (!reducedMotion && !staticTerminal) {
+    // Keep the useful sync receipt on first paint, then continue with scene 3.
+    let paused = false;
+    let sceneIndex = 2;
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => { paused = !e.isIntersecting; });
+    }, { threshold: 0.1 });
+    io.observe(term);
 
-  // pause when offscreen to save battery
-  let paused = false;
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(e => { paused = !e.isIntersecting; });
-  }, { threshold: 0.1 });
-  io.observe(term);
-
-  // simple gate: don't loop while offscreen
-  (async () => {
-    if (reducedMotion) { loop(); return; }
-    while (true) {
-      for (const scene of SCENES) {
+    (async () => {
+      await sleep(1400);
+      while (true) {
         while (paused) await sleep(400);
         reset();
-        await runScene(scene);
+        await runScene(SCENES[sceneIndex]);
+        sceneIndex = (sceneIndex + 1) % SCENES.length;
       }
-    }
-  })();
+    })();
+  }
 
 </script>
 
