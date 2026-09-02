@@ -4,6 +4,12 @@
 # and the favicons. HTML keeps the default (must-revalidate) so
 # deploys propagate immediately.
 
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  X-Frame-Options: DENY
+
 /og-v2.png
   Cache-Control: public, max-age=31536000, immutable
 
@@ -30,6 +36,12 @@
 
 /logo-512.png
   Cache-Control: public, max-age=31536000, immutable
+
+/scribe-explainer-poster.jpg
+  Cache-Control: public, max-age=604800
+
+/scribe-explainer-teams-poster.jpg
+  Cache-Control: public, max-age=604800
 
 /robots.txt
   Cache-Control: public, max-age=3600

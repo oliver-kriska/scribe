@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#202226" media="(prefers-color-scheme: dark)" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<title>Page not found · scribe</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: oklch(99% 0.002 240);
+    --surface: oklch(100% 0 0);
+    --fg: oklch(18% 0.012 250);
+    --muted: oklch(46% 0.012 250);
+    --border: oklch(92% 0.005 250);
+    --accent: oklch(55% 0.18 255);
+    --focus: oklch(55% 0.18 255 / 0.35);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: oklch(14% 0.012 250);
+      --surface: oklch(18% 0.012 250);
+      --fg: oklch(94% 0.005 240);
+      --muted: oklch(70% 0.012 250);
+      --border: oklch(27% 0.012 250);
+      --accent: oklch(70% 0.16 255);
+      --focus: oklch(70% 0.16 255 / 0.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { min-width: 320px; background: var(--bg); }
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+  }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:hover { color: var(--accent); }
+  a:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
+  .shell {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    width: min(1080px, calc(100% - 40px));
+    min-height: 100vh;
+    margin: 0 auto;
+  }
+  .nav,
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    min-height: 72px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    text-decoration: none;
+  }
+  .brand img { width: 26px; height: 26px; border-radius: 5px; }
+  .nav__links,
+  .foot__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  main {
+    display: grid;
+    align-content: center;
+    justify-items: start;
+    min-height: 480px;
+    padding: 72px 0;
+  }
+  .code {
+    margin: 0 0 18px;
+    color: var(--accent);
+    font: 500 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: 0.09em;
+  }
+  h1 {
+    max-width: 760px;
+    margin: 0;
+    font-size: clamp(40px, 7vw, 76px);
+    font-weight: 600;
+    line-height: 1.03;
+    letter-spacing: -0.04em;
+  }
+  .return {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    margin-top: 34px;
+    padding: 0 15px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .return:hover { border-color: var(--accent); }
+  .foot {
+    min-height: 78px;
+    border-top: 1px solid var(--border);
+    border-bottom: 0;
+    color: var(--muted);
+    font: 500 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (max-width: 620px) {
+    .shell { width: min(100% - 28px, 1080px); }
+    .nav { align-items: flex-start; flex-direction: column; gap: 14px; padding: 20px 0; }
+    .nav__links { gap: 10px 16px; }
+    main { min-height: 430px; padding: 56px 0; }
+    .foot { align-items: flex-start; flex-direction: column; justify-content: center; gap: 8px; padding: 18px 0; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="nav" aria-label="Primary">
+    <a class="brand" href="/"><img src="/favicon.svg" alt="" />scribe</a>
+    <div class="nav__links">
+      <a href="/setup">Setup</a>
+      <a href="/topologies">Topologies</a>
+      <a href="/vs">Compare</a>
+    </div>
+  </nav>
+  <main>
+    <p class="code">404 · NOT FOUND</p>
+    <h1>Nothing at this path.</h1>
+    <a class="return" href="/">Return home&nbsp; →</a>
+  </main>
+  <footer class="foot">
+    <span>Plain markdown in git.</span>
+    <div class="foot__links">
+      <a href="/setup">Setup guide</a>
+      <a href="/topologies">Topology guide</a>
+      <a href="https://github.com/oliver-kriska/scribe">GitHub</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>
