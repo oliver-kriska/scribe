@@ -1592,7 +1592,7 @@ func providerMiningFix(provider string) string {
 // loadCcriderProviderStats reads ccrider's per-provider index state.
 // Read-only: scribe never writes to another tool's database.
 func loadCcriderProviderStats(dbPath string) ([]ccriderProviderStat, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		return nil, err
 	}

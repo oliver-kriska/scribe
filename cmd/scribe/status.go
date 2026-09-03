@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -601,7 +600,7 @@ func pendingQueueSummary(cfg PriorityLanesConfig) (hot, normal, aged int, ok boo
 // read-only; returns (0, false) on any DB/manifest error so the caller
 // drops the row rather than printing a wrong number.
 func countScopedPendingSessions(root string, cfg *ScribeConfig, processed map[string]struct{}) (int, bool) {
-	db, err := sql.Open("sqlite3", cfg.CcriderDB+"?mode=ro")
+	db, err := openSQLiteRO(cfg.CcriderDB)
 	if err != nil {
 		return 0, false
 	}

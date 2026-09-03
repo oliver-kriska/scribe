@@ -88,7 +88,7 @@ func (c *SessionEndHookCmd) Run() error {
 	if _, err := os.Stat(cfg.CcriderDB); err != nil {
 		return c.skip("ccrider db missing: %v", err)
 	}
-	db, err := sql.Open("sqlite3", cfg.CcriderDB+"?mode=ro")
+	db, err := openSQLiteRO(cfg.CcriderDB)
 	if err != nil {
 		return c.skip("open db: %v", err)
 	}

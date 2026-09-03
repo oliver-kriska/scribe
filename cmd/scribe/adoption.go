@@ -289,7 +289,7 @@ func computeAdoptionMetrics(root string, cfg *ScribeConfig) ([]adoptionWindowRes
 	if cfg.CcriderDB == "" || !fileExists(cfg.CcriderDB) {
 		return nil, nil
 	}
-	db, err := sql.Open("sqlite3", cfg.CcriderDB+"?mode=ro")
+	db, err := openSQLiteRO(cfg.CcriderDB)
 	if err != nil {
 		// Best-effort, matches how other sync phases degrade when
 		// ccrider is unavailable. golangci-lint's nilerr linter doesn't

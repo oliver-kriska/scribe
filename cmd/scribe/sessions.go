@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -210,7 +209,7 @@ func (c *SessionsInspectCmd) Run() error {
 	logEntry, inLog := view.processed[c.ID]
 
 	// DB state
-	db, err := sql.Open("sqlite3", cfg.CcriderDB+"?mode=ro")
+	db, err := openSQLiteRO(cfg.CcriderDB)
 	if err != nil {
 		return fmt.Errorf("open ccrider db: %w", err)
 	}
@@ -361,7 +360,7 @@ func (c *SessionsUnskipCmd) Run() error {
 	fmt.Printf("Found %d skipped entries.\n", len(skippedIDs))
 
 	// Re-evaluate against current pre-filter.
-	db, err := sql.Open("sqlite3", cfg.CcriderDB+"?mode=ro")
+	db, err := openSQLiteRO(cfg.CcriderDB)
 	if err != nil {
 		return fmt.Errorf("open ccrider db: %w", err)
 	}
@@ -445,7 +444,7 @@ func (c *SessionsFilterCmd) Run() error {
 		return nil
 	}
 
-	db, err := sql.Open("sqlite3", cfg.CcriderDB+"?mode=ro")
+	db, err := openSQLiteRO(cfg.CcriderDB)
 	if err != nil {
 		return fmt.Errorf("open ccrider db: %w", err)
 	}

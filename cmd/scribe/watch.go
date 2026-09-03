@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -153,7 +152,7 @@ func (w *WatchCmd) scan(roots []string, dbPath string) {
 		return
 	}
 
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		logMsg("watch", "open db: %v", err)
 		return

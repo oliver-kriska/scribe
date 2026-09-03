@@ -380,7 +380,7 @@ func readSelfChatMessages(selfChatIDs []string, since string) ([]chatMessage, er
 		return nil, fmt.Errorf("chat.db not found at %s", dbPath)
 	}
 
-	db, err := sql.Open("sqlite3", "file:"+dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open chat.db: %w", err)
 	}

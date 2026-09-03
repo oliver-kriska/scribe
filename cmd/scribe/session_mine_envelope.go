@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -222,7 +221,7 @@ func envelopeIncludesSessionLog(env WikiActionEnvelope, sessionID string) bool {
 // {{PROJECT_PATH}} variable so the model has the same orientation
 // info the legacy MCP path got from get_session_messages.
 func lookupSessionProjectPath(dbPath, sessionID string) string {
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		return ""
 	}

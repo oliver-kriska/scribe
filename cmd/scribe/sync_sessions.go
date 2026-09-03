@@ -96,7 +96,7 @@ func filterSessionsByScope(root, dbPath string, sessionIDs []string) []string {
 	if len(sessionIDs) == 0 {
 		return sessionIDs
 	}
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		return sessionIDs
 	}
@@ -135,7 +135,7 @@ func preFilterSessions(root, dbPath string, sessionIDs []string) (kept, skipped 
 		return sessionIDs, nil
 	}
 
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		// If we can't open DB, keep all sessions (no filtering).
 		return sessionIDs, nil
@@ -216,7 +216,7 @@ type relatedSession struct {
 // whose updated_at is within `daysWindow` of the target session. The target
 // session itself is excluded. Best effort — returns nil on any DB error.
 func queryRelatedSessions(dbPath, sessionID string, daysWindow, limit int) []relatedSession {
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		return nil
 	}
@@ -641,7 +641,7 @@ func backfillMsgCounts(dbPath string, entries []pendingEntry) []pendingEntry {
 	if !needsLookup {
 		return entries
 	}
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		return entries
 	}

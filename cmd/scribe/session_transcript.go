@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 )
@@ -48,7 +47,7 @@ type sessionTurn struct {
 // callers can fan-out cheaply. ccrider's index on session_id makes
 // this O(n) in the number of messages even at 10k+ rows.
 func fetchSessionTranscript(dbPath, sessionID string) ([]sessionTurn, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open ccrider db: %w", err)
 	}

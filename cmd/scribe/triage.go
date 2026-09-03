@@ -39,7 +39,7 @@ func (t *TriageCmd) Run() error {
 		return fmt.Errorf("ccrider database not found at %s", dbPath)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	db, err := openSQLiteRO(dbPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
