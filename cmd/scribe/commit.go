@@ -8,7 +8,13 @@ import (
 
 // CommitCmd auto-commits and pushes pending KB changes.
 // Replaces scripts/auto-commit.sh.
-type CommitCmd struct{}
+type CommitCmd struct {
+	Check bool `help:"Run the secret + stop-word gate over the staged index and exit non-zero on a finding; changes nothing (for the pre-commit hook)."`
+}
+
+// ReadOnly: --check reads the index and writes nothing, so it must not
+// append a run record from inside a pre-commit hook.
+func (c *CommitCmd) ReadOnly() bool { return c.Check }
 
 // lockNames are the processes that do their own commits.
 var lockNames = []string{"sync", "dream", "capture-imessage"}
@@ -18,7 +24,24 @@ func (c *CommitCmd) Run() error {
 	if err != nil {
 		return err
 	}
+	if c.Check {
+		return commitCheck(root)
+	}
 	return commitRun(root)
+}
+
+// commitCheck is `scribe commit --check`: the gate's verdict on the
+// staged index, without holding or masking anything. Hand commits
+// through the pre-commit hook get the same scan a scribe commit does.
+func commitCheck(root string) error {
+	findings := gateCheck(root, loadConfig(root))
+	for _, f := range findings {
+		fmt.Println("HELD " + f)
+	}
+	if len(findings) > 0 {
+		return fmt.Errorf("commit gate: %d finding(s) in the staged index", len(findings))
+	}
+	return nil
 }
 
 func commitRun(root string) error {

@@ -154,8 +154,8 @@ func TestHoldStopWordFiles_HoldsMatching_SoloKB(t *testing.T) {
 	if !holdStopWordFiles(repo, cfg) {
 		t.Fatal("gate reported unsafe on a clean hold")
 	}
-	if len(stagedMarkdown(repo)) != 0 {
-		t.Errorf("held file still staged: %v", stagedMarkdown(repo))
+	if len(stagedTextFiles(repo)) != 0 {
+		t.Errorf("held file still staged: %v", stagedTextFiles(repo))
 	}
 	// The file remains on disk (held, not dropped).
 	if _, err := os.Stat(filepath.Join(repo, "wiki", "leak.md")); err != nil {
@@ -174,7 +174,7 @@ func TestHoldStopWordFiles_MasksMatching(t *testing.T) {
 		t.Fatal("gate reported unsafe while masking")
 	}
 	// Still staged (masked, not held)...
-	if !slices.Contains(stagedMarkdown(repo), "wiki/doc.md") {
+	if !slices.Contains(stagedTextFiles(repo), "wiki/doc.md") {
 		t.Fatal("masked file was unstaged — it should commit redacted")
 	}
 	// ...and the staged blob no longer contains the word.
@@ -209,8 +209,8 @@ func TestHoldStopWordFiles_PersonalConfigUnion(t *testing.T) {
 	if !holdStopWordFiles(repo, cfg) {
 		t.Fatal("gate reported unsafe")
 	}
-	if len(stagedMarkdown(repo)) != 0 {
-		t.Errorf("personal-config hold word didn't hold the file: %v", stagedMarkdown(repo))
+	if len(stagedTextFiles(repo)) != 0 {
+		t.Errorf("personal-config hold word didn't hold the file: %v", stagedTextFiles(repo))
 	}
 }
 
@@ -223,7 +223,7 @@ func TestHoldStopWordFiles_EmptyConfigNoOp(t *testing.T) {
 	if !holdStopWordFiles(repo, &ScribeConfig{}) {
 		t.Fatal("empty config reported unsafe")
 	}
-	if !slices.Contains(stagedMarkdown(repo), "wiki/x.md") {
+	if !slices.Contains(stagedTextFiles(repo), "wiki/x.md") {
 		t.Error("empty stop-words config touched a staged file")
 	}
 }
@@ -247,7 +247,7 @@ func TestHoldStopWordFiles_AllowMarkerCommits(t *testing.T) {
 	if !holdStopWordFiles(repo, cfg) {
 		t.Fatal("gate reported unsafe")
 	}
-	if !slices.Contains(stagedMarkdown(repo), "wiki/ok.md") {
+	if !slices.Contains(stagedTextFiles(repo), "wiki/ok.md") {
 		t.Error("scribe:allow line was held anyway")
 	}
 }

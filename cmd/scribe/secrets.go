@@ -395,7 +395,7 @@ func holdSecretFiles(root string, cfg *ScribeConfig) bool {
 		return true
 	}
 	safe := true
-	for _, rel := range stagedMarkdown(root) {
+	for _, rel := range stagedTextFiles(root) {
 		if secretScanPathExempt(cfg, rel) {
 			continue
 		}
@@ -445,18 +445,34 @@ func unstageHeld(root, rel string) bool {
 // dodges the .md suffix check), and --no-renames turns a rename+edit
 // back into an A entry — rename detection reports status R, which
 // --diff-filter=ACM silently drops.
-func stagedMarkdown(root string) []string {
+func stagedTextFiles(root string) []string {
 	out := runCmd(root, "git", "diff", "--cached", "--name-only", "-z", "--no-renames", "--diff-filter=ACM")
 	if out == "" {
 		return nil
 	}
 	var files []string
 	for p := range strings.SplitSeq(out, "\x00") {
-		if p != "" && strings.HasSuffix(p, ".md") {
+		if p != "" && isGateTextFile(p) {
 			files = append(files, p)
 		}
 	}
 	return files
+}
+
+// gateTextExts are the file types the commit gate scans. Markdown was
+// the only one for a long time, but a queued .url entry carries the
+// captured URL (tokens in query strings), a .json/.yaml sidecar carries
+// config, and a .sh/.py script in scripts/ is where a key gets pasted.
+var gateTextExts = map[string]bool{
+	".md": true, ".txt": true, ".json": true, ".yaml": true, ".yml": true,
+	".url": true, ".sh": true, ".py": true,
+}
+
+// gateTextPathspecs is the same set as git pathspecs for ls-files.
+var gateTextPathspecs = []string{"*.md", "*.txt", "*.json", "*.yaml", "*.yml", "*.url", "*.sh", "*.py"}
+
+func isGateTextFile(rel string) bool {
+	return gateTextExts[strings.ToLower(filepath.Ext(rel))]
 }
 
 // secretScanPathExempt applies secret_scan.allow_paths (KB-relative
@@ -492,7 +508,8 @@ func findSecretsInKB(root string, includeGeneric bool) []string {
 		return nil
 	}
 	if hasGit(root) {
-		if out, err := runCmdRaw(root, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.md"); err == nil {
+		lsArgs := append([]string{"ls-files", "-z", "--cached", "--others", "--exclude-standard", "--"}, gateTextPathspecs...)
+		if out, err := runCmdRaw(root, "git", lsArgs...); err == nil {
 			for rel := range strings.SplitSeq(string(out), "\x00") {
 				if rel == "" {
 					continue

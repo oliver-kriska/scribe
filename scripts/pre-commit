@@ -17,6 +17,16 @@ fi
 
 ERRORS=0
 
+# --- 0. Commit gate: secrets + held stop-words on the staged index ---
+# Same scan `scribe commit` runs before its own commits; --check only
+# reports, so a hand commit is held by git, not rewritten.
+if command -v scribe &>/dev/null; then
+    echo "Running commit gate..."
+    if ! scribe commit --check; then
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
 # --- 1. Frontmatter validation on wiki .md files (skip raw/ + KB infra) ---
 WIKI_MD_FILES=()
 for f in "${STAGED_FILES[@]}"; do

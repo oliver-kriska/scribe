@@ -252,7 +252,7 @@ func holdStopWordFiles(root string, cfg *ScribeConfig) bool {
 	}
 
 	safe := true
-	for _, rel := range stagedMarkdown(root) {
+	for _, rel := range stagedTextFiles(root) {
 		data, err := gitShowBytes(root, ":"+rel)
 		if err != nil {
 			// A staged blob we can't read can't be proven clean. Fail
@@ -370,4 +370,41 @@ func commitGate(root string, cfg *ScribeConfig) bool {
 	secretsOK := holdSecretFiles(root, cfg)
 	stopOK := holdStopWordFiles(root, cfg)
 	return secretsOK && stopOK
+}
+
+// gateCheck is the read-only form of commitGate, for the pre-commit hook
+// on hand commits: it scans the same staged blobs with the same rules
+// but unstages and masks nothing, returning one line per finding the
+// gate would act on. A mask-only match is a finding here too — the
+// gate would redact it in place, a hand commit would ship it verbatim.
+func gateCheck(root string, cfg *ScribeConfig) []string {
+	if cfg != nil && cfg.LoadErr != nil {
+		return []string{"scribe.yaml unparseable — the commit gate cannot determine team mode: " + cfg.LoadErr.Error()}
+	}
+	scanSecrets := cfg != nil && cfg.Team && !cfg.SecretScan.Disable
+	hold, mask, redaction := stopWordRules(cfg)
+	var findings []string
+	for _, rel := range stagedTextFiles(root) {
+		data, err := gitShowBytes(root, ":"+rel)
+		if err != nil {
+			findings = append(findings, fmt.Sprintf("%s: staged content unreadable (%v)", rel, err))
+			continue
+		}
+		if scanSecrets && !secretScanPathExempt(cfg, rel) {
+			for _, h := range scanContentForSecrets(data, cfg.SecretScan.Generic) {
+				findings = append(findings, fmt.Sprintf("%s:%d [%s] secret — rewrite the line or add 'scribe:allow' if it's a placeholder", rel, h.Line, h.Label))
+			}
+		}
+		if len(hold) == 0 && len(mask) == 0 {
+			continue
+		}
+		dec := applyStopWords(data, hold, mask, redaction)
+		switch {
+		case dec.hold:
+			findings = append(findings, fmt.Sprintf("%s:%d [%s] held word — remove it or add 'scribe:allow' to the line", rel, dec.line, dec.label))
+		case dec.masked:
+			findings = append(findings, fmt.Sprintf("%s: [%s] word to mask — `scribe commit` redacts it in place; a hand commit must edit it out", rel, strings.Join(dec.maskedLabels, ", ")))
+		}
+	}
+	return findings
 }

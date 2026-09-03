@@ -230,7 +230,7 @@ func TestHoldSecretFiles(t *testing.T) {
 	}
 	stagedSet := func(repo string) map[string]bool {
 		out := map[string]bool{}
-		for _, f := range stagedMarkdown(repo) {
+		for _, f := range stagedTextFiles(repo) {
 			out[f] = true
 		}
 		return out
@@ -287,19 +287,19 @@ func TestStagedMarkdownPathRobustness(t *testing.T) {
 	writeKBFile(t, repo, "wiki/riešenie.md", "# riešenie\n\nkey: "+fakeAWSKey()+"\n")
 	gitRun(t, repo, "add", "wiki")
 	found := false
-	for _, f := range stagedMarkdown(repo) {
+	for _, f := range stagedTextFiles(repo) {
 		if f == "wiki/riešenie.md" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("non-ASCII staged path not listed: %v", stagedMarkdown(repo))
+		t.Fatalf("non-ASCII staged path not listed: %v", stagedTextFiles(repo))
 	}
 	if !holdSecretFiles(repo, &ScribeConfig{Team: true}) {
 		t.Error("hold of non-ASCII path reported unsafe")
 	}
-	if len(stagedMarkdown(repo)) != 0 {
-		t.Errorf("leaky non-ASCII file still staged: %v", stagedMarkdown(repo))
+	if len(stagedTextFiles(repo)) != 0 {
+		t.Errorf("leaky non-ASCII file still staged: %v", stagedTextFiles(repo))
 	}
 
 	// Rename + small edit: similarity stays above git's rename
@@ -316,16 +316,16 @@ func TestStagedMarkdownPathRobustness(t *testing.T) {
 	writeKBFile(t, repo, "wiki/renamed.md", big.String()+"key: "+fakeAWSKey()+"\n")
 	gitRun(t, repo, "add", "wiki")
 	found = false
-	for _, f := range stagedMarkdown(repo) {
+	for _, f := range stagedTextFiles(repo) {
 		if f == "wiki/renamed.md" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("renamed+edited staged path not listed: %v", stagedMarkdown(repo))
+		t.Fatalf("renamed+edited staged path not listed: %v", stagedTextFiles(repo))
 	}
 	holdSecretFiles(repo, &ScribeConfig{Team: true})
-	for _, f := range stagedMarkdown(repo) {
+	for _, f := range stagedTextFiles(repo) {
 		if f == "wiki/renamed.md" {
 			t.Error("leaky renamed file still staged")
 		}
@@ -343,8 +343,8 @@ func TestHoldScansIndexNotWorktree(t *testing.T) {
 	gitRun(t, repo, "add", "wiki")
 	writeKBFile(t, repo, "wiki/edited.md", "clean now\n")
 	holdSecretFiles(repo, &ScribeConfig{Team: true})
-	if len(stagedMarkdown(repo)) != 0 {
-		t.Errorf("staged-leaky/worktree-clean file not held: %v", stagedMarkdown(repo))
+	if len(stagedTextFiles(repo)) != 0 {
+		t.Errorf("staged-leaky/worktree-clean file not held: %v", stagedTextFiles(repo))
 	}
 
 	// Staged content clean, secret only in the worktree → NOT held.
@@ -353,7 +353,7 @@ func TestHoldScansIndexNotWorktree(t *testing.T) {
 	writeKBFile(t, repo, "wiki/later.md", "key: "+fakeAWSKey()+"\n")
 	holdSecretFiles(repo, &ScribeConfig{Team: true})
 	found := false
-	for _, f := range stagedMarkdown(repo) {
+	for _, f := range stagedTextFiles(repo) {
 		if f == "wiki/later.md" {
 			found = true
 		}
@@ -369,7 +369,7 @@ func TestHoldScansIndexNotWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	holdSecretFiles(repo, &ScribeConfig{Team: true})
-	for _, f := range stagedMarkdown(repo) {
+	for _, f := range stagedTextFiles(repo) {
 		if f == "wiki/ghost.md" {
 			t.Error("staged-then-deleted leaky file still staged")
 		}
@@ -404,7 +404,7 @@ func TestHoldCoversAllStagedMarkdown(t *testing.T) {
 	writeKBFile(t, repo, "notes/scratch.md", "token: "+fakeGitHubToken()+"\n")
 	gitRun(t, repo, "add", ".")
 	holdSecretFiles(repo, &ScribeConfig{Team: true})
-	for _, f := range stagedMarkdown(repo) {
+	for _, f := range stagedTextFiles(repo) {
 		if f == "notes/scratch.md" {
 			t.Error("leaky markdown outside wiki/raw still staged")
 		}
