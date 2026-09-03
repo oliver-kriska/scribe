@@ -717,6 +717,14 @@ func TestNormalizeRelatedFrontmatter(t *testing.T) {
 			in:   "---\ntitle: X\nrelated: []\n---\nbody\n",
 			want: nil,
 		},
+		{
+			// A plain block list matches neither bracket regex and reached
+			// splitRelatedTokens with the bullet dash still attached, so
+			// every recovered link pointed at "[[- Some Title]]".
+			name: "plain block list keeps titles, drops bullets",
+			in:   "---\ntitle: X\nrelated:\n  - Some Title\n  - Other Thing\nsources: [s]\n---\nbody\n",
+			want: []string{"[[Some Title]]", "[[Other Thing]]"},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -210,3 +210,78 @@ func TestValidateKindOnType(t *testing.T) {
 		t.Errorf("empty type should be a pass-through: %v", errs)
 	}
 }
+
+// TestAddTypedEdge_PromotesQuotedScalar: a typed relation holding one
+// quoted scalar was promoted by wrapping the raw value in a second pair
+// of quotes — `["\"[[Old]]\"", "[[New]]"]` — and the article stopped
+// parsing until repaired by hand.
+func TestAddTypedEdge_PromotesQuotedScalar(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+	original := "---\ntitle: \"A\"\ntype: decision\nsupersedes: \"[[Old]]\"\n---\n\nbody\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := addTypedEdgeToFrontmatter(path, RelSupersedes, "New"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	fm, err := parseFrontmatter(got)
+	if err != nil {
+		t.Fatalf("frontmatter no longer parses: %v\n%s", err, got)
+	}
+	edges := edgesFromFrontmatter(fm)
+	if len(edges) != 2 || edges[0].Target != "Old" || edges[1].Target != "New" {
+		t.Errorf("want Old+New edges, got %+v\n%s", edges, got)
+	}
+}
+
+// TestAddTypedEdge_PromotesBlockList: bullets are re-quoted exactly once.
+func TestAddTypedEdge_PromotesBlockList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+	original := "---\ntitle: \"A\"\ntype: decision\nsupersedes:\n  - \"[[Old]]\"\n  - [[Older]]\n---\n\nbody\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := addTypedEdgeToFrontmatter(path, RelSupersedes, "New"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	fm, err := parseFrontmatter(got)
+	if err != nil {
+		t.Fatalf("frontmatter no longer parses: %v\n%s", err, got)
+	}
+	if edges := edgesFromFrontmatter(fm); len(edges) != 3 {
+		t.Errorf("want 3 edges, got %+v\n%s", edges, got)
+	}
+}
+
+// TestRemoveTypedEdge_BlockList: migrate's removeFromRelated used to bail
+// on block-form lists ("edit by hand"), leaving the target in both
+// `related:` and the typed field.
+func TestRemoveTypedEdge_BlockList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+	original := "---\ntitle: \"A\"\ntype: decision\nrelated:\n  - \"[[B]]\"\n  - \"[[C]]\"\ntags: [x]\n---\n\nbody\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeTypedEdgeFromFrontmatter(path, RelationKind("related"), "B"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	if strings.Contains(string(got), "[[B]]") || !strings.Contains(string(got), "[[C]]") || !strings.Contains(string(got), "tags: [x]") {
+		t.Errorf("want B gone, C and tags kept:\n%s", got)
+	}
+	if err := removeTypedEdgeFromFrontmatter(path, RelationKind("related"), "C"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = os.ReadFile(path)
+	if strings.Contains(string(got), "related") {
+		t.Errorf("empty block list must drop the key:\n%s", got)
+	}
+	if _, err := parseFrontmatter(got); err != nil {
+		t.Errorf("frontmatter broken: %v\n%s", err, got)
+	}
+}

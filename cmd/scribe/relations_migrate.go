@@ -161,12 +161,8 @@ func (m *RelationsMigrateCmd) Run() error {
 
 			// Apply the edit.
 			sourcePath := filepath.Join(root, c.SourceRel)
-			if err := addTypedEdgeToFrontmatter(sourcePath, kind, r.Target); err != nil {
-				logMsg("relations-migrate", "warn: add edge failed: %v", err)
+			if !moveRelatedToTyped(sourcePath, c.SourceRel, kind, r.Target) {
 				continue
-			}
-			if err := removeFromRelated(sourcePath, r.Target); err != nil {
-				logMsg("relations-migrate", "warn: remove from related failed: %v", err)
 			}
 
 			entry := MigrationLogEntry{
@@ -680,4 +676,26 @@ func readMigrationLog(path string) ([]MigrationLogEntry, error) {
 		out = append(out, e)
 	}
 	return out, nil
+}
+
+// moveRelatedToTyped adds target under the typed relation and removes it
+// from `related:`. Both steps must succeed: leaving the target in both
+// fields doubles the edge and re-proposes the same classification every
+// run, so a failed removal rolls the typed edge back and the article is
+// left exactly as it was. Returns true when the move was applied.
+func moveRelatedToTyped(sourcePath, sourceRel string, kind RelationKind, target string) bool {
+	if err := addTypedEdgeToFrontmatter(sourcePath, kind, target); err != nil {
+		logMsg("relations-migrate", "warn: add edge failed: %v", err)
+		return false
+	}
+	err := removeFromRelated(sourcePath, target)
+	if err == nil {
+		return true
+	}
+	if rb := removeTypedEdgeFromFrontmatter(sourcePath, kind, target); rb != nil {
+		logMsg("relations-migrate", "warn: remove from related failed (%v) and rollback failed (%v) — %s carries [[%s]] twice", err, rb, sourceRel, target)
+	} else {
+		logMsg("relations-migrate", "warn: remove from related failed: %v — left %s unchanged", err, sourceRel)
+	}
+	return false
 }

@@ -396,8 +396,10 @@ func buildRawArticleWithStats(root, rawURL, title, body, via, domain string, tag
 	fname := fmt.Sprintf("%s-%s.md", dateStr, slug)
 	path := filepath.Join(root, "raw", "articles", fname)
 
-	// Ensure title is safe for YAML (no unescaped quotes).
-	safeTitle := strings.ReplaceAll(title, `"`, `\"`)
+	// Every scalar goes through yamlDoubleQuote: escaping only `"` left a
+	// title ending in a backslash (or carrying a newline) unparseable.
+	safeTitle := yamlDoubleQuote(title)
+	safeURL := yamlDoubleQuote(rawURL)
 
 	var tagLine string
 	if len(tags) > 0 {
@@ -416,8 +418,8 @@ func buildRawArticleWithStats(root, rawURL, title, body, via, domain string, tag
 	}
 
 	fm := fmt.Sprintf(`---
-title: "%s"
-source_url: "%s"
+title: %s
+source_url: %s
 captured: %s
 fetched_via: %s
 type: article
@@ -427,7 +429,7 @@ word_count: %d
 density: %s
 %s---
 
-`, safeTitle, rawURL, dateStr, via, domain, tagLine, words, density, extra)
+`, safeTitle, safeURL, dateStr, via, domain, tagLine, words, density, extra)
 
 	return path, fm + body + "\n"
 }

@@ -114,3 +114,28 @@ func TestRewriteRawArticleBody_NoTitleResultIsNoop(t *testing.T) {
 		t.Errorf("expected slug title left alone when fetcher had no title, got:\n%s", out)
 	}
 }
+
+// TestRewriteRawArticleBody_TitleWithBackslash: the refetch title rewrite
+// escaped quotes but not backslashes, so a fetched title ending in `\`
+// turned the closing quote into an escape and corrupted the article it
+// was repairing.
+func TestRewriteRawArticleBody_TitleWithBackslash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stub.md")
+	original := "---\ntitle: \"example-com-p-1\"\nsource_url: \"https://example.com/p/1\"\nfetched_via: stub\ntype: article\n---\n\nold body\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := `C:\Users\path ends with \`
+	if err := rewriteRawArticleBody(path, fetchResult{Title: want, Body: "real body", Via: "jina"}); err != nil {
+		t.Fatalf("rewriteRawArticleBody: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	fm, err := parseFrontmatter(got)
+	if err != nil {
+		t.Fatalf("frontmatter broken after rewrite: %v\n%s", err, got)
+	}
+	if fm.Title != want {
+		t.Errorf("title = %q, want %q", fm.Title, want)
+	}
+}

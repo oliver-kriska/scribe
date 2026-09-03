@@ -223,8 +223,7 @@ func rewriteRawArticleBody(path string, res fetchResult) error {
 			foundVia = true
 		case "title":
 			if newTitle := strings.TrimSpace(res.Title); newTitle != "" && looksLikeSlugTitle(val) {
-				safe := strings.ReplaceAll(newTitle, `"`, `\"`)
-				lines[i] = `title: "` + safe + `"`
+				lines[i] = "title: " + yamlDoubleQuote(newTitle)
 			}
 		}
 	}

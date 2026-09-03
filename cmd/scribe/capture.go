@@ -605,7 +605,7 @@ func slugifyText(text string, limit int) string {
 // entry. Shape mirrors ingest.go's buildRawArticle but adds the source_url
 // only when present (notes have no URL).
 func buildCaptureArticle(rawURL, title, body, via, date string, tags []string) string {
-	safeTitle := strings.ReplaceAll(title, `"`, `\"`)
+	safeTitle := yamlDoubleQuote(title)
 	tagLine := "[]"
 	if len(tags) > 0 {
 		tagLine = "[" + strings.Join(tags, ", ") + "]"
@@ -613,9 +613,9 @@ func buildCaptureArticle(rawURL, title, body, via, date string, tags []string) s
 
 	var fm strings.Builder
 	fm.WriteString("---\n")
-	fmt.Fprintf(&fm, "title: \"%s\"\n", safeTitle)
+	fmt.Fprintf(&fm, "title: %s\n", safeTitle)
 	if rawURL != "" {
-		fmt.Fprintf(&fm, "source_url: \"%s\"\n", rawURL)
+		fmt.Fprintf(&fm, "source_url: %s\n", yamlDoubleQuote(rawURL))
 	}
 	fmt.Fprintf(&fm, "captured: %s\n", date)
 	fmt.Fprintf(&fm, "fetched_via: %s\n", via)

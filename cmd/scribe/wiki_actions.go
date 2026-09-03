@@ -1277,7 +1277,12 @@ func splitRelatedTokens(s string) []string {
 	})
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
+		t := strings.TrimSpace(p)
+		// A block list ("related:\n  - Some Title") reaches the fallthrough
+		// path one bullet per line; the bullet dash is list syntax, not part
+		// of the title — without this it was recovered as "[[- Some Title]]".
+		t = strings.TrimSpace(strings.TrimPrefix(t, "- "))
+		if t != "" {
 			out = append(out, t)
 		}
 	}

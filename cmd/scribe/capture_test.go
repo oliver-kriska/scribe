@@ -205,3 +205,17 @@ func TestBuildCaptureArticle(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildCaptureArticle_TitleSurvivesBackslashAndNewline pins the
+// yamlDoubleQuote route for capture titles.
+func TestBuildCaptureArticle_TitleSurvivesBackslashAndNewline(t *testing.T) {
+	want := "Weird \\ title \"quoted\"\nsecond line"
+	got := buildCaptureArticle("https://example.com/?q=a\"b", want, "body", "trafilatura", "2026-09-03", nil)
+	fm, err := parseFrontmatter([]byte(got))
+	if err != nil {
+		t.Fatalf("frontmatter broken: %v\n%s", err, got)
+	}
+	if fm.Title != want {
+		t.Errorf("title = %q, want %q", fm.Title, want)
+	}
+}

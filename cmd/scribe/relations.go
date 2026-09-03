@@ -417,6 +417,7 @@ func (c *RelationsCheckCmd) Run() error {
 	}
 	edges := map[edgeKey]string{} // edgeKey -> path of `from` article
 	titleToPath := map[string]string{}
+	titleToType := map[string]string{}
 
 	err = walkArticles(root, func(path string, content []byte) error {
 		fm, err := parseFrontmatter(content)
@@ -424,6 +425,7 @@ func (c *RelationsCheckCmd) Run() error {
 			return nil //nolint:nilerr // unparseable article: skip it, keep walking
 		}
 		titleToPath[fm.Title] = path
+		titleToType[fm.Title] = fm.Type
 		for _, e := range edgesFromFrontmatter(fm) {
 			edges[edgeKey{from: fm.Title, kind: e.Kind, target: e.Target}] = path
 		}
@@ -452,6 +454,14 @@ func (c *RelationsCheckCmd) Run() error {
 			targetPath, ok := titleToPath[k.target]
 			if !ok {
 				fmt.Printf("  cannot fix: target article not found on disk\n")
+				continue
+			}
+			// The forward direction was type-checked when it was written;
+			// the inverse must pass the same gate, or --fix creates the
+			// lint error it was meant to remove (e.g. superseded_by on a
+			// research note).
+			if msgs := validateKindOnType(inv, titleToType[k.target]); len(msgs) > 0 {
+				fmt.Printf("  cannot fix: %s\n", msgs[0])
 				continue
 			}
 			if err := addTypedEdgeToFrontmatter(targetPath, inv, k.from); err != nil {
@@ -540,7 +550,7 @@ func addTypedEdgeToFrontmatter(path string, kind RelationKind, target string) er
 		for insertAt > 0 && strings.TrimSpace(lines[insertAt-1]) == "" {
 			insertAt--
 		}
-		newLine := keyStr + ` ["` + wikilink + `"]`
+		newLine := keyStr + " [" + yamlDoubleQuote(wikilink) + "]"
 		lines = append(lines[:insertAt],
 			append([]string{newLine}, lines[insertAt:]...)...)
 		newContent := "---" + strings.Join(lines, "\n") + "\n---" + rest
@@ -575,12 +585,12 @@ func addTypedEdgeToFrontmatter(path string, kind RelationKind, target string) er
 		// Inline list; rewrite cleanly.
 		inner := strings.TrimSuffix(strings.TrimPrefix(val, "["), "]")
 		existing := splitInlineList(inner)
-		existing = append(existing, `"`+wikilink+`"`)
+		existing = append(existing, yamlDoubleQuote(wikilink))
 		lines[keyIdx] = keyStr + " [" + strings.Join(existing, ", ") + "]"
 	case val == "":
 		// Empty header followed by indented bullet lines, or empty header.
 		// Rewrite the header to inline form for compactness.
-		lines[keyIdx] = keyStr + ` ["` + wikilink + `"]`
+		lines[keyIdx] = keyStr + " [" + yamlDoubleQuote(wikilink) + "]"
 		// Drop the indented bullet block.
 		j := keyIdx + 1
 		for j < len(lines) {
@@ -596,17 +606,22 @@ func addTypedEdgeToFrontmatter(path string, kind RelationKind, target string) er
 			t = strings.TrimPrefix(t, "- ")
 			t = strings.TrimSpace(t)
 			if t != "" {
-				existingBullets = append(existingBullets, t)
+				// Bullets may be quoted ("[[A]]") or bare ([[A]]); either
+				// way they are re-emitted as one properly quoted scalar.
+				existingBullets = append(existingBullets, yamlDoubleQuote(unquoteYAMLScalar(t)))
 			}
 		}
 		if len(existingBullets) > 0 {
-			existingBullets = append(existingBullets, `"`+wikilink+`"`)
+			existingBullets = append(existingBullets, yamlDoubleQuote(wikilink))
 			lines[keyIdx] = keyStr + " [" + strings.Join(existingBullets, ", ") + "]"
 		}
 		lines = append(lines[:keyIdx+1], lines[j:]...)
 	default:
 		// Non-list scalar (rare); promote to inline list with old + new.
-		lines[keyIdx] = keyStr + ` ["` + val + `", "` + wikilink + `"]`
+		// The raw value keeps its own quotes, so it is unquoted first —
+		// wrapping `"[[Old]]"` in another pair produced `[""[[Old]]"", …]`
+		// and the article stopped parsing.
+		lines[keyIdx] = keyStr + " [" + yamlDoubleQuote(unquoteYAMLScalar(val)) + ", " + yamlDoubleQuote(wikilink) + "]"
 	}
 
 	newContent := "---" + strings.Join(lines, "\n") + "\n---" + rest
@@ -651,10 +666,43 @@ func removeTypedEdgeFromFrontmatter(path string, kind RelationKind, target strin
 	_, val, _ := splitFrontmatterLine(headerLine)
 	val = strings.TrimSpace(val)
 
+	if val == "" {
+		// Block-form list: header followed by indented "- item" lines.
+		// Remove the matching bullet; drop the key when nothing remains.
+		j := keyIdx + 1
+		for j < len(lines) && (strings.HasPrefix(lines[j], " ") || strings.HasPrefix(lines[j], "\t")) {
+			j++
+		}
+		kept := make([]string, 0, j-keyIdx-1)
+		removed := false
+		for k := keyIdx + 1; k < j; k++ {
+			t := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[k]), "- "))
+			bare := unquoteYAMLScalar(t)
+			if bare == wikilink || bare == target {
+				removed = true
+				continue
+			}
+			kept = append(kept, lines[k])
+		}
+		if !removed {
+			return nil
+		}
+		if len(kept) == 0 {
+			lines = append(lines[:keyIdx], lines[j:]...)
+		} else {
+			lines = append(append(lines[:keyIdx+1], kept...), lines[j:]...)
+		}
+		newContent := "---" + strings.Join(lines, "\n") + "\n---" + rest
+		return os.WriteFile(path, []byte(newContent), 0o644)
+	}
 	if !strings.HasPrefix(val, "[") || !strings.HasSuffix(val, "]") {
-		// Not an inline list; bail (Phase 6A v1 only handles inline form
-		// after migrate normalization). Surface what's there.
-		return fmt.Errorf("relation %s in non-inline list form; edit by hand", kind)
+		// Bare scalar: drop the key when it is the target, else leave it.
+		if bare := unquoteYAMLScalar(val); bare == wikilink || bare == target {
+			lines = append(lines[:keyIdx], lines[keyIdx+1:]...)
+			newContent := "---" + strings.Join(lines, "\n") + "\n---" + rest
+			return os.WriteFile(path, []byte(newContent), 0o644)
+		}
+		return nil
 	}
 	inner := strings.TrimSuffix(strings.TrimPrefix(val, "["), "]")
 	items := splitInlineList(inner)
