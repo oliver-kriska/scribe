@@ -208,6 +208,19 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 			continue
 		}
 
+		// Staged drop files are pending work even when the repo has not
+		// moved. collectDropFiles stages them into output/drops-<name>/ and
+		// only extractProject consumes them, so a project whose sole pending
+		// work is a drop must still be a candidate. Without this a low-churn
+		// repo strands its drops forever: the SHA never changes, extraction
+		// never runs, and collectDropFiles re-copies and re-logs the same
+		// files every run while the summary reports them collected and
+		// absorbed 0 — a green signal for work that never happened.
+		if hasPendingDrops(root, entry.Name) {
+			result = append(result, key)
+			continue
+		}
+
 		// Never extracted.
 		if entry.LastSHA == "" {
 			result = append(result, key)
@@ -265,6 +278,18 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 
 	sort.Strings(result)
 	return result
+}
+
+// hasPendingDrops reports whether collectDropFiles has staged drop files
+// for this project that extraction has not consumed yet. extractProject
+// clears the staging dir only on a successful run, so a failed extraction
+// correctly leaves the project a candidate for the next one.
+//
+// pname is entry.Name — the short display name collectDropFiles uses to
+// build the staging path, never the manifest's canonical-path key.
+func hasPendingDrops(root, pname string) bool {
+	drops, _ := filepath.Glob(filepath.Join(root, "output", "drops-"+pname, "*.md"))
+	return len(drops) > 0
 }
 
 // hasNewerFiles checks if any .md files in a non-git project are newer than the last extraction.

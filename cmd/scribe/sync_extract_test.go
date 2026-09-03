@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -78,5 +80,78 @@ func TestProjectsNeedingExtractionUnchangedSummary(t *testing.T) {
 				t.Errorf("summary %q missing from output:\n%s", tc.wantSummary, out)
 			}
 		})
+	}
+}
+
+// TestProjectsNeedingExtractionPendingDrops locks the drop-file gap: a
+// project whose repo has not moved is normally "unchanged", but a drop file
+// staged into output/drops-<name>/ is pending work that ONLY extractProject
+// consumes. Before this, a low-churn repo stranded its drops forever —
+// collectDropFiles re-copied and re-logged the same files every run while
+// the summary reported them collected and absorbed 0.
+func TestProjectsNeedingExtractionPendingDrops(t *testing.T) {
+	root := t.TempDir()
+	idle := &ProjectEntry{
+		Name:          "idle-project",
+		Path:          t.TempDir(),
+		LastSHA:       "deadbeef",
+		LastExtracted: time.Now().UTC().Format(time.RFC3339),
+	}
+	m := &Manifest{Projects: map[string]*ProjectEntry{idle.Path: idle}}
+	s := &SyncCmd{}
+	captureSyncLog(t)
+
+	// Baseline: unchanged and no drops staged → not a candidate.
+	if got := s.projectsNeedingExtraction(root, m); len(got) != 0 {
+		t.Fatalf("unchanged project with no drops should not need extraction, got %v", got)
+	}
+
+	// Stage a drop exactly as collectDropFiles does (entry.Name, not the key).
+	staging := filepath.Join(root, "output", "drops-"+idle.Name)
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "2026-01-01-note.md"), []byte("# note\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := s.projectsNeedingExtraction(root, m)
+	if len(got) != 1 {
+		t.Fatalf("project with a staged drop file should need extraction, got %v", got)
+	}
+	if got[0] != idle.Path {
+		t.Errorf("returned key %q, want the manifest key %q", got[0], idle.Path)
+	}
+}
+
+// TestHasPendingDropsIgnoresNonMarkdownAndMissingDir guards the predicate
+// itself: only *.md counts (collectDropFiles writes markdown), and a
+// missing staging dir is not an error.
+func TestHasPendingDropsIgnoresNonMarkdownAndMissingDir(t *testing.T) {
+	root := t.TempDir()
+	if hasPendingDrops(root, "nope") {
+		t.Error("missing staging dir should report no pending drops")
+	}
+
+	staging := filepath.Join(root, "output", "drops-proj")
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if hasPendingDrops(root, "proj") {
+		t.Error("empty staging dir should report no pending drops")
+	}
+
+	if err := os.WriteFile(filepath.Join(staging, "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if hasPendingDrops(root, "proj") {
+		t.Error("non-markdown file should not count as a pending drop")
+	}
+
+	if err := os.WriteFile(filepath.Join(staging, "real.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !hasPendingDrops(root, "proj") {
+		t.Error("markdown drop file should count as pending")
 	}
 }
