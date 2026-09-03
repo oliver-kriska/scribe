@@ -314,6 +314,11 @@ func loadLatestAdoptionStats(root string) ([]adoptionSnapshot, bool) {
 func formatRunLine(line string) string {
 	ts := extractJSONField(line, "timestamp")
 	status := extractJSONField(line, "status")
+	if status == "skipped" {
+		if reason := extractJSONField(line, "skip_reason"); reason != "" {
+			status += ": " + reason
+		}
+	}
 	abs := extractJSONField(line, "absorbed")
 	ext := extractJSONField(line, "extracted")
 	ses := extractJSONField(line, "sessions")

@@ -205,6 +205,11 @@ func main() {
 	if !commandIsReadOnly(ctx) {
 		writeRunRecord(cmdPath, started, err)
 	}
+	if _, skipped := runSkipReason(err); skipped {
+		// Already logged at the seam that skipped. A skip is a clean
+		// exit for cron; only the run record remembers it.
+		return
+	}
 
 	ctx.FatalIfErrorf(err)
 }
@@ -317,8 +322,15 @@ func writeRunRecord(cmdPath string, started time.Time, runErr error) {
 
 	status := "ok"
 	errMsg := ""
+	skipReason, skipped := runSkipReason(runErr)
+	if skipped {
+		// The run fired but did no work. It exits 0 like a no-op, but
+		// the record must not read as a completed run — see runSkip.
+		runErr = nil
+		status = "skipped"
+	}
 	degraded, degradedMsgs := degradedPhases()
-	if runErr == nil && len(degraded) > 0 {
+	if runErr == nil && len(degraded) > 0 && !skipped {
 		// The command completed and exits 0 — cron resilience is the
 		// point — but at least one phase failed and was logged over.
 		// Without this, `scribe doctor` cannot tell that run apart from
@@ -349,6 +361,9 @@ func writeRunRecord(cmdPath string, started time.Time, runErr error) {
 	}
 	if errMsg != "" {
 		record["error"] = errMsg
+	}
+	if skipped {
+		record["skip_reason"] = skipReason
 	}
 	if len(degraded) > 0 {
 		record["degraded"] = degraded

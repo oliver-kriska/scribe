@@ -99,6 +99,10 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 			if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
 				// Don't mark processed — resume cleanly next run.
 				logMsg("sync", "codex mining rate/budget limited on %s — resuming next run", c.id)
+				setRunStat("codex_rate_limited", true)
+				if mined == 0 {
+					return 0, skipRun("codex mining rate/budget limited before any session was mined")
+				}
 				return mined, nil
 			}
 			// One corrective retry, same posture as mineSessionEnvelope:

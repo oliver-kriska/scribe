@@ -93,7 +93,7 @@ func (s *SyncCmd) Run() error {
 		}
 		if !ok {
 			logMsg("sync", "another scribe sync is running — exiting")
-			return nil
+			return skipRun("another scribe sync is running")
 		}
 		defer releaseLock(lf)
 	}
@@ -314,9 +314,7 @@ func (s *SyncCmd) extractPhase(root string, manifest *Manifest, cfg *ScribeConfi
 	// Phase 2.5: Session mining.
 	if s.Sessions {
 		mined, err := s.mineSessions(root)
-		if err != nil {
-			logPhaseFailure("sync", "session mining", err)
-		}
+		logPhaseOutcome("sync", "session mining", err)
 		counters.sessionsScanned = mined
 	}
 
@@ -327,9 +325,7 @@ func (s *SyncCmd) extractPhase(root string, manifest *Manifest, cfg *ScribeConfi
 	// no-op without codex_sessions_dir. Respects --dry-run internally.
 	if s.Sessions && cfg.Codex.Mine {
 		cmined, cerr := s.mineCodexSessions(root, cfg)
-		if cerr != nil {
-			logPhaseFailure("sync", "codex session mining", cerr)
-		}
+		logPhaseOutcome("sync", "codex session mining", cerr)
 		counters.sessionsScanned += cmined
 	}
 

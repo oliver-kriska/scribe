@@ -244,7 +244,7 @@ func runHotDream(root string, cfg *ScribeConfig, domainOverride string, dryRun b
 	}
 	if !ok {
 		logMsg("dream", "hot: another dream cycle is running — exiting")
-		return nil
+		return skipRun("another dream cycle is running")
 	}
 	defer releaseLock(lf)
 
@@ -252,7 +252,7 @@ func runHotDream(root string, cfg *ScribeConfig, domainOverride string, dryRun b
 		acquired, holder := acquireDreamLease(root, now)
 		if !acquired {
 			logMsg("dream", "hot: dream lease held by %s — skipping this cycle", holder)
-			return nil
+			return skipRun("dream lease held by " + holder)
 		}
 		defer releaseDreamLease(root)
 	}

@@ -119,6 +119,10 @@ func TestDreamRunHistory_SplitsFullVsHotAndIgnoresSkippedHotRuns(t *testing.T) {
 		`{"command":"dream","status":"ok","timestamp":"2026-07-02T03:10:00Z","args":["dream","--hot"],"mode":"hot","hot_domain":"tools"}`,
 		// 4. errored — must be excluded, status != "ok".
 		`{"command":"dream","status":"error","timestamp":"2026-07-03T03:10:00Z","args":["dream","--hot"],"mode":"hot"}`,
+		// 5. lock-busy full dream — recorded as "skipped" since B09. It
+		//    used to be "ok" and pushed lastFull forward, which then
+		//    suppressed the next day's --hot pass for nothing.
+		`{"command":"dream","status":"skipped","timestamp":"2026-07-04T02:00:00Z","args":["dream"],"skip_reason":"another dream cycle is running"}`,
 	}
 	if err := os.WriteFile(filepath.Join(runsDir, "2026-07-01.jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)

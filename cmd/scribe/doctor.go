@@ -1182,9 +1182,15 @@ func checkJSONFile(root, rel, fix string) check {
 type freshnessSpec struct {
 	Command string // command path as written by writeRunRecord (e.g. "sync", "ingest drain")
 	ArgFlag string // optional args-substring required (e.g. "--sessions") to distinguish modes of the same command
-	Label   string
-	MaxGap  time.Duration
-	Fix     string
+	// Exclusive marks an ArgFlag that selects a different job rather
+	// than an extension of the default one: `dream --hot` is a daily
+	// mini pass, not the weekly dream, so it must not refresh the bare
+	// "dream" key — the daily run would hide a weekly one that stopped.
+	// `sync --sessions` stays inclusive: it extracts projects too.
+	Exclusive bool
+	Label     string
+	MaxGap    time.Duration
+	Fix       string
 }
 
 var freshnessSpecs = []freshnessSpec{
@@ -1192,7 +1198,7 @@ var freshnessSpecs = []freshnessSpec{
 	{Command: "sync", ArgFlag: "--sessions", Label: "sync (sessions)", MaxGap: 36 * time.Hour, Fix: "scribe sync --sessions"},
 	{Command: "lint", Label: "lint", MaxGap: 48 * time.Hour, Fix: "scribe lint"},
 	{Command: "dream", Label: "dream", MaxGap: 10 * 24 * time.Hour, Fix: "scribe dream"},
-	{Command: "dream", ArgFlag: "--hot", Label: "dream (hot)", MaxGap: 36 * time.Hour, Fix: "scribe dream --hot"},
+	{Command: "dream", ArgFlag: "--hot", Exclusive: true, Label: "dream (hot)", MaxGap: 36 * time.Hour, Fix: "scribe dream --hot"},
 	{Command: "capture", Label: "capture", MaxGap: 12 * time.Hour, Fix: "scribe capture --fetch"},
 	{Command: "commit", Label: "commit", MaxGap: 6 * time.Hour, Fix: "scribe commit"},
 	{Command: "ingest drain", Label: "ingest drain", MaxGap: 3 * time.Hour, Fix: "scribe ingest drain"},
@@ -1209,7 +1215,9 @@ type runRecord struct {
 // loadRunRecords scans output/runs/*.jsonl and returns, for each command key,
 // the newest "ok"-or-"degraded" timestamp. Keys are either the bare command path ("sync")
 // or "<command> <flag>" ("sync --sessions") so the freshness specs can
-// distinguish the two modes that share the same command path.
+// distinguish the two modes that share the same command path. A
+// "skipped" record (lock busy, lease elsewhere, rate-limited before any
+// work) is not a run and never refreshes a key.
 //
 // A missing runs directory is not an error — doctor must work on fresh
 // checkouts before any scribe commands have been logged.
@@ -1249,8 +1257,10 @@ func loadRunRecords(root string) (map[string]time.Time, error) {
 			if err != nil {
 				continue
 			}
-			if prev, ok := result[r.Command]; !ok || ts.After(prev) {
-				result[r.Command] = ts
+			if !hasExclusiveModeFlag(r.Command, r.Args) {
+				if prev, ok := result[r.Command]; !ok || ts.After(prev) {
+					result[r.Command] = ts
+				}
 			}
 			// Flag-specific keys so modes like `sync --sessions` track separately.
 			for _, arg := range r.Args {
@@ -1270,6 +1280,23 @@ func loadRunRecords(root string) (map[string]time.Time, error) {
 		_ = f.Close()
 	}
 	return result, nil
+}
+
+// hasExclusiveModeFlag reports whether args select a job that must not
+// count as the command's default mode — see freshnessSpec.Exclusive.
+// Derived from freshnessSpecs so the two cannot drift.
+func hasExclusiveModeFlag(command string, args []string) bool {
+	for _, spec := range freshnessSpecs {
+		if spec.Command != command || !spec.Exclusive || spec.ArgFlag == "" {
+			continue
+		}
+		for _, a := range args {
+			if a == spec.ArgFlag {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // classifyFreshness compares a last-ok timestamp to a threshold and returns

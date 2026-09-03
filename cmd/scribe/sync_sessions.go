@@ -963,13 +963,14 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 			logMsg("sync", "rate limited during normal session mining — skipping large sessions")
 			s.updateScanTimestamp(sessionsLog)
 			logMsg("sync", "session mining complete (%d sessions mined)", totalMined)
-			return totalMined, nil
+			return miningOutcome(totalMined, true)
 		}
 	} else {
 		logMsg("sync", "no normal sessions to mine")
 	}
 
 	// Pass 2: Large sessions (>300 messages) — one at a time, 20min timeout.
+	largeRateLimited := false
 	if largeMax := s.largeSessionBudget(); largeMax > 0 {
 		// Over-fetch 3x like the normal pool, matching sync_sessions.go's
 		// normal-pool over-fetch rationale — otherwise the 70/30 split
@@ -980,13 +981,30 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 			func(ids []string) []string { return filterSessionsByScope(root, cfg.CcriderDB, ids) })
 		if len(largeIDs) > 0 {
 			logMsg("sync", "priority lanes found %d large sessions (>300 msgs)", len(largeIDs))
-			mined, _ := s.mineSessionBatches(root, largeIDs, 1, 20*time.Minute, "session-extract-large.md", "large-session")
+			mined, rateLimited := s.mineSessionBatches(root, largeIDs, 1, 20*time.Minute, "session-extract-large.md", "large-session")
 			totalMined += mined
+			largeRateLimited = rateLimited
 		}
 	}
 
 	s.updateScanTimestamp(sessionsLog)
 	logMsg("sync", "session mining complete (%d sessions mined)", totalMined)
+	return miningOutcome(totalMined, largeRateLimited)
+}
+
+// miningOutcome turns a mining pass's tally into its return value. A
+// rate limit is recorded as a run stat either way; hitting it before a
+// single session was mined means the queue is untouched — a stall, not
+// a completed pass — so the phase reports itself as skipped and doctor
+// can tell it from a quiet day.
+func miningOutcome(totalMined int, rateLimited bool) (int, error) {
+	if !rateLimited {
+		return totalMined, nil
+	}
+	setRunStat("sessions_rate_limited", true)
+	if totalMined == 0 {
+		return 0, skipRun("rate limited before any session was mined")
+	}
 	return totalMined, nil
 }
 

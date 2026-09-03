@@ -64,7 +64,7 @@ func (d *DreamCmd) Run() error {
 	}
 	if !ok {
 		logMsg("dream", "another dream cycle is running — exiting")
-		return nil
+		return skipRun("another dream cycle is running")
 	}
 	defer releaseLock(lf)
 
@@ -75,7 +75,7 @@ func (d *DreamCmd) Run() error {
 		acquired, holder := acquireDreamLease(root, time.Now())
 		if !acquired {
 			logMsg("dream", "dream lease held by %s — skipping this cycle", holder)
-			return nil
+			return skipRun("dream lease held by " + holder)
 		}
 		defer releaseDreamLease(root)
 	}

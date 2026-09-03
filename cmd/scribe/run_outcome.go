@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -112,4 +113,42 @@ func resetRunOutcome() {
 	runOutcomeMu.Lock()
 	defer runOutcomeMu.Unlock()
 	runDegradations = nil
+}
+
+// A skipped run fired but could not do its job: the advisory lock was
+// busy, the team dream lease belonged to another machine, or the LLM
+// was rate-limited before the first unit of work. It exits 0 — cron
+// must not page on it — but the run record says "skipped" so doctor's
+// freshness check and dream's hot/full history do not count it as a
+// completed run. Before this, a lock-busy dream was recorded as "ok",
+// suppressed the daily --hot pass for a day, and kept the weekly
+// freshness check green while no dream had actually run.
+type runSkip struct{ reason string }
+
+func (e *runSkip) Error() string { return "skipped: " + e.reason }
+
+// skipRun is what a command returns to report a skipped run. The seam
+// that skips logs the reason itself; main exits 0 without printing it
+// again.
+func skipRun(reason string) error { return &runSkip{reason: reason} }
+
+// runSkipReason reports whether err (or anything it wraps) is a skip.
+func runSkipReason(err error) (string, bool) {
+	var s *runSkip
+	if errors.As(err, &s) {
+		return s.reason, true
+	}
+	return "", false
+}
+
+// logPhaseOutcome records one phase's result inside a larger run. A
+// skipped phase degrades the run under the phase's name — the sync
+// itself did work, this phase did none, and doctor should say so —
+// while any other error goes through logPhaseFailure. nil is a no-op.
+func logPhaseOutcome(script, phase string, err error) {
+	if reason, ok := runSkipReason(err); ok {
+		logPhaseDegraded(script, phase, "%s skipped: %s", phase, reason)
+		return
+	}
+	logPhaseFailure(script, phase, err)
 }
