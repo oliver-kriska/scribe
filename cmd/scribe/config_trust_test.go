@@ -482,3 +482,55 @@ func TestRoutingLockDiffShowsRows(t *testing.T) {
 		t.Errorf("config diff missing routing rows: %v", diff)
 	}
 }
+
+// TestMissingScribeYAMLKeepsTrustLock: deleting scribe.yaml from a team
+// KB (a pushed `git rm`, a checkout mid-rebase) used to return pure
+// defaults before the trust layer ran — team=false, secret gate off,
+// capture on, source filters gone — while an *unparseable* file correctly
+// reverted to the trusted values. The absent file must behave like the
+// unparseable one.
+func TestMissingScribeYAMLKeepsTrustLock(t *testing.T) {
+	root := setupTrustKB(t, "team: true\nsources:\n  exclude: [\"/users-personal\"]\ncapture:\n  self_chat_handle: \"+1555\"\n", "")
+	ensureConfigTrust(root)
+	if err := os.Remove(filepath.Join(root, "scribe.yaml")); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := loadConfig(root)
+	if !cfg.Team {
+		t.Error("team lock lost when scribe.yaml is missing")
+	}
+	if cfg.LoadErr == nil {
+		t.Error("LoadErr must be set so LLM-cost/write entry points fail closed")
+	}
+	if len(cfg.Sources.Exclude) != 1 || cfg.Sources.Exclude[0] != "/users-personal" {
+		t.Errorf("trusted source filter not applied: %v", cfg.Sources.Exclude)
+	}
+	if cfg.Capture.SelfChatHandle != "" {
+		t.Errorf("capture must stay hard-off in a team KB: %+v", cfg.Capture)
+	}
+	if !strings.Contains(cfg.ClaudeProjectsDir, ".claude") {
+		t.Errorf("discovery default not refilled: %q", cfg.ClaudeProjectsDir)
+	}
+}
+
+// TestMissingScribeYAMLSoloStaysDefault: a directory with no trust
+// record (fresh init, solo KB) keeps the old behavior — plain defaults,
+// no LoadErr, nothing logged as an error.
+func TestMissingScribeYAMLSoloStaysDefault(t *testing.T) {
+	root := setupTrustKB(t, "team: false\n", "")
+	ensureConfigTrust(root)
+	if err := os.Remove(filepath.Join(root, "scribe.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(root)
+	if cfg.LoadErr != nil {
+		t.Errorf("solo KB without scribe.yaml must not carry LoadErr: %v", cfg.LoadErr)
+	}
+	if cfg.Team {
+		t.Error("solo KB must not become a team KB")
+	}
+	if cfg.Sync.MaxAbsorb != 5 || cfg.LLM.Provider == "" {
+		t.Errorf("defaults not applied: sync=%+v llm=%+v", cfg.Sync, cfg.LLM)
+	}
+}

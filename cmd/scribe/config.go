@@ -713,31 +713,37 @@ func loadConfig(root string) *ScribeConfig {
 
 	cfgPath := filepath.Join(root, "scribe.yaml")
 	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		applyLLMDefaults(&cfg.LLM)
-		applyAbsorbDefaultsWithLLM(&cfg.Absorb, cfg.LLM)
-		applyIngestDefaults(&cfg.Ingest)
-		applyRelationsDefaults(&cfg.Relations, cfg.LLM)
-		applySessionMineDefaults(&cfg.SessionMine, cfg.LLM)
-		applyDreamDefaults(&cfg.Dream, cfg.LLM)
-		applyAssessDefaults(&cfg.Assess, cfg.LLM)
-		applyDeepIngestDefaults(&cfg.DeepIngest, cfg.LLM)
-		applyExtractDefaults(&cfg.Extract, cfg.LLM)
-		applyMetaDefaults(&cfg.Meta)
-		applyCodexDefaults(&cfg.Codex)
-		applyPriorityLanesDefaults(&cfg.PriorityLanes)
-		return cfg
-	}
-	// loadConfig used to swallow yaml.Unmarshal errors silently, which
-	// meant a single duplicate key (e.g. "pass2_timeout_min" defined twice)
-	// wiped every overridden field back to defaults with zero warning.
-	// Log AND record the failure: read-only commands still run on
-	// defaults, but LoadErr makes the secret gate fail closed and the
-	// LLM-cost entry points abort (the e2e sweep proved a duplicate key
-	// silently disarmed team mode and pushed a credential).
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		cfg.LoadErr = err
-		logMsg("config", "scribe.yaml has errors — falling back to defaults: %v", err)
+	switch {
+	case err == nil:
+		// loadConfig used to swallow yaml.Unmarshal errors silently, which
+		// meant a single duplicate key (e.g. "pass2_timeout_min" defined twice)
+		// wiped every overridden field back to defaults with zero warning.
+		// Log AND record the failure: read-only commands still run on
+		// defaults, but LoadErr makes the secret gate fail closed and the
+		// LLM-cost entry points abort (the e2e sweep proved a duplicate key
+		// silently disarmed team mode and pushed a credential).
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			cfg.LoadErr = err
+			logMsg("config", "scribe.yaml has errors — falling back to defaults: %v", err)
+		}
+	case os.IsNotExist(err):
+		// A missing file used to return pure defaults BEFORE the trust
+		// layer ran — so `git rm scribe.yaml` on a team KB disarmed team
+		// mode, the secret gate, capture hard-off and the source filters
+		// on every member's next sync, while the unparseable case above
+		// correctly reverted to the trusted values. Fall through instead:
+		// with a team trust record on this machine the trusted snapshot
+		// applies and LoadErr fails the mutating entry points closed; a
+		// directory with no record (fresh init, solo KB) still gets plain
+		// defaults and no LoadErr.
+		if rec := loadTrustRecord(root); rec != nil && rec.Sensitive.Team {
+			cfg.LoadErr = fmt.Errorf("scribe.yaml missing at %s", cfgPath)
+			logAutoFlipOnce("config-missing:"+root, "config",
+				"scribe.yaml is missing — team KB runs on its trusted values until the file is restored (LLM-cost and write commands refuse to run)")
+		}
+	default:
+		cfg.LoadErr = fmt.Errorf("read %s: %w", cfgPath, err)
+		logMsg("config", "scribe.yaml unreadable — falling back to defaults: %v", err)
 	}
 
 	// Trust layer (config_trust.go), in this exact order: first judge
