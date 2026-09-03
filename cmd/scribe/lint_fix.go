@@ -98,6 +98,12 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 	s := string(content)
 	joinedFence := false
 	openingFenceFixed := false
+	// A UTF-8 byte-order mark hides the opening fence from every parser
+	// in scribe (and from the validator); dropping it is a real repair.
+	bomStripped := strings.HasPrefix(s, "\uFEFF")
+	if bomStripped {
+		s = strings.TrimPrefix(s, "\uFEFF")
+	}
 	// Normalize a malformed opening fence first so the rest of the pipeline and
 	// the honesty guard see a canonical "---\n". Residual corruption (e.g.
 	// space-indented keys after a joined-fence split) then surfaces later as a
@@ -113,6 +119,13 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 		s = normalized
 		joinedFence = true
 	case fenceNotFrontmatter:
+		if strings.HasPrefix(s, "---") {
+			// Dashes that are not a fence (----, ---x, "--- prose" with
+			// no close): the file is neither valid nor repairable here,
+			// and a silent skip hid it from the --fix summary.
+			first, _, _ := strings.Cut(s, "\n")
+			return nil, nil, fmt.Errorf("unrecognized opening fence %q — expected a bare --- line", truncateBytes(first, 40))
+		}
 		return nil, nil, nil // no frontmatter — skip (body-only stubs)
 	}
 
@@ -124,23 +137,33 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 	// lint reports as clean. The matched fence is normalized to a bare
 	// "---" below, so a recognized-but-noncanonical fence becomes a real
 	// repair instead of a silent pass-through.
-	closeFenceRE := regexp.MustCompile(`\n---[ \t]*(?:\r?\n|$)`)
-	loc := closeFenceRE.FindStringIndex(s[4:])
-	if loc == nil {
-		return nil, nil, errors.New("malformed frontmatter (no closing ---)")
+	span, spanErr := frontmatterSpan(s)
+	closingFenceRepaired := false
+	var loose *looseFenceError
+	if errors.As(spanErr, &loose) {
+		// "-----" / "--- x" where the closing fence belongs: rewrite it
+		// to a bare fence. The honesty guard below still decides whether
+		// what precedes it parses as YAML.
+		s = s[:loose.Start] + "---" + s[loose.End:]
+		closingFenceRepaired = true
+		span, spanErr = frontmatterSpan(s)
 	}
-	fmStart := 4
-	fmEnd := 4 + loc[0]      // start of the "\n" preceding the fence
-	afterFence := 4 + loc[1] // first byte after the fence line
-	fmBlock := s[fmStart:fmEnd]
-	bodyAfter := s[afterFence:]
-	fenceWasNoncanonical := s[fmEnd:afterFence] != "\n---\n"
+	if spanErr != nil {
+		return nil, nil, fmt.Errorf("malformed frontmatter (no closing ---): %w", spanErr)
+	}
+	fmStart := span.YAMLStart
+	fmBlock := strings.TrimSuffix(s[span.YAMLStart:span.YAMLEnd], "\n")
+	bodyAfter := s[span.BodyStart:]
+	fenceWasNoncanonical := closingFenceRepaired || s[span.YAMLEnd:span.BodyStart] != "---\n"
 
 	present := presentKeys(fmBlock)
 
 	var changes []string
 	lines := strings.Split(fmBlock, "\n")
 
+	if bomStripped {
+		changes = append(changes, "removed UTF-8 byte-order mark before the opening fence")
+	}
 	if joinedFence {
 		changes = append(changes, "split joined opening fence to ---")
 	}
@@ -181,7 +204,13 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 	// Strip trailing whitespace on each frontmatter line.
 	trailingStripped := 0
 	for i, line := range lines {
-		cleaned := strings.TrimRight(line, " \t")
+		// CRLF files keep their "\r"; the whitespace before it is what
+		// gets stripped (it never was — TrimRight stopped at the CR).
+		cr := strings.HasSuffix(line, "\r")
+		cleaned := strings.TrimRight(strings.TrimSuffix(line, "\r"), " \t")
+		if cr {
+			cleaned += "\r"
+		}
 		if cleaned != line {
 			lines[i] = cleaned
 			trailingStripped++
@@ -629,7 +658,7 @@ func coerceScalarListField(lines []string, key string) ([]string, bool) {
 			return lines, false // block form, empty, or already a flow list
 		}
 		var items []string
-		for piece := range strings.SplitSeq(rest, ",") {
+		for _, piece := range splitListScalar(rest) {
 			piece = strings.TrimSpace(piece)
 			piece = strings.Trim(piece, `"'`)
 			if piece != "" {
@@ -793,4 +822,29 @@ func runLintFix(root string, files []string, dryRun bool) (fixed, skipped int, e
 		fixed++
 	}
 	return fixed, skipped, nil
+}
+
+// splitListScalar splits a `a, b, c` scalar on commas, except a comma
+// inside a URL-like token that is not followed by whitespace — a
+// `sources:` value such as https://x.test/a,b stayed one item before
+// coercion and must stay one item after it.
+func splitListScalar(rest string) []string {
+	var items []string
+	var cur strings.Builder
+	for i := range len(rest) {
+		c := rest[i]
+		if c != ',' {
+			cur.WriteByte(c)
+			continue
+		}
+		nextIsSpace := i+1 < len(rest) && (rest[i+1] == ' ' || rest[i+1] == '\t')
+		if strings.Contains(cur.String(), "://") && !nextIsSpace {
+			cur.WriteByte(c)
+			continue
+		}
+		items = append(items, cur.String())
+		cur.Reset()
+	}
+	items = append(items, cur.String())
+	return items
 }

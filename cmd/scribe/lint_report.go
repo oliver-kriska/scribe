@@ -116,6 +116,7 @@ func classifyFrontmatterError(msg string) errKind {
 	case strings.Contains(msg, "invalid confidence"):
 		return errKindNeedsConfidence
 	case strings.Contains(msg, "invalid domain"),
+		strings.Contains(msg, "closing frontmatter fence must be exactly"),
 		strings.Contains(msg, "invalid type"),
 		strings.Contains(msg, "should be a list"),
 		strings.Contains(msg, "not in YYYY-MM-DD format"):

@@ -65,9 +65,15 @@ func findConflictMarkers(root string) []conflictHit {
 // git conflict marker in content, or 0 when there is none. Manual line
 // splitting instead of bufio.Scanner — articles can exceed Scanner's
 // 64K default line limit.
+//
+// Two escapes, because articles about git legitimately show the
+// markers: a fenced code block (``` or ~~~) is skipped entirely, and a
+// line carrying "scribe:allow" is skipped on its own.
 func firstConflictMarkerLine(content []byte) int {
 	openMarker := []byte("<<<<<<< ")
 	closeMarker := []byte(">>>>>>> ")
+	allow := []byte("scribe:allow")
+	inFence := false
 	lineNo := 1
 	for start := 0; start < len(content); lineNo++ {
 		end := bytes.IndexByte(content[start:], '\n')
@@ -78,6 +84,14 @@ func firstConflictMarkerLine(content []byte) int {
 		} else {
 			line = content[start : start+end]
 			start += end + 1
+		}
+		trimmed := bytes.TrimLeft(line, " \t")
+		if bytes.HasPrefix(trimmed, []byte("```")) || bytes.HasPrefix(trimmed, []byte("~~~")) {
+			inFence = !inFence
+			continue
+		}
+		if inFence || bytes.Contains(line, allow) {
+			continue
 		}
 		if bytes.HasPrefix(line, openMarker) || bytes.HasPrefix(line, closeMarker) {
 			return lineNo

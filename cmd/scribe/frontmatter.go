@@ -95,17 +95,94 @@ type Frontmatter struct {
 	RelationsLocked bool `yaml:"relations_locked,omitempty"`
 }
 
+// fmSpan locates a frontmatter block inside a file.
+type fmSpan struct {
+	YAMLStart int // first byte after the opening fence line
+	YAMLEnd   int // start of the closing fence line (the YAML keeps its final "\n")
+	BodyStart int // first byte after the closing fence line; len(s) at EOF
+}
+
+// looseFenceError names a line that sits where the closing fence
+// belongs but is not one: "-----", "--- x", "---x". lint --fix rewrites
+// it to a bare fence; the validator reports it by name.
+type looseFenceError struct {
+	Line       string
+	Start, End int // byte offsets of the line (End excludes the newline)
+}
+
+func (e *looseFenceError) Error() string {
+	return fmt.Sprintf("closing frontmatter fence must be exactly --- (found %q)", e.Line)
+}
+
+var (
+	errNoFrontmatter   = errors.New("no frontmatter delimiter")
+	errNoClosingFence  = errors.New("no closing frontmatter delimiter")
+	fenceTrailingChars = " \t"
+)
+
+// isBareFence reports whether line is "---" plus optional trailing
+// whitespace (CRLF tolerated).
+func isBareFence(line string) bool {
+	return strings.TrimRight(strings.TrimSuffix(line, "\r"), fenceTrailingChars) == "---"
+}
+
+// isLooseFence reports whether line starts with "---" and carries one
+// more token and nothing else: the shapes a hand edit or a model
+// produces when it means a fence.
+func isLooseFence(line string) bool {
+	t := strings.TrimRight(strings.TrimSuffix(line, "\r"), fenceTrailingChars)
+	if !strings.HasPrefix(t, "---") || isBareFence(t) {
+		return false
+	}
+	rest := strings.TrimLeft(t[3:], fenceTrailingChars)
+	return rest != "" && !strings.ContainsAny(rest, fenceTrailingChars)
+}
+
+// frontmatterSpan is the one fence parser shared by the validator
+// (parseFrontmatter, parseFrontmatterRaw), the fixer (autoFixArticle)
+// and the duplicate scanner (stripFrontmatterBody). Three private
+// variants used to disagree — the validator accepted any line starting
+// with "---" as the close, the fixer required a bare fence — so --fix
+// SKIPped files lint called clean, and a file closed with "-----"
+// validated with the body folded into its YAML. The rule: the first
+// line is a bare fence; the closing fence is the first later bare-fence
+// line. A loose fence in that position is an error the fixer can repair.
+func frontmatterSpan(s string) (fmSpan, error) {
+	first, _, hasNL := strings.Cut(s, "\n")
+	if !hasNL || !isBareFence(first) {
+		return fmSpan{}, errNoFrontmatter
+	}
+	yamlStart := len(first) + 1
+	pos := yamlStart
+	for pos <= len(s) {
+		line := s[pos:]
+		next := len(s)
+		if nl := strings.IndexByte(line, '\n'); nl >= 0 {
+			line = line[:nl]
+			next = pos + nl + 1
+		}
+		if isBareFence(line) {
+			return fmSpan{YAMLStart: yamlStart, YAMLEnd: pos, BodyStart: next}, nil
+		}
+		if isLooseFence(line) {
+			return fmSpan{}, &looseFenceError{Line: line, Start: pos, End: pos + len(line)}
+		}
+		if next == len(s) {
+			break
+		}
+		pos = next
+	}
+	return fmSpan{}, errNoClosingFence
+}
+
 // parseFrontmatter extracts YAML frontmatter from markdown content.
 func parseFrontmatter(content []byte) (*Frontmatter, error) {
 	s := string(content)
-	if !strings.HasPrefix(s, "---") {
-		return nil, errors.New("no frontmatter delimiter")
+	span, err := frontmatterSpan(s)
+	if err != nil {
+		return nil, err
 	}
-	end := strings.Index(s[3:], "\n---")
-	if end < 0 {
-		return nil, errors.New("no closing frontmatter delimiter")
-	}
-	yamlBytes := []byte(s[3 : end+3])
+	yamlBytes := []byte(s[span.YAMLStart:span.YAMLEnd])
 	var fm Frontmatter
 	if err := yaml.Unmarshal(yamlBytes, &fm); err != nil {
 		// Handle duplicate keys
@@ -122,14 +199,11 @@ func parseFrontmatter(content []byte) (*Frontmatter, error) {
 // before parsing — last value wins, matching Python's yaml.safe_load behavior.
 func parseFrontmatterRaw(content []byte) (map[string]any, error) {
 	s := string(content)
-	if !strings.HasPrefix(s, "---") {
-		return nil, errors.New("no frontmatter delimiter")
+	span, err := frontmatterSpan(s)
+	if err != nil {
+		return nil, err
 	}
-	end := strings.Index(s[3:], "\n---")
-	if end < 0 {
-		return nil, errors.New("no closing frontmatter delimiter")
-	}
-	yamlBytes := []byte(s[3 : end+3])
+	yamlBytes := []byte(s[span.YAMLStart:span.YAMLEnd])
 	var raw map[string]any
 	if err := yaml.Unmarshal(yamlBytes, &raw); err != nil {
 		// Go's yaml.v3 rejects duplicate keys. Try deduplicating.

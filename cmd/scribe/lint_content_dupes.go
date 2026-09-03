@@ -303,17 +303,11 @@ func renderDuplicatesReport(exact [][]string, near []dupPair, threshold float64)
 // returned unchanged.
 func stripFrontmatterBody(content []byte) string {
 	s := string(content)
-	if !strings.HasPrefix(s, "---\n") && !strings.HasPrefix(s, "---\r\n") {
+	span, err := frontmatterSpan(s)
+	if err != nil {
 		return s
 	}
-	if i := strings.Index(s[4:], "\n---"); i >= 0 {
-		rest := s[4+i+len("\n---"):]
-		if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
-			return rest[nl+1:]
-		}
-		return ""
-	}
-	return s
+	return s[span.BodyStart:]
 }
 
 // normalizeForDedup lowercases, drops scribe/markdown machinery (HTML

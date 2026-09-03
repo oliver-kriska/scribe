@@ -77,9 +77,13 @@ func (l *LintCmd) Run() error {
 	phase("Phase 2: Size checks")
 	lintSizes(rep, root, files)
 
-	// Phases 3-6 are cross-KB structural checks — they only make sense
-	// on a full scan, not a --changed subset.
-	if !l.Changed {
+	// Phases 3-5 are cross-KB structural checks — they only make sense
+	// on a full scan. `scribe lint wiki/x.md` used to walk the whole KB
+	// for orphans/index/self-ingestion, so a one-file check reported
+	// (and failed on) articles the caller never asked about. Conflict
+	// markers are a per-file property, so that phase follows the scope.
+	fullScan := !l.Changed && len(l.Files) == 0
+	if fullScan {
 		phase("Phase 3: Orphan detection")
 		lintOrphans(rep, root)
 		phase("Phase 4: Index consistency")
@@ -88,6 +92,9 @@ func (l *LintCmd) Run() error {
 		lintSelfIngestion(rep, root)
 		phase("Phase 6: Conflict markers")
 		lintConflictMarkers(rep, root)
+	} else {
+		phase("Phase 6: Conflict markers")
+		lintConflictMarkersIn(rep, root, files)
 	}
 
 	mergeRunStats(map[string]any{
@@ -352,6 +359,19 @@ func lintConflictMarkers(rep *lintReport, root string) {
 	}
 }
 
+// lintConflictMarkersIn is the scoped form for --changed / explicit files.
+func lintConflictMarkersIn(rep *lintReport, root string, files []string) {
+	for _, path := range files {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue // validateFile already reported the unreadable file
+		}
+		if line := firstConflictMarkerLine(content); line > 0 {
+			rep.errorf("%s:%d: unresolved git conflict marker — resolve the merge and recommit", relPath(root, path), line)
+		}
+	}
+}
+
 // runFix collects the file set (--changed, explicit args, or all wiki
 // articles) and applies frontmatter auto-repair via autoFixArticle. A
 // summary line records totals for run-records.
@@ -412,7 +432,10 @@ func (l *LintCmd) runFix() error {
 
 // changedWikiFiles returns wiki .md files with uncommitted changes.
 func changedWikiFiles(root string) ([]string, error) {
-	cmd := exec.Command("git", "diff", "--name-only", "HEAD", "--") //nolint:noctx // git ls subprocess
+	// --diff-filter=d: a deleted article has nothing to validate, and
+	// it used to reach validateFile as a "cannot read" error — from the
+	// very command the shipped KB guide tells agents to run.
+	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=d", "HEAD", "--") //nolint:noctx // git ls subprocess
 	cmd.Args = append(cmd.Args, wikiDirs...)
 	cmd.Dir = root
 	out, err := cmd.Output()
@@ -440,6 +463,9 @@ func changedWikiFiles(root string) ([]string, error) {
 			continue
 		}
 		abs := filepath.Join(root, line)
+		if _, err := os.Stat(abs); err != nil {
+			continue // renamed or deleted since the diff was taken
+		}
 		if !seen[abs] {
 			seen[abs] = true
 			files = append(files, abs)
