@@ -49,20 +49,13 @@ func runContradictionsCheck(since string, limit int, dryRun bool, outputMD strin
 
 	// Build the prompt body inline; reuses the contextualize provider
 	// abstraction so local/anthropic both work.
-	var sb strings.Builder
-	for _, a := range articles {
-		data, err := os.ReadFile(a)
-		if err != nil {
-			continue
-		}
-		sb.WriteString("\n\n---\n\n### ")
-		sb.WriteString(relPath(root, a))
-		sb.WriteString("\n\n")
-		sb.Write(data)
+	packet, dropped := buildContradictionsPacket(root, articles)
+	if dropped > 0 {
+		logMsg("contradictions", "packet budget (%d chars) reached — %d article(s) left out of this pass; narrow --since or lower --limit", contradictionPacketMaxChars, dropped)
 	}
 
 	prompt, err := loadPrompt("contradictions.md", map[string]string{
-		"ARTICLES": sb.String(),
+		"ARTICLES": packet,
 	})
 	if err != nil {
 		return err
@@ -166,4 +159,40 @@ func collectArticlesForContradictionCheck(root, since string, limit int) ([]stri
 		out[i] = e.path
 	}
 	return out, nil
+}
+
+const (
+	// contradictionArticleMaxChars bounds one article's share of the
+	// packet and contradictionPacketMaxChars the whole packet — byte
+	// budgets cut on rune boundaries. Without them a wide --since window
+	// inlined every article whole; the prompt outgrew argv (fixed by
+	// moving prompts to stdin) and the model's context (still true).
+	contradictionArticleMaxChars = 12000
+	contradictionPacketMaxChars  = 120000
+)
+
+// buildContradictionsPacket concatenates the articles for the prompt,
+// capping each article and the packet as a whole. Articles that no
+// longer fit are left out entirely rather than sent as a fragment; the
+// count of those is returned so the caller can say so.
+func buildContradictionsPacket(root string, articles []string) (string, int) {
+	var sb strings.Builder
+	dropped := 0
+	for _, a := range articles {
+		data, err := os.ReadFile(a)
+		if err != nil {
+			continue
+		}
+		body := truncateBytes(string(data), contradictionArticleMaxChars)
+		if len(body) < len(data) {
+			body += "\n\n[… article truncated for the contradiction check …]"
+		}
+		entry := "\n\n---\n\n### " + relPath(root, a) + "\n\n" + body
+		if sb.Len()+len(entry) > contradictionPacketMaxChars {
+			dropped++
+			continue
+		}
+		sb.WriteString(entry)
+	}
+	return sb.String(), dropped
 }

@@ -28,19 +28,23 @@ import (
 // Model/timeout overrides let tenants tune cost vs quality. Pass2Model ""
 // inherits the sync-level default_model (typically Sonnet).
 type AbsorbConfig struct {
-	Strictness             string              `yaml:"strictness"`
-	MaxPerRun              int                 `yaml:"max_per_run"`
-	DenseThresholdWords    int                 `yaml:"dense_threshold_words"`
-	DenseThresholdHeadings int                 `yaml:"dense_threshold_headings"`
-	BriefThresholdWords    int                 `yaml:"brief_threshold_words"`
-	BriefThresholdHeadings int                 `yaml:"brief_threshold_headings"`
-	Pass1Model             string              `yaml:"pass1_model"`
-	Pass2Model             string              `yaml:"pass2_model"`
-	Pass1TimeoutMin        int                 `yaml:"pass1_timeout_min"`
-	Pass2TimeoutMin        int                 `yaml:"pass2_timeout_min"`
-	Pass2Parallel          int                 `yaml:"pass2_parallel"`
-	SinglePassTimeoutMin   int                 `yaml:"single_pass_timeout_min"`
-	Contextualize          ContextualizeConfig `yaml:"contextualize"`
+	Strictness             string `yaml:"strictness"`
+	MaxPerRun              int    `yaml:"max_per_run"`
+	DenseThresholdWords    int    `yaml:"dense_threshold_words"`
+	DenseThresholdHeadings int    `yaml:"dense_threshold_headings"`
+	BriefThresholdWords    int    `yaml:"brief_threshold_words"`
+	BriefThresholdHeadings int    `yaml:"brief_threshold_headings"`
+	Pass1Model             string `yaml:"pass1_model"`
+	Pass2Model             string `yaml:"pass2_model"`
+	Pass1TimeoutMin        int    `yaml:"pass1_timeout_min"`
+	Pass2TimeoutMin        int    `yaml:"pass2_timeout_min"`
+	Pass2Parallel          int    `yaml:"pass2_parallel"`
+	SinglePassTimeoutMin   int    `yaml:"single_pass_timeout_min"`
+	// MaxSinglePassChars bounds the raw body inlined into the single-pass
+	// absorb prompt (bytes, cut on a rune boundary; 0 = unbounded). The
+	// dense-article fallback to single-pass is the usual offender.
+	MaxSinglePassChars int                 `yaml:"max_single_pass_chars"`
+	Contextualize      ContextualizeConfig `yaml:"contextualize"`
 
 	// ChapterAware turns on the Phase 3A.5 chapter-iteration path:
 	// when a raw article has a TOC sidecar with at least
@@ -180,6 +184,7 @@ func absorbDefaults() AbsorbConfig {
 		Pass2TimeoutMin:      5,
 		Pass2Parallel:        3,
 		SinglePassTimeoutMin: 5,
+		MaxSinglePassChars:   60000,
 		ChapterAware:         &chapterAware,
 		ChapterThreshold:     3,
 		ChapterParallel:      2,

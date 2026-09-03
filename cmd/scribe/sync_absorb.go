@@ -248,7 +248,7 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 		"BRIEF_HEADINGS": strconv.Itoa(cfg.Absorb.BriefThresholdHeadings),
 		"DENSE_WORDS":    strconv.Itoa(cfg.Absorb.DenseThresholdWords),
 		"DENSE_HEADINGS": strconv.Itoa(cfg.Absorb.DenseThresholdHeadings),
-		"RAW_BODY":       string(rawBody),
+		"RAW_BODY":       capRawBody(string(rawBody), cfg.Absorb.MaxSinglePassChars, filepath.Base(rawFile)),
 		"TODAY":          time.Now().UTC().Format("2006-01-02"),
 	})
 	if err != nil {
@@ -927,4 +927,17 @@ func rawArticleOptsIntoAbsorb(path string) bool {
 		return true
 	}
 	return false
+}
+
+// capRawBody bounds the raw article body inlined into the single-pass
+// prompt. Single-pass is meant for brief sources, but a dense article
+// whose pass-1 plan came back empty falls back here with its whole
+// body — hundreds of KB on a long PDF — which overran the model's
+// context and, before prompts moved to stdin, argv. Zero disables.
+func capRawBody(body string, maxChars int, name string) string {
+	if maxChars <= 0 || len(body) <= maxChars {
+		return body
+	}
+	logMsg("sync", "absorb-single: %s is %d chars — inlining the first %d (absorb.max_single_pass_chars)", name, len(body), maxChars)
+	return truncateBytes(body, maxChars) + "\n\n[… source truncated at " + strconv.Itoa(maxChars) + " chars — absorb.max_single_pass_chars …]"
 }

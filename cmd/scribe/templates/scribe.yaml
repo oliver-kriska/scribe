@@ -275,6 +275,7 @@ absorb:
   pass2_timeout_min: 5            # default: 5
   pass2_parallel: 3               # default: 3 (chapters per pass2 run; drop to 1 for slow local models)
   single_pass_timeout_min: 5      # default: 5
+  max_single_pass_chars: 60000    # default: 60000 (raw body chars inlined into the single-pass prompt; longer sources are cut, 0 = unbounded)
 
   # Phase 3B atomic-fact extraction. Off by default — opt in once
   # chaptered absorb is verified on your corpus.

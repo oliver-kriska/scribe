@@ -43,8 +43,12 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// The prompt travels over stdin, never argv: argv is visible to
+	// every process on the machine (`ps`), and macOS caps it at 1 MiB —
+	// a dense raw article inlined into an absorb prompt used to fail
+	// with "argument list too long" before the model ever saw it.
 	args := []string{
-		"-p", prompt,
+		"-p",
 		"--no-session-persistence",
 		"--add-dir", root,
 		"--model", model,
@@ -101,6 +105,7 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = root
+	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 	defer startHeartbeat(ctx, op)()

@@ -104,11 +104,21 @@ func dreamReadLogTail(root string, lines int) string {
 		return ""
 	}
 	all := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	if len(all) <= lines {
-		return strings.Join(all, "\n")
+	if len(all) > lines {
+		all = all[len(all)-lines:]
 	}
-	return strings.Join(all[len(all)-lines:], "\n")
+	out := strings.Join(all, "\n")
+	// A line count is no size bound — one pasted stack trace on a
+	// single log line is enough to swamp the packet. Keep the newest
+	// bytes; they are the ones the consolidation reads.
+	if len(out) > dreamLogTailMaxBytes {
+		out = "[… earlier log text cut …]\n" + tailBytes(out, dreamLogTailMaxBytes)
+	}
+	return out
 }
+
+// dreamLogTailMaxBytes bounds the log excerpt in the dream packets.
+const dreamLogTailMaxBytes = 4096
 
 // dreamArticleSample is one row of the inventory packet.
 type dreamArticleSample struct {

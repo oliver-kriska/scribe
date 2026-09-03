@@ -84,6 +84,7 @@ Everything under `$SCRIBE_KB` belongs to the user's private KB repo and is never
 - **Kong for CLI.** Every subcommand is a struct with `Run(ctx *kong.Context) error`. Shared deps go on the root struct.
 - **Embedded prompts and templates.** `go:embed` under `prompts/` and `templates/`. Never read LLM prompts from disk at runtime — that breaks single-binary distribution.
 - **`claude -p` calls always pass `--no-session-persistence`.** Session-mining Claude invocations must not pollute the user's auto-memory. Search the codebase before adding a new `claude` call to make sure you follow this.
+- **Prompts go to `claude -p` over stdin; argv never carries KB content.** `realRunClaude` and `anthropicProvider.Generate` set `cmd.Stdin`; argv holds only flags. A prompt in argv is readable by every process on the machine via `ps` and hits the 1 MiB argv limit as soon as a dense article is inlined. Bound every packet you inline (`truncateBytes` / `tailBytes`): see `contradictionPacketMaxChars`, `absorb.max_single_pass_chars`, `dreamLogTailMaxBytes`.
 - **No LLM calls in the hot path of `triage`, `hook`, `doctor`.** These are budgeted at <1s, <2s, <1s respectively. Keep them deterministic.
 - **Writes are checkpointed.** Session-mining commits after each extracted session so an interrupted run doesn't lose work. Don't regress this.
 - **Run records** are appended to `$KB/output/runs/*.jsonl` by every invocation (see `writeRunRecord`). `scribe doctor --section freshness` reads them. Don't skip recording.

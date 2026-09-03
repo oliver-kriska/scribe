@@ -145,8 +145,9 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		}
 	}
 
+	// Prompt over stdin — see realRunClaude for why argv is off-limits.
 	args := []string{
-		"-p", prompt,
+		"-p",
 		"--no-session-persistence",
 		"--model", a.model,
 		// No tools — this path is for pure text generation.
@@ -171,6 +172,7 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 	defer startHeartbeat(ctx, op)()
