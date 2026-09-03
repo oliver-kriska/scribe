@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -242,53 +240,29 @@ func buildStalenessLedger(root string, opts BuildStaleOpts, now time.Time) (Stal
 		}
 	}
 
-	path := stalenessLedgerPath(root)
-	if len(out) == 0 {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return counts, err
-		}
-		return counts, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return counts, err
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return counts, err
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	for _, e := range out {
-		if err := enc.Encode(e); err != nil {
-			return counts, err
-		}
-	}
-	return counts, nil
+	// Atomic (tmp + rename): a crash mid-write used to leave a truncated
+	// trailing line, and the old decoder loop below spun forever on it.
+	return counts, writeJSONLines(stalenessLedgerPath(root), out)
 }
 
 func stalenessID(relPath string) string {
 	return "s-" + shortHash(relPath)
 }
 
+// readStalenessLedger is line-based (readJSONLines): the previous
+// json.Decoder loop `continue`d on a decode error, but a Decoder latches
+// its first error, so one truncated line hung `scribe doctor`, `stale`
+// and every team sync that builds the digest.
 func readStalenessLedger(root string) ([]StalenessEntry, error) {
-	f, err := os.Open(stalenessLedgerPath(root))
+	rows, skipped, err := readJSONLines[StalenessEntry](stalenessLedgerPath(root))
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
-	var out []StalenessEntry
-	for {
-		var e StalenessEntry
-		if err := dec.Decode(&e); err != nil {
-			if err == io.EOF {
-				break
-			}
-			continue
-		}
+	if skipped > 0 {
+		logMsg("stale", "staleness ledger: skipped %d unparseable line(s) — rebuilt on the next `scribe stale build`", skipped)
+	}
+	out := rows[:0]
+	for _, e := range rows {
 		if e.Version == stalenessLedgerVersion {
 			out = append(out, e)
 		}

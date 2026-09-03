@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -164,28 +162,12 @@ func buildContradictionLedger(root string) (int, int, error) {
 		return out[i].ID < out[j].ID
 	})
 
-	path := contradictionsLedgerPath(root)
+	// Atomic write; an empty ledger is represented by absence.
+	if err := writeJSONLines(contradictionsLedgerPath(root), out); err != nil {
+		return 0, 0, err
+	}
 	if len(out) == 0 {
-		// No contradictions; remove a stale ledger if present.
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return 0, 0, err
-		}
 		return 0, 0, nil
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return 0, 0, err
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	for _, e := range out {
-		if err := enc.Encode(e); err != nil {
-			return 0, 0, err
-		}
 	}
 
 	unresolved := 0
@@ -201,24 +183,12 @@ func buildContradictionLedger(root string) (int, int, error) {
 // empty slice, no error. Used by the build pass for merge and by the
 // CLI list/show/resolve subcommands.
 func readContradictionLedger(root string) ([]ContradictionEntry, error) {
-	path := contradictionsLedgerPath(root)
-	data, err := os.ReadFile(path)
+	rows, _, err := readJSONLines[ContradictionEntry](contradictionsLedgerPath(root))
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	var out []ContradictionEntry
-	for line := range strings.SplitSeq(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		var e ContradictionEntry
-		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			continue
-		}
+	out := rows[:0]
+	for _, e := range rows {
 		if e.Version == contradictionsLedgerVersion {
 			out = append(out, e)
 		}
@@ -284,19 +254,7 @@ func resolveContradiction(root, id, note string) error {
 	if !found {
 		return fmt.Errorf("no ledger entry with id %s", id)
 	}
-	path := contradictionsLedgerPath(root)
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	for _, e := range entries {
-		if err := enc.Encode(e); err != nil {
-			return err
-		}
-	}
-	return nil
+	return writeJSONLines(contradictionsLedgerPath(root), entries)
 }
 
 // ContradictionsCmd is the kong CLI for Phase 6B.
