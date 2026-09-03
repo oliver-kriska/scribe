@@ -303,7 +303,10 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 			if err != nil {
 				continue
 			}
-			dest := filepath.Join(staging, filepath.Base(d))
+			// Collision-safe: a worktree and the main checkout can each
+			// carry a same-named drop, and a deferred drop from the
+			// previous run may still be staged.
+			dest := stagedDropDest(staging, d)
 			if err := os.WriteFile(dest, data, 0o644); err != nil {
 				logMsg("sync", " [%s] write %s: %v", pname, dest, err)
 			}

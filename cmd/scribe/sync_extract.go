@@ -208,6 +208,17 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 			continue
 		}
 
+		// Staged drop files are work in their own right: a handoff
+		// written into an otherwise idle project (its .claude/ dir is
+		// usually gitignored, so the SHA never moves) must not wait for
+		// an unrelated commit — and drops deferred past the files budget
+		// need the follow-up extraction that consumes them.
+		if n := len(stagedDrops(dropStagingDir(root, entry.Name))); n > 0 {
+			logMsg("sync", " [%s] %d staged drop file(s) — extracting", entry.Name, n)
+			result = append(result, key)
+			continue
+		}
+
 		// Never extracted.
 		if entry.LastSHA == "" {
 			result = append(result, key)
@@ -331,19 +342,21 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 
 	// Detect drop files for this project.
 	dropInstruction := ""
-	dropStaging := filepath.Join(root, "output", "drops-"+pname)
-	if dirExists(dropStaging) {
-		drops, _ := filepath.Glob(filepath.Join(dropStaging, "*.md"))
-		if len(drops) > 0 {
-			kb := kbName(root)
-			dropInstruction = fmt.Sprintf(
-				"Step 1.5: Process drop files in %s/. "+
-					"Each has YAML frontmatter with '%s: true', an action (create/update/append), "+
-					"and optional target path. For 'create': make a new article. For 'update': merge into "+
-					"existing article. For 'append': add to target or rolling file (if rolling_target is set). "+
-					"Process drops BEFORE reading project docs to avoid duplication.\n",
-				dropStaging, kb)
-		}
+	dropStaging := dropStagingDir(root, pname)
+	// Which staged drops the model gets to see. The legacy tool-mode
+	// path points the model at the whole staging dir, so everything
+	// counts as consumed; the envelope path reports exactly what fit in
+	// its files block and the rest stays staged.
+	consumedDrops := stagedDrops(dropStaging)
+	if len(consumedDrops) > 0 {
+		kb := kbName(root)
+		dropInstruction = fmt.Sprintf(
+			"Step 1.5: Process drop files in %s/. "+
+				"Each has YAML frontmatter with '%s: true', an action (create/update/append), "+
+				"and optional target path. For 'create': make a new article. For 'update': merge into "+
+				"existing article. For 'append': add to target or rolling file (if rolling_target is set). "+
+				"Process drops BEFORE reading project docs to avoid duplication.\n",
+			dropStaging, kb)
 	}
 
 	// Build and run the extraction prompt.
@@ -372,9 +385,11 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 	cfg := loadConfig(root)
 	if strings.EqualFold(cfg.Extract.Mode, "envelope") {
 		_ = prompt // legacy tool-mode prompt unused in envelope path
-		if _, err := runExtractEnvelope(ctx, root, cfg, manifest, pname, entry, changed); err != nil {
+		seen, err := runExtractEnvelope(ctx, root, cfg, manifest, pname, entry, changed)
+		if err != nil {
 			return fmt.Errorf("extract envelope: %w", err)
 		}
+		consumedDrops = seen
 	} else {
 		tools := []string{
 			"Read", "Write", "Edit", "Glob", "Grep",
@@ -432,14 +447,8 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 		}
 	}
 
-	// Mark drops as processed and clean up staging.
-	if dirExists(dropStaging) {
-		drops, _ := filepath.Glob(filepath.Join(dropStaging, "*.md"))
-		if len(drops) > 0 {
-			entry.LastDropProcessed = timestamp
-			os.RemoveAll(dropStaging)
-		}
-	}
+	// Remove the drops the model saw; anything deferred stays staged.
+	finishDropStaging(pname, dropStaging, consumedDrops, entry, timestamp)
 
 	return manifest.save()
 }

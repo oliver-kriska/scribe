@@ -23,18 +23,21 @@ import (
 // for every project's extraction step. This file closes that gap.
 
 // runExtractEnvelope is the envelope-mode entry point. Mirrors
-// runDeepExtractEnvelope but at project granularity. Returns
-// (rateLimited, err).
+// runDeepExtractEnvelope but at project granularity.
 //
 // The caller is sync.go:extractProject — it dispatches here when
 // cfg.Extract.Mode == "envelope" (auto-flipped under non-anthropic
 // providers).
-func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *Manifest, pname string, entry *ProjectEntry, changed []string) (bool, error) {
+//
+// Returns the staged drop files the model actually received, so the
+// caller removes exactly those from staging (drops past the files budget
+// stay staged for the next extraction instead of being deleted unseen).
+func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *Manifest, pname string, entry *ProjectEntry, changed []string) ([]string, error) {
 	provider := newLLMProvider(cfg.Extract.Provider, cfg.Extract.Model, cfg.Extract.OllamaURL, root)
 	promptName := promptForProvider("extract", providerNameFor(provider))
 
-	dropStaging := filepath.Join(root, "output", "drops-"+pname)
-	filesContent := gatherExtractFiles(root, entry, changed, dropStaging, cfg.Extract.MaxFileChars, cfg.Extract.MaxTotalChars)
+	dropStaging := dropStagingDir(root, pname)
+	filesContent, consumed := gatherExtractFiles(root, entry, changed, dropStaging, cfg.Extract.MaxFileChars, cfg.Extract.MaxTotalChars)
 
 	prompt, err := loadPrompt(promptName, map[string]string{
 		"KB_DIR":        root,
@@ -53,7 +56,7 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 		"DROP_INSTRUCTION": "",
 	})
 	if err != nil {
-		return false, fmt.Errorf("load extract prompt: %w", err)
+		return nil, fmt.Errorf("load extract prompt: %w", err)
 	}
 
 	timeout := time.Duration(cfg.Extract.TimeoutMin) * time.Minute
@@ -65,23 +68,23 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	out, err := generateMaybeJSON(callCtx, provider, prompt)
 	if err != nil {
 		if errors.Is(err, ErrRateLimit) {
-			return true, err
+			return nil, err
 		}
-		return false, fmt.Errorf("extract LLM: %w", err)
+		return nil, fmt.Errorf("extract LLM: %w", err)
 	}
 	jsonText, ok := extractJSON(out)
 	if !ok {
-		return false, fmt.Errorf("extract: no JSON envelope in provider output (%d bytes)", len(out))
+		return nil, fmt.Errorf("extract: no JSON envelope in provider output (%d bytes)", len(out))
 	}
 	env, err := parseEnvelopeV2(jsonText, "extract")
 	if err != nil {
-		return false, fmt.Errorf("extract: parse envelope: %w", err)
+		return nil, fmt.Errorf("extract: parse envelope: %w", err)
 	}
 	// Project extraction creates new project entities; it must not overwrite
 	// an existing curated doc with a reconstruction.
 	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
 	if err != nil {
-		return false, fmt.Errorf("extract: apply actions: %w", err)
+		return nil, fmt.Errorf("extract: apply actions: %w", err)
 	}
 	if len(res.Errors) > 0 {
 		logMsg("sync", " [%s] envelope: applied %d action(s), %d errors: %v", pname, len(res.Applied), len(res.Errors), res.Errors)
@@ -92,7 +95,7 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	setRunStatIfAbsent("project", pname)
 	addRunStat("envelope_actions_applied", len(res.Applied))
 	addRunStat("envelope_actions_errored", len(res.Errors))
-	return false, nil
+	return consumed, nil
 }
 
 // gatherExtractFiles assembles the FILES_CONTENT block. Reads in
@@ -102,7 +105,11 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 // changed files, then a small sample of the project's .md docs.
 // Stops adding files when maxTotal is exceeded; truncates each file
 // at maxFile with a head/tail split (mirrors deep_orchestrator).
-func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, dropStaging string, maxFile, maxTotal int) string {
+//
+// The second result lists the staged drop files that made it into the
+// block. Drops that did not fit are NOT silently dropped — the caller
+// leaves them staged for the next extraction.
+func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, dropStaging string, maxFile, maxTotal int) (string, []string) {
 	var sb strings.Builder
 	used := 0
 
@@ -118,6 +125,11 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 		if len(text) > maxFile {
 			half := maxFile / 2
 			text = text[:half] + "\n…(truncated)…\n" + text[len(text)-half:]
+			if strings.HasPrefix(label, "DROP: ") {
+				// A drop is the user's own handoff; losing its middle is
+				// worth a line in the log, unlike a long README.
+				logMsg("sync", " [%s] drop %s exceeds extract.max_file_chars (%d) — middle truncated", entry.Name, filepath.Base(path), maxFile)
+			}
 		}
 		header := fmt.Sprintf("### %s\n\n", label)
 		// Don't exceed the global cap by writing a partial file we then
@@ -140,12 +152,11 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 	// Code sessions. Highest priority because they carry frontmatter
 	// hints (action: create/update/append, target path) that the LLM
 	// should honor verbatim.
-	if dirExists(dropStaging) {
-		drops, _ := filepath.Glob(filepath.Join(dropStaging, "*.md"))
-		sort.Strings(drops)
-		for _, p := range drops {
-			rel, _ := filepath.Rel(root, p)
-			appendFile("DROP: "+rel, p)
+	var consumed []string
+	for _, p := range stagedDrops(dropStaging) {
+		rel, _ := filepath.Rel(root, p)
+		if appendFile("DROP: "+rel, p) {
+			consumed = append(consumed, p)
 		}
 	}
 
@@ -196,7 +207,7 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 	if used == 0 {
 		// Empty body block is legal but the model produces better output
 		// when it knows there's *something* — explicit marker.
-		return "(no readable files gathered)"
+		return "(no readable files gathered)", nil
 	}
-	return sb.String()
+	return sb.String(), consumed
 }
