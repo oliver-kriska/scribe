@@ -78,9 +78,11 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 			// shared-sha entry stays as a soft pointer to the canonical
 			// absorber; we deliberately don't auto-delete the
 			// duplicate raw file (no-knowledge-deletion rule).
-			absorbLog[entry.Name()] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
-			if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
-				logPhaseDegraded("sync", "absorb log", "could not persist _absorb_log.json: %v", err)
+			if !s.DryRun {
+				absorbLog[entry.Name()] = AbsorbLogEntry{SHA: sha, At: time.Now().UTC().Format(time.RFC3339)}
+				if err := saveAbsorbLog(absorbLogPath, absorbLog); err != nil {
+					logPhaseDegraded("sync", "absorb log", "could not persist _absorb_log.json: %v", err)
+				}
 			}
 			continue
 		case absorbDecisionRunRefresh:
@@ -100,6 +102,14 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 		// the parked-links list so the user can handle them manually.
 		// `scribe capture --refetch` retries fetching these in a batch.
 		if rawArticleIsStub(rawFile) {
+			// This branch ran ahead of the --dry-run guard below, so a
+			// dry run parked stubs into wiki/_unfetched-links.md and
+			// rewrote _absorb_log.json — invisible, because main.go
+			// records dry runs as read-only. Dry runs only report.
+			if s.DryRun {
+				logMsg("sync", "would park unfetched stub raw/articles/%s", entry.Name())
+				continue
+			}
 			if parkStubLink(root, rawFile) {
 				logMsg("sync", "parked unfetched stub %s → wiki/_unfetched-links.md", entry.Name())
 			}
