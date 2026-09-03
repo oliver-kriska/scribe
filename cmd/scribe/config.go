@@ -918,19 +918,117 @@ func integrationToken(name string) string {
 	return strings.TrimSpace(loadUserConfig().IntegrationTokens[name])
 }
 
-// loadUserConfig reads the user-level config. Returns zero value if missing.
-func loadUserConfig() userConfig {
+// userConfigHeader is the comment every scribe writer puts at the top of
+// the user config. Tests pin the "# scribe user config" prefix.
+const userConfigHeader = "# scribe user config — managed by scribe (`scribe init`, `scribe kb add`)\n"
+
+// loadUserConfigChecked reads the user-level config. A missing file is
+// the zero value with a nil error. An unparseable file returns the error
+// so callers that depend on the registry (`scribe each`) or on secrets
+// (hosted providers) can fail loudly instead of silently running on a
+// zero value — the old `_ = yaml.Unmarshal` made a single bad indent
+// wipe kb_dir, every API key and the daily token ceiling with no log.
+func loadUserConfigChecked() (userConfig, error) {
 	var uc userConfig
 	data, err := os.ReadFile(userConfigPath())
 	if err != nil {
-		return uc
+		if os.IsNotExist(err) {
+			return uc, nil
+		}
+		return uc, fmt.Errorf("read %s: %w", userConfigPath(), err)
 	}
-	_ = yaml.Unmarshal(data, &uc)
+	if err := yaml.Unmarshal(data, &uc); err != nil {
+		return userConfig{}, fmt.Errorf("parse %s: %w", userConfigPath(), err)
+	}
+	uc.KBs = unfoldKBList(uc.KBs)
 	uc.KBDir = expandHome(uc.KBDir)
 	for i := range uc.KBs {
 		uc.KBs[i] = expandHome(uc.KBs[i])
 	}
+	return uc, nil
+}
+
+var userConfigWarnOnce gosync.Once
+
+// loadUserConfig is the lenient wrapper: zero value on any failure, with
+// the failure logged once per process. Use loadUserConfigChecked where
+// an unreadable file must stop the command.
+func loadUserConfig() userConfig {
+	uc, err := loadUserConfigChecked()
+	if err != nil {
+		userConfigWarnOnce.Do(func() {
+			logMsg("config", "user config unreadable — running on defaults (kb_dir, registry, API keys all unset): %v", err)
+		})
+	}
 	return uc
+}
+
+// unfoldKBList repairs the one corruption scribe itself used to produce:
+// `kbs:` items written at 2-space indent by the old text-splicing
+// registry writer next to 4-space items from yaml.Marshal. yaml.v3 parses
+// that shape WITHOUT error into a single folded scalar
+// ("/a - /b - /c"), which silently emptied the registry and stopped every
+// cron job. Split it back apart; the next writer rewrites the file clean.
+func unfoldKBList(kbs []string) []string {
+	if len(kbs) != 1 || !strings.Contains(kbs[0], " - ") {
+		return kbs
+	}
+	parts := strings.Split(kbs[0], " - ")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if !strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "~") {
+			return kbs // not a folded path list — leave it alone
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// userConfigFolded reports whether the on-disk file has the folded-kbs
+// corruption that unfoldKBList papers over. doctor surfaces it so the
+// user rewrites the file (any `scribe kb add`/`init` does) before the
+// heal is the only thing keeping cron alive.
+func userConfigFolded() bool {
+	data, err := os.ReadFile(userConfigPath())
+	if err != nil {
+		return false
+	}
+	var uc userConfig
+	if err := yaml.Unmarshal(data, &uc); err != nil {
+		return false
+	}
+	return len(uc.KBs) == 1 && len(unfoldKBList(uc.KBs)) > 1
+}
+
+// marshalUserConfig renders uc the way every writer must: header comment,
+// yaml.v3 formatting, and 0o600 whenever the file carries a secret.
+// Single serialiser = single indentation = no mixed-indent corruption.
+func marshalUserConfig(uc userConfig) ([]byte, os.FileMode, error) {
+	body, err := yaml.Marshal(&uc)
+	if err != nil {
+		return nil, 0, fmt.Errorf("marshal user config: %w", err)
+	}
+	perm := os.FileMode(0o644)
+	if uc.LLMAPIKey != "" || len(uc.LLMAPIKeys) > 0 || len(uc.IntegrationTokens) > 0 {
+		perm = 0o600
+	}
+	return append([]byte(userConfigHeader), body...), perm, nil
+}
+
+// writeUserConfig persists uc atomically (tmp + rename) through
+// marshalUserConfig. Registry writers use this directly; `scribe init`
+// routes the same bytes through writeGlobalState for its throwaway-path
+// guard.
+func writeUserConfig(uc userConfig) error {
+	content, perm, err := marshalUserConfig(uc)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(userConfigPath(), content, perm)
 }
 
 // requireParseable is the guard for commands that spend money or write

@@ -146,3 +146,121 @@ func TestUnregisterKB(t *testing.T) {
 		t.Error("removing an absent entry should report false")
 	}
 }
+
+// TestRegisterKB_AfterInitRewriteStaysParseable is the regression for the
+// registry corruption: `scribe init` rewrote the file with yaml.Marshal
+// (4-space list items) and the old registry writer then spliced a 2-space
+// item under the same `kbs:` key. yaml.v3 parsed that mix without error
+// into ONE folded scalar ("/a - /b"), registeredKBs() dropped it, and every
+// `scribe each` job stopped. Both writers now share marshalUserConfig.
+func TestRegisterKB_AfterInitRewriteStaysParseable(t *testing.T) {
+	isolateUserConfig(t)
+	a := makeKBRoot(t, "a")
+	b := makeKBRoot(t, "b")
+	c := makeKBRoot(t, "c")
+
+	// What installUserConfig leaves behind.
+	if err := writeUserConfig(userConfig{KBDir: a, KBs: []string{b}, LLMAPIKey: "sk-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if added, err := registerKB(c); err != nil || !added {
+		t.Fatalf("registerKB(c): added=%v err=%v", added, err)
+	}
+
+	uc, err := loadUserConfigChecked()
+	if err != nil {
+		t.Fatalf("config must stay parseable after init+register: %v", err)
+	}
+	if uc.KBDir != a || uc.LLMAPIKey != "sk-test" {
+		t.Errorf("registerKB dropped other fields: %+v", uc)
+	}
+	if len(uc.KBs) != 2 || uc.KBs[0] != b || uc.KBs[1] != c {
+		t.Errorf("want kbs [b c], got %v", uc.KBs)
+	}
+	got := registeredKBs()
+	if len(got) != 3 {
+		t.Errorf("want a,b,c in rotation, got %v", got)
+	}
+	raw, _ := os.ReadFile(userConfigPath())
+	for _, ln := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(ln), "- ") && !strings.HasPrefix(ln, "    - ") {
+			t.Errorf("list item not at yaml.v3's 4-space indent: %q", ln)
+		}
+	}
+	if !strings.HasPrefix(string(raw), "# scribe user config") {
+		t.Errorf("header comment missing:\n%s", raw)
+	}
+	fi, _ := os.Stat(userConfigPath())
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("file carries an API key; want 0600, got %o", fi.Mode().Perm())
+	}
+}
+
+// TestLoadUserConfig_UnfoldsCorruptedKBList: a file already corrupted by
+// the old writer mix must still yield every KB (the in-memory heal), and
+// doctor must be able to see that the on-disk shape is wrong.
+func TestLoadUserConfig_UnfoldsCorruptedKBList(t *testing.T) {
+	isolateUserConfig(t)
+	a := makeKBRoot(t, "a")
+	b := makeKBRoot(t, "b")
+	c := makeKBRoot(t, "c")
+	writeUserCfg(t, "kb_dir: "+a+"\nkbs:\n  - "+c+"\n    - "+a+"\n    - "+b+"\n")
+
+	uc, err := loadUserConfigChecked()
+	if err != nil {
+		t.Fatalf("yaml.v3 accepts this shape; got %v", err)
+	}
+	if len(uc.KBs) != 3 || uc.KBs[0] != c || uc.KBs[1] != a || uc.KBs[2] != b {
+		t.Fatalf("folded kbs must be split back apart; got %v", uc.KBs)
+	}
+	if got := registeredKBs(); len(got) != 3 {
+		t.Errorf("registry must survive the corruption; got %v", got)
+	}
+	if !userConfigFolded() {
+		t.Error("userConfigFolded must flag the on-disk corruption for doctor")
+	}
+	if ck := checkUserConfig(); ck.Status != statusWarn {
+		t.Errorf("doctor must WARN on a folded kbs list; got %+v", ck)
+	}
+
+	// A rewrite through the registry heals the file.
+	d := makeKBRoot(t, "d")
+	if _, err := registerKB(d); err != nil {
+		t.Fatal(err)
+	}
+	if userConfigFolded() {
+		t.Error("registerKB must rewrite the file with consistent indentation")
+	}
+	if ck := checkUserConfig(); ck.Status != statusOK {
+		t.Errorf("doctor must be OK after the rewrite; got %+v", ck)
+	}
+}
+
+// TestUserConfig_ParseErrorIsSurfaced: a file that does not parse must
+// not masquerade as a fresh install — each refuses to run, doctor FAILs,
+// and the registry writers refuse to touch the file.
+func TestUserConfig_ParseErrorIsSurfaced(t *testing.T) {
+	isolateUserConfig(t)
+	a := makeKBRoot(t, "a")
+	writeUserCfg(t, "kb_dir: "+a+"\nkb_dir: "+a+"\n") // duplicate key
+
+	if _, err := loadUserConfigChecked(); err == nil {
+		t.Fatal("duplicate key must be reported")
+	}
+	if uc := loadUserConfig(); uc.KBDir != "" {
+		t.Errorf("lenient loader must return the zero value; got %+v", uc)
+	}
+	if ck := checkUserConfig(); ck.Status != statusFail {
+		t.Errorf("doctor must FAIL; got %+v", ck)
+	}
+	prev := eachRunner
+	eachRunner = func(string, []string) error { t.Error("no job may run on an unreadable registry"); return nil }
+	t.Cleanup(func() { eachRunner = prev })
+	err := (&EachCmd{Args: []string{"sync"}}).Run()
+	if err == nil || !strings.Contains(err.Error(), userConfigPath()) {
+		t.Errorf("each must refuse and name the file; got %v", err)
+	}
+	if _, err := registerKB(a); err == nil {
+		t.Error("registerKB must refuse to rewrite a file it cannot parse")
+	}
+}

@@ -195,6 +195,36 @@ func checkDeps(cfg *ScribeConfig) []check {
 
 // ---- Config ----
 
+// checkUserConfig judges ~/.config/scribe/config.yaml itself. Every
+// consumer (registry, API keys, machine budget) used to read it through a
+// swallowed yaml error, so a corrupt file looked like a fresh install:
+// cron ran zero KBs, hosted calls went out unauthenticated, and nothing
+// said why. The folded-kbs case is the corruption scribe itself produced
+// (mixed 2-/4-space list indent); loadUserConfigChecked heals it in
+// memory, but the file should be rewritten before that heal is all that
+// keeps cron alive.
+func checkUserConfig() check {
+	path := userConfigPath()
+	if !fileExists(path) {
+		return check{Section: "config", Name: "user-config", Status: statusOK, Detail: "not present — single-KB defaults"}
+	}
+	if _, err := loadUserConfigChecked(); err != nil {
+		return check{
+			Section: "config", Name: "user-config", Status: statusFail,
+			Detail: fmt.Sprintf("%s does not parse — registry, API keys and budget ceiling are all unset: %v", path, err),
+			Fix:    "fix the YAML by hand (a backup copy first), then `scribe kb list` to confirm",
+		}
+	}
+	if userConfigFolded() {
+		return check{
+			Section: "config", Name: "user-config", Status: statusWarn,
+			Detail: "kbs: list has mixed indentation and parses as one folded entry — scribe repairs it in memory on every read",
+			Fix:    "scribe kb add <any registered KB> (rewrites the file with consistent indentation)",
+		}
+	}
+	return check{Section: "config", Name: "user-config", Status: statusOK, Detail: path}
+}
+
 func checkConfig(root string, cfg *ScribeConfig) []check {
 	var out []check
 
@@ -204,6 +234,7 @@ func checkConfig(root string, cfg *ScribeConfig) []check {
 	} else {
 		out = append(out, check{Section: "config", Name: "scribe.yaml", Status: statusWarn, Detail: "missing — using defaults", Fix: "scribe init"})
 	}
+	out = append(out, checkUserConfig())
 
 	// Team-KB config trust (config_trust.go): drifted sensitive keys mean
 	// scribe is deliberately ignoring part of the repo config — the user

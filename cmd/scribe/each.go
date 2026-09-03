@@ -74,7 +74,12 @@ func (c *EachCmd) Run() error {
 	if len(args) == 0 {
 		return errors.New("usage: scribe each -- <subcommand> [args...]")
 	}
-	kbs := registeredKBs()
+	// Checked: an unparseable user config must stop the scheduler with a
+	// message, not run zero jobs forever while cron reports success.
+	kbs, err := registeredKBsChecked()
+	if err != nil {
+		return fmt.Errorf("refusing to run with an unreadable registry: %w", err)
+	}
 	if len(kbs) == 0 {
 		return fmt.Errorf("no registered KBs — add one with `scribe kb add <path>` or set kb_dir in %s", userConfigPath())
 	}

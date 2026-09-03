@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 )
 
 // The KB registry (issue #26) is the `kbs:` list in the user config
@@ -22,7 +20,18 @@ import (
 // registering enaia would stop syncing scriptorium). Non-existent / non-KB
 // entries are skipped so one stale path can never break a cron tick.
 func registeredKBs() []string {
-	uc := loadUserConfig()
+	kbs, _ := registeredKBsChecked()
+	return kbs
+}
+
+// registeredKBsChecked is registeredKBs for callers that must not treat
+// an unreadable user config as "no KBs" — `scribe each` refuses to run
+// zero jobs silently when the file exists but does not parse.
+func registeredKBsChecked() ([]string, error) {
+	uc, err := loadUserConfigChecked()
+	if err != nil {
+		return nil, err
+	}
 	var cands []string
 	if uc.KBDir != "" {
 		cands = append(cands, uc.KBDir)
@@ -41,7 +50,7 @@ func registeredKBs() []string {
 		seen[abs] = true
 		out = append(out, abs)
 	}
-	return out
+	return out, nil
 }
 
 // kbRegistered reports whether abs is already covered by the registry —
@@ -59,9 +68,15 @@ func kbRegistered(uc userConfig, abs string) bool {
 }
 
 // registerKB idempotently adds root to the `kbs:` registry, preserving the
-// rest of the user config (comments, kb_dir). Returns whether a new entry
-// was written. A path that isn't a KB root is rejected so the registry
-// never accumulates dead entries.
+// rest of the user config (kb_dir, keys, stop words). Returns whether a
+// new entry was written. A path that isn't a KB root is rejected so the
+// registry never accumulates dead entries.
+//
+// The file is rewritten through marshalUserConfig — the same serialiser
+// `scribe init` uses — instead of splicing a "  - <path>" line into the
+// existing text. The splice wrote 2-space items; init's yaml.Marshal
+// writes 4-space items; the mix parsed (without error) as one folded
+// scalar and emptied the registry, which stopped every cron job.
 func registerKB(root string) (bool, error) {
 	abs, err := filepath.Abs(expandHome(root))
 	if err != nil {
@@ -70,18 +85,15 @@ func registerKB(root string) (bool, error) {
 	if !isKBRoot(abs) {
 		return false, fmt.Errorf("%s is not a scribe KB (no scribe.yaml or scripts/projects.json)", abs)
 	}
-	if kbRegistered(loadUserConfig(), abs) {
+	uc, err := loadUserConfigChecked()
+	if err != nil {
+		return false, fmt.Errorf("user config unreadable — fix it before registering: %w", err)
+	}
+	if kbRegistered(uc, abs) {
 		return false, nil
 	}
-	path := userConfigPath()
-	raw, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return false, err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
-	}
-	if err := os.WriteFile(path, []byte(appendKBEntry(string(raw), abs)), 0o644); err != nil {
+	uc.KBs = append(uc.KBs, abs)
+	if err := writeUserConfig(uc); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -95,61 +107,22 @@ func unregisterKB(root string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	path := userConfigPath()
-	raw, err := os.ReadFile(path)
+	uc, err := loadUserConfigChecked()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("user config unreadable — fix it before unregistering: %w", err)
 	}
-	updated, removed := removeKBEntry(string(raw), abs)
+	kept := uc.KBs[:0:0]
+	removed := false
+	for _, k := range uc.KBs {
+		if samePath(k, abs) {
+			removed = true
+			continue
+		}
+		kept = append(kept, k)
+	}
 	if !removed {
 		return false, nil
 	}
-	return true, os.WriteFile(path, []byte(updated), 0o644)
-}
-
-// appendKBEntry returns user-config text with abs added under a `kbs:`
-// block — inserted after an existing `kbs:` line, or as a new block
-// appended to the file. Only block-list form is handled (the form scribe
-// writes); inline `kbs: [...]` is not modified.
-func appendKBEntry(raw, abs string) string {
-	item := "  - " + abs
-	lines := strings.Split(raw, "\n")
-	for i, ln := range lines {
-		if strings.TrimSpace(ln) == "kbs:" {
-			out := append([]string{}, lines[:i+1]...)
-			out = append(out, item)
-			out = append(out, lines[i+1:]...)
-			return strings.Join(out, "\n")
-		}
-	}
-	block := "kbs:\n" + item + "\n"
-	if raw == "" {
-		return block
-	}
-	sep := "\n"
-	if strings.HasSuffix(raw, "\n") {
-		sep = ""
-	}
-	return raw + sep + block
-}
-
-// removeKBEntry drops the `- <abs>` list item from the user-config text,
-// matching on resolved path. Returns the new text and whether anything was
-// removed.
-func removeKBEntry(raw, abs string) (string, bool) {
-	lines := strings.Split(raw, "\n")
-	out := make([]string, 0, len(lines))
-	removed := false
-	for _, ln := range lines {
-		t := strings.TrimSpace(ln)
-		if rest, ok := strings.CutPrefix(t, "- "); ok {
-			val := strings.Trim(strings.TrimSpace(rest), `"'`)
-			if a, err := filepath.Abs(expandHome(val)); err == nil && samePath(a, abs) {
-				removed = true
-				continue
-			}
-		}
-		out = append(out, ln)
-	}
-	return strings.Join(out, "\n"), removed
+	uc.KBs = kept
+	return true, writeUserConfig(uc)
 }
