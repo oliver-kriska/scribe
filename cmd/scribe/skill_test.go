@@ -34,6 +34,16 @@ func TestReadEmbeddedSkillFiles_PopulatesBundle(t *testing.T) {
 	if !strings.Contains(string(skillMD), "description: ") {
 		t.Errorf("SKILL.md missing `description:` in frontmatter")
 	}
+	for _, want := range []string{
+		"first discover and use the qmd MCP `query` tool",
+		"always pass `intent`",
+		"may expose tools lazily",
+		"shell `qmd query` only after MCP discovery confirms",
+	} {
+		if !strings.Contains(string(skillMD), want) {
+			t.Errorf("scribe-kb/SKILL.md missing qmd transport guidance %q", want)
+		}
+	}
 	// References must include all six docs documented in the plan.
 	wantRefs := []string{
 		"scribe-kb/references/FRONTMATTER.md",
@@ -46,6 +56,18 @@ func TestReadEmbeddedSkillFiles_PopulatesBundle(t *testing.T) {
 	for _, want := range wantRefs {
 		if _, ok := got[want]; !ok {
 			t.Errorf("expected reference file missing: %s", want)
+		}
+	}
+	queryMD := string(got["scribe-kb/references/QUERY.md"])
+	for _, want := range []string{
+		"## Transport decision tree",
+		"`mcp__qmd__query`",
+		"`mcp__plugin_qmd_qmd__query`",
+		"`ALL_TOOLS`",
+		"Do not treat a sandbox Metal initialization failure as evidence that the qmd index is corrupt",
+	} {
+		if !strings.Contains(queryMD, want) {
+			t.Errorf("QUERY.md missing qmd transport guidance %q", want)
 		}
 	}
 

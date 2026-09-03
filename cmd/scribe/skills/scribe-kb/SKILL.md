@@ -1,6 +1,6 @@
 ---
 name: scribe-kb
-description: Read, write, and search a scribe-managed knowledge base (markdown vault with frontmatter conventions, wikilinks, and qmd hybrid search). Use when the user's project has a scribe.yaml (KB root) or a .claude/<kb_name>/ drop-file directory (consumer side), or when they mention scribe, scriptorium, qmd, drop files, or "my KB". Covers frontmatter schema, wikilink syntax, drop-file pattern, search via qmd, and directory taxonomy.
+description: Read, write, and search a scribe-managed knowledge base (markdown vault with frontmatter conventions, wikilinks, and qmd hybrid search). Use when the user's project has a scribe.yaml (KB root) or a .claude/kb-name/ drop-file directory (consumer side), or when they mention scribe, scriptorium, qmd, drop files, or "my KB". Covers frontmatter schema, wikilink syntax, drop-file pattern, search via qmd, and directory taxonomy.
 ---
 
 # scribe knowledge base — agent skill
@@ -21,8 +21,9 @@ Trigger on any of:
 
 | What | Command (qmd / shell) |
 |---|---|
-| Find articles by topic | `qmd query "<natural-language question>"` (or use the qmd MCP tool when present) |
+| Find articles by topic | Discover and use the qmd MCP `query` tool; see references/QUERY.md |
 | Exact-keyword search | `qmd search "<keywords>"` |
+| Semantic shell fallback | `qmd query "<natural-language question>"` only when MCP query is unavailable |
 | Read a specific article | Read tool with the absolute path |
 | Read a section | `scribe sections get <article> <id>` (Phase 5A) |
 | Write a new wiki article | Edit/Write tool — see references/FRONTMATTER.md |
@@ -61,6 +62,8 @@ qmd query "<the problem> decision reasoning"
 ```
 
 Past tool evaluations live in `tools/` with `verdict: use | evaluate | skip`. Past decisions live in `decisions/` with full context. Don't suggest something already rejected.
+
+Treat the commands above as query examples, not transport precedence. For semantic retrieval, first discover and use the qmd MCP `query` tool, always pass `intent`, and keep local-model calls serial. Agent runtimes qualify MCP names differently and may expose tools lazily, so do not declare qmd MCP unavailable merely because it is missing from an initial tool summary. Use `qmd search` for exact no-model lookups; use shell `qmd query` only after MCP discovery confirms the semantic tool is unavailable. Read references/QUERY.md for the complete decision tree and agent-specific examples.
 
 ## What NOT to do
 
