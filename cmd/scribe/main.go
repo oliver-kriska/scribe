@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	gosync "sync"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -21,7 +22,74 @@ var globalRoot string
 
 // runStats holds optional per-command telemetry that writeRunRecord merges
 // into the JSONL record. Commands populate it before returning.
-var runStats map[string]any
+//
+// Never write to the map directly — go through setRunStat/addRunStat.
+// Parallel extraction (sync_extract.go) runs runExtractEnvelope per
+// project in an errgroup; unguarded read-modify-write on this map is a
+// runtime fatal ("concurrent map writes") that kills the whole sync.
+var (
+	runStats   map[string]any
+	runStatsMu gosync.Mutex
+)
+
+// setRunStat records one telemetry value, initializing the map on first use.
+func setRunStat(key string, v any) {
+	runStatsMu.Lock()
+	defer runStatsMu.Unlock()
+	if runStats == nil {
+		runStats = map[string]any{}
+	}
+	runStats[key] = v
+}
+
+// setRunStatIfAbsent records v only when key is not set yet — for labels
+// like mode/project that the first goroutine to finish should own.
+func setRunStatIfAbsent(key string, v any) {
+	runStatsMu.Lock()
+	defer runStatsMu.Unlock()
+	if runStats == nil {
+		runStats = map[string]any{}
+	}
+	if _, ok := runStats[key]; !ok {
+		runStats[key] = v
+	}
+}
+
+// addRunStat adds n to an integer counter; a missing or non-int value
+// counts as zero.
+func addRunStat(key string, n int) {
+	runStatsMu.Lock()
+	defer runStatsMu.Unlock()
+	if runStats == nil {
+		runStats = map[string]any{}
+	}
+	if v, ok := runStats[key].(int); ok {
+		runStats[key] = v + n
+		return
+	}
+	runStats[key] = n
+}
+
+// mergeRunStats copies every key of m into the telemetry (later writers
+// win per key). Replaces the old whole-map assignment at command level.
+func mergeRunStats(m map[string]any) {
+	runStatsMu.Lock()
+	defer runStatsMu.Unlock()
+	if runStats == nil {
+		runStats = make(map[string]any, len(m))
+	}
+	maps.Copy(runStats, m)
+}
+
+// snapshotRunStats returns a copy of the current telemetry for the run
+// record writer.
+func snapshotRunStats() map[string]any {
+	runStatsMu.Lock()
+	defer runStatsMu.Unlock()
+	out := make(map[string]any, len(runStats))
+	maps.Copy(out, runStats)
+	return out
+}
 
 type CLI struct {
 	Root        string           `help:"Override KB root directory." type:"path" short:"C"`
@@ -286,7 +354,7 @@ func writeRunRecord(cmdPath string, started time.Time, runErr error) {
 		record["degraded"] = degraded
 		record["degraded_errors"] = degradedMsgs
 	}
-	maps.Copy(record, runStats)
+	maps.Copy(record, snapshotRunStats())
 
 	// Filename: runs/YYYY-MM-DD.jsonl (one daily JSONL file, append-only).
 	// JSONL keeps the file greppable and lets us reuse tooling like `jq -s`.

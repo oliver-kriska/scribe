@@ -297,11 +297,11 @@ func (b *SectionsBuildCmd) Run() error {
 		return err
 	}
 	logMsg("sections", "build done: scanned=%d wrote=%d removed=%d", scanned, written, removed)
-	runStats = map[string]any{
+	mergeRunStats(map[string]any{
 		"sections_scanned": scanned,
 		"sections_wrote":   written,
 		"sections_removed": removed,
-	}
+	})
 	return nil
 }
 

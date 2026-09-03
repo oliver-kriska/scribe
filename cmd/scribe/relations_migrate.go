@@ -202,12 +202,12 @@ func (m *RelationsMigrateCmd) Run() error {
 
 	logMsg("relations-migrate", "done: articles=%d edges=%d applied=%d log=%s",
 		len(candidates), totalEdges, totalApplied, filepath.Base(logPath))
-	runStats = map[string]any{
+	mergeRunStats(map[string]any{
 		"migrate_articles": len(candidates),
 		"migrate_edges":    totalEdges,
 		"migrate_applied":  totalApplied,
 		"migrate_log":      filepath.Base(logPath),
-	}
+	})
 	return nil
 }
 

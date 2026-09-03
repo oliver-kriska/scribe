@@ -138,12 +138,9 @@ func commitDreamCycle(root, today, commitMsgPrefix string, preCount int) error {
 	diff := postCount - preCount
 	logMsg("dream", "articles: %d -> %d (%+d)", preCount, postCount, diff)
 
-	if runStats == nil {
-		runStats = map[string]any{}
-	}
-	runStats["articles_before"] = preCount
-	runStats["articles_after"] = postCount
-	runStats["articles_delta"] = diff
+	setRunStat("articles_before", preCount)
+	setRunStat("articles_after", postCount)
+	setRunStat("articles_delta", diff)
 
 	if diff < -5 {
 		logMsg("dream", "WARNING: dream deleted more than 5 articles (%d), review before committing", diff)
@@ -158,7 +155,7 @@ func commitDreamCycle(root, today, commitMsgPrefix string, preCount int) error {
 
 	if changes != "" {
 		changedCount := len(strings.Split(strings.TrimSpace(changes), "\n"))
-		runStats["files_changed"] = changedCount
+		setRunStat("files_changed", changedCount)
 		commitMsg := fmt.Sprintf("%s: %s (%d files)", commitMsgPrefix, today, changedCount)
 
 		// Rebuild index and backlinks BEFORE committing so the index is part

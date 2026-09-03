@@ -90,11 +90,11 @@ func (l *LintCmd) Run() error {
 		lintConflictMarkers(rep, root)
 	}
 
-	runStats = map[string]any{
+	mergeRunStats(map[string]any{
 		"files_checked": len(files),
 		"errors":        rep.errors,
 		"warnings":      rep.warnings,
-	}
+	})
 
 	// Grouped warning summary (default mode only), the "To fix, run:"
 	// footer, then the verdict. The footer prints on a warnings-only PASS
@@ -397,7 +397,7 @@ func (l *LintCmd) runFix() error {
 			dupRemoved, dupRenamed, exactRemoved, phRemoved)
 	}
 	fmt.Println()
-	runStats = map[string]any{
+	mergeRunStats(map[string]any{
 		"files_scanned":       len(files),
 		"files_fixed":         fixed,
 		"files_skipped":       skipped,
@@ -406,7 +406,7 @@ func (l *LintCmd) runFix() error {
 		"dup_exact_removed":   exactRemoved,
 		"placeholder_removed": phRemoved,
 		"dry_run":             l.DryRun,
-	}
+	})
 	return nil
 }
 

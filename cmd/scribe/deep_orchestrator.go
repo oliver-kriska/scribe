@@ -65,19 +65,10 @@ func runDeepExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig,
 	// Per-directory metrics accumulate into runStats as the caller
 	// iterates. We track totals not per-dir so the JSONL row stays
 	// flat.
-	if runStats == nil {
-		runStats = map[string]any{"mode": "envelope", "project": project}
-	}
-	if v, ok := runStats["envelope_actions_applied"].(int); ok {
-		runStats["envelope_actions_applied"] = v + len(res.Applied)
-	} else {
-		runStats["envelope_actions_applied"] = len(res.Applied)
-	}
-	if v, ok := runStats["envelope_actions_errored"].(int); ok {
-		runStats["envelope_actions_errored"] = v + len(res.Errors)
-	} else {
-		runStats["envelope_actions_errored"] = len(res.Errors)
-	}
+	setRunStatIfAbsent("mode", "envelope")
+	setRunStatIfAbsent("project", project)
+	addRunStat("envelope_actions_applied", len(res.Applied))
+	addRunStat("envelope_actions_errored", len(res.Errors))
 	return false, nil
 }
 

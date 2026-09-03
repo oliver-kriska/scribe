@@ -88,19 +88,10 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	} else {
 		logMsg("sync", " [%s] envelope: applied %d action(s)", pname, len(res.Applied))
 	}
-	if runStats == nil {
-		runStats = map[string]any{"mode": "envelope-extract", "project": pname}
-	}
-	if v, ok := runStats["envelope_actions_applied"].(int); ok {
-		runStats["envelope_actions_applied"] = v + len(res.Applied)
-	} else {
-		runStats["envelope_actions_applied"] = len(res.Applied)
-	}
-	if v, ok := runStats["envelope_actions_errored"].(int); ok {
-		runStats["envelope_actions_errored"] = v + len(res.Errors)
-	} else {
-		runStats["envelope_actions_errored"] = len(res.Errors)
-	}
+	setRunStatIfAbsent("mode", "envelope-extract")
+	setRunStatIfAbsent("project", pname)
+	addRunStat("envelope_actions_applied", len(res.Applied))
+	addRunStat("envelope_actions_errored", len(res.Errors))
 	return false, nil
 }
 

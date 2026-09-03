@@ -88,13 +88,10 @@ func runDreamOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, t
 	// monolithic path sets articles_before/after later in dream.go;
 	// here we add the envelope-specific counts. maps.Copy in main.go
 	// merges these into the JSONL row.
-	if runStats == nil {
-		runStats = map[string]any{}
-	}
-	runStats["mode"] = "orchestrator"
-	runStats["envelope_actions_applied"] = len(res.Applied)
-	runStats["envelope_actions_errored"] = len(res.Errors)
-	runStats["envelope_meta_ops"] = len(env.Meta)
+	setRunStat("mode", "orchestrator")
+	setRunStat("envelope_actions_applied", len(res.Applied))
+	setRunStat("envelope_actions_errored", len(res.Errors))
+	setRunStat("envelope_meta_ops", len(env.Meta))
 	return nil
 }
 

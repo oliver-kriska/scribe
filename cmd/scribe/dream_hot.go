@@ -290,12 +290,9 @@ func runHotDream(root string, cfg *ScribeConfig, domainOverride string, dryRun b
 	// started" marker dreamRunHistory keys off. A skip above never
 	// reaches this line, so a self-gated --hot invocation never
 	// advances lastHot (see dreamRunHistory's doc comment).
-	if runStats == nil {
-		runStats = map[string]any{}
-	}
-	runStats["mode"] = "hot"
-	runStats["hot_domain"] = domain
-	runStats["hot_domain_touches"] = touches
+	setRunStat("mode", "hot")
+	setRunStat("hot_domain", domain)
+	setRunStat("hot_domain_touches", touches)
 
 	out, err := generateMaybeJSON(callCtx, provider, prompt)
 	if err != nil {
@@ -323,8 +320,8 @@ func runHotDream(root string, cfg *ScribeConfig, domainOverride string, dryRun b
 	if err != nil {
 		return fmt.Errorf("dream-hot: apply actions: %w", err)
 	}
-	runStats["envelope_actions_applied"] = len(res.Applied)
-	runStats["envelope_actions_errored"] = len(res.Errors)
+	setRunStat("envelope_actions_applied", len(res.Applied))
+	setRunStat("envelope_actions_errored", len(res.Errors))
 	if len(res.Errors) > 0 {
 		logMsg("dream", "hot: envelope: %d applied, %d errors: %v", len(res.Applied), len(res.Errors), res.Errors)
 	} else {

@@ -392,11 +392,11 @@ func (c *StaleBuildCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	runStats = map[string]any{
+	mergeRunStats(map[string]any{
 		"stale_total":  counts.Total,
 		"stale_date":   counts.Date,
 		"stale_source": counts.Source,
-	}
+	})
 	logMsg("stale", "ledger build done: total=%d date=%d source=%d", counts.Total, counts.Date, counts.Source)
 	return nil
 }

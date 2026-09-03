@@ -333,12 +333,9 @@ func (s *SyncCmd) mineSessionBatchesEnvelope(root string, sessionIDs []string, p
 	// session-mine activity. Key naming matches what dream/assess/deep
 	// emit so a single jq filter can roll all four orchestrator paths
 	// up consistently.
-	if runStats == nil {
-		runStats = map[string]any{}
-	}
-	runStats["mode"] = "envelope"
-	runStats[label+"_envelope_mined"] = total
-	runStats[label+"_envelope_total"] = len(sessionIDs)
+	setRunStat("mode", "envelope")
+	setRunStat(label+"_envelope_mined", total)
+	setRunStat(label+"_envelope_total", len(sessionIDs))
 	return total, rateLimited
 }
 

@@ -81,13 +81,10 @@ func runAssessOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, 
 	} else {
 		logMsg("assess", "envelope: applied %d action(s)", len(res.Applied))
 	}
-	if runStats == nil {
-		runStats = map[string]any{}
-	}
-	runStats["mode"] = "envelope"
-	runStats["project"] = project
-	runStats["envelope_actions_applied"] = len(res.Applied)
-	runStats["envelope_actions_errored"] = len(res.Errors)
+	setRunStat("mode", "envelope")
+	setRunStat("project", project)
+	setRunStat("envelope_actions_applied", len(res.Applied))
+	setRunStat("envelope_actions_errored", len(res.Errors))
 	return nil
 }
 

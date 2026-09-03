@@ -325,10 +325,10 @@ func (b *ContradictionsBuildCmd) Run() error {
 	}
 	logMsg("contradictions", "ledger build done: total=%d unresolved=%d",
 		total, unresolved)
-	runStats = map[string]any{
+	mergeRunStats(map[string]any{
 		"contradictions_total":      total,
 		"contradictions_unresolved": unresolved,
-	}
+	})
 	return nil
 }
 

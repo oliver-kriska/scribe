@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -181,13 +180,13 @@ func (s *SyncCmd) Run() error {
 		}
 	}
 
-	runStats = map[string]any{
+	mergeRunStats(map[string]any{
 		"discovered": counters.discovered,
 		"extracted":  counters.extracted,
 		"sessions":   counters.sessionsScanned,
 		"absorbed":   counters.absorbed,
-	}
-	maps.Copy(runStats, adoptionFields)
+	})
+	mergeRunStats(adoptionFields)
 
 	logMsg("sync", "done (discovered: %d, extracted: %d, sessions: %d, absorbed: %d)",
 		counters.discovered, counters.extracted, counters.sessionsScanned, counters.absorbed)

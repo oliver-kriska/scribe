@@ -379,11 +379,11 @@ func (w *TierWriteCmd) Run() error {
 	}
 	logMsg("tier", "tier write done: scanned=%d wrote=%d skipped=%d (dry_run=%v)",
 		scanned, wrote, skipped, w.DryRun)
-	runStats = map[string]any{
+	mergeRunStats(map[string]any{
 		"tier_scanned": scanned,
 		"tier_wrote":   wrote,
 		"tier_skipped": skipped,
-	}
+	})
 	return nil
 }
 
