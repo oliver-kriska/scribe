@@ -144,8 +144,29 @@ func commitDreamCycle(root, today, commitMsgPrefix string, preCount int) error {
 
 	if diff < -5 {
 		logMsg("dream", "WARNING: dream deleted more than 5 articles (%d), review before committing", diff)
-		logMsg("dream", "run: git diff --stat")
-		return fmt.Errorf("dream deleted too many articles (%d)", diff)
+		// Restore the wiki dirs now. Returning the error alone left the
+		// deletions in the worktree, and the next sync's gitAddWiki
+		// committed exactly what this guard had refused.
+		// One checkout per tracked dir: a single command fails as a
+		// whole when any wiki dir has no tracked files yet ("pathspec
+		// did not match"), and then nothing is restored.
+		restored := 0
+		for _, dir := range wikiDirs {
+			if runCmd(root, "git", "ls-files", "--", dir) == "" {
+				continue
+			}
+			if _, err := runCmdErr(root, "git", "checkout", "-q", "--", dir); err == nil {
+				restored++
+			} else {
+				logMsg("dream", "restore of %s failed: %v", dir, err)
+			}
+		}
+		if restored > 0 {
+			logMsg("dream", "restored %d wiki dir(s) from HEAD; new files stay untracked — review with: git status", restored)
+		} else {
+			logMsg("dream", "nothing restored — run: git checkout -- %s", strings.Join(wikiDirs, " "))
+		}
+		return fmt.Errorf("dream deleted too many articles (%d); worktree restored", diff)
 	}
 
 	// Check for changes in wiki dirs

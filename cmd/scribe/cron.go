@@ -64,7 +64,11 @@ type calTime struct {
 // global pending queue, deduping against all KBs' processed logs (watch.go).
 func scribeJobs(binary string) []cronJob {
 	logDir := "/tmp"
-	each := func(sub string) string { return binary + " each -- " + sub }
+	// The command runs through `zsh -lc`, so a binary path with a space
+	// (e.g. a user directory named "Oliver Kriska") must be shell-quoted;
+	// shellQuote leaves plain paths untouched so drift detection still
+	// compares byte-for-byte with what earlier installs stamped.
+	each := func(sub string) string { return shellQuote(binary) + " each -- " + sub }
 	return []cronJob{
 		{
 			Name:     "auto-commit",
@@ -309,6 +313,30 @@ func writeCalEntries(sb *strings.Builder, ct calTime, indent string) {
 	if ct.Weekday >= 0 {
 		fmt.Fprintf(sb, "%s<key>Weekday</key><integer>%d</integer>\n", indent, ct.Weekday)
 	}
+}
+
+// shellQuote single-quotes s for POSIX shells when it carries anything
+// outside the safe set; a plain path comes back unchanged.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	safe := true
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case strings.ContainsRune("_/.:=+@%,-", r):
+		default:
+			safe = false
+		}
+		if !safe {
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func xmlEscape(s string) string {
@@ -666,8 +694,11 @@ func probeLaunchAgent(domain, label, plistPath string) string {
 	if _, err := os.Stat(plistPath); err == nil {
 		state = "present"
 	}
-	out, _ := runLaunchctl("print", domain+"/"+label)
-	if len(out) > 0 && !strings.Contains(out, "Could not find") && !strings.Contains(out, "could not find") {
+	// Exit status first: `launchctl print` exits non-zero (113) when the
+	// service is not in the domain, whatever it prints. The message
+	// substring is only a fallback for builds that exit 0 on a miss.
+	out, err := runLaunchctl("print", domain+"/"+label)
+	if err == nil && len(out) > 0 && !strings.Contains(strings.ToLower(out), "could not find") {
 		state = "loaded"
 	}
 	return state

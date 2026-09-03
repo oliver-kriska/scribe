@@ -259,13 +259,21 @@ func installHotHooks(root string) error {
 	}
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 	hotPath := filepath.Join(root, "wiki", "_hot.md")
-	cmd := "cat " + hotPath
+	cmd := "cat " + shellQuote(hotPath)
 
 	var settings map[string]any
-	if data, err := os.ReadFile(settingsPath); err == nil {
+	data, err := os.ReadFile(settingsPath)
+	switch {
+	case err == nil:
 		if err := json.Unmarshal(data, &settings); err != nil {
 			return fmt.Errorf("parse %s: %w", settingsPath, err)
 		}
+	case os.IsNotExist(err):
+		// first install — start from an empty settings map
+	default:
+		// A permission error or a directory in the file's place used to
+		// fall through to an empty map and overwrite the user's settings.
+		return fmt.Errorf("read %s: %w — refusing to overwrite what could not be read", settingsPath, err)
 	}
 	if settings == nil {
 		settings = make(map[string]any)
@@ -293,15 +301,14 @@ func installHotHooks(root string) error {
 
 	settings["hooks"] = hooks
 
-	data, err := json.MarshalIndent(settings, "", "  ")
+	data, err = json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	// writeGlobalState: this is machine-global state pointing at one KB,
+	// so a throwaway (temp-path) KB is refused the same way init refuses.
+	if err := writeGlobalState(root, false, settingsPath, append(data, '\n'), 0o644); err != nil {
 		return err
-	}
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", settingsPath, err)
 	}
 	logMsg("hot", "installed hooks in %s", settingsPath)
 	logMsg("hot", "run `scribe hot` once to populate %s", hotPath)

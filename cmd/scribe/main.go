@@ -171,7 +171,7 @@ var commandGroups = kong.Groups{
 type VersionCmd struct{}
 
 func (v *VersionCmd) Run() error {
-	println("scribe " + version)
+	fmt.Println("scribe " + version)
 	return nil
 }
 
@@ -347,9 +347,7 @@ func writeRunRecord(cmdPath string, started time.Time, runErr error) {
 		// sanitize at their own seam; this is the catch-all that also covers
 		// every future source.
 		errMsg = redactURLToken(runErr.Error())
-		if len(errMsg) > 500 {
-			errMsg = errMsg[:500]
-		}
+		errMsg = truncateBytes(errMsg, 500)
 	}
 
 	record := map[string]any{

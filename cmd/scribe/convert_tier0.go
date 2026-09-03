@@ -24,7 +24,14 @@ import (
 // We don't try to reconstruct headings — there's no reliable signal in
 // raw PDF text streams. Absorb's density classifier treats it as prose,
 // which is the right default for tier 0.
-func convertPDFTier0(data []byte) (string, error) {
+func convertPDFTier0(data []byte) (out string, err error) {
+	// ledongthuc/pdf panics on some malformed xref tables and font
+	// streams; one bad PDF in the inbox must not take the drain down.
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = "", fmt.Errorf("pdf parser panicked (%v) — file is malformed; try marker-pdf", r)
+		}
+	}()
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return "", fmt.Errorf("open pdf: %w", err)
@@ -53,7 +60,7 @@ func convertPDFTier0(data []byte) (string, error) {
 		sb.WriteString(text)
 	}
 
-	out := strings.TrimSpace(sb.String())
+	out = strings.TrimSpace(sb.String())
 	if out == "" {
 		return "", errors.New("no extractable text (likely a scanned PDF — install marker-pdf for OCR)")
 	}
@@ -63,7 +70,12 @@ func convertPDFTier0(data []byte) (string, error) {
 // pdfPageCount returns the number of pages in a PDF, or 0 on any
 // error. Used by smart-routing — a "0" result means "we can't tell,
 // fall through to marker" rather than "trust me, it's empty".
-func pdfPageCount(data []byte) int {
+func pdfPageCount(data []byte) (n int) {
+	defer func() {
+		if r := recover(); r != nil {
+			n = 0
+		}
+	}()
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return 0

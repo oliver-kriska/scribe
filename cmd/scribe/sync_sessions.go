@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	gosync "sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -422,6 +423,10 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 	sem := make(chan struct{}, parallel)
 	results := make(chan sessionResult, len(sessionIDs))
 	var wg gosync.WaitGroup
+	// Set by the first goroutine that hits a rate limit; every goroutine
+	// still waiting on the semaphore then returns without calling the
+	// model, instead of queueing N more calls that fail the same way.
+	var stop atomic.Bool
 
 	logMsg("sync", "%s: processing %d sessions (parallel=%d)", label, len(sessionIDs), parallel)
 
@@ -431,6 +436,10 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 			defer wg.Done()
 			sem <- struct{}{}        // acquire
 			defer func() { <-sem }() // release
+			if stop.Load() {
+				results <- sessionResult{sessionID, false, true, nil}
+				return
+			}
 
 			logMsg("sync", "%s [%d/%d] extracting %s", label, idx+1, len(sessionIDs), sessionID)
 
@@ -453,6 +462,9 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 				// the session-mine batch stops gracefully and the next
 				// day's cron picks up where this run left off.
 				rl := errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted)
+				if rl {
+					stop.Store(true)
+				}
 				results <- sessionResult{sessionID, false, rl, err}
 				return
 			}
@@ -474,7 +486,11 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 
 	for r := range results {
 		if r.rateLimited {
-			logMsg("sync", "%s: rate limited on %s — will resume next run", label, r.sessionID)
+			if r.err == nil {
+				logMsg("sync", "%s: %s not started (rate limit hit by a sibling) — will resume next run", label, r.sessionID)
+			} else {
+				logMsg("sync", "%s: rate limited on %s — will resume next run", label, r.sessionID)
+			}
 			rateLimited = true
 			// Don't break — let in-flight goroutines finish, just stop launching new ones would be ideal
 			// but with the channel approach, already-launched goroutines will complete.

@@ -58,7 +58,19 @@ func runApplyIdentities(proposalsPath string, applyLow, dryRun bool) error {
 			skipped++
 			continue
 		}
-		abs := filepath.Join(root, b.Page)
+		cleanRel, err := validateActionPath(root, b.Page)
+		if err != nil {
+			// Model-written page path: the same containment gate every
+			// wiki action passes, so "../" or an absolute path cannot
+			// aim the alias append outside the KB.
+			logMsg("identities", "skip %s: %v", b.Page, err)
+			skipped++
+			continue
+		}
+		abs := cleanRel
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(root, cleanRel)
+		}
 		if _, err := os.Stat(abs); err != nil {
 			logMsg("identities", "skip %s: page not found", b.Page)
 			skipped++
