@@ -93,6 +93,7 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Absorb.MaxPerRun":                true,
 	"Absorb.Strictness":               true,
 	"Absorb.SinglePassTimeoutMin":     true,
+	"Absorb.MaxSinglePassChars":       true, // prompt-size cap; a pushed change costs tokens, widens nothing
 	"Absorb.SinglePassNumCtx":         true,
 	"Absorb.Pass1TimeoutMin":          true,
 	"Absorb.Pass2Mode":                true,
