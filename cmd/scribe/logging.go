@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -36,10 +37,11 @@ func setupLogger() {
 		var handler slog.Handler
 		switch strings.ToLower(os.Getenv("SCRIBE_LOG_FORMAT")) {
 		case "json":
-			handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-				Level:     logLevel,
-				AddSource: false,
-			})
+			opts := &slog.HandlerOptions{Level: logLevel, AddSource: false}
+			handler = &levelSplitHandler{
+				low:  slog.NewJSONHandler(os.Stdout, opts),
+				high: slog.NewJSONHandler(os.Stderr, opts),
+			}
 		default:
 			handler = &scribeTextHandler{level: logLevel}
 		}
@@ -87,8 +89,36 @@ func (h *scribeTextHandler) Handle(_ context.Context, r slog.Record) error {
 	if len(tail) > 0 {
 		line += " " + strings.Join(tail, " ")
 	}
-	fmt.Fprintln(os.Stdout, line)
+	// WARN and above go to stderr (CLAUDE.md: errors to stderr, summary
+	// to stdout) so a cron wrapper or `2>` can separate them.
+	w := io.Writer(os.Stdout)
+	if r.Level >= slog.LevelWarn {
+		w = os.Stderr
+	}
+	fmt.Fprintln(w, line)
 	return nil
+}
+
+// levelSplitHandler routes WARN+ records to `high` and the rest to `low`.
+type levelSplitHandler struct{ low, high slog.Handler }
+
+func (h *levelSplitHandler) Enabled(ctx context.Context, l slog.Level) bool {
+	return h.low.Enabled(ctx, l)
+}
+
+func (h *levelSplitHandler) Handle(ctx context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelWarn {
+		return h.high.Handle(ctx, r)
+	}
+	return h.low.Handle(ctx, r)
+}
+
+func (h *levelSplitHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &levelSplitHandler{low: h.low.WithAttrs(attrs), high: h.high.WithAttrs(attrs)}
+}
+
+func (h *levelSplitHandler) WithGroup(name string) slog.Handler {
+	return &levelSplitHandler{low: h.low.WithGroup(name), high: h.high.WithGroup(name)}
 }
 
 func (h *scribeTextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

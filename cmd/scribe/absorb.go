@@ -181,9 +181,7 @@ func normalizeForAbsorbWithPath(path, ext, raw, overrideTitle string) (title, bo
 	case ".txt", "":
 		// Treat as prose, try first line as title.
 		title = firstNonEmptyLine(raw)
-		if len(title) > 120 {
-			title = title[:120]
-		}
+		title = truncateBytes(title, 120)
 		body = raw
 	default:
 		// Structured formats: route through convertFile.

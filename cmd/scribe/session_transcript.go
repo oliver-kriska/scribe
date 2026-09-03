@@ -147,7 +147,7 @@ func renderTranscriptForPrompt(turns []sessionTurn, maxChars int) string {
 			// and result visible.
 			tool := t.ToolText
 			if len(tool) > 1200 {
-				tool = tool[:600] + "\n…\n" + tool[len(tool)-600:]
+				tool = truncateBytes(tool, 600) + "\n…\n" + tailBytes(tool, 600)
 			}
 			sb.WriteString("\n[tool] ")
 			sb.WriteString(tool)

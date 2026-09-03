@@ -103,7 +103,7 @@ func deepReadFilesForPrompt(paths []string, maxChars int) string {
 	}
 	out := sb.String()
 	if len(out) > maxChars {
-		out = out[:maxChars] + "\n…(truncated)\n"
+		out = truncateBytes(out, maxChars) + "\n…(truncated)\n"
 	}
 	return out
 }

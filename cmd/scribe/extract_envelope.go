@@ -124,7 +124,7 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 		text := string(data)
 		if len(text) > maxFile {
 			half := maxFile / 2
-			text = text[:half] + "\n…(truncated)…\n" + text[len(text)-half:]
+			text = truncateBytes(text, half) + "\n…(truncated)…\n" + tailBytes(text, half)
 			if strings.HasPrefix(label, "DROP: ") {
 				// A drop is the user's own handoff; losing its middle is
 				// worth a line in the log, unlike a long README.
@@ -139,7 +139,7 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 			if remaining < 500 {
 				return false
 			}
-			text = text[:remaining] + "\n…(truncated)\n"
+			text = truncateBytes(text, remaining) + "\n…(truncated)\n"
 		}
 		sb.WriteString(header)
 		sb.WriteString(text)

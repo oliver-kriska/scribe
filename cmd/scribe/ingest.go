@@ -395,6 +395,11 @@ func buildRawArticleWithStats(root, rawURL, title, body, via, domain string, tag
 
 	fname := fmt.Sprintf("%s-%s.md", dateStr, slug)
 	path := filepath.Join(root, "raw", "articles", fname)
+	// Two sources with the same title on the same day used to overwrite
+	// each other; the second one gets -2, -3, … like uniqueQueuePath.
+	for n := 2; fileExists(path); n++ {
+		path = filepath.Join(root, "raw", "articles", fmt.Sprintf("%s-%s-%d.md", dateStr, slug, n))
+	}
 
 	// Every scalar goes through yamlDoubleQuote: escaping only `"` left a
 	// title ending in a backslash (or carrying a newline) unparseable.
@@ -750,17 +755,6 @@ func (c *IngestFileCmd) Run() error {
 	sourceURL := "file:///" + filepath.Base(absPath)
 
 	rawPath, content := buildRawArticleWithStats(root, sourceURL, title, body, "local", c.Domain, c.Tag, stats)
-	// Phase 3A: TOC sidecar for chapter-aware absorb. Defer the
-	// actual write until the article is on disk so writeTOCSidecar
-	// can read the body to compute byte offsets.
-	defer func() {
-		if c.DryRun {
-			return
-		}
-		if err := writeTOCSidecar(rawPath, filepath.Base(absPath), stats); err != nil {
-			logMsg("ingest", "toc sidecar warning for %s: %v", filepath.Base(rawPath), err)
-		}
-	}()
 
 	if c.DryRun {
 		fmt.Printf("[dry-run] would write: %s\n", rawPath)
@@ -782,6 +776,14 @@ func (c *IngestFileCmd) Run() error {
 		return fmt.Errorf("write raw article: %w", err)
 	}
 	logMsg("ingest", "wrote %s", relPath(root, rawPath))
+
+	// Phase 3A: TOC sidecar for chapter-aware absorb, written once the
+	// article is on disk (offsets are computed against the body) and
+	// BEFORE the first absorb — a deferred write landed after
+	// contextualizeThenAbsorb had already run without it.
+	if err := writeTOCSidecar(rawPath, filepath.Base(absPath), stats); err != nil {
+		logMsg("ingest", "toc sidecar warning for %s: %v", filepath.Base(rawPath), err)
+	}
 
 	if !c.Absorb {
 		return nil

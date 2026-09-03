@@ -411,14 +411,16 @@ func gitDiffShortstat(repoPath, from, to string) (files, added, deleted int) {
 // history is append-only and losing remote commits would be worse than a
 // failed push we can reconcile manually.
 func gitPush(root string) error {
-	err := runGitPush(root)
+	out, err := runGitPush(root)
 	if err == nil {
 		return nil
 	}
-	// Detect non-fast-forward without parsing git's localized stderr by
-	// re-running the push capturing output and checking for known tokens.
-	out, _ := exec.Command("git", "-C", root, "push").CombinedOutput() //nolint:noctx // git push subprocess
-	if !isNonFastForward(string(out)) {
+	// One push, output captured: the old code streamed the first push to
+	// the terminal and then ran a SECOND push just to read its message,
+	// so every failure hit the remote twice and the reason was only on
+	// screen, never in the log doctor reads.
+	logMsg("git", "push failed: %s", strings.TrimSpace(tailLines(out, 5)))
+	if !isNonFastForward(out) {
 		return err
 	}
 	logMsg("git", "push rejected (non-fast-forward); attempting `git pull --rebase`")
@@ -431,15 +433,20 @@ func gitPush(root string) error {
 		logMsg("git", "pull --rebase failed: %v — resolve manually then push", rerr)
 		return err
 	}
-	return runGitPush(root)
+	out, err = runGitPush(root)
+	if err != nil {
+		logMsg("git", "push after rebase failed: %s", strings.TrimSpace(tailLines(out, 5)))
+	}
+	return err
 }
 
-func runGitPush(root string) error {
+// runGitPush runs `git push` and returns its combined output with the
+// error, so callers log what git said instead of only that it failed.
+func runGitPush(root string) (string, error) {
 	cmd := exec.Command("git", "push") //nolint:noctx // git push subprocess
 	cmd.Dir = root
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 // isNonFastForward recognizes the two strings git emits for a rejected push

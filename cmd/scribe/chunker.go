@@ -132,13 +132,23 @@ func chunkByTOC(body string, chapters []ChapterEntry, opts chunkOptions) []Chunk
 	}
 
 	out := make([]Chunk, 0, len(chapters))
-	for i, c := range chapters {
+	seenZeroOffset := false
+	for _, c := range chapters {
+		// An unresolved chapter carries offset 0 and length 0 — the same
+		// shape as a genuine first chapter, which is why the resolution
+		// count above accepts one zero offset. Emitting an unresolved one
+		// used to hand the whole body to absorb as a duplicate chunk.
+		unresolved := c.BodyOffset == 0 && seenZeroOffset
+		if c.BodyOffset == 0 {
+			seenZeroOffset = true
+		}
+		if unresolved || c.BodyOffset < 0 || c.BodyOffset >= len(body) {
+			logMsg("chunker", "chapter %q not located in the body — skipped", c.Title)
+			continue
+		}
 		end := c.BodyOffset + c.BodyLength
 		if end > len(body) || c.BodyLength == 0 {
 			end = len(body)
-		}
-		if c.BodyOffset < 0 || c.BodyOffset >= len(body) {
-			continue
 		}
 		section := body[c.BodyOffset:end]
 		base := Chunk{
@@ -162,7 +172,6 @@ func chunkByTOC(body string, chapters []ChapterEntry, opts chunkOptions) []Chunk
 				SourcePages: []int{c.PageID},
 			})
 		}
-		_ = i // unused but kept for clarity; the index doesn't change behavior
 	}
 	return out
 }

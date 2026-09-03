@@ -112,6 +112,11 @@ func (a *AssessCmd) Run() error {
 	}
 
 	outDir := filepath.Join(root, "output", "assess", fmt.Sprintf("%s-%s", a.Project, today))
+	if _, err := os.Stat(outDir); err == nil {
+		// A second run the same day used to count the earlier run's
+		// track files as "have", consolidating stale tracks with fresh.
+		outDir += "-" + time.Now().Format("150405")
+	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", outDir, err)
 	}

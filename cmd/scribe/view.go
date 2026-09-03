@@ -312,6 +312,11 @@ func scalarsEqual(a, b any) bool {
 // compareScalars returns -1/0/1 like strings.Compare. Returns ok=false
 // if the values can't be ordered (e.g. comparing a list to a number).
 func compareScalars(a, b any) (int, bool) {
+	// A list or map has no scalar order; comparing its fmt.Sprint form
+	// made `tags > x` filters and sorts match on bracket characters.
+	if isCollection(a) || isCollection(b) {
+		return 0, false
+	}
 	if at, ok := a.(time.Time); ok {
 		a = at.Format("2006-01-02")
 	}
@@ -571,4 +576,12 @@ func resolveViewPath(root, name string) string {
 		return filepath.Join(root, name)
 	}
 	return filepath.Join(viewsDir(root), name+".scribe-view.yaml")
+}
+
+func isCollection(v any) bool {
+	switch v.(type) {
+	case []any, []string, map[string]any:
+		return true
+	}
+	return false
 }

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -403,8 +405,11 @@ func deriveResearchTitle(flatName string) string {
 	title = strings.ReplaceAll(title, "-", " ")
 	words := strings.Fields(title)
 	for i, w := range words {
-		if len(w) > 0 {
-			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		// First rune, not first byte: "élan" used to become "\xc3\x89lan"
+		// with a broken lead byte in the title.
+		r, size := utf8.DecodeRuneInString(w)
+		if size > 0 {
+			words[i] = string(unicode.ToUpper(r)) + w[size:]
 		}
 	}
 	return strings.Join(words, " ")

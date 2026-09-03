@@ -128,8 +128,10 @@ func buildContradictionLedger(root string) (int, int, error) {
 	}
 
 	out := make([]ContradictionEntry, 0, len(pairs))
+	live := make(map[string]bool, len(pairs))
 	for k, acc := range pairs {
 		id := contradictionPairID(k.a, k.b)
+		live[id] = true
 		entry := ContradictionEntry{
 			Version:    contradictionsLedgerVersion,
 			ID:         id,
@@ -146,6 +148,15 @@ func buildContradictionLedger(root string) (int, int, error) {
 			entry.FirstObservedAt = now
 		}
 		out = append(out, entry)
+	}
+	// Paper trail: a resolved contradiction whose edge was then removed
+	// from the articles keeps its entry and note. Dropping it lost the
+	// only record of why the two articles were reconciled; unresolved
+	// entries whose edge is gone still drop — the disagreement is over.
+	for id, old := range priorByID {
+		if !live[id] && old.ResolvedAt != "" {
+			out = append(out, old)
+		}
 	}
 
 	// Sort for stable on-disk output (newest-observed first within

@@ -49,7 +49,7 @@ func recordDegradedMsg(phase, msg string) {
 		return
 	}
 	if len(msg) > degradedMsgMax {
-		msg = msg[:degradedMsgMax]
+		msg = truncateBytes(msg, degradedMsgMax)
 	}
 	runOutcomeMu.Lock()
 	defer runOutcomeMu.Unlock()
