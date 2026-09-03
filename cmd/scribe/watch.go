@@ -289,14 +289,5 @@ func processedByAllKBs(sets []map[string]bool, id string) bool {
 // docs/issue-22-priority-lanes-plan.md §2.2) so sync.go reads both writers
 // uniformly.
 func appendPending(path, sessionID string, score, msgCount int) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s\t%d\t%d\t%s\n", sessionID, score, msgCount, time.Now().UTC().Format(time.RFC3339))
-	return err
+	return appendPendingEntry(path, pendingEntry{ID: sessionID, Score: score, HasScore: true, MsgCount: msgCount})
 }

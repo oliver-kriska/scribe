@@ -155,15 +155,9 @@ func (c *SessionEndHookCmd) Run() error {
 	//    sessionID<TAB>score<TAB>msgCount<TAB>ISO8601-UTC
 	//    sync.go reads all four columns for priority-lane classification
 	//    (issue #22) — see parsePendingEntry.
-	if err := os.MkdirAll(filepath.Dir(pendingFile), 0o755); err != nil {
-		return c.skip("mkdir pending dir: %v", err)
+	if err := appendPendingEntry(pendingFile, pendingEntry{ID: sessionID, Score: score, HasScore: true, MsgCount: msgCount}); err != nil {
+		return c.skip("queue session: %v", err)
 	}
-	f, err := os.OpenFile(pendingFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return c.skip("open pending file: %v", err)
-	}
-	defer f.Close()
-	fmt.Fprintf(f, "%s\t%d\t%d\t%s\n", sessionID, score, msgCount, time.Now().UTC().Format(time.RFC3339))
 
 	if c.Verbose {
 		fmt.Fprintf(os.Stderr, "scribe hook: queued %s (score %d, msgs %d)\n", sessionID, score, msgCount)
@@ -330,6 +324,62 @@ func pendingSessionsFile() string {
 		return filepath.Join(d, "scribe", "pending-sessions.txt")
 	}
 	return filepath.Join(os.Getenv("HOME"), ".config", "scribe", "pending-sessions.txt")
+}
+
+// appendPendingEntry writes one 4-column line (sessionID, score,
+// msgCount, ISO8601-UTC) to the pending queue, creating the parent dir if
+// needed. Every producer — the SessionEnd hook, the watch daemon, and the
+// sync re-queue — goes through here so the file has exactly one format.
+// An entry without an enqueue time is stamped now; one that carries its
+// original EnqueuedAt keeps it, which is what lets age promotion fire for
+// a session that was drained but not admitted.
+func appendPendingEntry(path string, e pendingEntry) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	at := e.EnqueuedAt
+	if !e.HasEnqueuedAt || at.IsZero() {
+		at = time.Now()
+	}
+	_, err = fmt.Fprintf(f, "%s\t%d\t%d\t%s\n", e.ID, e.Score, e.MsgCount, at.UTC().Format(time.RFC3339))
+	return err
+}
+
+// requeueUnprocessedPending puts drained queue entries that this run did
+// not get to back into the pending file. readAndClearPendingEntries
+// empties the queue before admission, and admitForPool admits only the
+// budget — everything else used to vanish together with its EnqueuedAt,
+// so the AgeDays promotion lane could never fire for it. Entries whose
+// session is now in the processed set (mined, or marked mechanical/
+// skipped) are done; entries older than maxAge are dropped with a log
+// line so the queue cannot grow forever. Duplicate IDs collapse to one.
+func requeueUnprocessedPending(path string, entries []pendingEntry, processed map[string]bool, maxAge time.Duration, now time.Time) (kept, dropped int) {
+	seen := map[string]bool{}
+	for _, e := range entries {
+		if e.ID == "" || seen[e.ID] || processed[e.ID] {
+			continue
+		}
+		seen[e.ID] = true
+		if e.HasEnqueuedAt && now.Sub(e.EnqueuedAt) > maxAge {
+			dropped++
+			logMsg("sync", "hook queue: dropping %s — enqueued %s ago, never admitted within %s", e.ID, shortDuration(now.Sub(e.EnqueuedAt)), shortDuration(maxAge))
+			continue
+		}
+		if err := appendPendingEntry(path, e); err != nil {
+			logPhaseDegraded("sync", "pending queue re-queue", "could not re-queue %s: %v", e.ID, err)
+			continue
+		}
+		kept++
+	}
+	if kept > 0 {
+		logMsg("sync", "hook queue: re-queued %d session(s) not mined this run (priority kept)", kept)
+	}
+	return kept, dropped
 }
 
 // pendingEntry is one parsed line from pending-sessions.txt. Producers

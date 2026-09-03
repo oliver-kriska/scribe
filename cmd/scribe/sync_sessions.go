@@ -883,6 +883,21 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 	if err != nil {
 		logPhaseFailure("sync", "pending queue read", err)
 	}
+	// Whatever this run does not mine goes back into the queue with its
+	// original enqueue time (see requeueUnprocessedPending). Deferred so
+	// every exit — rate limit, error, normal completion — re-queues; the
+	// closure reads pendingEntries after the filtering below.
+	defer func() {
+		if len(pendingEntries) == 0 {
+			return
+		}
+		processed := map[string]bool{}
+		for _, id := range loadProcessedSessionIDs(sessionsLog) {
+			processed[id] = true
+		}
+		maxAge := time.Duration(cfg.PriorityLanes.AgeDays) * 24 * time.Hour * 4
+		requeueUnprocessedPending(pendingSessionsFile(), pendingEntries, processed, maxAge, time.Now())
+	}()
 	if len(pendingEntries) > 0 {
 		// Drop anything already extracted before. A hook might enqueue a
 		// session that a previous sync already absorbed — don't waste a
