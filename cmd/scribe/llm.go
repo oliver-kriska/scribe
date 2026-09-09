@@ -201,7 +201,25 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		default:
 			entry.ErrKind = "other"
 		}
-		return tailLines(combined, 15), fmt.Errorf("claude -p: %w\n%s", err, tailLines(combined, 15))
+		// Same treatment claude.go gives its failure path: the terse tail
+		// rides along on the error so the run record is diagnosable, and
+		// the full tails land in output/errors/ so the terminal can stay
+		// short without losing the context. llm.go carried neither, which
+		// is how an unset model spent twelve days reported as a bare
+		// `exit status 1` with the 400 discarded (#96).
+		appendErrorRecord(a.root, ErrorRecord{
+			Timestamp:   started.UTC().Format(time.RFC3339),
+			Op:          op,
+			Model:       a.model,
+			ErrKind:     entry.ErrKind,
+			DurationMS:  time.Since(started).Milliseconds(),
+			PromptChars: len(prompt),
+			Err:         err.Error(),
+			StderrTail:  tailLines(stderrStr, 50),
+			StdoutTail:  tailLines(stdoutStr, 50),
+		})
+		tail := tailLines(combined, 15)
+		return tail, fmt.Errorf("claude -p: %w\n%s", err, tail)
 	}
 
 	env, ok := parseClaudeResult(stdoutStr)

@@ -33,9 +33,12 @@ func TestDryRunTriageArgs(t *testing.T) {
 		large bool
 		want  []string
 	}{
-		{name: "normal", want: []string{"triage", "--top", "3", "--sort", "score", "--message-limit", "300"}},
-		{name: "large", large: true, want: []string{"triage", "--top", "3", "--sort", "score", "--min-messages", "301"}},
+		{name: "normal", want: []string{"triage", "--top", "3", "--sort", "score", "--in-scope", "--message-limit", "300"}},
+		{name: "large", large: true, want: []string{"triage", "--top", "3", "--sort", "score", "--in-scope", "--min-messages", "301"}},
 	}
+	// --in-scope is not cosmetic here: the preview claims to show what the
+	// real run would mine, and mineSessions passes the same flag. Without
+	// it the dry run lists candidates admission now drops (#102).
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := dryRunTriageArgs(3, "score", tt.large)

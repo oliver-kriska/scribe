@@ -666,7 +666,12 @@ func (s *SyncCmd) largeSessionBudget() int {
 }
 
 func dryRunTriageArgs(top int, sortBy string, large bool) []string {
-	args := []string{"triage", "--top", strconv.Itoa(top), "--sort", sortBy}
+	// --in-scope matches the real run (mineSessions passes it too). The
+	// preview exists to show what sync *would* mine, so it must not list
+	// candidates the admission path now drops. Plain `scribe triage`
+	// still shows everything — seeing the blockers ranked first is how a
+	// stalled queue gets diagnosed in the first place (#102).
+	args := []string{"triage", "--top", strconv.Itoa(top), "--sort", sortBy, "--in-scope"}
 	if large {
 		return append(args, "--min-messages", "301")
 	}
