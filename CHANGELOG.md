@@ -2,6 +2,173 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.5.2] — 2026-09-09
+
+A correctness patch, and the theme running through nearly all of it is the
+same: work that failed silently while the run reported success. An op with no
+model configured sent `--model ""` and 400ed on every scheduled run for twelve
+days behind a bare `exit status 1`. Session mining deadlocked when sessions it
+could never process outranked the ones it could, and logged `no normal sessions
+to mine` as if that were normal. A drop file past the prompt budget was deleted
+without ever reaching the model. Fifteen SQLite handles that asked for
+read-only were writable. None of these errored, and none of them degraded — they
+just quietly did nothing, or did the wrong thing, and said `ok`.
+
+Three of the fixes came from external reports with reproductions attached
+(#96, #102, #104 — thanks @louis-byers). No new commands, no config migration,
+no scheduled-job changes: upgrade is a plain binary swap.
+
+### Added
+
+- **`scribe commit --check`** runs the secret and stop-word gate over the staged
+  index and exits non-zero on a finding, without unstaging or masking anything,
+  so a hand `git commit` in a KB is gated the same way `scribe commit` is. The
+  gate now covers every staged text file — `.md .txt .json .yaml .yml .url .sh
+  .py` — not only markdown: a queued `.url` carries the captured URL and its
+  query-string tokens, and `scripts/` is where a key gets pasted. `scribe
+  doctor` uses the same pathspecs so the two cannot disagree about scope.
+- **`scribe triage --in-scope`** lists only sessions this KB could actually
+  mine, dropping ignored, too-shallow, out-of-sources and unapproved projects.
+  `sync` uses it; plain `scribe triage` still shows everything, because seeing
+  the blockers ranked first is how a stalled queue gets diagnosed.
+- **`absorb.max_single_pass_chars`** (default 60 000, `0` disables) caps the
+  single-pass absorb prompt. Companion caps landed for the contradictions packet
+  (12 000 chars per article, 120 000 per packet, with the left-out count logged)
+  and the dream log tail (4 KiB after the line cut).
+
+### Fixed
+
+- **An op with no model configured anywhere sent `--model ""` and 400ed —
+  silently, forever** (#96). `inheritLLMOpBase` backstopped the provider twice
+  and the model never, and `coerceProviderModel` returns early for anything but
+  ollama, so a KB with `llm: {provider: anthropic, model: ""}` — what `init`
+  writes when no model is given — resolved to an empty model for all six ops
+  sharing the helper: `relations`, `dream`, `assess`, `deep-ingest`, `extract`,
+  `session-mine`. `dream --hot` is where it bit in practice, failing on every
+  run while the hot-domain backlog climbed 8 → 82 touches. The model is now
+  backstopped for anthropic only — ollama is `coerceProviderModel`'s job, and
+  guessing an id for a hosted provider would trade a clear 400 for a confusing
+  one.
+- **Both `claude -p` failure paths keep their diagnostics.** `llm.go` dropped
+  the stderr tail that `claude.go` kept, so every run record carried a bare
+  `exit status 1` with the 400 discarded — the direct reason the above went
+  twelve days undiagnosed. The tail now rides on the error and the full
+  stdout/stderr tails land in `output/errors/`, on both the exit-status path and
+  the branch beside it where the CLI exits 0 and reports the failure inside the
+  JSON envelope.
+- **Session mining deadlocked when undrainable sessions outranked admissible
+  ones** (#102). Triage read a fixed window of `sessions_max × 3` candidates and
+  applied the scope filter afterwards. A scope-rejected session is deliberately
+  left unmarked so it stays re-mineable if the KB's scope later widens — which
+  means it keeps its score and wins the same slot on the next run, and the run
+  after that. Once enough of them outranked the admissible work, nothing was
+  ever admitted again. The scope predicate now runs while *picking* rather than
+  after admitting, shared as one definition between the two sites so they cannot
+  drift apart.
+- **The large-session lane mined projects that were never approved.** It checked
+  the ignore list and source filters but not manifest approval, so a
+  >300-message session from a project still pending `scribe projects approve`
+  was mined while the same project's shorter sessions were correctly refused.
+  Both lanes now share the one predicate.
+- **Drop files the model never saw were deleted anyway.** Extraction stops
+  inlining once `extract.max_total_chars` is used up, but the whole staging dir
+  was then removed and `last_drop_processed` stamped — so a drop past the budget
+  was destroyed unread. Only the drops that actually fit are removed now; the
+  rest stay staged for the next run. Same-named handoffs from a worktree and the
+  main checkout no longer overwrite each other, and a project whose only change
+  is a new drop is scheduled for extraction instead of waiting for an unrelated
+  commit (#104) — its `.claude/` dir is usually gitignored, so the SHA never
+  moves on its own.
+- **Hook-queue entries that were not admitted vanished.** `mineSessions` drained
+  `pending-sessions.txt` before admission but nothing wrote back the remainder,
+  so every entry over budget — or admitted and then lost to a rate limit —
+  disappeared along with its enqueue time, and the age-based promotion lane could
+  never fire for it. Unprocessed entries are now re-queued at every exit, keeping
+  their original enqueue time, collapsing duplicates, and dropping anything older
+  than 4× `age_days` so the queue cannot grow without bound.
+- **`sync` crashed with `concurrent map writes`** as soon as two envelope-mode
+  projects extracted at once: the per-project run-stats map was updated from
+  inside the errgroup without a lock, which is a runtime fatal, not an error —
+  it killed the whole sync.
+- **A rate limit no longer queues N more failing calls.** An atomic stop flag set
+  on the first one makes every goroutine still waiting on the semaphore return
+  without calling the model.
+- **A lock-busy or lease-lost run recorded itself as `ok`.** `dream`/`sync`
+  returned nil when they could not acquire the lock, so `doctor`'s freshness
+  check stayed green while nothing had run, and `dream --hot` was suppressed the
+  next day by a dream that never happened. Such a run is now recorded as
+  `skipped` with a reason, and every reader treats it as "did not run".
+  `dream --hot` also stopped refreshing the plain `dream` freshness key.
+- **Fifteen SQLite handles opened read-write when they asked for read-only.**
+  `go-sqlite3` honours `mode=ro` only when the DSN starts with `file:`; a bare
+  `<path>?mode=ro` had the query stripped and opened `READWRITE|CREATE`. That
+  meant writable handles contending with ccrider's WAL writer, and `scribe
+  status`/`doctor` on a machine without ccrider *creating* an empty
+  `sessions.db`. All sixteen sites now go through one helper with `mode=ro` and
+  `_query_only=1`.
+- **One truncated line made `doctor`, `stale` and every team sync spin forever.**
+  The ledger reader looped on a `json.Decoder` and `continue`d past decode
+  errors, but a Decoder latches its first error. Both ledgers were also written
+  with a streaming encoder over `os.Create`, which is what produced the truncated
+  line in the first place; writes are atomic now.
+- **A title ending in a backslash stopped its article parsing.** Five writers
+  hand-built quoted YAML scalars escaping only the double quote. Everything goes
+  through one quoting helper that also handles backslashes and control
+  characters and round-trips through `yaml.v3`. Relation writers had the inverse
+  bug — promoting an already-quoted scalar to an inline list wrapped it in a
+  second pair of quotes.
+- **`lint --fix` and `lint` disagreed about what closes a frontmatter block.**
+  The validator accepted any `---…` line while the fixer required a bare fence,
+  so `--fix` skipped files lint called clean, and a `-----` close validated with
+  the body folded into the YAML. One parser now serves both. `lint --changed`
+  skips deletions instead of reporting them as unreadable, and a single-file
+  scan no longer fails on articles it was not asked about.
+- **`sync --dry-run` wrote to the KB.** The unfetched-stub and content-duplicate
+  branches of absorb ran ahead of the dry-run guard, parking stubs into
+  `wiki/_unfetched-links.md` and rewriting `_absorb_log.json` — and because dry
+  runs are recorded as read-only, the writes were invisible. A test now pins the
+  KB byte-for-byte across a dry run.
+- **A missing `scribe.yaml` bypassed the trust layer.** `loadConfig` returned
+  pure defaults before trust enforcement and local overrides ran, so a
+  teammate's `git rm scribe.yaml` (or a checkout mid-rebase) disarmed team mode,
+  the secret gate, capture hard-off and the source filters on every member's next
+  sync — while an *unparseable* file correctly reverted to the trusted snapshot.
+- **The `>5 deletions` dream guard left the deletions in the worktree**, and the
+  next sync committed them. The tracked wiki dirs are restored from HEAD before
+  the error returns.
+- Assorted robustness: `hot --install` refuses rather than overwriting an
+  unreadable `~/.claude/settings.json`; a model-written page path is validated so
+  `../` cannot aim a write outside the KB; a parser panic on a tier-0 PDF names
+  the file instead of taking the inbox drain down; `launchctl` probing trusts exit
+  status over substring matching; plist and hook paths are shell-quoted so a home
+  directory with a space works; `scribe version` prints to stdout.
+- Text handling: six raw byte slices became rune-safe cuts, so a truncation never
+  lands mid-character. An unresolved TOC chapter is skipped instead of emitting
+  the whole body as a duplicate chunk; same-day ingest title collisions get a
+  suffix instead of overwriting; a resolved contradiction whose edge was later
+  removed keeps its paper trail; a second `assess` on the same day gets its own
+  output dir instead of counting stale track files as fresh; `WARN` and above go
+  to stderr in both handlers.
+
+### Security
+
+- **Prompts are passed over stdin, never argv.** `realRunClaude` and the
+  anthropic provider passed the whole prompt as an argv value, so every process
+  on the machine could read KB content through `ps` — and a dense article inlined
+  into an absorb prompt tripped the 1 MiB argv limit before the model saw it.
+  Argv now carries flags only. A shim on `PATH` pins the contract in tests.
+- **OpenSSF Scorecard Binary-Artifacts and Token-Permissions cleared.** A 21 MB
+  Mach-O had been committed by accident — `.gitignore`'s `/scribe` is
+  root-anchored, so `go build ./cmd/scribe/` run from inside the package dropped
+  a binary the rule could not see. `metrics-snapshot.yml` declared top-level
+  `contents: write` for one push step; every workflow is read-only at the top
+  level now, with writes scoped to the job that needs them.
+- **A pre-commit gate rejects compiled executables and blobs over 2 MB.** Nothing
+  in the repo could have caught that binary: every other hook command is scoped to
+  `*.go`, and the secret gate skips binaries by design. The new gate matches
+  executable magic bytes (ELF, every Mach-O variant, PE) rather than "binary", so
+  the PNG, JPEG, ICO and SVG assets the repo legitimately tracks are untouched.
+
 ## [0.5.1] — 2026-08-27
 
 A reliability patch for session mining. The headline: the processed-mark for a
