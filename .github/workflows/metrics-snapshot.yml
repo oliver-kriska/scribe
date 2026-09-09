@@ -18,8 +18,12 @@ on:
     - cron: "15 7 * * 1" # weekly, Monday 07:15 UTC
   workflow_dispatch:
 
+# Least privilege: read-only at the top level, and the single job that
+# needs to push the snapshot commit widens it to `contents: write`
+# itself. OSSF Scorecard's Token-Permissions check scores a top-level
+# write as 0 regardless of how few steps use it.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: metrics-snapshot
@@ -28,6 +32,9 @@ concurrency:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
+    permissions:
+      # Pushes the metrics/<date>.json snapshot commit to the default branch.
+      contents: write
     steps:
       - name: Checkout default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

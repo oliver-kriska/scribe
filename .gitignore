@@ -1,5 +1,8 @@
 # Build output
 /scribe
+# `go build ./cmd/scribe/` run from inside the package drops the binary
+# next to the source; /scribe above is root-anchored and misses it.
+/cmd/scribe/scribe
 /bin/
 /dist/
 /.zig-cache/
