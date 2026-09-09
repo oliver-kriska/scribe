@@ -88,11 +88,19 @@ func projectScopeAllowed(cfg *ScribeConfig, manifest *Manifest, projectPath stri
 	return sourceAllowed(cfg, projectPath)
 }
 
-// filterSessionsByScope drops sessions whose project is ignored or
-// source-excluded for this KB. It is the scope half of preFilterSessions,
-// pulled out for the large-session lane (which skips the mechanical/thin
-// gate but must still honor sources/ignore). Fails open on DB-open error,
-// matching preFilterSessions.
+// filterSessionsByScope is the admission gate for the large-session lane:
+// everything preFilterSessions drops for scope reasons, minus the
+// mechanical/thin gate (a long session is never thin, and the gate's
+// side effect of marking IDs processed does not belong here).
+//
+// It shares sessionDropReason with the other two sites deliberately. It
+// used to call projectScopeAllowed alone, which checks ignore + sources
+// but NOT manifest approval — so a >300-message session from a project
+// still pending `scribe projects approve` was mined, while the same
+// project's shorter sessions were correctly refused. Approval is a
+// consent gate; the expensive lane was the one bypassing it.
+//
+// Fails open on DB-open error, matching preFilterSessions.
 func filterSessionsByScope(root, dbPath string, sessionIDs []string) []string {
 	if len(sessionIDs) == 0 {
 		return sessionIDs
@@ -106,17 +114,34 @@ func filterSessionsByScope(root, dbPath string, sessionIDs []string) []string {
 	manifest, _ := loadManifest(root)
 	cfg := loadConfig(root)
 	kept := sessionIDs[:0]
-	dropped := 0
+	kbSkipped, scopeSkipped, pendingSkipped := 0, 0, 0
 	for _, sid := range sessionIDs {
 		stats := querySessionStats(db, sid)
-		if stats.Found && !projectScopeAllowed(cfg, manifest, stats.ProjectPath) {
-			dropped++
+		if !stats.Found {
+			kept = append(kept, sid) // On error, keep the session.
+			continue
+		}
+		switch sessionDropReason(cfg, manifest, root, stats.ProjectPath) {
+		case dropReasonKB:
+			kbSkipped++
+			continue
+		case dropReasonScope:
+			scopeSkipped++
+			continue
+		case dropReasonPending:
+			pendingSkipped++
 			continue
 		}
 		kept = append(kept, sid)
 	}
-	if dropped > 0 {
-		logMsg("sync", "pre-filter: dropped %d large session(s) from out-of-scope projects (ignored or excluded by sources)", dropped)
+	if kbSkipped > 0 {
+		logMsg("sync", "pre-filter: dropped %d large session(s) run inside the KB (never mine the KB into itself)", kbSkipped)
+	}
+	if scopeSkipped > 0 {
+		logMsg("sync", "pre-filter: dropped %d large session(s) from out-of-scope projects (ignored or excluded by sources)", scopeSkipped)
+	}
+	if pendingSkipped > 0 {
+		logMsg("sync", "pre-filter: deferred %d large session(s) from pending project(s) — approve via `scribe projects review`", pendingSkipped)
 	}
 	return kept
 }

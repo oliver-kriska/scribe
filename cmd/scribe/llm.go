@@ -247,7 +247,27 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 				return env.Result, ErrRateLimit
 			}
 			entry.ErrKind = "other"
-			return env.Result, fmt.Errorf("claude -p: %s", env.Subtype)
+			// The CLI exited 0 and reported the failure inside the
+			// envelope — an API-level error (a 400 on the model, an
+			// overloaded upstream) rather than a crash. Without this it
+			// returned a bare subtype with no tail and no record: the
+			// same twelve-day-silence shape as #96, one branch over from
+			// the exit-status path that got fixed.
+			appendErrorRecord(a.root, ErrorRecord{
+				Timestamp:   started.UTC().Format(time.RFC3339),
+				Op:          op,
+				Model:       a.model,
+				ErrKind:     entry.ErrKind,
+				DurationMS:  time.Since(started).Milliseconds(),
+				PromptChars: len(prompt),
+				Err:         "claude -p subtype=" + env.Subtype,
+				StderrTail:  tailLines(stderrStr, 50),
+				StdoutTail:  tailLines(stdoutStr, 50),
+			})
+			// env.Result carries the API's own message ("API Error: 400
+			// model: String should have at least 1 character"); the
+			// subtype alone ("error_during_execution") names no cause.
+			return env.Result, fmt.Errorf("claude -p: %s: %s", env.Subtype, truncateBytes(strings.TrimSpace(env.Result), 300))
 		}
 		entry.OK = true
 		return strings.TrimSpace(env.Result), nil

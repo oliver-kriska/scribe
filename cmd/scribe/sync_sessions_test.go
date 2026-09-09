@@ -436,3 +436,41 @@ func TestAdmitForPool_WithPreFilterSessions(t *testing.T) {
 		t.Errorf("got %v, want %v (hot-thin must be dropped by the mechanical-content gate)", got, want)
 	}
 }
+
+// The two admission gates must agree on approval. filterSessionsByScope
+// (large lane) used to call projectScopeAllowed alone, which checks
+// ignore + sources but not manifest approval — so a >300-message session
+// from a project still pending `scribe projects approve` was mined while
+// the same project's shorter sessions were refused. Approval is a consent
+// gate, and the expensive lane was the one bypassing it.
+func TestLaneApprovalParity(t *testing.T) {
+	db, dbPath := newCcriderDB(t)
+	root := sessionsTestKB(t, dbPath)
+
+	const pendingProj = "/home/dev/projects/beta"
+	const approvedProj = "/home/dev/projects/alpha"
+	writeKBFile(t, root, "scripts/projects.json", `{"projects": {`+
+		`"alpha": {"path": `+jsonQuote(approvedProj)+`, "status": "approved"},`+
+		`"beta": {"path": `+jsonQuote(pendingProj)+`, "status": "pending"}}}`)
+
+	seed := func(sid, proj string) {
+		rowid := insertFixtureSession(t, db, sid, proj, 400,
+			"2026-06-01T10:00:00", "2026-06-01T12:00:00", "s")
+		for range 20 {
+			insertFixtureMessage(t, db, rowid, "user", strings.Repeat("x", 900), false)
+		}
+	}
+	seed("big-pending", pendingProj)
+	seed("big-approved", approvedProj)
+
+	ids := []string{"big-pending", "big-approved"}
+	normalKept, _ := preFilterSessions(root, dbPath, append([]string{}, ids...))
+	largeKept := filterSessionsByScope(root, dbPath, append([]string{}, ids...))
+
+	if !equalStrings(normalKept, largeKept) {
+		t.Errorf("lanes disagree: normal kept %v, large kept %v", normalKept, largeKept)
+	}
+	if !equalStrings(largeKept, []string{"big-approved"}) {
+		t.Errorf("large lane kept %v, want only [big-approved] — a pending project must not be mined", largeKept)
+	}
+}

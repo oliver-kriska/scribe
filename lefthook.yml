@@ -9,6 +9,12 @@
 pre-commit:
   parallel: true
   commands:
+    # No glob: this is the ONE gate that must see non-Go staged files.
+    # Every other command below is `glob: "*.go"`, and `scribe commit
+    # --check` skips binaries by design — which is how a 21 MB Mach-O
+    # landed in cmd/scribe/ on 2026-09-03 with nothing to stop it.
+    staged-artifacts:
+      run: ./scripts/check-staged-artifacts.sh
     go-mod-tidy:
       run: |
         go mod tidy -diff 2>/dev/null || { echo "run go mod tidy"; exit 1; }
