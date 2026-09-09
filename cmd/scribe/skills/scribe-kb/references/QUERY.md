@@ -2,6 +2,17 @@
 
 `qmd` is the search engine over a scribe-managed KB: BM25 keyword search + vector similarity, hybrid-ranked. Three query types (`lex`, `vec`, `hyde`), one expand mode, plus structural retrieval helpers. qmd works from any directory — the collection uses absolute paths, so you don't need to `cd` into the KB.
 
+## Transport decision tree
+
+1. For a natural-language or semantic question, discover and use the qmd MCP `query` tool. Tool names are runtime-qualified: common examples are `mcp__qmd__query` in Codex and `mcp__plugin_qmd_qmd__query` in Claude Code, but the available tool registry is authoritative.
+2. MCP tools may be lazy or deferred. Inspect the runtime's available/deferred tool catalog before saying qmd MCP is unavailable. In Codex runtimes that expose `ALL_TOOLS`, look there for a name ending in `qmd__query` and invoke it through the runtime's programmatic tool mechanism.
+3. Always pass `intent` with the user-facing question. Run qmd MCP model operations serially; concurrent calls can contend for the same local model and stall.
+4. Use the matching MCP `get` or `multi_get` tool to retrieve selected results and the one central wikilink/`related:` neighbor.
+5. Use shell `qmd search "<keywords>"` for exact-term, no-model retrieval.
+6. Use shell `qmd query "<natural-language question>"` only when semantic retrieval is needed and MCP discovery confirms that the query tool is unavailable. In a sandboxed Codex session, run this fallback outside the sandbox with approval because Metal-backed local models may not initialize reliably inside it.
+
+Do not treat a sandbox Metal initialization failure as evidence that the qmd index is corrupt. Check MCP/status or run the semantic fallback outside the sandbox before diagnosing index health.
+
 ## When to use which
 
 | You want to find... | Use |
@@ -30,7 +41,7 @@ qmd search "fetched_via stub"
 qmd vsearch "knowing when to give up on a feature"
 ```
 
-When using the qmd MCP tool inside Claude Code, every query call accepts a structured `searches` array — pass multiple types in one call instead of running three separate queries.
+When using the qmd MCP tool, every query call accepts a structured `searches` array — pass multiple types in one call instead of running three separate queries.
 
 ## Reading results
 
