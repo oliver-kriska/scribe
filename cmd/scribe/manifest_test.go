@@ -904,3 +904,60 @@ func TestManifestUniqueName(t *testing.T) {
 		t.Errorf("self-match = %q, want api (not a collision with its own entry)", got)
 	}
 }
+
+// TestManifestIsIgnoredEnrolledProjectDefeatsDepthFloor pins the split
+// between the depth heuristic and the hazard gates. The floor exists to stop
+// discovery auto-enrolling an over-broad path; once a project IS enrolled the
+// user has made that call, so the floor must not keep vetoing it. A repo
+// checked out directly under a mount root (/Volumes/Vol/repo, 3 segments) is
+// the case that matters: before this, projectScopeAllowed dropped every
+// session from such a project, permanently and silently.
+//
+// TCC, within-a-KB and the explicit ignore list are NOT waived by enrollment
+// — they encode a real hazard and an explicit user decision, not a guess.
+func TestManifestIsIgnoredEnrolledProjectDefeatsDepthFloor(t *testing.T) {
+	t.Setenv("HOME", "/Users/x")
+
+	const shallow = "/Volumes/Vol/repo" // 3 non-empty segments
+	enrolled := &Manifest{Projects: map[string]*ProjectEntry{
+		shallow: {Path: shallow, Name: "repo", Worktrees: []string{"/Volumes/Vol/repo-wt"}},
+	}}
+	bare := &Manifest{Projects: map[string]*ProjectEntry{}}
+
+	if bare.isIgnored(shallow) != true {
+		t.Error("un-enrolled shallow path must stay ignored — the discovery heuristic is unchanged")
+	}
+	if enrolled.isIgnored(shallow) != false {
+		t.Error("enrolled shallow path must not be ignored; this is what strands its sessions")
+	}
+	// entryForPath resolves worktrees to their parent, so a linked worktree
+	// of an enrolled shallow project is enrolled too.
+	if enrolled.isIgnored("/Volumes/Vol/repo-wt") != false {
+		t.Error("worktree of an enrolled shallow project must not be ignored")
+	}
+	// Enrollment does not launder an explicit ignore.
+	ignored := &Manifest{
+		Projects:     map[string]*ProjectEntry{shallow: {Path: shallow, Name: "repo"}},
+		IgnoredPaths: []string{shallow},
+	}
+	if ignored.isIgnored(shallow) != true {
+		t.Error("explicit ignored_paths entry must still win over enrollment")
+	}
+	// Enrollment does not waive the TCC guard (3 segments, so the floor
+	// would have caught it first — TCC must catch it on its own).
+	tcc := &Manifest{Projects: map[string]*ProjectEntry{
+		"/Users/x/Downloads": {Path: "/Users/x/Downloads", Name: "dl"},
+	}}
+	if tcc.isIgnored("/Users/x/Downloads") != true {
+		t.Error("TCC-protected path must stay ignored even when enrolled")
+	}
+	// Enrollment does not waive the never-harvest-a-KB guard.
+	kb := t.TempDir()
+	if err := os.WriteFile(filepath.Join(kb, "scribe.yaml"), []byte("owner_name: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inKB := &Manifest{Projects: map[string]*ProjectEntry{kb: {Path: kb, Name: "kb"}}}
+	if inKB.isIgnored(kb) != true {
+		t.Error("a scribe KB must stay ignored even when enrolled")
+	}
+}

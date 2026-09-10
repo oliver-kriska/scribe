@@ -216,6 +216,22 @@ func (m *Manifest) save() error {
 
 // isIgnored checks if a path is in the ignored list, too shallow, or under a
 // macOS TCC-protected location whose first access would prompt the user.
+//
+// The depth floor is an *enrollment* heuristic: it stops discovery from
+// auto-enrolling a path so broad it would sweep every repo beneath it
+// (~/src, a bare mount root). It is not a claim that such a path is
+// unusable, so it must not outlive the decision it guards — once a project
+// is in the manifest the user has already made that call explicitly, via
+// discovery-plus-approval or `scribe projects add`. Applying the floor to an
+// enrolled project instead silently voids that decision on every path that
+// consults this, and the session lane is one of them: a repo checked out
+// directly under a mount root (3 segments) has every one of its sessions
+// dropped by projectScopeAllowed, forever, with no log line and no way to
+// override it from config.
+//
+// The TCC, within-a-KB and explicit-ignore gates below are deliberately NOT
+// waived for enrolled projects. Those encode hazards and explicit user
+// intent respectively; the depth floor encodes neither.
 func (m *Manifest) isIgnored(path string) bool {
 	parts := strings.Split(path, "/")
 	nonEmpty := 0
@@ -224,7 +240,7 @@ func (m *Manifest) isIgnored(path string) bool {
 			nonEmpty++
 		}
 	}
-	if nonEmpty < 4 {
+	if nonEmpty < 4 && m.entryForPath(path) == nil {
 		return true
 	}
 	if isTCCProtected(path) {
