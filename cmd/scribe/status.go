@@ -604,6 +604,21 @@ func pendingQueueSummary(cfg PriorityLanesConfig) (hot, normal, aged int, ok boo
 // already-mined session IDs, excluded from the tally. Reads the DB
 // read-only; returns (0, false) on any DB/manifest error so the caller
 // drops the row rather than printing a wrong number.
+//
+// The approval check alone is necessary but not sufficient: it answers
+// "does this path belong to an approved project", while admission asks
+// sessionDropReason — in-a-KB, out-of-scope, pending-approval. A session
+// can satisfy the first and fail the second, and then it is counted as
+// pending forever while the miner refuses it on every run. That gap is
+// what makes the backlog report a floor it can never reach, and a count
+// that cannot reach zero is one people learn to ignore.
+//
+// Both gates are applied, not one: sessionDropReason is deliberately
+// permissive about projects it has never seen (knowledge can be captured
+// before formal enrollment), so using it alone would re-admit the whole
+// machine's session pile on a KB with no approved projects — exactly the
+// #27 regression the approval check exists to prevent. Composed, the
+// count only ever narrows.
 func countScopedPendingSessions(root string, cfg *ScribeConfig, processed map[string]struct{}) (int, bool) {
 	db, err := openSQLiteRO(cfg.CcriderDB)
 	if err != nil {
@@ -636,6 +651,11 @@ func countScopedPendingSessions(root string, cfg *ScribeConfig, processed map[st
 		// a basename collision can't borrow another project's approval.
 		entry := manifest.entryForPath(ppath)
 		if entry == nil || !entry.IsApproved() {
+			continue
+		}
+		// ...and the miner's own admission predicate, so "pending" means
+		// "will actually be mined" rather than "lives somewhere approved".
+		if sessionDropReason(cfg, manifest, root, ppath) != "" {
 			continue
 		}
 		if _, done := processed[sid]; done {
