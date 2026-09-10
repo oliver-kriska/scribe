@@ -161,3 +161,56 @@ func writeStatusManifest(t *testing.T, root string, projects map[string]map[stri
 		t.Fatal(err)
 	}
 }
+
+// TestCountScopedPendingSessionsExcludesUnminable pins "pending" to mean
+// "will actually be mined". An approved manifest entry answers only
+// "does this path belong to an approved project"; admission additionally
+// asks sessionDropReason. A session that satisfies the first and fails
+// the second used to be counted forever while the miner refused it on
+// every run, giving the backlog a floor it could never reach.
+//
+// The KB guard is the cheapest drop reason to construct, and the one that
+// bites in practice: sessions run inside a KB checkout are never mined
+// (KBs must not harvest themselves), yet the KB can be an approved project.
+func TestCountScopedPendingSessionsExcludesUnminable(t *testing.T) {
+	db, dbPath := newCcriderDB(t)
+	root := t.TempDir()
+
+	minable := filepath.Join(t.TempDir(), "Projects", "minable")
+	// An approved project that is itself a scribe KB — approved, but the
+	// miner drops every session in it via sessionInKB.
+	kbProject := filepath.Join(t.TempDir(), "Projects", "someKB")
+	if err := os.MkdirAll(kbProject, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kbProject, "scribe.yaml"), []byte("owner_name: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	writeStatusManifest(t, root, map[string]map[string]string{
+		"minable": {"path": minable, "domain": "general"},
+		"someKB":  {"path": kbProject, "domain": "general"},
+	})
+
+	insertFixtureSession(t, db, "s-minable", minable, 50, "", "", "will be mined")
+	insertFixtureSession(t, db, "s-in-kb", kbProject, 50, "", "", "approved but never admissible")
+
+	cfg := loadConfig(root)
+	cfg.CcriderDB = dbPath
+
+	got, ok := countScopedPendingSessions(root, cfg, map[string]struct{}{})
+	if !ok {
+		t.Fatal("countScopedPendingSessions returned ok=false")
+	}
+	if got != 1 {
+		t.Errorf("pending = %d, want 1: the in-KB session is approved but unminable, so it must not be counted", got)
+	}
+	// Guard the composition: sessionDropReason alone is permissive about
+	// unseen projects, so it must not be allowed to re-admit an unenrolled
+	// path and undo #27.
+	insertFixtureSession(t, db, "s-unknown", "/somewhere/else/entirely", 50, "", "", "no manifest entry")
+	got, _ = countScopedPendingSessions(root, cfg, map[string]struct{}{})
+	if got != 1 {
+		t.Errorf("pending = %d, want 1: an unenrolled project must stay uncounted (#27)", got)
+	}
+}
