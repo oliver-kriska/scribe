@@ -252,6 +252,74 @@ func minimalVars(kbDir string) templateVars {
 	}
 }
 
+// TestAgentHandshakeTemplates_QMDTransportContract pins the retrieval order
+// shared by every generated agent handshake: semantic MCP first, exact shell
+// search second, and semantic shell query only as the final fallback.
+func TestAgentHandshakeTemplates_QMDTransportContract(t *testing.T) {
+	vars := minimalVars("/home/tester/my-kb")
+	cases := []struct {
+		name     string
+		template string
+		unique   []string
+	}{
+		{
+			name:     "codex",
+			template: "templates/codex-agents-md.md",
+			unique: []string{
+				"deferred/lazy",
+				"`ALL_TOOLS`",
+				"outside the sandbox with approval",
+			},
+		},
+		{
+			name:     "claude",
+			template: "templates/claude-md-kb.md",
+			unique: []string{
+				"`mcp__plugin_qmd_qmd__query`",
+				"`mcp__qmd__query`",
+				"initial tool summary",
+			},
+		},
+		{
+			name:     "amp",
+			template: "templates/amp-agents-md.md",
+			unique: []string{
+				"`amp.mcpServers`",
+				"available tool registry",
+				"initial tool summary",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := renderTemplate(tc.template, vars)
+			if err != nil {
+				t.Fatalf("render %s: %v", tc.template, err)
+			}
+			for _, want := range append([]string{
+				"qmd MCP `query` tool",
+				"as `intent`",
+				"model operations serially",
+				"exact-term, no-model retrieval",
+			}, tc.unique...) {
+				if !strings.Contains(out, want) {
+					t.Errorf("%s handshake missing qmd transport contract %q", tc.name, want)
+				}
+			}
+			mcpAt := strings.Index(out, "qmd MCP `query` tool")
+			exactAt := strings.Index(out, "exact-term, no-model retrieval")
+			fallbackAt := strings.Index(out, "`qmd query \"<natural language question>\"`")
+			if mcpAt < 0 || exactAt < 0 || fallbackAt < 0 || !(mcpAt < exactAt && exactAt < fallbackAt) {
+				t.Errorf("%s handshake retrieval order is not MCP query -> exact shell search -> semantic shell fallback", tc.name)
+			}
+			if strings.Contains(out, "always available, and the reliable default") || strings.Contains(out, "shell command is always available and is the reliable default") {
+				t.Errorf("%s handshake restored the obsolete shell-first guidance", tc.name)
+			}
+		})
+	}
+}
+
 // TestInstallCodexMD_Lifecycle exercises the four installAgentMD cases
 // against ~/.codex/AGENTS.md via the Codex wrapper: create-when-missing,
 // in-sync no-op, drift refresh, and user content outside the markers
