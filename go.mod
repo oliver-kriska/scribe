@@ -18,7 +18,7 @@ require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 )
 
 require (
