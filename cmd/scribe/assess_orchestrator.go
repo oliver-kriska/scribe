@@ -139,7 +139,7 @@ func assessSourceTree(projectPath string, maxEntries int) string {
 			return nil //nolint:nilerr // unreadable entry: skip it, keep sampling the rest of the tree
 		}
 		if info.IsDir() {
-			if excludedDirNames[info.Name()] || nestedCheckout(projectPath, path) {
+			if excludedDirNames[info.Name()] || nestedCheckout(projectPath, path) || isClaudeToolingDir(projectPath, path) {
 				return filepath.SkipDir
 			}
 			return nil
