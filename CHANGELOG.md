@@ -36,6 +36,20 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   so `scribe init --path <fresh clone>` rewrote the committed `scribe.yaml`,
   `CLAUDE.md`, `.gitignore` and `log.md`. An existing `scribe.yaml` now
   refuses too; `--force` still overrides.
+- **Dream prompts describe what the dream can actually do (#139).** The
+  monolithic prompt now states its tool grant, as measured against the
+  CLI: Bash runs only `wc`, `ls` and `find` (piped into each other at
+  most), `find -delete`/`-exec` are refused, and there are no subagents.
+  Cycles that didn't know this spent turns on refused commands. It no
+  longer tells the model to delete files, which it cannot do; deletion
+  candidates go to the dream log for a human. It no longer asks the model
+  to clean `_index.md`, rebuild `_backlinks.json` or update
+  `article_count`, all of which scribe regenerates after every cycle. The
+  orchestrator and hot prompts no longer call their stale list "zero
+  links". It is filtered by `updated:` only, so listing is no longer
+  treated as evidence of decay. In those modes, which see metadata
+  only, expect far fewer `decay-candidate` markers: a listed article is
+  marked only on a concrete sign it is obsolete.
 
 ## [0.5.10] — 2026-10-15
 
