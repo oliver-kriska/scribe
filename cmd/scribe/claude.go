@@ -186,6 +186,16 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 	stderrStr := stderrBuf.String()
 	combined := stdoutStr + "\n" + stderrStr
 
+	// Parse the result envelope once, before any exit path. A non-zero
+	// exit can still print a full envelope (an api_error mid-run), and
+	// those are the runs that most need explaining. On a timeout or
+	// cancel the process is killed before it writes one, so ok is false
+	// and nothing changes.
+	env, envOK := parseClaudeResult(stdoutStr)
+	if envOK {
+		entry = entry.withEnvelope(env)
+	}
+
 	// Rate-limit text detection runs first as a safety net for cases
 	// where claude crashes before emitting a JSON envelope. We scan
 	// **stderr only** — never stdout. Stdout carries the model's
@@ -237,28 +247,7 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 	// surrounding lines that breaks a whole-buffer parse. Scan
 	// line-by-line for the first line that starts with `{` and
 	// unmarshals as a result envelope.
-	env, ok := parseClaudeResult(stdoutStr)
-	if ok {
-		// Capture token / cost numbers regardless of success/error
-		// status — even rate-limited or partial calls bill some
-		// input tokens and the user wants to see them.
-		if env.Usage.InputTokens > 0 {
-			in := env.Usage.InputTokens
-			entry.InputTokens = &in
-		}
-		if env.Usage.OutputTokens > 0 {
-			out := env.Usage.OutputTokens
-			entry.OutputTokens = &out
-		}
-		if env.Usage.CacheReadInputTokens > 0 {
-			c := env.Usage.CacheReadInputTokens
-			entry.CacheReadTokens = &c
-		}
-		if env.TotalCostUSD > 0 {
-			cost := env.TotalCostUSD
-			entry.CostUSD = &cost
-		}
-
+	if envOK {
 		if env.IsError {
 			entry.OK = false
 			if isRateLimitSubtype(env.Subtype) {

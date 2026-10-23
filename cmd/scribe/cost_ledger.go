@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,6 +74,29 @@ type CostEntry struct {
 	OutputTokens    *int64   `json:"output_tokens,omitempty"`
 	CacheReadTokens *int64   `json:"cache_read_tokens,omitempty"`
 	CostUSD         *float64 `json:"cost_usd,omitempty"`
+	// Telemetry from the claude -p envelope (SCRIBE-139). All optional:
+	// absent on legacy rows, non-claude providers, and envelopes from
+	// CLI versions that don't emit the field.
+	//
+	// ResolvedModels are the model ids that actually ran (modelUsage keys,
+	// sorted) — the alias in Model can move to a new model silently.
+	ResolvedModels []string `json:"resolved_models,omitempty"`
+	NumTurns       *int     `json:"num_turns,omitempty"`
+	TerminalReason string   `json:"terminal_reason,omitempty"`
+	// Denials counts tool calls the CLI refused; DeniedTools breaks them
+	// down by tool name; DeniedSamples keeps up to maxDeniedSamples short
+	// previews (Bash commands are cut to deniedSampleMaxBytes).
+	Denials       int             `json:"denials,omitempty"`
+	DeniedTools   map[string]int  `json:"denied_tools,omitempty"`
+	DeniedSamples []string        `json:"denied_samples,omitempty"`
+	Subagents     *SubagentCounts `json:"subagents,omitempty"`
+}
+
+// SubagentCounts is the ledger form of the envelope's subagent_stats.
+type SubagentCounts struct {
+	Spawned   int `json:"spawned"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
 }
 
 // claudeResultEnvelope mirrors the JSON shape claude -p emits with
@@ -93,6 +117,27 @@ type claudeResultEnvelope struct {
 		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 	} `json:"usage"`
+	// ModelUsage is keyed by the model id that actually ran (e.g.
+	// "claude-sonnet-5-5"), which can differ from the alias passed to
+	// --model. Only the keys are used.
+	ModelUsage        map[string]json.RawMessage `json:"modelUsage"`
+	PermissionDenials []claudeDenial             `json:"permission_denials"`
+	TerminalReason    string                     `json:"terminal_reason"`
+	SubagentStats     *claudeSubagentStats       `json:"subagent_stats"`
+}
+
+// claudeDenial is one tool call the CLI refused under the granted tools.
+type claudeDenial struct {
+	ToolName  string          `json:"tool_name"`
+	ToolInput json.RawMessage `json:"tool_input"`
+}
+
+// claudeSubagentStats is the subset of the envelope's subagent_stats the
+// ledger keeps.
+type claudeSubagentStats struct {
+	Spawned   int `json:"spawned"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
 }
 
 // parseClaudeResult scans claude -p --output-format json stdout
@@ -117,6 +162,95 @@ func parseClaudeResult(stdout string) (claudeResultEnvelope, bool) {
 		}
 	}
 	return claudeResultEnvelope{}, false
+}
+
+const (
+	// maxDeniedSamples bounds how many refused tool calls one ledger row
+	// previews; the count and per-tool tally are always complete.
+	maxDeniedSamples = 3
+	// deniedSampleMaxBytes bounds each previewed Bash command. Commands
+	// can carry KB paths; the ledger lives under the gitignored output/.
+	deniedSampleMaxBytes = 120
+	// toolNameBash is the permission-denial tool name whose command input
+	// is previewed.
+	toolNameBash = "Bash"
+)
+
+// withEnvelope returns a copy of e with token usage, cost, and call
+// telemetry filled from a parsed claude -p result envelope. The receiver
+// is not modified. Zero/absent envelope fields leave the corresponding
+// ledger fields unset, so legacy envelopes produce legacy-shaped rows.
+func (e CostEntry) withEnvelope(env claudeResultEnvelope) CostEntry {
+	out := e
+	if env.Usage.InputTokens > 0 {
+		in := env.Usage.InputTokens
+		out.InputTokens = &in
+	}
+	if env.Usage.OutputTokens > 0 {
+		o := env.Usage.OutputTokens
+		out.OutputTokens = &o
+	}
+	if env.Usage.CacheReadInputTokens > 0 {
+		c := env.Usage.CacheReadInputTokens
+		out.CacheReadTokens = &c
+	}
+	if env.TotalCostUSD > 0 {
+		cost := env.TotalCostUSD
+		out.CostUSD = &cost
+	}
+	if len(env.ModelUsage) > 0 {
+		models := make([]string, 0, len(env.ModelUsage))
+		for id := range env.ModelUsage {
+			models = append(models, id)
+		}
+		sort.Strings(models)
+		out.ResolvedModels = models
+	}
+	if env.NumTurns > 0 {
+		turns := env.NumTurns
+		out.NumTurns = &turns
+	}
+	out.TerminalReason = env.TerminalReason
+	if n := len(env.PermissionDenials); n > 0 {
+		tally := make(map[string]int, n)
+		samples := make([]string, 0, min(n, maxDeniedSamples))
+		for _, d := range env.PermissionDenials {
+			tally[d.ToolName]++
+			if len(samples) < maxDeniedSamples {
+				samples = append(samples, denialSample(d))
+			}
+		}
+		out.Denials = n
+		out.DeniedTools = tally
+		out.DeniedSamples = samples
+	}
+	if s := env.SubagentStats; s != nil && (s.Spawned > 0 || s.Completed > 0 || s.Failed > 0) {
+		out.Subagents = &SubagentCounts{Spawned: s.Spawned, Completed: s.Completed, Failed: s.Failed}
+	}
+	return out
+}
+
+// leadingCDPrefix matches a leading `cd <dir> && ` (or `;`), which real
+// denied commands almost always start with. It names a directory, not what
+// was refused, so it is dropped before truncation.
+var leadingCDPrefix = regexp.MustCompile(`^\s*cd\s+\S+\s*(?:&&|;)\s*`)
+
+// denialSample renders one refused tool call for the ledger. For Bash it is
+// the command, with a leading cd prefix stripped, URL tokens redacted, and the
+// result cut to deniedSampleMaxBytes. For every other tool it is the tool
+// name only; their inputs are never stored.
+func denialSample(d claudeDenial) string {
+	if d.ToolName != toolNameBash {
+		return d.ToolName
+	}
+	var input struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(d.ToolInput, &input); err != nil || input.Command == "" {
+		return d.ToolName
+	}
+	cmd := redactURLToken(leadingCDPrefix.ReplaceAllString(input.Command, ""))
+	return d.ToolName + ": " + truncateBytes(cmd, deniedSampleMaxBytes)
 }
 
 // isRateLimitSubtype detects rate-limit errors from the JSON
@@ -297,6 +431,11 @@ type CostSummary struct {
 	OutputTokens    int64
 	CacheReadTokens int64
 	ActualUSD       float64
+	// ResolvedModels counts calls per model id that actually ran
+	// (from CostEntry.ResolvedModels); empty for legacy rows.
+	ResolvedModels map[string]int
+	// Denials totals refused tool calls across the rows.
+	Denials int
 }
 
 // summarizeCosts reads every JSONL in output/costs/ within the
@@ -386,6 +525,7 @@ func summarizeCosts(root string, days int) ([]CostSummary, error) {
 			if ce.CostUSD != nil {
 				row.ActualUSD += *ce.CostUSD
 			}
+			accumulateTelemetry(row, ce)
 		}
 	}
 
@@ -421,6 +561,22 @@ func summarizeCosts(root string, days int) ([]CostSummary, error) {
 		return rowSortKey(out[i]) > rowSortKey(out[j])
 	})
 	return out, nil
+}
+
+// accumulateTelemetry folds one ledger row's envelope telemetry into the
+// per-model summary row being built by summarizeCosts. row is that
+// function's own accumulator, not a caller's value.
+func accumulateTelemetry(row *CostSummary, ce CostEntry) {
+	row.Denials += ce.Denials
+	if len(ce.ResolvedModels) == 0 {
+		return
+	}
+	if row.ResolvedModels == nil {
+		row.ResolvedModels = map[string]int{}
+	}
+	for _, id := range ce.ResolvedModels {
+		row.ResolvedModels[id]++
+	}
 }
 
 // CostCmd is the `scribe cost` subcommand.
@@ -508,6 +664,9 @@ func (c *CostCmd) Run() error {
 			total.CallsWithUsage, total.Calls, unmeasured, total.EstUSDHigh)
 	} else {
 		fmt.Printf("  Coverage: %d/%d calls reported real token usage (--output-format json).\n", total.CallsWithUsage, total.Calls)
+	}
+	if total.Denials > 0 {
+		fmt.Printf("  Denied tool calls: %d in this window (see denied_tools / denied_samples in output/costs/*.jsonl).\n", total.Denials)
 	}
 	fmt.Println("  usd = measured spend from token data.  ~$lo-hi = char-based estimate for rows with no token data at all.")
 	fmt.Println("  cancl = sibling-canceled (rate-limit cascade).  rate = direct rate-limit response.  tmout = ctx.DeadlineExceeded.")
@@ -613,6 +772,17 @@ func addCost(dst *CostSummary, src CostSummary) {
 	dst.OutputTokens += src.OutputTokens
 	dst.CacheReadTokens += src.CacheReadTokens
 	dst.ActualUSD += src.ActualUSD
+	dst.Denials += src.Denials
+	if len(src.ResolvedModels) > 0 {
+		merged := make(map[string]int, len(dst.ResolvedModels)+len(src.ResolvedModels))
+		for id, n := range dst.ResolvedModels {
+			merged[id] = n
+		}
+		for id, n := range src.ResolvedModels {
+			merged[id] += n
+		}
+		dst.ResolvedModels = merged
+	}
 }
 
 // totalOfCosts sums a set of per-model rows into a single CostSummary.
@@ -647,7 +817,7 @@ func printCostTable(rows []CostSummary) CostSummary {
 	header := []string{"model", "calls", "ok", "cancl", "rate", "tmout", "wallclock", "in-tokens", "out-tokens", "usd"}
 	cells := func(r CostSummary) []string {
 		return []string{
-			r.Model,
+			costModelLabel(r),
 			commaInt(int64(r.Calls)),
 			commaInt(int64(r.OK)),
 			commaInt(int64(r.Canceled)),
@@ -667,6 +837,35 @@ func printCostTable(rows []CostSummary) CostSummary {
 	footer[0] = "TOTAL"
 	printAlignedTable(header, body, footer)
 	return total
+}
+
+// costModelLabel is the model column's text: the alias, plus the model ids
+// that actually ran when they differ from it ("sonnet → claude-sonnet-5-5").
+// An alias can be moved to a new model by the provider without any config
+// change; this is where that becomes visible. A run that spawned subagents
+// also lists their models, so only ids containing the alias are shown; if
+// none does, all are.
+func costModelLabel(r CostSummary) string {
+	if len(r.ResolvedModels) == 0 {
+		return r.Model
+	}
+	all := make([]string, 0, len(r.ResolvedModels))
+	matching := make([]string, 0, len(r.ResolvedModels))
+	for id := range r.ResolvedModels {
+		all = append(all, id)
+		if r.Model != "" && strings.Contains(id, r.Model) {
+			matching = append(matching, id)
+		}
+	}
+	shown := matching
+	if len(shown) == 0 {
+		shown = all
+	}
+	if len(shown) == 1 && shown[0] == r.Model {
+		return r.Model
+	}
+	sort.Strings(shown)
+	return r.Model + " → " + strings.Join(shown, ", ")
 }
 
 // groupByProvider rolls per-model rows up to their backend provider, ordered
