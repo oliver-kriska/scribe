@@ -20,59 +20,18 @@ func (b *BacklinksCmd) Run() error {
 		return err
 	}
 
-	// Map: title -> path (for resolving link targets)
-	titleToPath := make(map[string]string)
-	// Map: path -> title
-	pathToTitle := make(map[string]string)
-	// Map: path -> []wikilink targets
-	pathToLinks := make(map[string][]string)
-
-	// First pass: collect titles of real articles (underscored files have no title).
-	err = walkArticles(root, func(path string, content []byte) error {
-		fm, err := parseFrontmatter(content)
-		if err != nil {
-			return nil //nolint:nilerr // skip unparseable file, continue walk
-		}
-		rel := relPath(root, path)
-		titleToPath[fm.Title] = rel
-		pathToTitle[rel] = fm.Title
-		links := extractWikilinks(content)
-		if len(links) > 0 {
-			pathToLinks[rel] = links
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	// Second pass: include wikilinks from hub _index.md files.
-	// They lack frontmatter titles, so attribute them to their relative path.
-	err = walkAllMarkdown(root, func(path string, content []byte) error {
-		rel := relPath(root, path)
-		if _, already := pathToLinks[rel]; already {
-			return nil
-		}
-		links := extractWikilinks(content)
-		if len(links) > 0 {
-			pathToLinks[rel] = links
-			if _, ok := pathToTitle[rel]; !ok {
-				pathToTitle[rel] = rel // use path as pseudo-title for hub files
-			}
-		}
-		return nil
-	})
+	g, err := collectArticleLinks(root)
 	if err != nil {
 		return err
 	}
 
 	// Build backlinks: target title -> [source titles]
 	backlinks := make(map[string][]string)
-	for sourcePath, links := range pathToLinks {
-		sourceTitle := pathToTitle[sourcePath]
+	for sourcePath, links := range g.pathToLinks {
+		sourceTitle := g.pathToTitle[sourcePath]
 		for _, target := range links {
-			// Only add if source != target
-			if target != sourceTitle {
+			// Skip self-links and titles held only by superseded articles.
+			if target != sourceTitle && !g.supersededTitles[target] {
 				backlinks[target] = append(backlinks[target], sourceTitle)
 			}
 		}

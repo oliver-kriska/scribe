@@ -37,6 +37,9 @@ func (i *IndexCmd) Run() error {
 		if err != nil {
 			return nil //nolint:nilerr // skip unparseable frontmatter, continue walk
 		}
+		if isSuperseded(fm) {
+			return nil
+		}
 		rel := relPath(root, path)
 		dir := filepath.Dir(rel)
 

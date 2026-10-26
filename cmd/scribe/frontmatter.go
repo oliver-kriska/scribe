@@ -95,6 +95,18 @@ type Frontmatter struct {
 	RelationsLocked bool `yaml:"relations_locked,omitempty"`
 }
 
+// statusSuperseded marks an article that a newer one replaces: a thin
+// stub left by a merge, or a full decision/research record kept for
+// history. The KB is append-only, so it stays on disk and resolvable by
+// title, but scribe leaves it out of its generated outputs (_index.md,
+// _backlinks.json) and of duplicate and orphan reports.
+const statusSuperseded = "superseded"
+
+// isSuperseded reports whether an article is marked superseded.
+func isSuperseded(fm *Frontmatter) bool {
+	return fm != nil && fm.Status == statusSuperseded
+}
+
 // fmSpan locates a frontmatter block inside a file.
 type fmSpan struct {
 	YAMLStart int // first byte after the opening fence line

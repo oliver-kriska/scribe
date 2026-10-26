@@ -16,6 +16,22 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   Ollama rows are marked free. When a daily output ceiling is set, the
   estimate also prints today's headroom and warns if the run would hit it.
 
+### Changed
+
+- **Superseded articles drop out of generated outputs (#139).** An
+  article with `status: superseded` in its frontmatter (a full
+  decision/research record, or a stub left by a merge) stays on disk and
+  resolvable by title, but `scribe index` no longer lists it, `scribe
+  backlinks` no longer uses it as a link source or target, `lint
+  --duplicates` no longer reports it, and `lint`, `scribe orphans` and
+  `scribe link` no longer treat it (or its aliases) as an orphan or link
+  host. The index-consistency lint counts the same way. A live article
+  that shares a superseded article's title keeps its backlinks.
+  `superseded` is now a valid `status` for `project` too. `scribe debug
+  --fresh` now shares `scribe backlinks`' link walk and, like it,
+  ignores self-links. The KB template's Rule 12 and the tidy skill name
+  the field.
+
 ### Fixed
 
 - **Envelope-mode extraction sends the changed files again (#138).** The
