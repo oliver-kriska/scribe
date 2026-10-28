@@ -22,7 +22,7 @@ This pass covers ONLY domain `{{DOMAIN}}`. Every article below belongs to it. Do
 {{INVENTORY}}
 <<<INVENTORY_END>>>
 
-## Stale candidates in this domain (zero links, updated >60 days ago)
+## Stale candidates in this domain (updated >60 days ago; link counts not checked)
 
 <<<STALE_BEGIN>>>
 {{STALE}}
@@ -58,7 +58,7 @@ This pass covers ONLY domain `{{DOMAIN}}`. Every article below belongs to it. Do
 - Path rooted in: wiki/, projects/, research/, solutions/, tools/, decisions/, patterns/, ideas/, people/, sessions/.
 - Every `create` action's frontmatter MUST set `domain: {{DOMAIN}}`.
 - Use `update_frontmatter` for date bumps (cheapest action). Its `frontmatter` value MUST be a non-empty object, e.g. `{"updated": "{{TODAY}}"}` — the key is named `frontmatter`, never `set`/`fields`/`updates`. Nothing to set → omit the action entirely.
-- Use `append` for decay markers — content `"\n<!-- decay-candidate {{TODAY}} -->\n"` — and ONLY on a path listed verbatim under "Stale candidates" above. If that list is empty, emit NO decay append.
+- Use `append` for decay markers — content `"\n<!-- decay-candidate {{TODAY}} -->\n"` — and ONLY on a path listed verbatim under "Stale candidates" above. You are not shown link counts, so being on that list is not evidence of decay. Mark a listed article only when the inventory or contradiction candidates give a concrete reason it is obsolete (for example, a newer article on the same subject that supersedes it). If unsure, do not mark it. If that list is empty, emit NO decay append.
 - Use `replace_section` to swap a body without rewriting frontmatter.
 - Use `create` for stub articles (entity referenced in 3+ of the shown articles but no wiki page yet, this domain only).
 - NEVER target ANY file whose basename starts with `_`. Scribe generates these and writing one corrupts the KB. The executor rejects them.
