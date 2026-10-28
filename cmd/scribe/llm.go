@@ -187,6 +187,16 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 	stderrStr := stderrBuf.String()
 	combined := stdoutStr + "\n" + stderrStr
 
+	// Parse the result envelope once, before any exit path. A non-zero
+	// exit can still print a full envelope (an api_error mid-run), and
+	// those are the runs that most need explaining. On a timeout or
+	// cancel the process is killed before it writes one, so ok is false
+	// and nothing changes.
+	env, envOK := parseClaudeResult(stdoutStr)
+	if envOK {
+		entry = entry.withEnvelope(env)
+	}
+
 	// Rate-limit text-matching scans stderr only — see claude.go for
 	// the full rationale. Short version: ~10% of articles in the
 	// corpus discuss rate-limiting as a topic, and matching against
@@ -228,24 +238,7 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 		return tail, fmt.Errorf("claude -p: %w\n%s", err, tail)
 	}
 
-	env, ok := parseClaudeResult(stdoutStr)
-	if ok {
-		if env.Usage.InputTokens > 0 {
-			in := env.Usage.InputTokens
-			entry.InputTokens = &in
-		}
-		if env.Usage.OutputTokens > 0 {
-			out := env.Usage.OutputTokens
-			entry.OutputTokens = &out
-		}
-		if env.Usage.CacheReadInputTokens > 0 {
-			c := env.Usage.CacheReadInputTokens
-			entry.CacheReadTokens = &c
-		}
-		if env.TotalCostUSD > 0 {
-			cost := env.TotalCostUSD
-			entry.CostUSD = &cost
-		}
+	if envOK {
 		if env.IsError {
 			entry.OK = false
 			if isRateLimitSubtype(env.Subtype) {
