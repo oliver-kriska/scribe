@@ -22,7 +22,7 @@ Article inventory for this domain (title, type, domain, confidence, updated, pat
 {{INVENTORY}}
 <<<INVENTORY_END>>>
 
-Stale candidates in this domain (zero links + updated > 60 days ago — paths only):
+Stale candidates in this domain (updated > 60 days ago; link counts not checked — paths only):
 
 <<<STALE_BEGIN>>>
 {{STALE}}
@@ -44,7 +44,7 @@ ONE envelope, scoped to `{{DOMAIN}}` only. Cover:
 
 3. **Stub creation** — for entity names appearing in 3+ of the articles shown above (this domain only) that don't have a wiki page, emit a `create` action with a 2-3 sentence stub plus wikilinks back to sources. Set `domain: {{DOMAIN}}` in the stub's frontmatter.
 
-4. **Decay tagging** — ONLY for a path that appears **verbatim in the stale-candidates list above** and shows no signal of value, emit an `append` action adding `<!-- decay-candidate {{TODAY}} -->` as the last line. Never decay-mark a path that is not in that list. If the stale list is empty, emit **zero** decay actions.
+4. **Decay tagging** — ONLY for a path that appears **verbatim in the stale-candidates list above** and shows no signal of value, emit an `append` action adding `<!-- decay-candidate {{TODAY}} -->` as the last line. You are not shown link counts, so being on that list is not evidence of decay. Mark a listed article only when the inventory or contradiction candidates give a concrete reason it is obsolete (for example, a newer article on the same subject that supersedes it). If unsure, do not mark it. Never decay-mark a path that is not in that list. If the stale list is empty, emit **zero** decay actions.
 
 5. **Meta** — emit ONE `log_append` MetaAction with a one-line summary: `## [{{TODAY}}] dream-hot | domain={{DOMAIN}} | <summary>`.
 

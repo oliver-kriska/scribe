@@ -222,60 +222,22 @@ func lintSizes(rep *lintReport, root string, files []string) {
 // aggregates — already one line per class — so they print inline via
 // warnAggregatef instead of joining the grouped per-file summary.
 func lintOrphans(rep *lintReport, root string) {
-	allTitles := make(map[string]bool)
-	allTargets := make(map[string]bool)
-	inboundCount := make(map[string]int)
-
-	// Collect titles (and aliases) from articles. Aliases from the
-	// optional `aliases:` frontmatter field share the same namespace
-	// as canonical titles so a wikilink to a known alias does not
-	// trigger a missing-page warning.
-	_ = walkArticles(root, func(_ string, content []byte) error {
-		if fm, err := parseFrontmatter(content); err == nil && fm.Title != "" {
-			allTitles[fm.Title] = true
-			for _, alias := range toStringSlice(fm.Aliases) {
-				if alias != "" {
-					allTitles[alias] = true
-				}
-			}
-			return nil
-		}
-		if title := extractTitleFast(content); title != "" {
-			allTitles[title] = true
-		}
-		return nil
-	})
-
-	// Scan ALL markdown (including _-prefixed) for wikilinks
-	_ = walkAllMarkdown(root, func(_ string, content []byte) error {
-		sourceTitle := extractTitleFast(content)
-		for _, link := range extractWikilinks(content) {
-			allTargets[link] = true
-			if link != sourceTitle {
-				inboundCount[link]++
-			}
-		}
-		return nil
-	})
-
-	orphanCount := 0
-	for title := range allTitles {
-		if inboundCount[title] == 0 && !allTargets[title] {
-			orphanCount++
-		}
+	graph, err := buildLinkGraph(root)
+	if err != nil {
+		rep.warnAggregatef("link graph unavailable: %v", err)
+		return
 	}
-	if orphanCount > 0 {
+	if orphanCount := len(graphOrphans(graph)); orphanCount > 0 {
 		rep.warnAggregatef("%d orphan articles (no inbound wikilinks)", orphanCount)
 	}
-
-	missingCount := 0
-	for target := range allTargets {
-		if !allTitles[target] {
-			missingCount++
-		}
-	}
-	if missingCount > 0 {
+	if missingCount := len(graph.Missing); missingCount > 0 {
 		rep.warnAggregatef("%d missing pages (linked but don't exist)", missingCount)
+	}
+	if graph.Ambiguous > 0 {
+		rep.warnAggregatef("%d ambiguous links (match more than one article)", graph.Ambiguous)
+	}
+	if skipped := graph.Unreadable + graph.Unparsed; skipped > 0 {
+		rep.warnAggregatef("%d files unreadable or unparsed during the link scan", skipped)
 	}
 }
 
@@ -298,8 +260,13 @@ func lintIndexConsistency(rep *lintReport, root string) {
 			indexCount++
 		}
 	}
+	// Count what `scribe index` lists: superseded articles are on disk but
+	// deliberately left out of the index.
 	diskCount := 0
-	_ = walkArticles(root, func(_ string, _ []byte) error {
+	_ = walkArticles(root, func(_ string, content []byte) error {
+		if fm, err := parseFrontmatter(content); err == nil && isSuperseded(fm) {
+			return nil
+		}
 		diskCount++
 		return nil
 	})

@@ -93,8 +93,9 @@ func (d *DreamCmd) Run() error {
 	} else {
 		// Load prompt and run claude -p
 		prompt, err := loadPrompt("dream.md", map[string]string{
-			"KB_DIR": root,
-			"DATE":   today,
+			"KB_DIR":      root,
+			"DATE":        today,
+			"LINK_REPORT": dreamLinkReportText(root, time.Now()),
 		})
 		if err != nil {
 			return fmt.Errorf("load dream prompt: %w", err)

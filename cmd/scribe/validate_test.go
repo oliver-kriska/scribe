@@ -260,3 +260,27 @@ func TestValidateFile_ImplausibleDates(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateProjectAcceptsSuperseded(t *testing.T) {
+	content := `---
+title: "Old Project"
+type: project
+created: 2026-04-10
+updated: 2026-04-10
+domain: general
+confidence: high
+tags: []
+related: []
+sources: []
+status: superseded
+---
+
+Body.
+`
+	path := writeTmp(t, "old-project.md", content)
+	for _, e := range validateFile("", path) {
+		if strings.Contains(e, "invalid status") {
+			t.Errorf("project status superseded rejected: %v", e)
+		}
+	}
+}

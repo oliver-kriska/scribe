@@ -95,6 +95,18 @@ type Frontmatter struct {
 	RelationsLocked bool `yaml:"relations_locked,omitempty"`
 }
 
+// statusSuperseded marks an article that a newer one replaces: a thin
+// stub left by a merge, or a full decision/research record kept for
+// history. The KB is append-only, so it stays on disk and resolvable by
+// title, but scribe leaves it out of its generated outputs (_index.md,
+// _backlinks.json) and of duplicate and orphan reports.
+const statusSuperseded = "superseded"
+
+// isSuperseded reports whether an article is marked superseded.
+func isSuperseded(fm *Frontmatter) bool {
+	return fm != nil && fm.Status == statusSuperseded
+}
+
 // fmSpan locates a frontmatter block inside a file.
 type fmSpan struct {
 	YAMLStart int // first byte after the opening fence line
@@ -323,6 +335,15 @@ func walkAllMarkdown(root string, fn func(path string, content []byte) error) er
 }
 
 func walkMarkdown(root string, skipUnderscored bool, fn func(path string, content []byte) error) error {
+	_, err := walkMarkdownCounting(root, skipUnderscored, fn)
+	return err
+}
+
+// walkMarkdownCounting is walkMarkdown that also reports how many
+// directories or files it could not read, so callers can say so instead of
+// silently under-counting.
+func walkMarkdownCounting(root string, skipUnderscored bool, fn func(path string, content []byte) error) (int, error) {
+	skipped := 0
 	for _, dir := range wikiDirs {
 		dirPath := filepath.Join(root, dir)
 		if _, err := os.Stat(dirPath); os.IsNotExist(err) {
@@ -330,7 +351,8 @@ func walkMarkdown(root string, skipUnderscored bool, fn func(path string, conten
 		}
 		err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				return nil //nolint:nilerr // skip unreadable, continue walk
+				skipped++
+				return nil //nolint:nilerr // count unreadable, continue walk
 			}
 			if info.IsDir() {
 				return nil
@@ -354,15 +376,16 @@ func walkMarkdown(root string, skipUnderscored bool, fn func(path string, conten
 			}
 			content, err := os.ReadFile(path)
 			if err != nil {
-				return nil //nolint:nilerr // skip unreadable, continue walk
+				skipped++
+				return nil //nolint:nilerr // count unreadable, continue walk
 			}
 			return fn(path, content)
 		})
 		if err != nil {
-			return err
+			return skipped, err
 		}
 	}
-	return nil
+	return skipped, nil
 }
 
 // countLines counts lines in a byte slice.

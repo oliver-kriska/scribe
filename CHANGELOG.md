@@ -16,6 +16,52 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   Ollama rows are marked free. When a daily output ceiling is set, the
   estimate also prints today's headroom and warns if the run would hit it.
 
+### Changed
+
+- **Superseded articles drop out of generated outputs (#139).** An
+  article with `status: superseded` in its frontmatter (a full
+  decision/research record, or a stub left by a merge) stays on disk and
+  resolvable by title, but `scribe index` no longer lists it, `scribe
+  backlinks` no longer uses it as a link source or target, `lint
+  --duplicates` no longer reports it, and `lint`, `scribe orphans` and
+  `scribe link` no longer treat it (or its aliases) as an orphan or link
+  host. The index-consistency lint counts the same way. A live article
+  that shares a superseded article's title keeps its backlinks.
+  `superseded` is now a valid `status` for `project` too. `scribe debug
+  --fresh` now shares `scribe backlinks`' link walk and, like it,
+  ignores self-links. The KB template's Rule 12 and the tidy skill name
+  the field.
+- **Links resolve by alias, case, slug, path and anchor (#139).**
+  `scribe backlinks`, `debug --fresh`, `lint`, `scribe orphans` and
+  `scribe link` now share one link graph. `wiki/_backlinks.json` keys are
+  canonical titles, so alias, case, slug and `#anchor` links credit the
+  article they name. A missing link keeps its normalized text as the key.
+  Behavior changes:
+  1. `_backlinks.json` keys are canonical titles.
+  2. `scribe orphans` and `link` compute from the KB, not from
+     `_backlinks.json`.
+  3. An article whose only inbound link is a self-link is now an orphan.
+  4. An unlinked alias is no longer its own orphan (only titles are
+     candidates), and rolling articles are no longer orphans in `lint` or
+     `scribe orphans`.
+  5. A link that matches more than one article is neither missing nor
+     credited; `lint` reports how many there are.
+  6. Links that resolve by case, slug or path are no longer missing.
+  7. Articles whose frontmatter fails to parse are no longer orphan
+     candidates; the `lint` warning about files unreadable or unparsed
+     during the link scan reports them instead.
+  8. `scribe orphans --json` emits `[]` instead of `null` for an empty
+     list.
+- **The monolithic dream gets a resolved link report (#139).** Before the
+  prompt is built, scribe lists broken links with their canonical title,
+  decay candidates (no non-generated inbound link, no outbound link,
+  `updated:` older than 60 days) and wanted pages (dangling targets linked
+  from 3 or more articles). Each list is capped at 40 lines, and links from
+  generated `_` files do not count toward decay, wanted pages or broken
+  links. The dream fixes broken links in its source files; scribe never
+  rewrites them. A failed scan is recorded as degraded and the prompt says
+  the report is unavailable. The orchestrator and hot prompts are unchanged.
+
 ### Fixed
 
 - **Envelope-mode extraction sends the changed files again (#138).** The
@@ -36,6 +82,20 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   so `scribe init --path <fresh clone>` rewrote the committed `scribe.yaml`,
   `CLAUDE.md`, `.gitignore` and `log.md`. An existing `scribe.yaml` now
   refuses too; `--force` still overrides.
+- **Dream prompts describe what the dream can actually do (#139).** The
+  monolithic prompt now states its tool grant, as measured against the
+  CLI: Bash runs only `wc`, `ls` and `find` (piped into each other at
+  most), `find -delete`/`-exec` are refused, and there are no subagents.
+  Cycles that didn't know this spent turns on refused commands. It no
+  longer tells the model to delete files, which it cannot do; deletion
+  candidates go to the dream log for a human. It no longer asks the model
+  to clean `_index.md`, rebuild `_backlinks.json` or update
+  `article_count`, all of which scribe regenerates after every cycle. The
+  orchestrator and hot prompts no longer call their stale list "zero
+  links". It is filtered by `updated:` only, so listing is no longer
+  treated as evidence of decay. In those modes, which see metadata
+  only, expect far fewer `decay-candidate` markers: a listed article is
+  marked only on a concrete sign it is obsolete.
 
 ## [0.5.10] — 2026-10-15
 

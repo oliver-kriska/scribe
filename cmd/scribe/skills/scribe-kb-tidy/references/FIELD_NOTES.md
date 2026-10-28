@@ -78,8 +78,9 @@ so the same discipline applies. When in doubt, propose.
   before proposing any merge, exclude `rolling: true` and `*-archive-*` files
   and cap the size ratio (a 14-line stub is not "the same article" as a
   400-line learnings log). Merge a thin article into a *peer*, not into a log.
-- **Append-only nuance:** superseded content is not deleted — it stays with a
-  `Status: superseded by [[X]]` note. Only delete a thin file when it is a true
+- **Append-only nuance:** superseded content is not deleted — it stays,
+  marked `status: superseded` in frontmatter with a "Superseded by [[X]]" line
+  in the body. Only delete a thin file when it is a true
   empty scaffold/greeting/exact duplicate with nothing unique, and only after
   checking inbound links.
 

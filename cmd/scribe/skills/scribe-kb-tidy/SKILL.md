@@ -41,8 +41,9 @@ written procedure, grounded in the KB's stated principles.
 4. **Never lose information.** Every claim, quote, `> — Source:` line,
    `session:UUID`/`[[wikilink]]` provenance, and `sources:` entry must survive.
    Splitting/merging redistributes content; it never deletes it. Superseded
-   content stays with a `Status: superseded by [[X]]` note (the KB is
-   append-only), not hard-deleted.
+   content stays, marked `status: superseded` in frontmatter with a
+   "Superseded by [[X]]" line in the body (the KB is append-only), not
+   hard-deleted.
 5. **Preserve frontmatter validity — including `authority`/`index_tier`.** Every
    new or rewritten file needs a valid frontmatter block (see the **scribe-kb**
    skill's `references/FRONTMATTER.md`). Live files carry `authority:` and
