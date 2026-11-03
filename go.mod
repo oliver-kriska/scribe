@@ -9,7 +9,7 @@ module github.com/oliver-kriska/scribe
 go 1.26.10
 
 require (
-	github.com/alecthomas/kong v1.16.1
+	github.com/alecthomas/kong v1.17.0
 	github.com/mattn/go-sqlite3 v1.14.52
 	gopkg.in/yaml.v3 v3.0.1
 )
