@@ -32,7 +32,7 @@ func dreamLinkReport(g linkGraph, today time.Time, staleDays int) string {
 		fmt.Fprintf(&sb, "%d more differ from their title only by case or separators; scribe rewrites those itself, so they are not listed.\n", g.SafeBroken)
 	}
 	sb.WriteString(renderCappedList(brokenLinkLines(g)))
-	fmt.Fprintf(&sb, "\n### Decay candidates (no links from other articles, no outbound links, updated more than %d days ago)\n", staleDays)
+	fmt.Fprintf(&sb, "\n### Decay candidates (no links from other articles, no outbound links, updated more than %d days ago, oldest first; people pages excluded)\n", staleDays)
 	sb.WriteString(renderCappedList(decayCandidateLines(g, today, staleDays)))
 	fmt.Fprintf(&sb, "\n### Wanted pages (linked from %d or more articles, no page exists)\n", wantedPageMinArticles)
 	sb.WriteString(renderCappedList(wantedPageLines(g)))
@@ -100,11 +100,15 @@ func hasNonGeneratedEdge(edges []linkEdge) bool {
 	return slices.ContainsFunc(edges, func(e linkEdge) bool { return !e.Generated })
 }
 
+// decayCandidateLines lists unlinked articles past the stale cutoff, oldest
+// updated: first. People pages are reference entries, not knowledge that
+// goes stale, so type: person never decays; on a large KB they otherwise
+// crowd every other candidate out of the capped list.
 func decayCandidateLines(g linkGraph, today time.Time, staleDays int) []string {
 	cutoff := today.AddDate(0, 0, -staleDays)
 	var candidates []graphArticle
 	for _, article := range g.Articles {
-		if article.Rolling || article.Outbound != 0 || hasNonGeneratedEdge(g.Inbound[article.Title]) {
+		if article.Rolling || article.Type == "person" || article.Outbound != 0 || hasNonGeneratedEdge(g.Inbound[article.Title]) {
 			continue
 		}
 		updated, err := time.Parse(dreamLinkDateLayout, article.Updated)

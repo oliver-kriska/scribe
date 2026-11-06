@@ -17,6 +17,7 @@ type graphArticle struct {
 	Path     string
 	Title    string
 	Rolling  bool
+	Type     string
 	Updated  string
 	Outbound int // distinct non-self, non-empty normalized link targets, any status
 }
@@ -73,7 +74,7 @@ func scanArticles(root string) (articleScan, error) {
 		}
 		scan.titleByRel[rel] = fm.Title
 		scan.articles = append(scan.articles, graphArticle{
-			Path: rel, Title: fm.Title, Rolling: fm.Rolling, Updated: stringFromAny(fm.Updated),
+			Path: rel, Title: fm.Title, Rolling: fm.Rolling, Type: fm.Type, Updated: stringFromAny(fm.Updated),
 		})
 		return nil
 	})

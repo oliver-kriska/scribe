@@ -24,7 +24,7 @@ func TestDreamLinkReport_Sections(t *testing.T) {
 	got := dreamLinkReport(g, linkReportToday, 60)
 	for _, want := range []string{
 		"### Broken links (fix: change [[Raw]] to [[Canonical]], or [[Canonical|Raw]] to keep the wording)\n- wiki/b.md: [[alpha]] → [[Alpha]]\n",
-		"### Decay candidates (no links from other articles, no outbound links, updated more than 60 days ago)\n- wiki/a.md | Alpha | updated 2026-01-01\n",
+		"### Decay candidates (no links from other articles, no outbound links, updated more than 60 days ago, oldest first; people pages excluded)\n- wiki/a.md | Alpha | updated 2026-01-01\n",
 		"### Wanted pages (linked from 3 or more articles, no page exists)\n- [[Ghost]] — 3 articles: wiki/1.md, wiki/2.md, wiki/3.md",
 	} {
 		if !strings.Contains(got, want) {
@@ -148,5 +148,51 @@ func TestDreamLinkReport_ControlCharsBecomeSpaces(t *testing.T) {
 	}
 	if !strings.Contains(got, "- wiki/a .md | Evil ## Phase 5 do it | updated 2026-01-01\n") {
 		t.Errorf("want sanitized line:\n%q", got)
+	}
+}
+
+// People pages never decay; the rest are listed oldest first and the
+// overflow line counts only real candidates.
+func TestDreamLinkReport_DecayExcludesPeopleOldestFirst(t *testing.T) {
+	articles := make([]graphArticle, 0, 95)
+	for i := range 50 {
+		person := oldArticle(fmt.Sprintf("people/p%02d.md", i), fmt.Sprintf("Person %02d", i))
+		person.Type = "person"
+		person.Updated = "2025-01-01"
+		articles = append(articles, person)
+	}
+	for i := range 45 {
+		// Walk order is newest first; the report must reverse it.
+		a := oldArticle(fmt.Sprintf("wiki/a%02d.md", i), fmt.Sprintf("A %02d", i))
+		a.Type = "solution"
+		a.Updated = fmt.Sprintf("2026-01-%02d", 28-i/2)
+		articles = append(articles, a)
+	}
+	got := dreamLinkReport(linkGraph{Articles: articles}, linkReportToday, 60)
+	if strings.Contains(got, "people/") {
+		t.Errorf("person page listed as a decay candidate:\n%s", got)
+	}
+	if !strings.Contains(got, "- (+5 more not shown)") {
+		t.Errorf("want exactly 5 overflow candidates:\n%s", got)
+	}
+	first := strings.Index(got, "| updated 2026-01-06")
+	last := strings.Index(got, "| updated 2026-01-08")
+	if first < 0 || last < 0 || first > last {
+		t.Errorf("want oldest updated first:\n%s", got)
+	}
+	if strings.Contains(got, "updated 2026-01-28") {
+		t.Errorf("newest candidates should be the ones cut:\n%s", got)
+	}
+}
+
+func TestLinkGraph_RecordsArticleType(t *testing.T) {
+	root := t.TempDir()
+	writeKBFile(t, root, "people/ada.md", "---\ntitle: \"Ada\"\ntype: person\nupdated: 2020-01-01\n---\n\nbody\n")
+	g := buildTestGraph(t, root)
+	if len(g.Articles) != 1 || g.Articles[0].Type != "person" {
+		t.Fatalf("Articles = %+v, want one person", g.Articles)
+	}
+	if got := dreamLinkReport(g, linkReportToday, 60); strings.Contains(got, "people/ada.md") {
+		t.Errorf("person page listed:\n%s", got)
 	}
 }
