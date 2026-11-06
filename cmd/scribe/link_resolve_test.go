@@ -135,14 +135,18 @@ func TestResolve_TitleWithCodeSpans(t *testing.T) {
 		{Title: "Alembic wraps `upgrade head` in ONE transaction", Path: "solutions/alembic.md"},
 		{Title: "Title with `code` inside", Path: "solutions/code-title.md"},
 	})
-	assertResolve(t, resolver, "Alembic wraps  in ONE transaction",
+	// A link written without the backticks still reaches the title by slug.
+	assertResolve(t, resolver, "Alembic wraps upgrade head in ONE transaction",
 		"Alembic wraps `upgrade head` in ONE transaction", linkFuzzy)
+	// The code-stripped remnant is no longer a key: nothing produces it.
+	assertResolve(t, resolver, "Alembic wraps  in ONE transaction",
+		"Alembic wraps  in ONE transaction", linkMissing)
 
 	links := extractWikilinks([]byte("See [[Title with `code` inside]] now."))
 	if len(links) != 1 {
 		t.Fatalf("extractWikilinks = %v, want one link", links)
 	}
-	assertResolve(t, resolver, links[0], "Title with `code` inside", linkFuzzy)
+	assertResolve(t, resolver, links[0], "Title with `code` inside", linkExact)
 }
 
 func TestResolve_HashInTitle(t *testing.T) {

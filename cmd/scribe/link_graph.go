@@ -144,9 +144,7 @@ func buildLinkGraph(root string) (linkGraph, error) {
 			}
 			seenTargets[target] = true
 			outbound[rel]++
-			// extractWikilinks strips code spans, so a link to a title with
-			// code arrives without it; the file text is already right.
-			if status == linkFuzzy && !edge.Generated && collapseSpace(stripCodeSpans(canonical)) != collapseSpace(target) {
+			if status == linkFuzzy && !edge.Generated && collapseSpace(canonical) != collapseSpace(target) {
 				graph.Broken = append(graph.Broken, brokenLink{Raw: cleanLinkTarget(raw), Canonical: canonical, SourcePath: rel})
 			}
 			if seenCanonical[canonical] {

@@ -280,15 +280,11 @@ func deduplicateYAMLKeys(yamlStr string) string {
 
 // extractWikilinks returns all [[Target]] links from markdown content.
 // Strips fenced code blocks AND inline code spans before scanning to avoid
-// false positives from code. Order matters: fenced blocks → double-backtick
-// spans → single-backtick spans. Double first because “ `foo` “ nests a
-// single-backtick pair inside a double-backtick span, and stripping single
-// first leaves a stray “ “ “ that throws off multiline parity.
+// false positives from code (see codeRanges). A code span inside the link
+// text stays: [[The `foo` flag]] yields "The `foo` flag".
 // Handles piped links [[Target|Display]] by extracting just the target.
 func extractWikilinks(content []byte) []string {
-	cleaned := codeFenceRE.ReplaceAll(content, nil)
-	cleaned = codeSpanDoubleRE.ReplaceAll(cleaned, nil)
-	cleaned = codeSpanRE.ReplaceAll(cleaned, nil)
+	cleaned := stripCode(content)
 	matches := wikilinkRE.FindAllSubmatch(cleaned, -1)
 	seen := make(map[string]bool)
 	var links []string

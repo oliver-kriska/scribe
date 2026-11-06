@@ -94,20 +94,11 @@ func entryKeys(tier int, entry resolverEntry) []string {
 			if slugSafe(name) {
 				keys = append(keys, slugify(name))
 			}
-			// extractWikilinks drops inline code spans from link text, so a
-			// link to a title containing code arrives without them.
-			if codeFree := stripCodeSpans(name); codeFree != name && slugSafe(codeFree) {
-				keys = append(keys, slugify(codeFree))
-			}
 		}
 		return keys
 	default:
 		return []string{strings.ToLower(strings.TrimSuffix(entry.Path, ".md"))}
 	}
-}
-
-func stripCodeSpans(text string) string {
-	return codeSpanRE.ReplaceAllString(codeSpanDoubleRE.ReplaceAllString(text, ""), "")
 }
 
 func targetKey(tier int, target string) string {

@@ -31,9 +31,7 @@ func (c *DebugWikilinksCmd) Run() error {
 
 	// Clean content the same way extractWikilinks does, so we can show
 	// what the real extractor sees (not just the naive regex matches).
-	cleaned := codeFenceRE.ReplaceAll(content, nil)
-	cleaned = codeSpanDoubleRE.ReplaceAll(cleaned, nil)
-	cleaned = codeSpanRE.ReplaceAll(cleaned, nil)
+	cleaned := stripCode(content)
 
 	// All raw matches (post-cleanup).
 	rawMatches := wikilinkRE.FindAllSubmatch(cleaned, -1)
