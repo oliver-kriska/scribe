@@ -2,6 +2,12 @@ You are working in {{KB_DIR}}. Read CLAUDE.md for the full Dream protocol and wr
 
 Execute all 4 phases of the Dream cycle. Today is {{DATE}}.
 
+## Your tools
+
+You have Read, Write, Edit, Glob and Grep. Bash runs only `wc`, `ls` and `find`, on their own or piped into each other. `find -delete` and `find -exec` are refused, and so is every other command (`cd`, `rm`, `python3`, `node`, `scribe`, `for` loops). There are no subagents, and you cannot delete files. For an article's inbound links, Grep `wiki/_backlinks.json` for its title (the file is keyed by title and too large to Read whole). Ignore any source ending in `_index.md`: the generated indexes link every article, so they don't count. The file reflects the KB before this cycle, so also Grep for `[[Title]]` in files you created or edited this cycle. Never edit a file whose name starts with `_` (such as `wiki/_index.md`, `wiki/_backlinks.json` or a hub `_index.md`): scribe generates them and regenerates the index and backlinks after this cycle. Do every sweep with Glob, Grep and Read (or `find` piped into `wc`).
+
+There is no later cycle with more tools. When a step would need a script, do it file by file now, or narrow it to what you can check that way and say in the log what you narrowed. Don't defer it.
+
 ## Phase 1 — ORIENT (read-only, no edits)
 
 Read wiki/_index.md to understand what exists. Scan 10-15 articles across different
@@ -54,14 +60,10 @@ in 3 or more articles but do not have their own wiki page. For each:
 - Do not create stubs for generic terms (e.g., 'database', 'deployment', 'testing')
   — only for specific named entities that carry project-specific meaning
 
-## Phase 4 — PRUNE AND INDEX
+## Phase 4 — PRUNE
 
-- Remove entries from _index.md that no longer exist on disk
 - Flag (do not delete) an article ONLY when ALL hold: zero inbound links, zero outbound wikilinks, AND its `updated:` date is more than 60 days before today. Add '<!-- decay-candidate {{DATE}} -->' as the last line. Never flag an article whose `updated:` is within the last 60 days — the marker asserts staleness, so marking a fresh article is self-contradictory and wrong.
-- Deleting a previously-flagged article requires RE-VERIFICATION from the article itself, never the marker alone (earlier runs stamped bogus markers on fresh docs). Open the article and confirm ALL of: its `updated:` is still more than 90 days before today, it still has zero inbound and outbound links, AND the `decay-candidate` marker it carries is itself dated more than 30 days ago. Only then delete. If the `updated:` date is recent, the marker is bogus — REMOVE THE MARKER and keep the article. Never delete more than 3 articles in a single cycle; list any further candidates in the dream log for human review instead of deleting them.
-- Verify every entry in _index.md has a matching file on disk
-- Rebuild wiki/_backlinks.json from scratch by scanning all wikilinks in all articles
-- Update article_count in _index.md frontmatter
+- Deleting a previously-flagged article requires RE-VERIFICATION from the article itself, never the marker alone (earlier runs stamped bogus markers on fresh docs). Open the article and confirm ALL of: its `updated:` is still more than 90 days before today, it still has zero inbound and outbound links, AND the `decay-candidate` marker it carries is itself dated more than 30 days ago. Only then is it a deletion candidate. You cannot delete files with these tools, so list each candidate, with the evidence for every condition, in the dream log for a human to delete. If the `updated:` date is recent, the marker is bogus — REMOVE THE MARKER and keep the article. List every candidate that meets all the conditions.
 
 Log everything you did in log.md using this format:
 ## [{{DATE}}] dream | One-line summary
