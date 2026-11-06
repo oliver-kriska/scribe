@@ -56,6 +56,8 @@ func TestDreamPrompts_UseOnlyLoaderVars(t *testing.T) {
 // find -delete/-exec. Measured 2026-10-23 on Claude Code 2.1.293. Cycles
 // that didn't know this spent turns on refused cd && …; for … loops and
 // python3/scribe calls. Anchors are kept to the load-bearing facts.
+// Re-measure against the installed CLI with `make live-probe`
+// (live_probe_test.go).
 func TestDreamPrompt_StatesActualToolGrant(t *testing.T) {
 	p := loadDreamPromptForTest(t, "dream.md")
 	for _, want := range []string{"`wc`, `ls` and `find`", "no subagents", "Ignore any source ending in `_index.md`"} {

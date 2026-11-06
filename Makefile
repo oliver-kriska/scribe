@@ -32,7 +32,7 @@ UNAME_S := $(shell uname -s)
 CODESIGN_IDENTITY ?= $(shell if [ "$(UNAME_S)" = "Darwin" ]; then security find-identity -v -p codesigning 2>/dev/null | awk '/"Developer ID Application:/{print $$2; exit}'; fi)
 CODESIGN_IDENTIFIER ?= scribe
 
-.PHONY: build sign install test tidy check fmt race lint vuln ci clean
+.PHONY: build sign install test tidy check fmt race lint vuln ci clean live-probe
 
 # Default target builds — matches existing muscle memory, but the output now
 # lands in ./bin/scribe instead of ~/.local/bin (deploy is `make install`).
@@ -67,6 +67,13 @@ install: sign ## Build, sign on macOS when possible, then deploy — the binary 
 
 test: ## Run tests
 	$(GO) test -tags "$(TAGS)" $(GOFLAGS) -count=1 -timeout 20m ./...
+
+# Opt-in, never in CI: calls the real `claude` CLI (your own login, a few
+# haiku tokens) with the monolithic dream's exact flags and tool grant, and
+# checks that `find -delete` is still refused and plain `ls` still allowed.
+# Run it after a Claude Code update; see live_probe_test.go.
+live-probe: ## Probe the dream's Bash grant against the installed claude CLI (opt-in, spends tokens)
+	SCRIBE_LIVE_CLAUDE=1 $(GO) test -tags "$(TAGS)" $(GOFLAGS) -count=1 -run TestLiveProbe -v $(PKG)
 
 race: ## Run tests with race detector
 	$(GO) test -race -tags "$(TAGS)" $(GOFLAGS) -count=1 -timeout 30m ./...

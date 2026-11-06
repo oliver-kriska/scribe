@@ -95,25 +95,12 @@ func readOnlyGitTools(repoPath string) []string {
 	return out
 }
 
-func realRunClaude(ctx context.Context, root, prompt, model string, tools []string, timeout time.Duration) (string, error) {
-	// Daily metered output-token ceiling: read once per call so a
-	// long-running absorb that crosses the ceiling mid-run aborts at
-	// the next claude -p invocation rather than barreling through.
-	// Falls open (no error) when the knob is zero or the env bypass
-	// is set — same shape as the rate-limit safety net below.
-	if cfg := loadConfig(root); cfg != nil {
-		if err := checkBudget(root, effectiveOutputTokenCeiling(cfg.Sync)); err != nil {
-			return "", err
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	// The prompt travels over stdin, never argv: argv is visible to
-	// every process on the machine (`ps`), and macOS caps it at 1 MiB —
-	// a dense raw article inlined into an absorb prompt used to fail
-	// with "argument list too long" before the model ever saw it.
+// claudeArgs builds the argv of one `claude -p` call: isolation flags,
+// JSON output, and the tool grant (--tools for the schema, --allowedTools
+// for the patterns). It carries no prompt; that goes over stdin. Shared by
+// realRunClaude and the opt-in live probe (live_probe_test.go), so the
+// probe exercises exactly the flags a real run sends.
+func claudeArgs(root, model string, tools []string) []string {
 	args := []string{
 		"-p",
 		"--no-session-persistence",
@@ -138,8 +125,9 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 		// wiki/_sessions_log.json (recordSessionProcessed); deny the model
 		// write access to it so a stray model write can't race Go's writer.
 		// A Write() rule is silently ignored, so the rule must be spelled
-		// Edit(); deny wins over allow. cmd.Dir is root (set below), so this
-		// cwd-relative pattern resolves to <root>/wiki/_sessions_log.json.
+		// Edit(); deny wins over allow. The caller runs claude with cmd.Dir
+		// = root, so this cwd-relative pattern resolves to
+		// <root>/wiki/_sessions_log.json.
 		//
 		// Measured against Claude Code 2.1.236, with Write granted and this
 		// rule set (see the PR for the harness): a Write to the named path is
@@ -153,6 +141,29 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 			"--disallowedTools", "Edit(wiki/_sessions_log.json)",
 		)
 	}
+	return args
+}
+
+func realRunClaude(ctx context.Context, root, prompt, model string, tools []string, timeout time.Duration) (string, error) {
+	// Daily metered output-token ceiling: read once per call so a
+	// long-running absorb that crosses the ceiling mid-run aborts at
+	// the next claude -p invocation rather than barreling through.
+	// Falls open (no error) when the knob is zero or the env bypass
+	// is set — same shape as the rate-limit safety net below.
+	if cfg := loadConfig(root); cfg != nil {
+		if err := checkBudget(root, effectiveOutputTokenCeiling(cfg.Sync)); err != nil {
+			return "", err
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// The prompt travels over stdin, never argv: argv is visible to
+	// every process on the machine (`ps`), and macOS caps it at 1 MiB —
+	// a dense raw article inlined into an absorb prompt used to fail
+	// with "argument list too long" before the model ever saw it.
+	args := claudeArgs(root, model, tools)
 
 	// Phase 3D: start timer for the cost ledger. The deferred append
 	// fires regardless of return path so even errors get recorded.

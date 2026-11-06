@@ -18,6 +18,7 @@ import (
 // discipline before; this makes it the package floor. Tests that need
 // their own isolated HOME still override via t.Setenv.
 func TestMain(m *testing.M) {
+	captureLiveProbeEnv() // before HOME and SCRIBE_* are scrubbed below
 	scratch, err := os.MkdirTemp("", "scribe-test-home-")
 	if err != nil {
 		panic(err)
