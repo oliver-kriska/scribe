@@ -2,6 +2,25 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [Unreleased]
+
+### Fixed
+
+- **A mined session is no longer frozen at the moment it was mined
+  (#146).** Sessions are admitted while still open, and envelope mode (and
+  the tools-mode large prompt) never showed the model the middle of a long
+  transcript, but the session was marked processed and never read again.
+  Each processed entry now records `through_seq`, the ccrider sequence of
+  the last message the model was shown. A new remine pass at the end of
+  `sync --sessions` mines what came after it, through the envelope path,
+  with a header naming the pages already written from the session so the
+  model appends instead of re-creating them. Settings under
+  `session_mine:`: `remine` (default on), `remine_min_new_chars` (20000),
+  `remine_quiet_hours` (6), `remine_max_per_run` (2). Entries written
+  before this release carry no `through_seq` and are never re-mined, so
+  an upgrade does not start re-mining old history. The sessions-log git
+  merge keeps the higher `through_seq` of the two sides.
+
 ## [0.6.1] — 2026-11-06
 
 Follow-ups found while smoke-testing 0.6.0 on a ~12k-article KB.

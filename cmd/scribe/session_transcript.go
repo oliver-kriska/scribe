@@ -126,34 +126,7 @@ func roleFromCcriderType(s string) string {
 func renderTranscriptForPrompt(turns []sessionTurn, maxChars int) string {
 	var sb strings.Builder
 	for _, t := range turns {
-		switch t.Role {
-		case "user":
-			sb.WriteString("## USER\n\n")
-		case "assistant":
-			sb.WriteString("## ASSISTANT\n\n")
-		case "system":
-			sb.WriteString("## SYSTEM\n\n")
-		case "tool":
-			sb.WriteString("## TOOL\n\n")
-		}
-		if t.Text != "" {
-			sb.WriteString(t.Text)
-			sb.WriteString("\n")
-		}
-		if t.ToolText != "" {
-			// Trim per-turn tool payloads so a single big edit
-			// doesn't push the transcript past the model's
-			// context. 1200 chars head + tail keeps the verb
-			// and result visible.
-			tool := t.ToolText
-			if len(tool) > 1200 {
-				tool = truncateBytes(tool, 600) + "\n…\n" + tailBytes(tool, 600)
-			}
-			sb.WriteString("\n[tool] ")
-			sb.WriteString(tool)
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\n")
+		sb.WriteString(renderTurn(t))
 	}
 	rendered := sb.String()
 	if maxChars <= 0 || len(rendered) <= maxChars {
@@ -167,4 +140,40 @@ func renderTranscriptForPrompt(turns []sessionTurn, maxChars int) string {
 		return rendered
 	}
 	return rendered[:half] + "\n\n[…transcript truncated for prompt budget…]\n\n" + rendered[len(rendered)-half:]
+}
+
+// renderTurn renders one turn the way renderTranscriptForPrompt does.
+// Shared with the watermark code so "how much was shown" is measured on
+// exactly the rendered text.
+func renderTurn(t sessionTurn) string {
+	var sb strings.Builder
+	switch t.Role {
+	case "user":
+		sb.WriteString("## USER\n\n")
+	case "assistant":
+		sb.WriteString("## ASSISTANT\n\n")
+	case "system":
+		sb.WriteString("## SYSTEM\n\n")
+	case "tool":
+		sb.WriteString("## TOOL\n\n")
+	}
+	if t.Text != "" {
+		sb.WriteString(t.Text)
+		sb.WriteString("\n")
+	}
+	if t.ToolText != "" {
+		// Trim per-turn tool payloads so a single big edit
+		// doesn't push the transcript past the model's
+		// context. 1200 chars head + tail keeps the verb
+		// and result visible.
+		tool := t.ToolText
+		if len(tool) > 1200 {
+			tool = truncateBytes(tool, 600) + "\n…\n" + tailBytes(tool, 600)
+		}
+		sb.WriteString("\n[tool] ")
+		sb.WriteString(tool)
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+	return sb.String()
 }

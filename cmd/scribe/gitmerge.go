@@ -132,8 +132,13 @@ func mergeSessionsLogContent(ours, theirs []byte) []byte {
 	merged := processed(ourDoc)
 	for id, theirEntry := range processed(theirDoc) {
 		ourEntry, ok := merged[id]
-		if !ok || sessionEntryNewer(theirEntry, ourEntry) {
+		switch {
+		case !ok:
 			merged[id] = theirEntry
+		case sessionEntryNewer(theirEntry, ourEntry):
+			merged[id] = withHigherWatermark(theirEntry, ourEntry)
+		default:
+			merged[id] = withHigherWatermark(ourEntry, theirEntry)
 		}
 	}
 
@@ -258,4 +263,42 @@ func mergeUnionLines(ours, theirs []byte) []byte {
 		out += strings.Join(extra, "\n") + "\n"
 	}
 	return []byte(out)
+}
+
+// withHigherWatermark returns winner, carrying other's through_seq when it
+// is higher: a watermark never moves back on merge, whichever side's
+// timestamp wins (session_watermark.go).
+func withHigherWatermark(winner, other json.RawMessage) json.RawMessage {
+	var winnerEntry, otherEntry any
+	if json.Unmarshal(winner, &winnerEntry) != nil || json.Unmarshal(other, &otherEntry) != nil {
+		return winner
+	}
+	otherSeq, ok := entryThroughSeq(otherEntry)
+	winnerSeq, _ := entryThroughSeq(winnerEntry)
+	if !ok || otherSeq <= winnerSeq {
+		return winner
+	}
+	var carried any
+	switch w := winnerEntry.(type) {
+	case map[string]any:
+		copied := make(map[string]any, len(w)+1)
+		for k, v := range w {
+			copied[k] = v
+		}
+		copied[sessionsLogThroughSeqKey] = otherSeq
+		delete(copied, sessionsLogPartialKey)
+		if entryPartial(otherEntry) {
+			copied[sessionsLogPartialKey] = true
+		}
+		carried = copied
+	case string:
+		carried = sessionsLogEntry(nil, w, mineMark{ThroughSeq: otherSeq, Partial: entryPartial(otherEntry)})
+	default:
+		return winner
+	}
+	data, err := json.Marshal(carried)
+	if err != nil {
+		return winner
+	}
+	return data
 }

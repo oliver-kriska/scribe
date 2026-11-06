@@ -205,6 +205,26 @@ type SessionMineConfig struct {
 	// 16384 is the floor for the default TranscriptMaxChars; bump
 	// alongside any TranscriptMaxChars increase.
 	NumCtx int `yaml:"num_ctx"`
+	// Remine turns the remine lane on (default true): a mined session that
+	// grew past its watermark (session_watermark.go) is mined again, delta
+	// only. Only sessions mined by a build that records watermarks are
+	// eligible, so turning it on never re-mines older history.
+	Remine *bool `yaml:"remine"`
+	// RemineMinNewChars is the new content (rendered-size estimate) a
+	// session needs past its watermark before it is re-mined. Default 20000.
+	RemineMinNewChars int `yaml:"remine_min_new_chars"`
+	// RemineQuietHours is how long a session must be idle before a re-mine,
+	// so an open session is mined once it settles, not on every run.
+	// Default 6.
+	RemineQuietHours int `yaml:"remine_quiet_hours"`
+	// RemineMaxPerRun caps re-mines per sync run (each is one LLM call).
+	// Default 2.
+	RemineMaxPerRun int `yaml:"remine_max_per_run"`
+}
+
+// remineEnabled reports whether the remine lane runs (nil = default on).
+func (c SessionMineConfig) remineEnabled() bool {
+	return c.Remine == nil || *c.Remine
 }
 
 // CodexConfig controls C3 Codex session mining: distilling Codex CLI
@@ -515,6 +535,15 @@ func applySessionMineDefaults(cfg *SessionMineConfig, llm LLMConfig) {
 	}
 	if cfg.TimeoutMin <= 0 {
 		cfg.TimeoutMin = 8
+	}
+	if cfg.RemineMinNewChars <= 0 {
+		cfg.RemineMinNewChars = 20000
+	}
+	if cfg.RemineQuietHours <= 0 {
+		cfg.RemineQuietHours = 6
+	}
+	if cfg.RemineMaxPerRun <= 0 {
+		cfg.RemineMaxPerRun = 2
 	}
 	// Default TranscriptMaxChars 24000 + prompt skeleton + related
 	// sessions block lands at 6-7K tokens. 16384 is the floor; raising
