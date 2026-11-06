@@ -264,6 +264,27 @@ func TestOrphansSkipSupersededAliases(t *testing.T) {
 	}
 }
 
+// A superseded article that shares a live article's title or alias must
+// not exempt the live one from the orphan report: the live article owns
+// the name, as it does in _backlinks.json.
+func TestOrphansReportLiveArticleSharingASupersededName(t *testing.T) {
+	root := orphanFixture(t)
+	writeKBFile(t, root, "wiki/other-dup.md",
+		"---\ntitle: \"Other Note\"\ntype: pattern\ndomain: general\nstatus: superseded\n---\n\nStub.\n")
+	writeKBFile(t, root, "wiki/alias-dup.md",
+		"---\ntitle: \"Older Note\"\naliases: [Other Note]\ntype: pattern\ndomain: general\nstatus: superseded\n---\n\nStub.\n")
+	g, err := buildLinkGraph(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := graphOrphans(g); !slices.Equal(got, []string{"Other Note"}) {
+		t.Errorf("orphans = %v, want [Other Note]", got)
+	}
+	if g.SupersededTitles["Other Note"] {
+		t.Error("a title a live article holds was marked superseded-only")
+	}
+}
+
 func TestLinkOrphanFlagRejectsSupersededArticle(t *testing.T) {
 	supersededTestKB(t)
 	runBacklinks(t)
