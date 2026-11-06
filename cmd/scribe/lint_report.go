@@ -19,6 +19,7 @@ const (
 	lintClassSelfNamedDir       = "directory named after the KB"
 	lintClassNestedFrontmatter  = "nested frontmatter map"
 	lintClassFixableFrontmatter = "fixable frontmatter"
+	lintClassSplitRelated       = "split related: entry"
 )
 
 // lintHints maps a warning class to the command that remediates it.
@@ -32,6 +33,7 @@ var lintHints = map[string]string{
 	lintClassFilenameAsTitle:    "scribe lint --fix",
 	lintClassNestedFrontmatter:  "scribe lint --fix",
 	lintClassFixableFrontmatter: "scribe lint --fix",
+	lintClassSplitRelated:       "scribe lint --fix",
 }
 
 // lintReviewGuidance maps a warning class that has NO fix command — the

@@ -22,7 +22,7 @@ type LintCmd struct {
 	DryRun         bool    `help:"For --contradictions and --fix: preview without calling LLM / writing files." short:"n"`
 	OutputMD       string  `help:"For --contradictions: override the output markdown path." default:""`
 
-	Fix bool `help:"Deterministically repair frontmatter: missing tags/related/sources/confidence/domain/dates; normalize YYYY/MM/DD → YYYY-MM-DD; clamp a future created/updated to today; strip trailing whitespace. Never touches title/type. On a full run (no files / not --changed) also removes self-ingestion duplicate pages (foo.md.md, foo_md.md), collapses byte-identical duplicate pages, and removes paths with an unsubstituted {{VAR}} template placeholder — all git-recoverable."`
+	Fix bool `help:"Deterministically repair frontmatter: missing tags/related/sources/confidence/domain/dates; normalize YYYY/MM/DD → YYYY-MM-DD; clamp a future created/updated to today; rejoin related: entries split at a comma inside a title (drop leftover fragments with unbalanced brackets); strip trailing whitespace. Never touches title/type. On a full run (no files / not --changed) also removes self-ingestion duplicate pages (foo.md.md, foo_md.md), collapses byte-identical duplicate pages, and removes paths with an unsubstituted {{VAR}} template placeholder — all git-recoverable."`
 
 	Resolve    bool `help:"Read wiki/_contradictions.md, weigh pairs by authority+updated+confidence, write proposals to wiki/_resolution-proposals.md. Never auto-applies — human reviews."`
 	Identities bool `help:"Detect same-person mentions across wiki + raw (emails, @handles, name variants) and write clustering proposals to wiki/_identity-proposals.md."`
@@ -145,6 +145,7 @@ func (l *LintCmd) targetFiles(root string) ([]string, error) {
 // once, matching the historical summary) while still printing every
 // finding per-file.
 func lintFrontmatter(rep *lintReport, root string, files []string) {
+	known := kbTitleLookup(root)
 	for _, path := range files {
 		rel := relPath(root, path)
 		errs := validateFile(root, path)
@@ -166,7 +167,13 @@ func lintFrontmatter(rep *lintReport, root string, files []string) {
 		if err != nil {
 			continue
 		}
-		if changes, out, ferr := autoFixArticle(root, rel, content); ferr == nil && out != nil && len(changes) > 0 {
+		// A related: list cut at a comma inside a title: its own class, so
+		// the summary names it. --fix repairs it with the same helper.
+		if notes := splitRelatedFindings(content, known); len(notes) > 0 {
+			rep.warnf(lintClassSplitRelated, "%s: %s", rel, strings.Join(notes, "; "))
+			continue
+		}
+		if changes, out, ferr := autoFixArticleWith(root, rel, content, known); ferr == nil && out != nil && len(changes) > 0 {
 			rep.warnf(lintClassFixableFrontmatter, "%s: %s", rel, changes[0])
 		}
 		lintSupersededMarkers(rep, rel, content)

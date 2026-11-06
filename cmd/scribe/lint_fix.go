@@ -24,6 +24,8 @@ import (
 //   - reformat 2026/04/20 or 2026.04.20 → 2026-04-20 in created/updated
 //   - clamp a future created/updated to today (a past one may be real)
 //   - strip trailing whitespace on every line
+//   - rejoin related: entries cut at a comma inside a title and drop
+//     leftover fragments with unbalanced brackets (repairRelatedLines)
 //   - clamp an invalid/missing `type` to the path's canonical type
 //     (decisions/→decision, …; wiki/ & sessions/ → research). The
 //     directory IS the taxonomy (validate.go: validTypes "mirrors the
@@ -96,6 +98,13 @@ func normalizeOpeningFence(s string) (string, openingFenceKind) {
 }
 
 func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) {
+	return autoFixArticleWith(root, rel, content, nil)
+}
+
+// autoFixArticleWith is autoFixArticle with a KB title lookup for the
+// related: split repair (repairSplitRelated). A nil known limits that
+// repair to bracket balance.
+func autoFixArticleWith(root, rel string, content []byte, known func(string) bool) ([]string, []byte, error) {
 	s := string(content)
 	joinedFence := false
 	openingFenceFixed := false
@@ -262,6 +271,14 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 	if newLines, didFix := normalizeAliasesBlock(lines); didFix {
 		lines = newLines
 		changes = append(changes, "normalized aliases block (quoting/indent/dedup)")
+	}
+
+	// Rejoin related: entries a comma split cut out of one title, and drop
+	// leftover fragments with unbalanced brackets. Only the related: lines
+	// are rewritten.
+	if newLines, notes := repairRelatedLines(lines, known); len(notes) > 0 {
+		lines = newLines
+		changes = append(changes, notes...)
 	}
 
 	// Append missing keys with safe defaults.
@@ -815,13 +832,14 @@ func padTwo(s string) string {
 // runLintFix applies autoFixArticle across the set of files and reports
 // totals. Files are rewritten in place unless dryRun is true.
 func runLintFix(root string, files []string, dryRun bool) (fixed, skipped int, err error) {
+	known := kbTitleLookup(root)
 	for _, path := range files {
 		data, rErr := os.ReadFile(path)
 		if rErr != nil {
 			skipped++
 			continue
 		}
-		changes, newContent, fErr := autoFixArticle(root, relPath(root, path), data)
+		changes, newContent, fErr := autoFixArticleWith(root, relPath(root, path), data, known)
 		if fErr != nil {
 			fmt.Printf("  SKIP %s: %v\n", relPath(root, path), fErr)
 			skipped++

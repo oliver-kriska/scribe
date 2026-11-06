@@ -107,22 +107,32 @@ func anyKnown(names []string, known func(string) bool) bool {
 	return false
 }
 
-// repairRelatedValue applies repairSplitRelated to a decoded related: value
-// ([]any or []string of strings). Any other shape is returned unchanged.
-func repairRelatedValue(v any, known func(string) bool) (any, []string) {
-	var entries []string
+// relatedStrings returns a decoded related: value as strings, or ok=false
+// when it is not a list of strings.
+func relatedStrings(v any) ([]string, bool) {
 	switch list := v.(type) {
 	case []string:
-		entries = list
+		return list, true
 	case []any:
+		entries := make([]string, 0, len(list))
 		for _, item := range list {
 			s, ok := item.(string)
 			if !ok {
-				return v, nil
+				return nil, false
 			}
 			entries = append(entries, s)
 		}
+		return entries, true
 	default:
+		return nil, false
+	}
+}
+
+// repairRelatedValue applies repairSplitRelated to a decoded related: value.
+// A value that is not a list of strings is returned unchanged.
+func repairRelatedValue(v any, known func(string) bool) (any, []string) {
+	entries, ok := relatedStrings(v)
+	if !ok {
 		return v, nil
 	}
 	repaired, notes := repairSplitRelated(entries, known)
