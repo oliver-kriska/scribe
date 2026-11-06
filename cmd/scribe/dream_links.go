@@ -129,6 +129,11 @@ type wantedGroup struct {
 func wantedPageLines(g linkGraph) []string {
 	groups := map[string]*wantedGroup{}
 	for raw, edges := range g.Missing {
+		// An unbalanced bracket marks a split artifact ("2026-10-09)"), not
+		// a page anyone meant to link.
+		if !bracketsBalanced(raw) {
+			continue
+		}
 		key := slugify(raw)
 		if key == "" {
 			key = "\x00" + raw // empty slug: its own group per key

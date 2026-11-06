@@ -754,6 +754,14 @@ func applyUpdateFrontmatterAction(res *ApplyResult, i int, abs string, a WikiAct
 		}
 		updates = kept
 	}
+	if related, has := updates["related"]; has {
+		if repaired, notes := repairRelatedValue(related, nil); len(notes) > 0 {
+			logMsg("envelope", "action[%d] update_frontmatter %s: %s", i, a.Path, strings.Join(notes, "; "))
+			cp := maps.Clone(updates) // shared with the caller's envelope
+			cp["related"] = repaired
+			updates = cp
+		}
+	}
 	if opts.DryRun {
 		res.Skipped = append(res.Skipped, a.Path)
 		return
@@ -1441,8 +1449,11 @@ func normalizeRelatedFrontmatter(content string) string {
 
 	var names []string
 	if m := relatedWikiRE.FindAllStringSubmatch(region, -1); len(m) > 0 {
+		// One [[…]] is one link: a comma inside it belongs to the title
+		// ("Default Target Stack (Verified Current Versions, 2026-10-09)").
+		// Splitting it here wrote the halves back as two broken links.
 		for _, g := range m {
-			names = append(names, splitRelatedTokens(g[1])...)
+			names = append(names, splitRelatedLines(g[1])...)
 		}
 	} else if m := relatedBracketRE.FindAllStringSubmatch(region, -1); len(m) > 0 {
 		for _, g := range m {
@@ -1452,8 +1463,7 @@ func normalizeRelatedFrontmatter(content string) string {
 		names = splitRelatedTokens(region)
 	}
 
-	seen := map[string]struct{}{}
-	clean := make([]string, 0, len(names))
+	trimmed := make([]string, 0, len(names))
 	for _, n := range names {
 		n = strings.TrimSpace(strings.Trim(strings.TrimSpace(n), `"'[]`))
 		// A recovered name is about to be embedded in a double-quoted
@@ -1465,9 +1475,18 @@ func normalizeRelatedFrontmatter(content string) string {
 		// them degrades to an orphan wikilink at worst — soft, the
 		// linker tolerates it — never to broken frontmatter.
 		n = sanitizeRelatedName(n)
-		if n == "" {
-			continue
+		if n != "" {
+			trimmed = append(trimmed, n)
 		}
+	}
+	// A model (or the bare-list fallback above) may still hand over a
+	// title cut at its comma; rejoin halves whose brackets only balance
+	// together and drop a leftover unbalanced fragment.
+	trimmed, _ = repairSplitRelated(trimmed, nil)
+
+	seen := map[string]struct{}{}
+	clean := make([]string, 0, len(trimmed))
+	for _, n := range trimmed {
 		if _, dup := seen[n]; dup {
 			continue
 		}
@@ -1525,6 +1544,11 @@ func splitRelatedTokens(s string) []string {
 		}
 	}
 	return out
+}
+
+// splitRelatedLines splits a captured [[…]] body on line breaks only.
+func splitRelatedLines(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' })
 }
 
 // normalizeEnvelopeRelated applies normalizeRelatedFrontmatter to every
