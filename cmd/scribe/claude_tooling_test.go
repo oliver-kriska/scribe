@@ -13,23 +13,26 @@ func TestIsClaudeToolingRelPath(t *testing.T) {
 		rel  string
 		want bool
 	}{
-		{".claude/rules/angular.md", true},
 		{".claude/agents/reviewer.md", true},
 		{".claude/commands/ship.md", true},
-		{".claude/skills/kb/SKILL.md", true},
+		{".claude/hooks/notes.md", true},
+		{".claude/plugins/local/README.md", true},
 		{".claude/output-styles/terse.md", true},
+		// Project memory and project skills are knowledge, not tooling.
+		{".claude/rules/angular.md", false},
+		{".claude/skills/kb/SKILL.md", false},
 		// Nested checkouts are nestedCheckout's job, not this list's.
 		{".claude/worktrees/feature/docs/design.md", false},
-		{"pkg/.claude/rules/x.md", true},
+		{"pkg/.claude/agents/x.md", true},
 		// Knowledge the extract prompts read on purpose.
 		{".claude/plans/migration.md", false},
 		{".claude/research/2026-01-01-topic.md", false},
 		{".claude/solutions/fix.md", false},
 		// The KB drop folder.
 		{".claude/scribe/2026-01-01-drop.md", false},
-		{".claude-notes/rules/x.md", false},
-		{"docs/rules/x.md", false},
-		{"rules/.claude", false},
+		{".claude-notes/agents/x.md", false},
+		{"docs/agents/x.md", false},
+		{"agents/.claude", false},
 	}
 	for _, c := range cases {
 		if got := isClaudeToolingRelPath(c.rel); got != c.want {
@@ -44,7 +47,7 @@ func TestIsClaudeToolingRelPath(t *testing.T) {
 func TestExcludeClaudeToolingIgnoresClaudeAboveRepo(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "main", claudeToolingDir, "worktrees", "feature")
 	knowledge := filepath.Join(repo, "docs", "design.md")
-	tooling := filepath.Join(repo, claudeToolingDir, "rules", "angular.md")
+	tooling := filepath.Join(repo, claudeToolingDir, "agents", "reviewer.md")
 
 	got := excludeClaudeTooling(repo, []string{knowledge, tooling})
 
@@ -70,20 +73,21 @@ func relPaths(t *testing.T, root string, files []string) []string {
 func TestGitChangedFilesSkipsClaudeToolingOnBothPaths(t *testing.T) {
 	repo := initTestGitRepo(t, "Extract Tester")
 	writeTestArticle(t, repo, "docs/design.md", "real project knowledge\n")
-	writeTestArticle(t, repo, ".claude/rules/angular.md", "tooling config\n")
+	writeTestArticle(t, repo, ".claude/agents/reviewer.md", "tooling config\n")
 	writeTestArticle(t, repo, ".claude/plans/migration.md", "a plan\n")
+	writeTestArticle(t, repo, ".claude/rules/angular.md", "project memory\n")
 	writeTestArticle(t, repo, ".claude-notes/a.md", "not tooling\n")
 	gitRun(t, repo, "add", ".")
 	gitRun(t, repo, "commit", "-q", "-m", "init")
 
 	first := relPaths(t, repo, gitChangedFiles(repo, "", []string{"*.md"}))
-	want := []string{".claude-notes/a.md", ".claude/plans/migration.md", "docs/design.md"}
+	want := []string{".claude-notes/a.md", ".claude/plans/migration.md", ".claude/rules/angular.md", "docs/design.md"}
 	if !slices.Equal(first, want) {
 		t.Errorf("first extraction (ls-files) = %v, want %v", first, want)
 	}
 
 	base := strings.TrimSpace(runCmd("", "git", "-C", repo, "rev-parse", "HEAD"))
-	writeTestArticle(t, repo, ".claude/rules/angular.md", "tooling config, edited\n")
+	writeTestArticle(t, repo, ".claude/agents/reviewer.md", "tooling config, edited\n")
 	writeTestArticle(t, repo, ".claude/plans/migration.md", "a plan, edited\n")
 	gitRun(t, repo, "commit", "-q", "-am", "edit")
 
@@ -99,8 +103,8 @@ func TestGitChangedFilesFallbackWalkSkipsClaudeTooling(t *testing.T) {
 	dir := t.TempDir()
 	writeTestArticle(t, dir, "docs/design.md", "knowledge\n")
 	writeTestArticle(t, dir, ".claude/plans/migration.md", "a plan\n")
-	writeTestArticle(t, dir, ".claude/rules/angular.md", "tooling\n")
-	writeTestArticle(t, dir, ".claude/skills/kb/SKILL.md", "tooling\n")
+	writeTestArticle(t, dir, ".claude/agents/reviewer.md", "tooling\n")
+	writeTestArticle(t, dir, ".claude/commands/ship.md", "tooling\n")
 
 	got := relPaths(t, dir, gitChangedFiles(dir, "", []string{"*.md"}))
 	want := []string{".claude/plans/migration.md", "docs/design.md"}
@@ -113,8 +117,8 @@ func TestFindKnowledgeDirsSkipsClaudeTooling(t *testing.T) {
 	dir := t.TempDir()
 	writeTestArticle(t, dir, "docs/design.md", "knowledge\n")
 	writeTestArticle(t, dir, ".claude/plans/migration.md", "a plan\n")
-	writeTestArticle(t, dir, ".claude/rules/angular.md", "tooling\n")
-	writeTestArticle(t, dir, ".claude/skills/kb/SKILL.md", "tooling\n")
+	writeTestArticle(t, dir, ".claude/agents/reviewer.md", "tooling\n")
+	writeTestArticle(t, dir, ".claude/commands/ship.md", "tooling\n")
 
 	dirs, err := findKnowledgeDirs(dir)
 	if err != nil {
@@ -130,7 +134,7 @@ func TestFindKnowledgeDirsSkipsClaudeTooling(t *testing.T) {
 // A walk rooted inside a tooling dir still walks: only directories below
 // the root are skipped.
 func TestFindKnowledgeDirsWalksRootInsideClaudeTooling(t *testing.T) {
-	root := filepath.Join(t.TempDir(), claudeToolingDir, "skills")
+	root := filepath.Join(t.TempDir(), claudeToolingDir, "commands")
 	writeTestArticle(t, root, "docs/design.md", "knowledge\n")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
@@ -151,8 +155,8 @@ func TestCollectKnowledgeFilesSkipsClaudeTooling(t *testing.T) {
 	dir := t.TempDir()
 	writeTestArticle(t, dir, "docs/design.md", "knowledge\n")
 	writeTestArticle(t, dir, ".claude/plans/migration.md", "a plan\n")
-	writeTestArticle(t, dir, ".claude/rules/angular.md", "tooling\n")
-	writeTestArticle(t, dir, ".claude/skills/kb/SKILL.md", "tooling\n")
+	writeTestArticle(t, dir, ".claude/agents/reviewer.md", "tooling\n")
+	writeTestArticle(t, dir, ".claude/commands/ship.md", "tooling\n")
 
 	got := collectKnowledgeFiles(dir)
 	want := []string{"./.claude/plans/migration.md", "./docs/design.md"}
@@ -167,10 +171,10 @@ func TestAssessSourceTreeSkipsClaudeTooling(t *testing.T) {
 	dir := t.TempDir()
 	writeTestArticle(t, dir, "lib/app.ex", "defmodule App do end\n")
 	writeTestArticle(t, dir, ".claude/plans/migration.md", "a plan\n")
-	writeTestArticle(t, dir, ".claude/skills/kb/SKILL.md", "tooling\n")
+	writeTestArticle(t, dir, ".claude/commands/ship.md", "tooling\n")
 
 	tree := assessSourceTree(dir, 200)
-	if strings.Contains(tree, "skills") {
+	if strings.Contains(tree, "commands") {
 		t.Errorf("assess tree includes a tooling dir:\n%s", tree)
 	}
 	for _, want := range []string{"lib/app.ex", ".claude/plans/migration.md"} {
@@ -180,10 +184,10 @@ func TestAssessSourceTreeSkipsClaudeTooling(t *testing.T) {
 	}
 }
 
-// The model globs for itself in tools mode, so both extract prompts must
+// The model globs for itself in tools mode, so the extract and assess-docs prompts must
 // name every directory the Go file selection skips.
 func TestExtractPromptsNameClaudeToolingDirs(t *testing.T) {
-	for _, name := range []string{"extract.md", "extract-anthropic.md"} {
+	for _, name := range []string{"extract.md", "extract-anthropic.md", "assess-docs.md"} {
 		prompt, err := loadPrompt(name, map[string]string{"CLAUDE_TOOLING_DIRS": claudeToolingPromptList()})
 		if err != nil {
 			t.Fatalf("load %s: %v", name, err)

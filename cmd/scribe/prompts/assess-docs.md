@@ -10,7 +10,7 @@ Scope:
 - Rate each doc: current | stale | historical. A doc is "stale" if its claims contradict the current code or refer to a state of the project that no longer exists.
 
 What to read:
-- Glob for *.md across the project (excluding deps/, node_modules/, _build/, and nested checkouts: .claude/worktrees/, .worktrees/, submodules)
+- Glob for *.md across the project (excluding deps/, node_modules/, _build/, nested checkouts: .claude/worktrees/, .worktrees/, submodules, and Claude Code tooling, which is configuration rather than documentation: {{CLAUDE_TOOLING_DIRS}})
 - Read only the top of each file (first 50 lines) to identify its purpose and freshness
 - For files in .claude/, read the title + first paragraph only
 

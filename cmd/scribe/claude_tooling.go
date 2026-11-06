@@ -10,8 +10,14 @@ import (
 const claudeToolingDir = ".claude"
 
 // claudeToolingSubdirs are the .claude/ subdirectories that hold Claude Code
-// tooling — agent, command, rule, skill, hook, plugin and output-style
-// definitions — rather than project knowledge. Extraction skips them.
+// tooling — agent, command, hook, plugin and output-style definitions —
+// rather than project knowledge. Extraction skips them.
+//
+// rules/ and skills/ are deliberately NOT listed. rules/*.md is project
+// memory, CLAUDE.md split into files, and extraction reads CLAUDE.md as its
+// strongest source of project framing. A project skill's SKILL.md and
+// references/ often hold real domain knowledge (API conventions, runbooks),
+// and the same files under .agents/skills/ are read anyway (#131).
 //
 // .claude/ as a whole is NOT excluded: its other subdirectories (research/,
 // plans/, analysis/, solutions/, lessons/, …) are knowledge sources the
@@ -21,8 +27,6 @@ const claudeToolingDir = ".claude"
 var claudeToolingSubdirs = map[string]bool{
 	"agents":        true,
 	"commands":      true,
-	"rules":         true,
-	"skills":        true,
 	"hooks":         true,
 	"plugins":       true,
 	"output-styles": true,
