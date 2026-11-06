@@ -126,10 +126,11 @@ func runDuplicatesCheck(threshold float64, outputMD string, dryRun bool) error {
 // skipping aggregation files (rolling memory, archives) — those deliberately
 // accumulate many unrelated topics, so they're not duplicate candidates and
 // would otherwise match every small note that shares a word with them.
+// Superseded articles are skipped too: they are already-resolved duplicates.
 func collectContentDocs(root string) []contentDoc {
 	var docs []contentDoc
 	_ = walkArticles(root, func(path string, content []byte) error {
-		if isAggregationArticle(relPath(root, path), content) {
+		if excludedFromDuplicates(relPath(root, path), content) {
 			return nil
 		}
 		body := stripFrontmatterBody(content)
@@ -149,11 +150,12 @@ func collectContentDocs(root string) []contentDoc {
 	return docs
 }
 
-// isAggregationArticle reports whether an article is a rolling/aggregation
-// file (learnings, decisions-log, yearly archives) that collects many topics
-// and so must be excluded from duplicate detection.
-func isAggregationArticle(rel string, content []byte) bool {
-	if fm, err := parseFrontmatter(content); err == nil && fm != nil && fm.Rolling {
+// excludedFromDuplicates reports whether an article is left out of
+// duplicate detection: rolling/aggregation files (learnings, decisions-log,
+// yearly archives) collect many topics, and superseded articles are
+// already resolved duplicates.
+func excludedFromDuplicates(rel string, content []byte) bool {
+	if fm, err := parseFrontmatter(content); err == nil && fm != nil && (fm.Rolling || isSuperseded(fm)) {
 		return true
 	}
 	base := filepath.Base(rel)

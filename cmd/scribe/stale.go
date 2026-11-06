@@ -59,10 +59,10 @@ type StalenessEntry struct {
 // Defaults are conservative — better to under-flag than to nag the user
 // into ignoring the ledger. scribe.yaml override ships in v2.
 func halfLifeDays(articleType, status string) int {
-	if articleType == "research" && status == "superseded" {
+	if articleType == "research" && status == statusSuperseded {
 		return 0
 	}
-	if articleType == "decision" && status == "superseded" {
+	if articleType == "decision" && status == statusSuperseded {
 		return 0
 	}
 	switch articleType {

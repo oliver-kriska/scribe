@@ -77,13 +77,13 @@ Don't remove it; only set it manually when writing on someone's behalf.
 
 ### Type-specific fields
 
-**project**: `status` (active | paused | completed | idea), `stack`
+**project**: `status` (active | paused | completed | idea | superseded), `stack`
 **tool**: `url`, `verdict` (use | evaluate | skip), `alternatives`
 **person**: `role`, `context`
 **decision**: `status` (decided | reconsidering | superseded), `date_decided`
 **pattern**: `applies_to` (list of project names or "general")
 **solution**: `problem`, `applies_to`
-**research**: `status` (active | completed | stale), `depth` (shallow | moderate | deep)
+**research**: `status` (active | completed | stale | superseded), `depth` (shallow | moderate | deep)
 
 ### Domain values
 
@@ -124,5 +124,5 @@ See `scribe --help` for the full command tree.
 9. **Post-write size check** — split articles over 150 lines.
 10. **Rolling memory files** use `rolling: true` frontmatter and append-newest-first.
 11. **Reality wins** — fix contradicted articles in place, don't carry both versions.
-12. **No knowledge deletion** — the KB is append-only; mark superseded, never delete.
+12. **No knowledge deletion** — the KB is append-only; mark superseded with `status: superseded` in frontmatter (any type), never delete. Scribe keeps the article on disk and resolvable by title but leaves it out of `_index.md`, `_backlinks.json`, and duplicate and orphan reports.
 13. **Capture failure traces** — when a source shows what was tried and rejected (and why), or the conditions under which a solution breaks, record that alongside the fix. A reader avoiding a known dead end is often more valuable than the fix itself. This is a guideline: don't pad an article with a failure-trace section it doesn't need.

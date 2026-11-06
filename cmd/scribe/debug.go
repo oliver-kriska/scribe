@@ -185,51 +185,22 @@ func (c *DebugBacklinksCmd) Run() error {
 }
 
 // computeBacklinksFor walks the KB and returns sources linking to title.
-// Mirrors backlinks.go logic but for a single target.
+// It shares collectArticleLinks with `scribe backlinks`, so the two cannot
+// disagree about what counts as a link.
 func computeBacklinksFor(root, title string) ([]string, error) {
-	pathToTitle := make(map[string]string)
-	pathToLinks := make(map[string][]string)
-
-	err := walkArticles(root, func(path string, content []byte) error {
-		fm, err := parseFrontmatter(content)
-		if err != nil {
-			return nil //nolint:nilerr // skip unparseable frontmatter, continue walk
-		}
-		rel := relPath(root, path)
-		pathToTitle[rel] = fm.Title
-		links := extractWikilinks(content)
-		if len(links) > 0 {
-			pathToLinks[rel] = links
-		}
-		return nil
-	})
+	g, err := collectArticleLinks(root)
 	if err != nil {
 		return nil, err
 	}
-
-	// Include hub _index.md files.
-	err = walkAllMarkdown(root, func(path string, content []byte) error {
-		rel := relPath(root, path)
-		if _, already := pathToLinks[rel]; already {
-			return nil
-		}
-		links := extractWikilinks(content)
-		if len(links) > 0 {
-			pathToLinks[rel] = links
-			if _, ok := pathToTitle[rel]; !ok {
-				pathToTitle[rel] = rel
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	if g.supersededTitles[title] {
+		return nil, nil
 	}
-
 	var sources []string
-	for srcPath, links := range pathToLinks {
-		if slices.Contains(links, title) {
-			sources = append(sources, pathToTitle[srcPath])
+	for srcPath, links := range g.pathToLinks {
+		srcTitle := g.pathToTitle[srcPath]
+		// Same rule as `scribe backlinks`: a self-link is not inbound.
+		if srcTitle != title && slices.Contains(links, title) {
+			sources = append(sources, srcTitle)
 		}
 	}
 	sort.Strings(sources)

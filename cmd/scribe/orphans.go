@@ -19,6 +19,24 @@ type orphanReport struct {
 	Missing []string `json:"missing"`
 }
 
+// addAliasTitles records fm's title and aliases as known and, for a
+// superseded article, as exempt from orphan reporting.
+func addAliasTitles(fm *Frontmatter, allTitles, supersededTitles map[string]bool) {
+	superseded := isSuperseded(fm)
+	if superseded {
+		supersededTitles[fm.Title] = true
+	}
+	for _, alias := range toStringSlice(fm.Aliases) {
+		if alias == "" {
+			continue
+		}
+		allTitles[alias] = true
+		if superseded {
+			supersededTitles[alias] = true
+		}
+	}
+}
+
 func (o *OrphansCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
@@ -37,17 +55,14 @@ func (o *OrphansCmd) Run() error {
 	// field and live in the same namespace as canonical titles for the
 	// purposes of orphan / missing-page detection.
 	allTitles := make(map[string]bool)
+	supersededTitles := make(map[string]bool)
 	allTargets := make(map[string]bool)
 
 	err = walkArticles(root, func(_ string, content []byte) error {
 		fm, ferr := parseFrontmatter(content)
 		if ferr == nil && fm.Title != "" {
 			allTitles[fm.Title] = true
-			for _, alias := range toStringSlice(fm.Aliases) {
-				if alias != "" {
-					allTitles[alias] = true
-				}
-			}
+			addAliasTitles(fm, allTitles, supersededTitles)
 			return nil
 		}
 		// Fall back to the fast title scan if frontmatter didn't parse.
@@ -74,6 +89,9 @@ func (o *OrphansCmd) Run() error {
 	// Orphans: titles with no inbound links
 	var orphans []string
 	for title := range allTitles {
+		if supersededTitles[title] {
+			continue
+		}
 		if _, hasBacklinks := backlinks[title]; !hasBacklinks {
 			// Also check if it's a target of any link
 			if !allTargets[title] {

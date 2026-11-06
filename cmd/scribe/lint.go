@@ -223,6 +223,7 @@ func lintSizes(rep *lintReport, root string, files []string) {
 // warnAggregatef instead of joining the grouped per-file summary.
 func lintOrphans(rep *lintReport, root string) {
 	allTitles := make(map[string]bool)
+	supersededTitles := make(map[string]bool)
 	allTargets := make(map[string]bool)
 	inboundCount := make(map[string]int)
 
@@ -233,11 +234,7 @@ func lintOrphans(rep *lintReport, root string) {
 	_ = walkArticles(root, func(_ string, content []byte) error {
 		if fm, err := parseFrontmatter(content); err == nil && fm.Title != "" {
 			allTitles[fm.Title] = true
-			for _, alias := range toStringSlice(fm.Aliases) {
-				if alias != "" {
-					allTitles[alias] = true
-				}
-			}
+			addAliasTitles(fm, allTitles, supersededTitles)
 			return nil
 		}
 		if title := extractTitleFast(content); title != "" {
@@ -260,7 +257,7 @@ func lintOrphans(rep *lintReport, root string) {
 
 	orphanCount := 0
 	for title := range allTitles {
-		if inboundCount[title] == 0 && !allTargets[title] {
+		if inboundCount[title] == 0 && !allTargets[title] && !supersededTitles[title] {
 			orphanCount++
 		}
 	}
@@ -298,8 +295,13 @@ func lintIndexConsistency(rep *lintReport, root string) {
 			indexCount++
 		}
 	}
+	// Count what `scribe index` lists: superseded articles are on disk but
+	// deliberately left out of the index.
 	diskCount := 0
-	_ = walkArticles(root, func(_ string, _ []byte) error {
+	_ = walkArticles(root, func(_ string, content []byte) error {
+		if fm, err := parseFrontmatter(content); err == nil && isSuperseded(fm) {
+			return nil
+		}
 		diskCount++
 		return nil
 	})

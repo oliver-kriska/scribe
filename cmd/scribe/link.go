@@ -44,6 +44,19 @@ type linkCandidate struct {
 	Reasons []string
 }
 
+// isSupersededTitle reports whether title belongs to an article marked
+// status: superseded. Only used on the --orphan not-found path.
+func isSupersededTitle(root, title string) bool {
+	found := false
+	_ = walkArticles(root, func(_ string, content []byte) error {
+		if fm, err := parseFrontmatter(content); err == nil && fm.Title == title && isSuperseded(fm) {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
 func (c *LinkCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
@@ -69,6 +82,9 @@ func (c *LinkCmd) Run() error {
 	// Filter orphans if --orphan flag is set.
 	if c.Orphan != "" {
 		if _, ok := titleIndex[c.Orphan]; !ok {
+			if isSupersededTitle(root, c.Orphan) {
+				return fmt.Errorf("%q is marked status: superseded; superseded articles are not relinked", c.Orphan)
+			}
 			return fmt.Errorf("orphan %q not found by title", c.Orphan)
 		}
 		orphanTitles = []string{c.Orphan}
@@ -153,6 +169,11 @@ func loadArticles(root string) ([]*article, error) {
 			return nil //nolint:nilerr // skip unparseable frontmatter, continue walk
 		}
 		if fm.Title == "" {
+			return nil
+		}
+		// A superseded article is neither an orphan to relink nor a host
+		// to link from.
+		if isSuperseded(fm) {
 			return nil
 		}
 

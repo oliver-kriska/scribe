@@ -26,13 +26,15 @@ Some types add extra closed-set fields that lint validates:
 
 | Type | Extra field | Allowed values |
 |---|---|---|
-| `project` | `status` | `active`, `paused`, `completed`, `idea` |
+| `project` | `status` | `active`, `paused`, `completed`, `idea`, `superseded` |
 | `tool` | `verdict` | `use`, `evaluate`, `skip` |
 | `decision` | `status` | `decided`, `reconsidering`, `superseded` |
 | `research` | `status` | `active`, `completed`, `stale`, `superseded` |
 | `research` | `depth` | `shallow`, `moderate`, `deep` |
 
 A `decision` with `status: decided` means it's the current call. `reconsidering` means re-evaluating. `superseded` means a newer decision replaces it (point to the replacement via `related:` or a typed `superseded_by:` edge if the KB has Phase 6A enabled).
+
+Any article with `status: superseded`, whether a full decision or research record or a thin stub left by a merge, stays on disk but is left out of `_index.md`, `_backlinks.json`, and duplicate and orphan reports. Link to its replacement from its body.
 
 ## Optional fields
 

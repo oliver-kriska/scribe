@@ -26,7 +26,7 @@ var (
 	validDomainsOverride map[string]bool
 
 	typeFields = map[string]map[string]map[string]bool{
-		"project": {"status": {"active": true, "paused": true, "completed": true, "idea": true}},
+		"project": {"status": {"active": true, "paused": true, "completed": true, "idea": true, "superseded": true}},
 		"tool":    {"verdict": {"use": true, "evaluate": true, "skip": true}},
 		// "superseded" is shared between decision and research: a research
 		// note replaced by a newer plan has the same lifecycle shape as a
