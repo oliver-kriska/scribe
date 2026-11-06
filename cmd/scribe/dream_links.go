@@ -28,6 +28,9 @@ func dreamLinkReport(g linkGraph, today time.Time, staleDays int) string {
 		fmt.Fprintf(&sb, "Note: %d files could not be read or parsed; links in them are missing from this report.\n\n", skipped)
 	}
 	sb.WriteString("### Broken links (fix: change [[Raw]] to [[Canonical]], or [[Canonical|Raw]] to keep the wording)\n")
+	if g.SafeBroken > 0 {
+		fmt.Fprintf(&sb, "%d more differ from their title only by case or separators; scribe rewrites those itself, so they are not listed.\n", g.SafeBroken)
+	}
 	sb.WriteString(renderCappedList(brokenLinkLines(g)))
 	fmt.Fprintf(&sb, "\n### Decay candidates (no links from other articles, no outbound links, updated more than %d days ago)\n", staleDays)
 	sb.WriteString(renderCappedList(decayCandidateLines(g, today, staleDays)))
@@ -212,6 +215,13 @@ func dreamLinkReportText(root string, now time.Time) string {
 	}
 	if g.Unreadable > 0 {
 		recordDegradedMsg("dream_link_report", fmt.Sprintf("%d unreadable files in link scan", g.Unreadable))
+	}
+	// Leave out what `scribe link --fix-broken` rewrites deterministically,
+	// so the dream's bounded list goes to links that need judgment.
+	if plan, err := planBrokenLinkFixes(root); err == nil {
+		g = withoutSettledBroken(g, plan)
+	} else {
+		logMsg("dream", "broken-link fix plan unavailable: %v", err)
 	}
 	return dreamLinkReport(g, now, dreamDecayStaleDays)
 }

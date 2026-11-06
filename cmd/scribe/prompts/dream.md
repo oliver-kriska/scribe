@@ -42,6 +42,7 @@ List every contradiction you found with its classification before proceeding to 
 ## Phase 3 — CONSOLIDATE (the core work)
 
 - Fix every broken link in the link report: edit the source file so the link names the canonical title.
+  The report lists only links that need judgment. Links that differ from their title only by case, spacing, `-`/`_` or a trailing `.md` are rewritten by scribe in Go (`scribe link --fix-broken`); don't search for those.
   Before rewriting a link, open the canonical article and confirm it is the article the link means; if it is not, leave the link alone.
 - Fix contradictions at source using the classification from Phase 2.5:
   - **Solid-vs-Vague:** rewrite or remove the vague claim. The high-confidence article wins.

@@ -31,6 +31,7 @@ type linkGraph struct {
 	Inbound          map[string][]linkEdge // canonical title -> edges; self-links excluded
 	Missing          map[string][]linkEdge // normalized raw target -> edges
 	Broken           []brokenLink          // non-generated sources only
+	SafeBroken       int                   // Broken entries left out because `link --fix-broken` rewrites them
 	Ambiguous        int                   // distinct ambiguous raw targets
 	SupersededTitles map[string]bool       // titles + aliases held only by superseded articles
 	Unparsed         int                   // articles whose frontmatter did not parse

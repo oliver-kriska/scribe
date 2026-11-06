@@ -23,6 +23,9 @@ type LinkCmd struct {
 	Related  bool   `help:"Run a second scoring pass based on shared-neighbor wikilinks before hub fallback. Borrowed from zk's --related."`
 	MinScore int    `help:"Minimum candidate score to propose as host." default:"8"`
 	Top      int    `help:"Show top N candidates per orphan (dry-run only)." default:"3"`
+
+	FixBroken bool `help:"Rewrite broken links whose target differs from the canonical title only by case, whitespace, -/_ separators or a trailing .md, keeping any #anchor and |label. Skips code, generated _ files, and frontmatter other than related:."`
+	DryRun    bool `help:"With --fix-broken: print the rewrites without writing." short:"n"`
 }
 
 // article is a minimal in-memory representation used by the linker.
@@ -60,6 +63,9 @@ func (c *LinkCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
 		return err
+	}
+	if c.FixBroken {
+		return runFixBroken(root, c.DryRun)
 	}
 
 	articles, err := loadArticles(root)
