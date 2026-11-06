@@ -9,6 +9,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # init, analyze and upload-sarif are one release train: bumped in
+      # separate PRs, the first one merged leaves init and analyze on
+      # different versions and the CodeQL Analyze job fails.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
   - package-ecosystem: gomod
     directory: /
     schedule:
