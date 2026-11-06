@@ -2,7 +2,20 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
-## [Unreleased]
+## [0.6.0] — 2026-11-06
+
+Most of this release was contributed by @louis-byers: the `.claude/`
+tooling skip (#132) and the four-part dream series for #139 — envelope
+telemetry (#140), dream prompts that match the real tool grant (#141),
+superseded articles out of generated outputs (#142) and one shared
+wikilink resolver (#143). Thank you.
+
+**Upgrade notes.** `wiki/_backlinks.json` is now keyed by canonical
+title and drops `status: superseded` articles; `_index.md` drops them
+too. Both regenerate on the next `scribe backlinks` / `scribe index` (the
+next sync or dream), so expect a one-time diff and a one-time
+index-consistency warning until then. Failed `claude -p` runs that report
+usage now count toward `daily_output_token_ceiling`.
 
 ### Added
 
