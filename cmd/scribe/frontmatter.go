@@ -102,9 +102,13 @@ type Frontmatter struct {
 // _backlinks.json) and of duplicate and orphan reports.
 const statusSuperseded = "superseded"
 
-// isSuperseded reports whether an article is marked superseded.
+// isSuperseded reports whether an article is marked superseded. The match
+// ignores case and surrounding whitespace, so `status: Superseded` on a
+// pattern (a type with no status enum to catch it) is still left out of the
+// generated outputs; lint warns about the variant so the KB converges on the
+// canonical lowercase spelling.
 func isSuperseded(fm *Frontmatter) bool {
-	return fm != nil && fm.Status == statusSuperseded
+	return fm != nil && strings.EqualFold(strings.TrimSpace(fm.Status), statusSuperseded)
 }
 
 // fmSpan locates a frontmatter block inside a file.

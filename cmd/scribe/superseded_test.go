@@ -41,7 +41,10 @@ func TestIsSuperseded(t *testing.T) {
 		{"no status", &Frontmatter{}, false},
 		{"superseded", &Frontmatter{Status: "superseded"}, true},
 		{"other status", &Frontmatter{Status: "decided"}, false},
-		{"case differs", &Frontmatter{Status: "Superseded"}, false},
+		{"case differs", &Frontmatter{Status: "Superseded"}, true},
+		{"upper case", &Frontmatter{Status: "SUPERSEDED"}, true},
+		{"surrounding whitespace", &Frontmatter{Status: " superseded\t"}, true},
+		{"prefix only", &Frontmatter{Status: "superseded-ish"}, false},
 	}
 	for _, c := range cases {
 		if got := isSuperseded(c.fm); got != c.want {
