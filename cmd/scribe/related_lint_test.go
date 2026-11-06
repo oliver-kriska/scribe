@@ -122,3 +122,51 @@ func TestLintSplitRelated_ReportAndFix(t *testing.T) {
 		}
 	}
 }
+
+// The fast path must agree with the YAML parse whenever it answers.
+func TestPlainFrontmatterTitle_AgreesWithParser(t *testing.T) {
+	titles := []string{
+		`Go Modules`,
+		`"Default Target Stack (Verified Current Versions, 2026-10-09)"`,
+		`Notes in CLAUDE.md`,
+		`C#`,
+		`"Say \"hi\""`,
+		`'It''s'`,
+		`Foo # comment`,
+		`Foo: Bar`,
+		`- dash`,
+		`[flow]`,
+		`null`,
+		`~`,
+		`2026`,
+		`"unterminated`,
+		``,
+	}
+	for _, title := range titles {
+		content := "---\ntitle: " + title + "\ntype: tool\n---\nbody\n"
+		got, ok := plainFrontmatterTitle([]byte(content))
+		if !ok {
+			continue
+		}
+		fm, err := parseFrontmatter([]byte(content))
+		if err != nil {
+			t.Errorf("title %q: fast path answered %q but YAML fails: %v", title, got, err)
+			continue
+		}
+		if got != fm.Title {
+			t.Errorf("title %q: fast path %q, YAML %q", title, got, fm.Title)
+		}
+	}
+	for _, content := range []string{
+		"---\ntitle: A\naliases: [B]\n---\n",
+		"---\ntitle: A\ntitle: B\n---\n",
+		"no frontmatter\n",
+	} {
+		if got, ok := plainFrontmatterTitle([]byte(content)); ok {
+			t.Errorf("%q: fast path answered %q, want fallback", content, got)
+		}
+	}
+	if got, ok := plainFrontmatterTitle([]byte("---\ntitle: Go Modules\n---\n")); !ok || got != "Go Modules" {
+		t.Errorf("plain title = %q, %v", got, ok)
+	}
+}
