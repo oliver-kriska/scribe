@@ -863,6 +863,7 @@ scribe lint --duplicates     # no-LLM duplicate scan → wiki/_duplicates.md (re
 scribe lint --resolve        # weigh contradiction pairs → wiki/_resolution-proposals.md (never auto-applies)
 scribe lint --identities     # alias-cluster proposals → wiki/_identity-proposals.md; --apply-identities applies them
 scribe link         # link orphan articles to contextual hosts via See Also sections
+scribe link --fix-broken     # rewrite [[links]] that differ from a title only by case/separators/.md (-n dry run; the weekly dream runs it first)
 scribe watch        # long-running fsnotify watcher on ccrider DB (near-real-time session extraction)
 scribe assess <project>      # one-shot parallel deep assessment of a project (5 tracks + consolidation)
 scribe cost         # summarize LLM calls (tokens, wallclock, USD) over the last 7 days (--days N, 0 = all time) — aggregates all registered KBs; scope with --kb

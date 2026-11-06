@@ -91,6 +91,11 @@ func (d *DreamCmd) Run() error {
 
 	ctx := context.Background()
 
+	// Case/separator-only broken links are fixed in Go first: the edits ride
+	// along in the dream commit, and the link report built below no longer
+	// lists them.
+	fixSafeBrokenLinks(root)
+
 	// Phase 4D dispatch: orchestrator mode runs the LLM as a single
 	// bounded envelope subtask while Go does the file walking and
 	// index work itself. Monolithic mode keeps the historical

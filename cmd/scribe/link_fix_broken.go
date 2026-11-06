@@ -241,6 +241,55 @@ func withoutSettledBroken(g linkGraph, plan brokenFixPlan) linkGraph {
 	return g
 }
 
+// brokenFixResult counts what applyBrokenFixPlan did.
+type brokenFixResult struct{ Links, Files, Stale, Review int }
+
+// applyBrokenFixPlan writes every planned file, or with dryRun only counts
+// them. A file that changed since the scan is left alone and counted Stale.
+// onRewrite, when set, is called for each rewrite before its file is written.
+func applyBrokenFixPlan(root string, plan brokenFixPlan, dryRun bool, onRewrite func(rel string, r brokenRewrite)) (brokenFixResult, error) {
+	res := brokenFixResult{Review: len(plan.declined)}
+	for _, f := range plan.Files {
+		if onRewrite != nil {
+			for _, r := range f.Rewrites {
+				onRewrite(f.Rel, r)
+			}
+		}
+		if !dryRun {
+			wrote, err := writeBrokenFix(root, f)
+			if err != nil {
+				return res, err
+			}
+			if !wrote {
+				res.Stale++
+				continue
+			}
+		}
+		res.Links += len(f.Rewrites)
+		res.Files++
+	}
+	return res, nil
+}
+
+// fixSafeBrokenLinks rewrites the safe Broken links before a dream, so its
+// edits land in the dream commit and the link report keeps its bounded list
+// for the links that need judgment. Failures degrade the run, never block it.
+func fixSafeBrokenLinks(root string) {
+	plan, err := planBrokenLinkFixes(root)
+	if err == nil {
+		var res brokenFixResult
+		res, err = applyBrokenFixPlan(root, plan, false, nil)
+		if res.Links > 0 || res.Stale > 0 {
+			logMsg("dream", "fixed %d broken link(s) in %d file(s) (%d file(s) changed mid-scan, left alone)", res.Links, res.Files, res.Stale)
+		}
+		setRunStat("broken_rewritten", res.Links)
+	}
+	if err != nil {
+		recordDegraded("dream_fix_broken", err)
+		logMsg("dream", "broken-link fix skipped: %v", err)
+	}
+}
+
 // runFixBroken is `scribe link --fix-broken`: rewrite every safe Broken
 // link in place, or with dryRun print what would change.
 func runFixBroken(root string, dryRun bool) error {
@@ -248,37 +297,26 @@ func runFixBroken(root string, dryRun bool) error {
 	if err != nil {
 		return fmt.Errorf("plan broken-link fixes: %w", err)
 	}
-	links, files, stale := 0, 0, 0
-	for _, f := range plan.Files {
-		for _, r := range f.Rewrites {
-			fmt.Printf("%s: [[%s]] → [[%s]]\n", f.Rel, r.Old, r.New)
-		}
-		if !dryRun {
-			if wrote, err := writeBrokenFix(root, f); err != nil {
-				return err
-			} else if !wrote {
-				stale++
-				continue
-			}
-		}
-		links += len(f.Rewrites)
-		files++
+	res, err := applyBrokenFixPlan(root, plan, dryRun, func(rel string, r brokenRewrite) {
+		fmt.Printf("%s: [[%s]] → [[%s]]\n", rel, r.Old, r.New)
+	})
+	if err != nil {
+		return err
 	}
-	review := len(plan.declined)
 	verb := "rewrote"
 	if dryRun {
 		verb = "would rewrite"
 	}
-	fmt.Printf("%s %d link(s) in %d file(s); %d broken link(s) need review", verb, links, files, review)
-	if stale > 0 {
-		fmt.Printf("; %d file(s) changed during the scan were left alone", stale)
+	fmt.Printf("%s %d link(s) in %d file(s); %d broken link(s) need review", verb, res.Links, res.Files, res.Review)
+	if res.Stale > 0 {
+		fmt.Printf("; %d file(s) changed during the scan were left alone", res.Stale)
 	}
 	fmt.Println()
 	mergeRunStats(map[string]any{
-		"broken_rewritten": links,
-		"broken_files":     files,
-		"broken_review":    review,
-		"broken_stale":     stale,
+		"broken_rewritten": res.Links,
+		"broken_files":     res.Files,
+		"broken_review":    res.Review,
+		"broken_stale":     res.Stale,
 		"dry_run":          dryRun,
 	})
 	return nil

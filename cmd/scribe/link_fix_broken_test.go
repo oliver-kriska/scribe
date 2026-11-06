@@ -134,3 +134,24 @@ func TestDreamLinkReport_LeavesOutSafeBroken(t *testing.T) {
 		}
 	}
 }
+
+// The dream fixes the safe links in place before it builds the report, so
+// the report neither lists them nor counts them as left out.
+func TestFixSafeBrokenLinks_BeforeDreamReport(t *testing.T) {
+	root := fixBrokenKB(t)
+	fixSafeBrokenLinks(root)
+
+	data, _ := os.ReadFile(filepath.Join(root, "wiki", "user.md"))
+	for _, want := range []string{`"[[Go Modules]]"`, "[[Go Modules#Setup|modules]]"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("user.md missing %q after the pre-dream fix:\n%s", want, data)
+		}
+	}
+	got := dreamLinkReportText(root, linkReportToday)
+	if strings.Contains(got, "[[go_modules]]") || strings.Contains(got, "differ from their title only") {
+		t.Errorf("fixed links still in the report:\n%s", got)
+	}
+	if !strings.Contains(got, "[[kafka-streams]]") {
+		t.Errorf("link needing review dropped from the report:\n%s", got)
+	}
+}
