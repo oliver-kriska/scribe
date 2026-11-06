@@ -53,8 +53,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   `scan`, `deep`, assess's tree sample, the non-git file fallback and the
   recent-activity probe now skip any subdirectory that carries its own
   `.git` entry, and the tools-mode extract and assess prompts say so too.
-  The tooling half of #131 (whether `.claude/agents`, `rules`, `skills`
-  count as project knowledge) is left open.
+- **Extraction skips Claude Code tooling under `.claude/` (#131, #132).**
+  `.claude/agents/`, `commands/`, `hooks/`, `plugins/` and
+  `output-styles/` are configuration, not project knowledge: the
+  changed-file lists (first extraction, incremental diff and the non-git
+  walk), `scan`, `deep`, assess's tree sample, and the tools-mode extract
+  and assess-docs prompts all leave them out. `.claude/rules/` (project
+  memory, CLAUDE.md split into files) and `.claude/skills/` stay in, as do
+  `.claude/research/`, `plans/`, `solutions/` and the drop folder.
+  Contributed by @louis-byers.
 - **`init --path` no longer scaffolds over a team clone.** The existing-KB
   guard looked only for `scripts/projects.json`, which team KBs gitignore,
   so `scribe init --path <fresh clone>` rewrote the committed `scribe.yaml`,
