@@ -53,7 +53,7 @@ func TestDreamPrompts_UseOnlyLoaderVars(t *testing.T) {
 
 // The monolithic dream's grant (DreamCmd.Run's tools slice in dream.go, isolated by claude.go's
 // --tools/--allowedTools) lets Bash run only wc, ls and find, and refuses
-// find -delete/-exec. Measured 2026-10-23 on Claude Code 2.1.293. Cycles
+// find -delete/-exec. Measured 2026-10-23 on Claude Code 2.1.293, re-verified 2026-11-06 on 2.1.319 (make live-probe). Cycles
 // that didn't know this spent turns on refused cd && …; for … loops and
 // python3/scribe calls. Anchors are kept to the load-bearing facts.
 // Re-measure against the installed CLI with `make live-probe`
