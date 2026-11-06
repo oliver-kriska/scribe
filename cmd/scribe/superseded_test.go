@@ -300,3 +300,33 @@ func TestCollectContentDocsSkipsSupersededArticles(t *testing.T) {
 		t.Errorf("collectContentDocs = %+v, want only wiki/survivor.md", docs)
 	}
 }
+
+// The orchestrator and hot dreams build their packets from these samplers.
+// A superseded record is kept on purpose, so it must not be offered as a
+// stale (decay) candidate, a contradiction candidate or an inventory row.
+func TestDreamSamplersSkipSupersededArticles(t *testing.T) {
+	root := t.TempDir()
+	writeKBFile(t, root, "wiki/live.md", "---\ntitle: Live Note\ntype: pattern\ndomain: general\ntags: [shared]\nupdated: 2020-01-01\n---\n\nbody\n")
+	writeKBFile(t, root, "wiki/live2.md", "---\ntitle: Live Two\ntype: pattern\ndomain: general\ntags: [shared]\nupdated: 2020-01-01\n---\n\nbody\n")
+	writeKBFile(t, root, "wiki/old.md", "---\ntitle: Old Note\ntype: pattern\ndomain: general\ntags: [shared]\nstatus: superseded\nupdated: 2020-01-01\n---\n\nSuperseded. See [[Live Note]].\n")
+
+	if inv := dreamSampleInventory(root, "", 10); strings.Contains(inv, "Old Note") || !strings.Contains(inv, "Live Note") {
+		t.Errorf("inventory should list live articles only: %q", inv)
+	}
+	if stale := dreamStaleCandidates(root, "", 60); strings.Contains(stale, "wiki/old.md") || !strings.Contains(stale, "wiki/live.md") {
+		t.Errorf("stale candidates should list live articles only: %q", stale)
+	}
+	if contra := dreamContradictionCandidates(root, ""); strings.Contains(contra, "Old Note") || !strings.Contains(contra, "Live Note") {
+		t.Errorf("contradiction candidates should list live articles only: %q", contra)
+	}
+}
+
+func TestDreamPromptNeverFlagsSupersededArticles(t *testing.T) {
+	prompt, err := promptFS.ReadFile("prompts/dream.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(prompt), "Never flag an article with `status: superseded`") {
+		t.Error("dream.md Phase 4 must exempt superseded articles from decay flagging")
+	}
+}
