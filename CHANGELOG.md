@@ -58,6 +58,12 @@ the upgrade may touch more files than usual.
   onto high/medium/low (≥ 0.8 high, ≥ 0.5 medium, else low). The
   write-time clamp applies the same repairs, so new articles never land
   with them.
+- **An append to a missing page gets frontmatter.** The executor
+  promotes such an append to a create, and wrote the bare fragment
+  (`## 2026-09-27 — …`), a page lint, the index and the link graph all
+  reject. It now adds a complete block: the rolling-file one for
+  `projects/<p>/learnings.md` / `decisions-log.md`, otherwise the
+  directory's type and a title from the file name.
 - **`status: Superseded` takes effect.** The match is now case- and
   whitespace-insensitive on every type.
 - **Every superseded article leaves the staleness ledger**, not only

@@ -1684,3 +1684,36 @@ func TestApplyWikiActions_ModelDates(t *testing.T) {
 		}
 	})
 }
+
+// A fragment appended to a missing page used to land with no frontmatter,
+// which lint, the index and the link graph all reject. The promoted page
+// now gets a complete block, and a full page keeps its own.
+func TestApplyWikiActions_AppendMissingScaffoldsFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{Actions: []WikiAction{
+		{Op: "append", Path: "projects/enaia-mobile/learnings.md", Content: "\n\n## 2026-09-27 — PR #84\n\nLesson.\n"},
+		{Op: "append", Path: "solutions/uniffi-panics.md", Content: "\n## Related session\n\nText.\n"},
+		{Op: "append", Path: "wiki/own.md", Content: "---\ntitle: Own\n---\nbody\n"},
+	}}
+	res, _ := applyWikiActions(root, env, ApplyOptions{})
+	if len(res.Errors) != 0 || len(res.Applied) != 3 {
+		t.Fatalf("applied=%v errors=%v", res.Applied, res.Errors)
+	}
+	for rel, want := range map[string][]string{
+		"projects/enaia-mobile/learnings.md": {"title: \"Enaia Mobile Learnings\"", "type: project", "rolling: true", "\n---\n\n## 2026-09-27 — PR #84\n"},
+		"solutions/uniffi-panics.md":         {"title: \"Uniffi Panics\"", "type: solution", "authority: contextual", "\n---\n\n## Related session\n"},
+	} {
+		got := readBack(t, root, rel)
+		for _, w := range want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s missing %q:\n%s", rel, w, got)
+			}
+		}
+		for _, e := range validateFile(root, filepath.Join(root, filepath.FromSlash(rel))) {
+			t.Errorf("%s fails validation: %s", rel, e)
+		}
+	}
+	if got := readBack(t, root, "wiki/own.md"); got != "---\ntitle: Own\n---\nbody\n" {
+		t.Errorf("a page with its own frontmatter was changed:\n%s", got)
+	}
+}

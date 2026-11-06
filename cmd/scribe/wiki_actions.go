@@ -683,7 +683,14 @@ func applyAppendAction(res *ApplyResult, i int, abs string, a WikiAction, opts A
 		// the generation. Layer-1 path validation already ran,
 		// so this can never resurrect a _-prefixed write.
 		if errors.Is(err, fs.ErrNotExist) {
-			if werr := writeFileAtomic(abs, []byte(a.Content), 0o644); werr != nil {
+			// An append is a fragment ("## 2026-09-27 — …"); written as
+			// is it becomes a page lint, the index and the link graph all
+			// reject for want of frontmatter.
+			content := a.Content
+			if !strings.HasPrefix(content, "---") {
+				content = scaffoldFrontmatter(a.Path, time.Now()) + strings.TrimLeft(content, "\n")
+			}
+			if werr := writeFileAtomic(abs, []byte(content), 0o644); werr != nil {
 				res.Errors = append(res.Errors, fmt.Sprintf("action[%d] append→create %q: %v", i, a.Path, werr))
 				return
 			}
@@ -1000,6 +1007,32 @@ func applyMetaRollingAppend(root string, m MetaAction, opts ApplyOptions) error 
 	return nil
 }
 
+// scaffoldFrontmatter returns complete, lint-valid frontmatter for a page
+// created from a bare fragment at rel. A projects/<p>/learnings.md or
+// decisions-log.md gets the rolling-file block; any other page gets its
+// directory's canonical type (research where there is none) and a title
+// made from its file name. domain is general, which every KB accepts.
+func scaffoldFrontmatter(rel string, now time.Time) string {
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/")
+	stem := strings.TrimSuffix(parts[len(parts)-1], ".md")
+	if len(parts) == 3 && parts[0] == "projects" && dropValidRollingTargets[stem] {
+		return rollingFrontmatter(titleCaseDashed(parts[1])+" "+titleCaseDashed(stem), "general", parts[1], now)
+	}
+	typ, ok := dirCanonicalType[parts[0]]
+	if !ok {
+		typ = "research"
+	}
+	authority := defaultAuthorityForType(typ)
+	if authority == "" {
+		authority = "contextual"
+	}
+	today := now.Format(time.DateOnly)
+	return fmt.Sprintf(
+		"---\ntitle: %q\ntype: %s\ncreated: %s\nupdated: %s\ndomain: general\nconfidence: medium\ntags: []\nrelated: []\nsources: []\nauthority: %s\n---\n\n",
+		titleCaseDashed(stem), typ, today, today, authority,
+	)
+}
+
 // rollingFileFrontmatter returns complete, lint-valid frontmatter for a
 // rolling memory file (projects/<domain>/<target>.md), matching the
 // convention `scribe init` and existing rolling files use. This must be
@@ -1017,11 +1050,14 @@ func applyMetaRollingAppend(root string, m MetaAction, opts ApplyOptions) error 
 //     pre-validated by the caller (allowedDomainsForRoot), so it is
 //     always a valid value here.
 func rollingFileFrontmatter(domain, target string) string {
-	today := time.Now().Format("2006-01-02")
-	title := titleCaseDashed(domain) + " " + titleCaseDashed(target)
+	return rollingFrontmatter(titleCaseDashed(domain)+" "+titleCaseDashed(target), domain, domain, time.Now())
+}
+
+func rollingFrontmatter(title, domain, tag string, now time.Time) string {
+	today := now.Format(time.DateOnly)
 	return fmt.Sprintf(
 		"---\ntitle: %q\ntype: project\ncreated: %s\nupdated: %s\ndomain: %s\nconfidence: medium\nrolling: true\ntags: [rolling-memory, %s]\nrelated: []\nsources: []\nauthority: contextual\n---\n\n",
-		title, today, today, domain, domain,
+		title, today, today, domain, tag,
 	)
 }
 
