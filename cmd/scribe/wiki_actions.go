@@ -905,14 +905,14 @@ func applyMetaLogAppend(root string, m MetaAction, opts ApplyOptions) error {
 	return nil
 }
 
-// applyMetaSessionsLogAppend is the Go-side writer behind
-// recordSessionProcessed; applyMetaAction no longer routes the model's
-// sessions_log_append here. It records one session ID under
-// wiki/_sessions_log.json's `processed` map. The Phase 4C envelope
-// replaces the previous "Claude writes the file" approach; centralizing
-// this in Go gives us a per-file lock against concurrent session-mine
-// goroutines stomping each other's JSON edits.
-func applyMetaSessionsLogAppend(root string, m MetaAction, opts ApplyOptions) error {
+// appendSessionsLogEntry is the single Go-side writer of a mined
+// session's entry in wiki/_sessions_log.json, behind
+// recordSessionProcessed; applyMetaAction does not route the model's
+// sessions_log_append here (Go is the only writer). Centralizing this in
+// Go gives a per-file lock against concurrent session-mine goroutines.
+// mark is the watermark (session_watermark.go); a zero mark means unknown.
+// sessionsLogEntry keeps an existing higher watermark.
+func appendSessionsLogEntry(root string, m MetaAction, mark mineMark, opts ApplyOptions) error {
 	if m.SessionID == "" {
 		return errors.New("sessions_log_append: session_id required")
 	}
@@ -939,7 +939,7 @@ func applyMetaSessionsLogAppend(root string, m MetaAction, opts ApplyOptions) er
 		if processed == nil {
 			processed = map[string]any{}
 		}
-		processed[m.SessionID] = ts
+		processed[m.SessionID] = sessionsLogEntry(processed[m.SessionID], ts, mark)
 		data["processed"] = processed
 	})
 }
