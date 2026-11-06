@@ -32,7 +32,7 @@ func TestApplyMetaSessionsLogAppend(t *testing.T) {
 		t.Fatal("model-supplied sessions_log_append must not touch wiki/_sessions_log.json")
 	}
 	// The Go-side writer is the only path.
-	recordSessionProcessed(root, "abc-123")
+	recordSessionProcessed(root, "abc-123", mineMark{})
 	data, err := os.ReadFile(filepath.Join(root, "wiki", "_sessions_log.json"))
 	if err != nil {
 		t.Fatalf("read sessions log: %v", err)
