@@ -18,6 +18,15 @@ type DreamCmd struct {
 	Domain string `help:"Explicit domain override for --hot (skips auto-selection and the churn-threshold gate)." name:"domain"`
 }
 
+// dreamMonolithicTools is the tool grant for the monolithic dream. prompts/
+// dream.md states this grant to the model in prose; TestDreamPrompt_
+// ToolGrantMatchesCode pins both, so widening the grant without updating the
+// prompt fails a test instead of silently making the prompt wrong.
+var dreamMonolithicTools = []string{
+	"Read", "Write", "Edit", "Glob", "Grep",
+	"Bash(wc:*)", "Bash(ls:*)", "Bash(find:*)",
+}
+
 func (d *DreamCmd) Run() error {
 	root, err := kbDir()
 	if err != nil {
@@ -101,12 +110,7 @@ func (d *DreamCmd) Run() error {
 			return fmt.Errorf("load dream prompt: %w", err)
 		}
 
-		tools := []string{
-			"Read", "Write", "Edit", "Glob", "Grep",
-			"Bash(wc:*)", "Bash(ls:*)", "Bash(find:*)",
-		}
-
-		_, err = runClaude(withOpLabel(ctx, "dream"), root, prompt, d.Model, tools, 3600*time.Second)
+		_, err = runClaude(withOpLabel(ctx, "dream"), root, prompt, d.Model, dreamMonolithicTools, 3600*time.Second)
 		if err != nil {
 			if errors.Is(err, ErrRateLimit) {
 				logMsg("dream", "rate limited — dream cycle interrupted, will retry next week")

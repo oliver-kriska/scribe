@@ -16,7 +16,29 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   Ollama rows are marked free. When a daily output ceiling is set, the
   estimate also prints today's headroom and warns if the run would hit it.
 
+- **The cost ledger records what each `claude -p` call actually did
+  (#139).** Each row now carries the model id that ran (`resolved_models`
+  — the `sonnet` alias can move to a new model with no config change),
+  `num_turns`, `terminal_reason`, subagent counts, and refused tool calls
+  (`denials`, a per-tool `denied_tools` tally, and up to 3
+  `denied_samples`: Bash commands cut to 120 bytes with a leading
+  `cd <dir> &&` dropped and credentials redacted: URL query tokens,
+  `Authorization`/`Bearer` values, `user:pass@` and `-u user:pass`,
+  `--token`/`--api-key`-style flags and `*_TOKEN=`/`*_KEY=` assignments;
+  other tools store their name only). Telemetry fields are decoded
+  leniently, so a future CLI changing one of their shapes cannot break the
+  core envelope parse. `scribe cost` labels a row `sonnet → <resolved id>`
+  when they differ and prints the window's denied-call total.
+
 ### Changed
+
+- **Failed `claude -p` runs that still printed a result envelope now
+  record their usage and cost.** Previously a non-zero exit (or a stderr
+  rate-limit banner) discarded the envelope, so those tokens were
+  invisible to the ledger. They now count toward `scribe cost` and toward
+  `daily_output_token_ceiling`, both per-KB and machine-wide. Runs that
+  exited 0 with `is_error` already counted and are unchanged. Per-op
+  estimates (`sync --dry-run --estimate`) still use successful calls only.
 
 - **Superseded articles drop out of generated outputs (#139).** An
   article with `status: superseded` in its frontmatter (a full
@@ -78,8 +100,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   `scan`, `deep`, assess's tree sample, the non-git file fallback and the
   recent-activity probe now skip any subdirectory that carries its own
   `.git` entry, and the tools-mode extract and assess prompts say so too.
-  The tooling half of #131 (whether `.claude/agents`, `rules`, `skills`
-  count as project knowledge) is left open.
+- **Extraction skips Claude Code tooling under `.claude/` (#131, #132).**
+  `.claude/agents/`, `commands/`, `hooks/`, `plugins/` and
+  `output-styles/` are configuration, not project knowledge: the
+  changed-file lists (first extraction, incremental diff and the non-git
+  walk), `scan`, `deep`, assess's tree sample, and the tools-mode extract
+  and assess-docs prompts all leave them out. `.claude/rules/` (project
+  memory, CLAUDE.md split into files) and `.claude/skills/` stay in, as do
+  `.claude/research/`, `plans/`, `solutions/` and the drop folder.
+  Contributed by @louis-byers.
 - **`init --path` no longer scaffolds over a team clone.** The existing-KB
   guard looked only for `scripts/projects.json`, which team KBs gitignore,
   so `scribe init --path <fresh clone>` rewrote the committed `scribe.yaml`,

@@ -374,13 +374,14 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 
 	// Build and run the extraction prompt.
 	prompt, err := loadPrompt("extract.md", map[string]string{
-		"KB_DIR":           root,
-		"PROJECT":          pname,
-		"P_PATH":           entry.Path,
-		"DOMAIN":           entry.Domain,
-		"STEP2":            step2,
-		"FILELIST":         fileList,
-		"DROP_INSTRUCTION": dropInstruction,
+		"KB_DIR":              root,
+		"PROJECT":             pname,
+		"P_PATH":              entry.Path,
+		"DOMAIN":              entry.Domain,
+		"STEP2":               step2,
+		"FILELIST":            fileList,
+		"DROP_INSTRUCTION":    dropInstruction,
+		"CLAUDE_TOOLING_DIRS": claudeToolingPromptList(),
 	})
 	if err != nil {
 		return fmt.Errorf("load extract prompt: %w", err)

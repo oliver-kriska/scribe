@@ -225,6 +225,8 @@ func (a *AssessCmd) runTrack(ctx context.Context, root string, t assessTrack, en
 		"P_PATH":  entry.Path,
 		"DOMAIN":  entry.Domain,
 		"OUT":     outPath,
+		// Only assess-docs.md uses it; the other tracks ignore it.
+		"CLAUDE_TOOLING_DIRS": claudeToolingPromptList(),
 	})
 	if err != nil {
 		return fmt.Errorf("load prompt: %w", err)

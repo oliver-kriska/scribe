@@ -50,9 +50,10 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 		// extract.mode=envelope + extract.provider=anthropic (an
 		// unusual mix, but supported: the envelope path is provider-
 		// agnostic).
-		"STEP2":            "",
-		"FILELIST":         "",
-		"DROP_INSTRUCTION": "",
+		"STEP2":               "",
+		"FILELIST":            "",
+		"DROP_INSTRUCTION":    "",
+		"CLAUDE_TOOLING_DIRS": claudeToolingPromptList(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load extract prompt: %w", err)

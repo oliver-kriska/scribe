@@ -693,7 +693,9 @@ provider. Per-op `provider`/`model` always win over the top-level block.
 > one machine they share one API key and bill, so also set a machine-wide
 > `daily_output_token_ceiling` in `~/.config/scribe/config.yaml` — it sums
 > today's metered tokens across **every registered KB**, and whichever ceiling
-> (per-KB or machine) is hit first aborts the call. `scribe cost` rolls up tokens (and dollars, when
+> (per-KB or machine) is hit first aborts the call. Tokens from failed
+> `claude -p` runs count too when the CLI still reports usage, since they were
+> billed. `scribe cost` rolls up tokens (and dollars, when
 > `pricing` is set) per `provider/model`. By default it aggregates **every
 > registered KB** — hosted providers bill per API key, and one key usually
 > serves all your KBs, so the combined total matches the provider dashboard.

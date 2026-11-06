@@ -44,9 +44,9 @@ func gitChangedFiles(repoPath, oldSHA string, patterns []string) []string {
 		// The incremental path below never had this problem: `git diff`
 		// only ever reports tracked files.
 		if files, ok := gitListFiles(repoPath, patterns); ok {
-			return files
+			return excludeClaudeTooling(repoPath, files)
 		}
-		return findFiles(repoPath, patterns)
+		return excludeClaudeTooling(repoPath, findFiles(repoPath, patterns))
 	}
 
 	// oldSHA comes from scripts/projects.json and is placed BEFORE the
@@ -71,7 +71,7 @@ func gitChangedFiles(repoPath, oldSHA string, patterns []string) []string {
 			files = append(files, filepath.Join(repoPath, line))
 		}
 	}
-	return files
+	return excludeClaudeTooling(repoPath, files)
 }
 
 // gitListFiles lists the files git would consider part of repoPath —
@@ -487,7 +487,7 @@ func findFiles(root string, patterns []string) []string {
 			return nil //nolint:nilerr // skip unreadable, continue walk
 		}
 		if info.IsDir() {
-			if excludeDirs[info.Name()] || nestedCheckout(root, path) {
+			if excludeDirs[info.Name()] || nestedCheckout(root, path) || isClaudeToolingDir(root, path) {
 				return filepath.SkipDir
 			}
 			return nil

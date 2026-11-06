@@ -151,6 +151,12 @@ func dreamSampleInventory(root, domain string, maxEntries int) string {
 		if domain != "" && fm.Domain != domain {
 			return nil
 		}
+		// Superseded records stay on disk on purpose (Rule 12). Showing them
+		// as stale, contradiction or inventory candidates invites the model
+		// to decay-mark them or reopen a contradiction already resolved.
+		if isSuperseded(fm) {
+			return nil
+		}
 		rel, _ := filepath.Rel(root, path)
 		samples = append(samples, dreamArticleSample{
 			Path:       filepath.ToSlash(rel),
@@ -198,6 +204,12 @@ func dreamStaleCandidates(root, domain string, days int) string {
 		if domain != "" && fm.Domain != domain {
 			return nil
 		}
+		// Superseded records stay on disk on purpose (Rule 12). Showing them
+		// as stale, contradiction or inventory candidates invites the model
+		// to decay-mark them or reopen a contradiction already resolved.
+		if isSuperseded(fm) {
+			return nil
+		}
 		updated := stringFromAny(fm.Updated)
 		if updated == "" {
 			return nil
@@ -240,6 +252,12 @@ func dreamContradictionCandidates(root, domain string) string {
 			return nil //nolint:nilerr // unparseable article: skip it, keep walking
 		}
 		if domain != "" && fm.Domain != domain {
+			return nil
+		}
+		// Superseded records stay on disk on purpose (Rule 12). Showing them
+		// as stale, contradiction or inventory candidates invites the model
+		// to decay-mark them or reopen a contradiction already resolved.
+		if isSuperseded(fm) {
 			return nil
 		}
 		rel, _ := filepath.Rel(root, path)
