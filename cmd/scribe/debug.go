@@ -132,10 +132,17 @@ func (c *DebugBacklinksCmd) Run() error {
 		return err
 	}
 
+	// _backlinks.json is keyed by canonical title, so an alias or a case
+	// variant has to be resolved the way a [[wikilink]] would be.
+	title, err := resolveBacklinksKey(root, c.Title)
+	if err != nil {
+		return err
+	}
+
 	var sources []string
 
 	if c.Fresh {
-		sources, err = computeBacklinksFor(root, c.Title)
+		sources, err = computeBacklinksFor(root, title)
 		if err != nil {
 			return err
 		}
@@ -149,15 +156,18 @@ func (c *DebugBacklinksCmd) Run() error {
 		if err := json.Unmarshal(data, &all); err != nil {
 			return fmt.Errorf("parse backlinks: %w", err)
 		}
-		sources = all[c.Title]
+		sources = all[title]
 	}
 
 	if c.JSON {
 		out := map[string]any{
-			"title":   c.Title,
+			"title":   title,
 			"count":   len(sources),
 			"sources": sources,
 			"fresh":   c.Fresh,
+		}
+		if title != c.Title {
+			out["resolved_from"] = c.Title
 		}
 		data, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
@@ -167,7 +177,11 @@ func (c *DebugBacklinksCmd) Run() error {
 		return nil
 	}
 
-	fmt.Printf("Backlinks for: %s\n", c.Title)
+	if title != c.Title {
+		fmt.Printf("Backlinks for: %s (resolved from %s)\n", title, c.Title)
+	} else {
+		fmt.Printf("Backlinks for: %s\n", title)
+	}
 	if c.Fresh {
 		fmt.Println("  (computed fresh from disk)")
 	}
@@ -181,6 +195,18 @@ func (c *DebugBacklinksCmd) Run() error {
 		fmt.Printf("  ← %s\n", s)
 	}
 	return nil
+}
+
+// resolveBacklinksKey maps a title, alias or case variant to the canonical
+// title _backlinks.json uses as its key. An ambiguous name stays as given;
+// a missing one gets the normalized form a dangling link is keyed by.
+func resolveBacklinksKey(root, name string) (string, error) {
+	scan, err := scanArticles(root)
+	if err != nil {
+		return "", err
+	}
+	canonical, _ := newLinkResolver(scan.entries).resolve(name)
+	return canonical, nil
 }
 
 // computeBacklinksFor walks the KB and returns sources linking to title.
