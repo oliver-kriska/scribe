@@ -210,6 +210,7 @@ scribe sync                 # discover → extract → absorb → reindex
 scribe sync --sessions      # mine coding-agent transcripts
 scribe sync --dry-run --estimate  # token estimate for queued extraction + absorb work, no writes or LLM calls
 scribe doctor               # validate deps, config, cron, run freshness, Ollama
+scribe doctor --section telemetry  # flag dream model drift and refused-tool spikes
 scribe commit               # stage + push the KB to your private remote
 scribe dream                # weekly 4-phase consolidation
 scribe capture              # pull self-sent iMessage links (macOS)
@@ -239,7 +240,7 @@ After `scribe init` + `scribe cron install`, five things happen on their own. Ne
 
 4. **Auto-publish — your private KB repo commits and pushes itself.** `scribe commit` runs hourly: stages every change, builds a structured commit message, and `git push`es to your origin (GitHub, Gitea, or Forgejo — no scribe-hosted backend). On non-fast-forward, it runs `git pull --rebase` and retries once; force-push is never attempted.
 
-5. **Weekly cleanup — Dream cycle prunes, merges, breaks down (Ollama-capable).** Sundays at 02:00, `scribe dream` runs a 4-phase consolidation (ORIENT → SIGNAL → CONSOLIDATE → PRUNE + INDEX). A Go orchestrator inlines the orient packet into one bounded prompt and parses one `EnvelopeV2` JSON document back — verified end-to-end on a 7,472-article KB in ~70s on `gemma3:12b`.
+5. **Weekly cleanup — Dream cycle prunes, merges, breaks down (Ollama-capable).** Sundays at 02:00, `scribe dream` runs a 4-phase consolidation (ORIENT → SIGNAL → CONSOLIDATE → PRUNE + INDEX). A Go orchestrator inlines the orient packet into one bounded prompt and parses one `EnvelopeV2` JSON document back — verified end-to-end on a 7,472-article KB in ~70s on `gemma3:12b`. Links that differ from a title only by case or separators are rewritten in Go before the model starts, so its link work goes to the ones that need judgment.
 
 The loop closes here: every absorb tick reindexes `qmd`; the next Claude Code, Codex, or Amp session finds whatever scribe just wrote — and if that session produces a new lesson, it writes a drop file, and the cycle repeats.
 
@@ -348,4 +349,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-10-23
+**Last updated:** 2026-11-06

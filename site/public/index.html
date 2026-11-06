@@ -31,7 +31,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="scribe — your knowledge base, written by your tools. Over 7,400 docs. $0/sync. ~70s." />
 <meta property="og:locale" content="en_US" />
-<meta property="article:modified_time" content="2026-10-01T00:00:00Z" />
+<meta property="article:modified_time" content="2026-11-06T00:00:00Z" />
 
 <!-- Twitter / X -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -276,7 +276,7 @@
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og-v4.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
-  "dateModified": "2026-10-23T00:00:00+02:00",
+  "dateModified": "2026-11-06T00:00:00+02:00",
   "isBasedOn": {
     "@type": "CreativeWork",
     "name": "LLM Wiki",
@@ -3280,7 +3280,7 @@ scribe cost — last 7 days — 2 KBs (personal-kb, team-kb)
         <dt>Capture</dt><dd>git repos &middot; coding-agent sessions (ccrider FTS5) &middot; direct Codex rollouts &middot; iMessage self-chat &middot; drop files &middot; URL ingest</dd>
         <dt>Triage</dt><dd>FTS5 keyword-density gate &middot; zero-LLM reject &middot; <code>sync --dry-run --estimate</code> token preview</dd>
         <dt>Extract</dt><dd>two-pass absorb &middot; entity-first fan-out &middot; retrieval-context splicing &middot; <code>deep</code> / <code>assess</code> batch passes</dd>
-        <dt>Graph</dt><dd>closed 10-kind typed-edge schema &middot; <code>_backlinks.json</code> &middot; orphan linking &middot; qmd BM25 + vector index</dd>
+        <dt>Graph</dt><dd>closed 10-kind typed-edge schema &middot; <code>_backlinks.json</code> &middot; orphan linking &middot; deterministic broken-link repair &middot; qmd BM25 + vector index</dd>
         <dt>Hygiene</dt><dd>frontmatter validate &middot; structural lint &middot; staleness ledger &middot; contradiction ledger &middot; Dream 4-phase consolidation</dd>
         <dt>Governance</dt><dd>trust layer &middot; secret-scan commit gate &middot; <code>allowed_remotes</code> &middot; promote-with-provenance &middot; committed leader lease</dd>
         <dt>Inference</dt><dd>local / hosted / Anthropic &middot; per-op model routing &middot; daily spend ceiling &middot; <code>scribe cost</code> reconciliation</dd>
@@ -3410,6 +3410,9 @@ scribe doctor
 <span class="comment"># validate just the local-mode pipeline</span>
 scribe doctor <span class="flag">--section</span> localmode
 
+<span class="comment"># flag a dream whose model alias moved or whose refused tool calls spiked</span>
+scribe doctor <span class="flag">--section</span> telemetry
+
 <span class="comment"># inspect clean/degraded phase status from the last sync</span>
 <span class="kw">cat</span> output/runs/$(date +%Y-%m-%d).jsonl | <span class="kw">tail</span> <span class="flag">-n</span> <span class="num">5</span></pre>
       </div>
@@ -3473,7 +3476,7 @@ scribe doctor <span class="flag">--section</span> localmode
           <h3>Sunday 02:00: the Dream cycle</h3>
           <span class="stage__pill">100% Ollama</span>
         </div>
-        <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Runs entirely on local Ollama: no token spend, no third party touches your notes. The digest and index stay small enough for an agent to read whole; everything else is one <code>qmd</code> query away.</p>
+        <p class="stage__body">Once a week the Dream cycle wakes up. It looks at what's grown, prunes stubs that never got fleshed out, merges near-duplicates, breaks down articles that got too dense, and surfaces contradictions for review. Links that differ from a title only by case or separators are rewritten in Go before the model starts, so its link work goes to the ones that need judgment. Runs entirely on local Ollama: no token spend, no third party touches your notes. The digest and index stay small enough for an agent to read whole; everything else is one <code>qmd</code> query away.</p>
         <div class="stage__src">cmd/scribe/cron.go: weekly entry @ <code>Sun 02:00</code> → cmd/scribe/dream.go: <code>DreamCmd.Run()</code> → <code>prompts/dream-ollama.md</code> on gemma3:12b</div>
       </article>
     </div>
@@ -3505,6 +3508,7 @@ scribe doctor <span class="flag">--section</span> localmode
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--sessions</span>             <span class="cmd-cmt"># mine coding-agent transcripts</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--dry-run --estimate</span>   <span class="cmd-cmt"># token estimate for queued extraction + absorb work, no writes or LLM calls</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe doctor</span>                      <span class="cmd-cmt"># validate deps, config, cron, run freshness, Ollama</span>
+<span class="cmd-prompt">$</span> <span class="cmd-name">scribe doctor</span> <span class="cmd-arg">--section telemetry</span>  <span class="cmd-cmt"># flag dream model drift and refused-tool spikes</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe commit</span>                      <span class="cmd-cmt"># stage + push the KB to your private remote</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe dream</span>                       <span class="cmd-cmt"># weekly 4-phase consolidation</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe capture</span>                     <span class="cmd-cmt"># pull self-sent iMessage links (macOS)</span>
@@ -3872,7 +3876,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT · last updated 2026-10-23</span>
+      <span>MIT · last updated 2026-11-06</span>
       <span>github.com/oliver-kriska/scribe</span>
     </div>
   </div>
