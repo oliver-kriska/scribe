@@ -45,6 +45,9 @@ var lintReviewGuidance = map[string]string{
 	lintClassThinArticle:      "expand, or merge into a related article",
 	lintClassRollingOvergrown: "archive oldest entries to {name}-archive-YYYY.md",
 	lintClassSelfNamedDir:     "merge into canonical articles, then remove the directory",
+
+	lintClassSupersededSpelling: "lowercase it to `status: superseded`",
+	lintClassSupersededByLive:   "set `status: superseded`, or drop superseded_by: if the article is still current",
 }
 
 // lintReport accumulates findings during a structural lint run and

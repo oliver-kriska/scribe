@@ -169,6 +169,7 @@ func lintFrontmatter(rep *lintReport, root string, files []string) {
 		if changes, out, ferr := autoFixArticle(root, rel, content); ferr == nil && out != nil && len(changes) > 0 {
 			rep.warnf(lintClassFixableFrontmatter, "%s: %s", rel, changes[0])
 		}
+		lintSupersededMarkers(rep, rel, content)
 	}
 }
 
