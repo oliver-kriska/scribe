@@ -349,7 +349,7 @@ func writeRunRecord(cmdPath string, started time.Time, runErr error) {
 		// `scribe doctor --section errors`, which prints it. Producers should
 		// sanitize at their own seam; this is the catch-all that also covers
 		// every future source.
-		errMsg = redactURLToken(runErr.Error())
+		errMsg = redactSubprocessOutput(runErr.Error())
 		errMsg = truncateBytes(errMsg, 500)
 	}
 

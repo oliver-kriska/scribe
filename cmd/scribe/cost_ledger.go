@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -326,6 +329,67 @@ func redactCommandSecrets(cmd string) string {
 	return cmd
 }
 
+// redactSubprocessOutput redacts credentials from captured subprocess
+// output before it is stored (error-record tails, run-record and degraded
+// messages). A failed `claude -p` prints its whole result envelope on one
+// stdout line, including permission_denials[].tool_input.command verbatim,
+// so a refused `GITHUB_TOKEN=… git push` landed in output/errors/ intact.
+//
+// Each line is handled on its own, so the line count (the bound tailLines
+// applied) never changes. A line that is a complete JSON value is decoded,
+// every string leaf (denied commands, tool inputs, the result text) goes
+// through redactCommandSecrets, and the value is re-encoded on one line:
+// redacting the raw text instead would cut through JSON escapes (`\"`) and
+// leave an unparseable line. Any other line gets the same rules as text.
+func redactSubprocessOutput(s string) string {
+	if s == "" {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = redactOutputLine(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func redactOutputLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		dec := json.NewDecoder(strings.NewReader(trimmed))
+		dec.UseNumber() // keep token counts and costs byte-exact
+		var v any
+		if err := dec.Decode(&v); err == nil {
+			if _, err := dec.Token(); errors.Is(err, io.EOF) {
+				var buf bytes.Buffer
+				enc := json.NewEncoder(&buf)
+				enc.SetEscapeHTML(false)
+				if err := enc.Encode(redactJSONStrings(v)); err == nil {
+					return strings.TrimSuffix(buf.String(), "\n")
+				}
+			}
+		}
+	}
+	return redactCommandSecrets(line)
+}
+
+// redactJSONStrings applies redactCommandSecrets to every string leaf of a
+// decoded JSON value, in place. Keys are left alone.
+func redactJSONStrings(v any) any {
+	switch t := v.(type) {
+	case string:
+		return redactCommandSecrets(t)
+	case map[string]any:
+		for k, x := range t {
+			t[k] = redactJSONStrings(x)
+		}
+	case []any:
+		for i, x := range t {
+			t[i] = redactJSONStrings(x)
+		}
+	}
+	return v
+}
+
 // isRateLimitSubtype detects rate-limit errors from the JSON
 // envelope's subtype field. The subtype set varies across claude
 // versions; the substrings listed here cover what's been observed
@@ -452,10 +516,11 @@ func appendErrorRecord(root string, rec ErrorRecord) {
 		return
 	}
 	// The tails are raw subprocess output: a provider error that echoes
-	// the request URL, or a fetch that logs it, carries the token.
-	rec.Err = redactURLToken(rec.Err)
-	rec.StderrTail = redactURLToken(rec.StderrTail)
-	rec.StdoutTail = redactURLToken(rec.StdoutTail)
+	// the request URL carries the token, and a failed claude -p envelope
+	// carries every refused command verbatim.
+	rec.Err = redactSubprocessOutput(rec.Err)
+	rec.StderrTail = redactSubprocessOutput(rec.StderrTail)
+	rec.StdoutTail = redactSubprocessOutput(rec.StdoutTail)
 	day := time.Now().UTC().Format("2006-01-02")
 	dayFile := filepath.Join(dir, day+".jsonl")
 	f, err := os.OpenFile(dayFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
