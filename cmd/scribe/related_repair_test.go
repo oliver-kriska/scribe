@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,6 +28,24 @@ func TestBracketsBalanced(t *testing.T) {
 			t.Errorf("bracketsBalanced(%q) = %v, want %v", in, got, want)
 		}
 	}
+}
+
+// numberedEntries returns n distinct balanced entries [[n1]] … [[nN]].
+func numberedEntries(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf("[[n%d]]", i+1)
+	}
+	return out
+}
+
+// titlesFrom wraps a name predicate as a knownTitles that completes
+// nothing; nil stays nil.
+func titlesFrom(has func(string) bool) *knownTitles {
+	if has == nil {
+		return nil
+	}
+	return &knownTitles{has: has}
 }
 
 func TestRepairSplitRelated(t *testing.T) {
@@ -89,15 +108,31 @@ func TestRepairSplitRelated(t *testing.T) {
 			want: []string{"[[A]]", "[[B (c)]]"},
 		},
 		{
-			name:  "join window is bounded",
-			in:    []string{"[[A (1]]", "[[2]]", "[[3]]", "[[4]]", "[[5)]]"},
-			want:  []string{"[[2]]", "[[3]]", "[[4]]"},
+			// The real case: a dozen short ids inside one parenthesis.
+			name: "bracket join spans a long id list",
+			in: []string{
+				"[[Keep]]", "[[Threads (9bc7]]", "[[620a]]", "[[6221]]", "[[6245]]", "[[6254]]",
+				"[[5270]]", "[[529e]]", "[[52a7]]", "[[b5b]]", "[[8ccf]]", "[[8d71]]", "[[8e0f)]]",
+			},
+			want:  []string{"[[Keep]]", "[[Threads (9bc7, 620a, 6221, 6245, 6254, 5270, 529e, 52a7, b5b, 8ccf, 8d71, 8e0f)]]"},
+			notes: 1,
+		},
+		{
+			name:  "title join window is bounded",
+			in:    []string{"[[A]]", "[[B]]", "[[C]]", "[[D]]", "[[E]]"},
+			known: func(n string) bool { return n == "A, B, C, D, E" },
+			want:  []string{"[[A]]", "[[B]]", "[[C]]", "[[D]]", "[[E]]"},
+		},
+		{
+			name:  "bracket join window is bounded",
+			in:    append(append([]string{"[[A (1]]"}, numberedEntries(maxBracketJoinParts-1)...), "[[z)]]"),
+			want:  numberedEntries(maxBracketJoinParts - 1),
 			notes: 2,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, notes := repairSplitRelated(c.in, c.known)
+			got, notes := repairSplitRelated(c.in, titlesFrom(c.known))
 			if !slices.Equal(got, c.want) {
 				t.Errorf("got %q, want %q", got, c.want)
 			}
@@ -170,5 +205,30 @@ func TestDreamLinkReport_WantedSkipsUnbalancedTargets(t *testing.T) {
 	}
 	if !strings.Contains(got, "- [[Real (Page)]] — 3 articles") {
 		t.Errorf("balanced wanted page missing:\n%s", got)
+	}
+}
+
+// A fragment whose other half is gone is restored from the one title it
+// starts, and a repair never leaves the same link twice.
+func TestRepairSplitRelated_CompletesOrphanFragment(t *testing.T) {
+	set := newTitleSet(map[string]bool{
+		"Reflexion (Shinn et al., NeurIPS 2023)":    true,
+		"Twin (a, x)":                               true,
+		"Twin (a, y)":                               true,
+		"Self-Refine (Madaan et al., NeurIPS 2023)": true,
+	})
+	known := &knownTitles{has: func(n string) bool { return set.names[n] }, complete: set.complete}
+	got, notes := repairSplitRelated([]string{
+		"[[Self-Refine (Madaan et al.]]", "[[NeurIPS 2023)]]",
+		"[[Reflexion (Shinn et al.]]", "[[Twin (a]]",
+		"[[Self-Refine (Madaan et al., NeurIPS 2023)]]",
+	}, known)
+	want := []string{"[[Self-Refine (Madaan et al., NeurIPS 2023)]]", "[[Reflexion (Shinn et al., NeurIPS 2023)]]"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// rejoin, complete, drop ambiguous "Twin (a", drop duplicate
+	if len(notes) != 4 {
+		t.Errorf("notes = %q, want 4", notes)
 	}
 }

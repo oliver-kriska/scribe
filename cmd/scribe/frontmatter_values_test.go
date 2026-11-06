@@ -44,7 +44,10 @@ func TestNormalizeConfidence(t *testing.T) {
 		{"85%", "high", true},
 		{"40 %", "low", true},
 		{"High", "high", true},
-		{`"medium"`, "medium", true},
+		{`"medium"`, "", false}, // valid YAML for medium
+		{`'low'`, "", false},
+		{`"High"`, "high", true},
+		{`high"`, "high", true},
 		{"moderate", "medium", true},
 		{"7", "", false},    // a 1–10 score? a percent? ambiguous
 		{"-0.1", "", false}, // out of range

@@ -31,8 +31,11 @@ the upgrade may touch more files than usual.
   90 MB ledger.
 - **`scribe lint` reports comma-split `related:` entries** as their own
   class, and `--fix` rejoins them (adjacent entries whose brackets only
-  balance together, or that join into an existing title or alias) and
-  drops leftover fragments.
+  balance together, up to 16 pieces, or that join into an existing title
+  or alias). A fragment whose other half is gone is restored from the one
+  title it starts (`[[Reflexion (Shinn et al.]]` →
+  `[[Reflexion (Shinn et al., NeurIPS 2023)]]`); anything else is dropped,
+  and duplicates the repair creates are removed.
 - **Superseded-marker warnings.** Lint warns on a `status:` that is
   superseded in all but spelling, and on a `superseded_by:` whose article
   is not `status: superseded` (still indexed and linked as live).

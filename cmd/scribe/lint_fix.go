@@ -109,7 +109,7 @@ func autoFixArticle(root, rel string, content []byte) ([]string, []byte, error) 
 // autoFixArticleWith is autoFixArticle with a KB title lookup for the
 // related: split repair (repairSplitRelated). A nil known limits that
 // repair to bracket balance.
-func autoFixArticleWith(root, rel string, content []byte, known func(string) bool) ([]string, []byte, error) {
+func autoFixArticleWith(root, rel string, content []byte, known *knownTitles) ([]string, []byte, error) {
 	s := string(content)
 	joinedFence := false
 	openingFenceFixed := false
@@ -864,10 +864,11 @@ var confidenceSynonyms = map[string]string{"moderate": "medium", "med": "medium"
 // Returns ("", false) when there is no such mapping or val is already valid.
 func normalizeConfidence(val string) (string, bool) {
 	raw := strings.TrimSpace(val)
-	if validConfidence[raw] {
-		return "", false
+	unquoted := strings.Trim(raw, `"'`)
+	if validConfidence[unquoted] && balancedQuotes(raw) {
+		return "", false // `"high"` is valid YAML for high
 	}
-	v := strings.ToLower(strings.Trim(raw, `"'`))
+	v := strings.ToLower(unquoted)
 	if validConfidence[v] {
 		return v, true
 	}

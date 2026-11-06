@@ -5,9 +5,15 @@ import (
 	"strings"
 )
 
-// maxRelatedJoinParts bounds how many adjacent related: entries one repair
-// may rejoin: a title with up to three commas.
+// maxRelatedJoinParts bounds how many adjacent related: entries a
+// title-lookup repair may rejoin: a title with up to three commas.
 const maxRelatedJoinParts = 4
+
+// maxBracketJoinParts bounds a bracket-balance repair, which needs no
+// lookup: both ends must be unbalanced and only balance together, a much
+// stronger signal, and real titles list a dozen short ids inside one
+// parenthesis ("Campfire Review Threads (9bc7, 620a, …, 8e0f)").
+const maxBracketJoinParts = 16
 
 var openingBracket = map[rune]rune{')': '(', ']': '[', '}': '{'}
 
@@ -50,11 +56,12 @@ func relatedEntryInner(entry string) (inner string, wrapped bool) {
 //   - the first and last pieces both have unbalanced brackets and the
 //     joined text is balanced.
 //
-// At most maxRelatedJoinParts entries join, nearest end first. An entry
+// At most maxRelatedJoinParts entries join by title, maxBracketJoinParts
+// by brackets, nearest end first. An entry
 // that still has unbalanced brackets afterwards is dropped. Entries the
 // repair does not touch are returned verbatim. notes describes each change;
 // it is empty when nothing changed.
-func repairSplitRelated(entries []string, known func(string) bool) (out, notes []string) {
+func repairSplitRelated(entries []string, known *knownTitles) (out, notes []string) {
 	inners := make([]string, len(entries))
 	for i, entry := range entries {
 		inners[i], _ = relatedEntryInner(entry)
@@ -72,23 +79,54 @@ func repairSplitRelated(entries []string, known func(string) bool) (out, notes [
 			continue
 		}
 		if !bracketsBalanced(inners[i]) {
-			notes = append(notes, "dropped related entry with unbalanced brackets "+entries[i])
+			// The other half may be gone (a dedupe kept one copy of a shared
+			// "2023)"), but the KB can still name the whole title.
+			if full, ok := known.Complete(inners[i]); ok {
+				restored := full
+				if _, wrapped := relatedEntryInner(entries[i]); wrapped {
+					restored = "[[" + full + "]]"
+				}
+				notes = append(notes, fmt.Sprintf("completed split related entry %s → %s", entries[i], restored))
+				out = append(out, restored)
+			} else {
+				notes = append(notes, "dropped related entry with unbalanced brackets "+entries[i])
+			}
 			i++
 			continue
 		}
 		out = append(out, entries[i])
 		i++
 	}
+	if len(notes) > 0 {
+		out, notes = dedupeRelatedEntries(out, notes)
+	}
+	return out, notes
+}
+
+// dedupeRelatedEntries drops a later entry that names the same link as an
+// earlier one: a rejoined or completed title can repeat one already listed.
+func dedupeRelatedEntries(entries, notes []string) (out, outNotes []string) {
+	seen := make(map[string]bool, len(entries))
+	out = entries[:0:0]
+	for _, entry := range entries {
+		inner, _ := relatedEntryInner(entry)
+		if seen[inner] {
+			notes = append(notes, "dropped duplicate related entry "+entry)
+			continue
+		}
+		seen[inner] = true
+		out = append(out, entry)
+	}
 	return out, notes
 }
 
 // relatedJoinEnd returns the index of the last entry to rejoin with
 // inners[start], or start when no join applies.
-func relatedJoinEnd(inners []string, start int, known func(string) bool) int {
+func relatedJoinEnd(inners []string, start int, known *knownTitles) int {
 	firstUnbalanced := !bracketsBalanced(inners[start])
-	for end := start + 1; end < len(inners) && end < start+maxRelatedJoinParts; end++ {
+	for end := start + 1; end < len(inners) && end < start+maxBracketJoinParts; end++ {
 		joined := strings.Join(inners[start:end+1], ", ")
-		if known != nil && known(joined) && !anyKnown(inners[start:end+1], known) {
+		if end < start+maxRelatedJoinParts && known.Has(joined) && !anyKnown(inners[start:end+1], known) {
 			return end
 		}
 		if firstUnbalanced && !bracketsBalanced(inners[end]) && bracketsBalanced(joined) {
@@ -98,13 +136,36 @@ func relatedJoinEnd(inners []string, start int, known func(string) bool) int {
 	return start
 }
 
-func anyKnown(names []string, known func(string) bool) bool {
+func anyKnown(names []string, known *knownTitles) bool {
 	for _, name := range names {
-		if known(name) {
+		if known.Has(name) {
 			return true
 		}
 	}
 	return false
+}
+
+// knownTitles is the KB's title and alias set as the related: repair uses
+// it. A nil *knownTitles knows nothing, which limits the repair to
+// bracket balance.
+type knownTitles struct {
+	has      func(string) bool
+	complete func(fragment string) (string, bool)
+}
+
+// Has reports whether name is a title or alias.
+func (k *knownTitles) Has(name string) bool {
+	return k != nil && k.has != nil && k.has(name)
+}
+
+// Complete returns the one title or alias that starts with fragment + ", "
+// and has balanced brackets, the whole of a title whose other pieces were
+// lost. ok=false when none or several match.
+func (k *knownTitles) Complete(fragment string) (string, bool) {
+	if k == nil || k.complete == nil {
+		return "", false
+	}
+	return k.complete(fragment)
 }
 
 // relatedStrings returns a decoded related: value as strings, or ok=false
@@ -130,7 +191,7 @@ func relatedStrings(v any) ([]string, bool) {
 
 // repairRelatedValue applies repairSplitRelated to a decoded related: value.
 // A value that is not a list of strings is returned unchanged.
-func repairRelatedValue(v any, known func(string) bool) (any, []string) {
+func repairRelatedValue(v any, known *knownTitles) (any, []string) {
 	entries, ok := relatedStrings(v)
 	if !ok {
 		return v, nil

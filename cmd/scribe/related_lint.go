@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"sync"
 	"unicode"
@@ -8,10 +9,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// kbTitleLookup returns a function reporting whether name is a title or
-// alias of any article under root. The walk runs once, on first use.
-func kbTitleLookup(root string) func(string) bool {
-	load := sync.OnceValue(func() map[string]bool {
+// kbTitleLookup returns the title and alias set of every article under
+// root. The walk runs once, on first use.
+func kbTitleLookup(root string) *knownTitles {
+	load := sync.OnceValue(func() titleSet {
 		names := map[string]bool{}
 		_ = walkArticles(root, func(_ string, content []byte) error {
 			if title, ok := plainFrontmatterTitle(content); ok {
@@ -35,9 +36,43 @@ func kbTitleLookup(root string) func(string) bool {
 			}
 			return nil
 		})
-		return names
+		return newTitleSet(names)
 	})
-	return func(name string) bool { return load()[name] }
+	return &knownTitles{
+		has:      func(name string) bool { return load().names[name] },
+		complete: func(fragment string) (string, bool) { return load().complete(fragment) },
+	}
+}
+
+// titleSet is a name set plus its sorted keys for prefix lookups.
+type titleSet struct {
+	names  map[string]bool
+	sorted []string
+}
+
+func newTitleSet(names map[string]bool) titleSet {
+	sorted := make([]string, 0, len(names))
+	for name := range names {
+		sorted = append(sorted, name)
+	}
+	slices.Sort(sorted)
+	return titleSet{names: names, sorted: sorted}
+}
+
+// complete returns the single balanced name that starts with fragment + ", ".
+func (s titleSet) complete(fragment string) (string, bool) {
+	prefix := fragment + ", "
+	match := ""
+	for i, _ := slices.BinarySearch(s.sorted, prefix); i < len(s.sorted) && strings.HasPrefix(s.sorted[i], prefix); i++ {
+		if !bracketsBalanced(s.sorted[i]) {
+			continue
+		}
+		if match != "" {
+			return "", false
+		}
+		match = s.sorted[i]
+	}
+	return match, match != ""
 }
 
 // plainFrontmatterTitle reads the title without a YAML parse when that is
@@ -108,7 +143,7 @@ func relatedRegion(lines []string) (start, end int) {
 // repair applies: they are re-rendered in the same style (flow or block),
 // each entry double-quoted. Any other value shape, or a region that does
 // not parse, is left alone.
-func repairRelatedLines(lines []string, known func(string) bool) ([]string, []string) {
+func repairRelatedLines(lines []string, known *knownTitles) ([]string, []string) {
 	start, end := relatedRegion(lines)
 	if start < 0 {
 		return lines, nil
@@ -179,7 +214,7 @@ func relatedYAMLQuote(s string) string {
 
 // splitRelatedFindings returns what repairRelatedLines would change in
 // content's frontmatter, without changing it.
-func splitRelatedFindings(content []byte, known func(string) bool) []string {
+func splitRelatedFindings(content []byte, known *knownTitles) []string {
 	span, err := frontmatterSpan(string(content))
 	if err != nil {
 		return nil
