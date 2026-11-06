@@ -65,6 +65,25 @@ func TestDreamPrompt_StatesActualToolGrant(t *testing.T) {
 	}
 }
 
+// The prompt describes the grant in prose, so pin the code side too: a change
+// to dreamMonolithicTools must come with a review of dream.md's tool text.
+func TestDreamPrompt_ToolGrantMatchesCode(t *testing.T) {
+	want := []string{"Read", "Write", "Edit", "Glob", "Grep", "Bash(wc:*)", "Bash(ls:*)", "Bash(find:*)"}
+	if !slices.Equal(dreamMonolithicTools, want) {
+		t.Fatalf("dreamMonolithicTools = %v, want %v; update prompts/dream.md's tool grant text and this test together", dreamMonolithicTools, want)
+	}
+	p := loadDreamPromptForTest(t, "dream.md")
+	for _, tool := range dreamMonolithicTools {
+		name := tool
+		if strings.HasPrefix(tool, "Bash(") {
+			name = "`" + strings.TrimSuffix(strings.TrimPrefix(tool, "Bash("), ":*)") + "`"
+		}
+		if !strings.Contains(p, name) {
+			t.Errorf("dream.md does not mention granted tool %s", name)
+		}
+	}
+}
+
 // Nothing in the grant can delete a file (no rm; find -delete is refused),
 // so the prompt must not tell the model to delete. Deletion candidates go to
 // the log for a human.
