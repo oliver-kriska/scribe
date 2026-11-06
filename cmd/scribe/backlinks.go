@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 )
 
 type BacklinksCmd struct {
@@ -20,27 +19,11 @@ func (b *BacklinksCmd) Run() error {
 		return err
 	}
 
-	g, err := collectArticleLinks(root)
+	graph, err := buildLinkGraph(root)
 	if err != nil {
 		return err
 	}
-
-	// Build backlinks: target title -> [source titles]
-	backlinks := make(map[string][]string)
-	for sourcePath, links := range g.pathToLinks {
-		sourceTitle := g.pathToTitle[sourcePath]
-		for _, target := range links {
-			// Skip self-links and titles held only by superseded articles.
-			if target != sourceTitle && !g.supersededTitles[target] {
-				backlinks[target] = append(backlinks[target], sourceTitle)
-			}
-		}
-	}
-
-	// Sort source lists for deterministic output
-	for target := range backlinks {
-		sort.Strings(backlinks[target])
-	}
+	backlinks := backlinksMap(graph)
 
 	data, err := json.MarshalIndent(backlinks, "", "  ")
 	if err != nil {

@@ -4,9 +4,15 @@ Execute all 4 phases of the Dream cycle. Today is {{DATE}}.
 
 ## Your tools
 
-You have Read, Write, Edit, Glob and Grep. Bash runs only `wc`, `ls` and `find`, on their own or piped into each other. `find -delete` and `find -exec` are refused, and so is every other command (`cd`, `rm`, `python3`, `node`, `scribe`, `for` loops). There are no subagents, and you cannot delete files. For an article's inbound links, Grep `wiki/_backlinks.json` for its title (the file is keyed by title and too large to Read whole). Ignore any source ending in `_index.md`: the generated indexes link every article, so they don't count. The file reflects the KB before this cycle, so also Grep for `[[Title]]` in files you created or edited this cycle. Never edit a file whose name starts with `_` (such as `wiki/_index.md`, `wiki/_backlinks.json` or a hub `_index.md`): scribe generates them and regenerates the index and backlinks after this cycle. Do every sweep with Glob, Grep and Read (or `find` piped into `wc`).
+You have Read, Write, Edit, Glob and Grep. Bash runs only `wc`, `ls` and `find`, on their own or piped into each other. `find -delete` and `find -exec` are refused, and so is every other command (`cd`, `rm`, `python3`, `node`, `scribe`, `for` loops). There are no subagents, and you cannot delete files. For an article's inbound links, Grep `wiki/_backlinks.json` for the article's exact title (keys are canonical titles; aliases and case variants are already folded in; the file is too large to Read whole). Ignore any source ending in `_index.md`: the generated indexes link every article, so they don't count. The file reflects the KB before this cycle, so also Grep for `[[Title]]` in files you created or edited this cycle. Never edit a file whose name starts with `_` (such as `wiki/_index.md`, `wiki/_backlinks.json` or a hub `_index.md`): scribe generates them and regenerates the index and backlinks after this cycle. Do every sweep with Glob, Grep and Read (or `find` piped into `wc`).
 
 There is no later cycle with more tools. When a step would need a script, do it file by file now, or narrow it to what you can check that way and say in the log what you narrowed. Don't defer it.
+
+## Link report
+
+scribe computed this from every article before this cycle. Titles, aliases, case, slugs and file names are already resolved, and links from generated `_` files are left out.
+
+{{LINK_REPORT}}
 
 ## Phase 1 — ORIENT (read-only, no edits)
 
@@ -35,6 +41,8 @@ List every contradiction you found with its classification before proceeding to 
 
 ## Phase 3 — CONSOLIDATE (the core work)
 
+- Fix every broken link in the link report: edit the source file so the link names the canonical title.
+  Before rewriting a link, open the canonical article and confirm it is the article the link means; if it is not, leave the link alone.
 - Fix contradictions at source using the classification from Phase 2.5:
   - **Solid-vs-Vague:** rewrite or remove the vague claim. The high-confidence article wins.
   - **Solid-vs-Solid:** this is a Rule 11 + Rule 12 case. Determine which claim reflects current reality (prefer newer `updated:`, prefer primary sources in `sources:`, prefer the project closer to the subject). Rewrite the losing article in place to match reality, and append a `Status: reconsidered YYYY-MM-DD — superseded claim "X" with "Y" after dream contradiction pass` line at the top of the rewritten article. Do not delete the history, do not carry both versions in the same article.
@@ -51,6 +59,7 @@ List every contradiction you found with its classification before proceeding to 
 Scan all articles for entity names (tools, patterns, people, concepts) that appear
 in 3 or more articles but do not have their own wiki page. For each:
 - Count how many articles reference it
+- The link report's wanted pages are dangling wikilinks with 3 or more linking articles; treat each as a candidate (mentions without a wikilink still count separately).
 - If referenced in 3+ articles: create a stub article with proper frontmatter,
   a 2-3 sentence summary synthesized from the referencing articles, and wikilinks
   back to the sources. Apply the concrete noun test: 'X is a ___'. If it fails
@@ -62,7 +71,7 @@ in 3 or more articles but do not have their own wiki page. For each:
 
 ## Phase 4 — PRUNE
 
-- Flag (do not delete) an article ONLY when ALL hold: zero inbound links, zero outbound wikilinks, AND its `updated:` date is more than 60 days before today. Add '<!-- decay-candidate {{DATE}} -->' as the last line. Never flag an article whose `updated:` is within the last 60 days — the marker asserts staleness, so marking a fresh article is self-contradictory and wrong. Never flag an article with `status: superseded`: it is kept on purpose as history (Rule 12), and it is absent from `_backlinks.json` by design, so it always looks unlinked.
+- Decay candidates come from the link report's list. For each, still open it and confirm it meets this rule: flag (do not delete) an article ONLY when ALL hold: zero inbound links, zero outbound wikilinks, AND its `updated:` date is more than 60 days before today. Add '<!-- decay-candidate {{DATE}} -->' as the last line. Never flag an article whose `updated:` is within the last 60 days — the marker asserts staleness, so marking a fresh article is self-contradictory and wrong. Never flag an article with `status: superseded`: it is kept on purpose as history (Rule 12), and it is absent from `_backlinks.json` by design, so it always looks unlinked.
 - Deleting a previously-flagged article requires RE-VERIFICATION from the article itself, never the marker alone (earlier runs stamped bogus markers on fresh docs). Open the article and confirm ALL of: its `updated:` is still more than 90 days before today, it still has zero inbound and outbound links, AND the `decay-candidate` marker it carries is itself dated more than 30 days ago. Only then is it a deletion candidate. You cannot delete files with these tools, so list each candidate, with the evidence for every condition, in the dream log for a human to delete. If the `updated:` date is recent, the marker is bogus — REMOVE THE MARKER and keep the article. List every candidate that meets all the conditions.
 
 Log everything you did in log.md using this format:

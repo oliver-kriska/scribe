@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,11 +72,12 @@ func (c *LinkCmd) Run() error {
 		titleIndex[articles[i].Title] = articles[i]
 	}
 
-	// Compute orphans from backlinks file (same source as `scribe orphans`).
-	orphanTitles, err := computeOrphans(root, titleIndex)
+	// Same link graph as `scribe orphans` and lint.
+	graph, err := buildLinkGraph(root)
 	if err != nil {
 		return fmt.Errorf("compute orphans: %w", err)
 	}
+	orphanTitles := graphOrphans(graph)
 
 	// Filter orphans if --orphan flag is set.
 	if c.Orphan != "" {
@@ -219,43 +219,6 @@ func loadArticles(root string) ([]*article, error) {
 		return nil
 	})
 	return articles, err
-}
-
-// computeOrphans reads backlinks and returns titles with zero inbound links.
-// Matches the logic in `scribe orphans` but returns only the titles.
-func computeOrphans(root string, titleIndex map[string]*article) ([]string, error) {
-	blPath := filepath.Join(root, "wiki", "_backlinks.json")
-	backlinks := make(map[string][]string)
-	if data, err := os.ReadFile(blPath); err == nil {
-		_ = json.Unmarshal(data, &backlinks)
-	}
-
-	allTargets := make(map[string]bool)
-	err := walkAllMarkdown(root, func(_ string, content []byte) error {
-		for _, link := range extractWikilinks(content) {
-			allTargets[link] = true
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var orphans []string
-	for title, art := range titleIndex {
-		if art.Rolling {
-			continue // rolling memory files are hosted via overview links, not orphans to relink
-		}
-		if _, hasBacklinks := backlinks[title]; hasBacklinks {
-			continue
-		}
-		if allTargets[title] {
-			continue
-		}
-		orphans = append(orphans, title)
-	}
-	sort.Strings(orphans)
-	return orphans, nil
 }
 
 // scoreHosts returns candidate host articles above the min score, sorted by score.

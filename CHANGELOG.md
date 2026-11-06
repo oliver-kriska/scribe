@@ -53,6 +53,39 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   --fresh` now shares `scribe backlinks`' link walk and, like it,
   ignores self-links. The KB template's Rule 12 and the tidy skill name
   the field.
+- **Links resolve by alias, case, slug, path and anchor (#139).**
+  `scribe backlinks`, `debug --fresh`, `lint`, `scribe orphans` and
+  `scribe link` now share one link graph. `wiki/_backlinks.json` keys are
+  canonical titles, so alias, case, slug and `#anchor` links credit the
+  article they name. A missing link keeps its normalized text as the key.
+  Behavior changes:
+  1. `_backlinks.json` keys are canonical titles.
+  2. `scribe orphans` and `link` compute from the KB, not from
+     `_backlinks.json`.
+  3. An article whose only inbound link is a self-link is now an orphan.
+  4. An unlinked alias is no longer its own orphan (only titles are
+     candidates), and rolling articles are no longer orphans in `lint` or
+     `scribe orphans`.
+  5. A link that matches more than one article is neither missing nor
+     credited; `lint` reports how many there are.
+  6. Links that resolve by case, slug or path are no longer missing. A
+     slug match that would drop a symbol or non-ASCII letter (`C++`,
+     `C#`, `Čaj`) is not made, and a title containing `#` matches whole
+     before the `#anchor` is cut.
+  7. Articles whose frontmatter fails to parse are no longer orphan
+     candidates; the `lint` warning about files unreadable or unparsed
+     during the link scan reports them instead.
+  8. `scribe orphans --json` emits `[]` instead of `null` for an empty
+     list.
+- **The monolithic dream gets a resolved link report (#139).** Before the
+  prompt is built, scribe lists broken links with their canonical title,
+  decay candidates (no non-generated inbound link, no outbound link,
+  `updated:` older than 60 days) and wanted pages (dangling targets linked
+  from 3 or more articles). Each list is capped at 40 lines, and links from
+  generated `_` files do not count toward decay, wanted pages or broken
+  links. The dream fixes broken links in its source files; scribe never
+  rewrites them. A failed scan is recorded as degraded and the prompt says
+  the report is unavailable. The orchestrator and hot prompts are unchanged.
 
 ### Fixed
 

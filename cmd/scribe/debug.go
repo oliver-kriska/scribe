@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 )
 
@@ -185,24 +184,12 @@ func (c *DebugBacklinksCmd) Run() error {
 }
 
 // computeBacklinksFor walks the KB and returns sources linking to title.
-// It shares collectArticleLinks with `scribe backlinks`, so the two cannot
+// It reads the same backlinksMap as `scribe backlinks`, so the two cannot
 // disagree about what counts as a link.
 func computeBacklinksFor(root, title string) ([]string, error) {
-	g, err := collectArticleLinks(root)
+	graph, err := buildLinkGraph(root)
 	if err != nil {
 		return nil, err
 	}
-	if g.supersededTitles[title] {
-		return nil, nil
-	}
-	var sources []string
-	for srcPath, links := range g.pathToLinks {
-		srcTitle := g.pathToTitle[srcPath]
-		// Same rule as `scribe backlinks`: a self-link is not inbound.
-		if srcTitle != title && slices.Contains(links, title) {
-			sources = append(sources, srcTitle)
-		}
-	}
-	sort.Strings(sources)
-	return sources, nil
+	return backlinksMap(graph)[title], nil
 }

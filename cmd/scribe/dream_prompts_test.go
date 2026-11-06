@@ -10,7 +10,7 @@ import (
 // (dream.go, dream_orchestrator.go, dream_hot.go). A placeholder outside
 // this set is silently stripped by loadPrompt, so it is a prompt bug.
 var dreamPromptVars = map[string][]string{
-	"dream.md":               {"KB_DIR", "DATE"},
+	"dream.md":               {"KB_DIR", "DATE", "LINK_REPORT"},
 	"dream-anthropic.md":     {"KB_DIR", "TODAY", "LOG_TAIL", "INVENTORY", "STALE", "CONTRADICTIONS"},
 	"dream-ollama.md":        {"KB_DIR", "TODAY", "LOG_TAIL", "INVENTORY", "STALE", "CONTRADICTIONS"},
 	"dream-hot-anthropic.md": {"KB_DIR", "TODAY", "DOMAIN", "LOG_TAIL", "INVENTORY", "STALE", "CONTRADICTIONS"},
@@ -145,5 +145,19 @@ func TestDreamOrchestratorPrompts_DoNotClaimStaleListIsZeroLink(t *testing.T) {
 		if !strings.Contains(lower, "if unsure, do not mark it") {
 			t.Errorf("%s decay instruction does not say to skip marking when unsure", name)
 		}
+	}
+}
+
+func TestDreamPrompt_HasLinkReport(t *testing.T) {
+	raw, err := promptFS.ReadFile("prompts/dream.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "## Link report") || !strings.Contains(string(raw), "{{LINK_REPORT}}") {
+		t.Fatal("dream.md lacks the Link report section or its placeholder")
+	}
+	p := loadDreamPromptForTest(t, "dream.md")
+	if !strings.Contains(p, "## Link report") || !strings.Contains(p, "<link_report>") || strings.Contains(p, "{{LINK_REPORT}}") {
+		t.Error("rendered prompt lacks the Link report section")
 	}
 }
