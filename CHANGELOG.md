@@ -2,6 +2,88 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.6.1] — 2026-11-06
+
+Follow-ups found while smoke-testing 0.6.0 on a ~12k-article KB.
+
+**Upgrade notes.** Run `scribe lint --fix` once: it repairs `related:`
+entries an earlier extraction split at a comma inside a title, stray-quote
+dates and numeric `confidence:` values already on disk. The weekly dream
+now fixes case/separator-only broken links itself, so its first run after
+the upgrade may touch more files than usual.
+
+### Added
+
+- **`scribe link --fix-broken [-n]`** rewrites broken links whose target
+  differs from a title only by case, whitespace, `-`/`_` or a trailing
+  `.md` (`[[go_modules]]` → `[[Go Modules]]`), keeping any `#anchor`,
+  `|label` and table-escape backslash. The rewrite must resolve exactly.
+  Code spans, generated `_` files, superseded articles and frontmatter
+  other than `related:` are left alone. Writes are atomic and skip files
+  that changed during the scan. The weekly dream runs it first, so the
+  edits land in the dream commit and the dream's link report keeps its
+  bounded list for links that need judgment.
+- **`scribe doctor --section telemetry`** reads the dream rows of the cost
+  ledger and warns on model drift (the `sonnet` alias now resolves to a
+  different model id than the previous run) and on denial spikes (refused
+  tool calls above `max(3, 2 × median)` of the previous 5 runs), the usual
+  sign a Claude Code update narrowed the dream's tool grant. ~90 ms on a
+  90 MB ledger.
+- **`scribe lint` reports comma-split `related:` entries** as their own
+  class, and `--fix` rejoins them (adjacent entries whose brackets only
+  balance together, or that join into an existing title or alias) and
+  drops leftover fragments.
+- **Superseded-marker warnings.** Lint warns on a `status:` that is
+  superseded in all but spelling, and on a `superseded_by:` whose article
+  is not `status: superseded` (still indexed and linked as live).
+- **`make live-probe`**: an opt-in test (`SCRIBE_LIVE_CLAUDE=1`) that runs
+  the real `claude -p` with the dream's tool grant and checks that
+  `find -delete` is refused and `ls` is not. Not wired into CI.
+
+### Fixed
+
+- **Titles with a comma no longer become two broken links.** The
+  `related:` normalizer split every `[[…]]` on commas, so
+  `[[Default Target Stack (Verified Current Versions, 2026-10-09)]]` was
+  written back as two links, which the dream's Wanted pages then asked to
+  create. Wanted pages also skip targets with unbalanced brackets.
+- **Inline code inside a link survives.** ``[[The `foo` flag]]`` reached
+  the resolver, orphan linker and promote as `The  flag`.
+- **Stray-quote dates and numeric confidence are repaired.** `lint --fix`
+  now fixes `created: 2026-10-14"` (a lone quote; a balanced pair is left
+  as written) and maps `confidence: 0.83` / `85%` / `moderate` / `High`
+  onto high/medium/low (≥ 0.8 high, ≥ 0.5 medium, else low). The
+  write-time clamp applies the same repairs, so new articles never land
+  with them.
+- **`status: Superseded` takes effect.** The match is now case- and
+  whitespace-insensitive on every type.
+- **Every superseded article leaves the staleness ledger**, not only
+  research and decisions.
+- **`scribe debug backlinks <alias>`** resolves the name to its canonical
+  title first (0.6.0 keyed `_backlinks.json` by canonical title).
+- **Secrets are redacted from stored `claude -p` output.** Error records,
+  run-record errors and degraded-phase messages kept a failed run's
+  envelope tail verbatim, including refused commands such as
+  `GITHUB_TOKEN=… git push`. Envelope lines stay valid JSON after
+  redaction.
+- **Prompts no longer ask models to rebuild `_index.md` /
+  `_backlinks.json`.** Seven prompts still did, and a model rewrite has
+  the wrong shape since 0.6.0. `scribe assess` (tools mode) and one-shot
+  `scribe absorb` / `ingest --absorb` now rebuild both in Go.
+
+### Changed
+
+- **People pages are no longer dream decay candidates.** On a large KB
+  unlinked `type: person` pages filled the capped list. The remaining
+  candidates are listed oldest first.
+- **The KB title lookup reads plain titles without a YAML parse**, which
+  cuts its CPU time about 4× and speeds up the one-file `lint --changed`
+  that sync runs.
+
+### Internal
+
+- Dependabot groups the `github/codeql-action` sub-actions into one PR.
+
 ## [0.6.0] — 2026-11-06
 
 Most of this release was contributed by @louis-byers: the `.claude/`
