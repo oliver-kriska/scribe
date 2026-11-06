@@ -1702,7 +1702,7 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 	now := time.Now()
 	today := now.UTC().Format(time.DateOnly)
 	kept := make([]WikiAction, 0, len(env.Actions))
-	var dropped, retyped, redomained, stamped, deduped, nested, refenced, futured int
+	var dropped, retyped, redomained, stamped, deduped, nested, refenced, futured, normalized int
 	for _, a := range env.Actions {
 		if a.Op == "update_frontmatter" {
 			var fixed map[string]any
@@ -1794,6 +1794,9 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 				stamped++
 			}
 		}
+		var n int
+		a.Content, n = normalizeEnvelopeValues(a.Content, fm)
+		normalized += n
 		if createdFuture := isFutureDate(fm.Created, now); createdFuture || isFutureDate(fm.Updated, now) {
 			if createdFuture {
 				a.Content = setFrontmatterScalar(a.Content, "created", today)
@@ -1804,10 +1807,31 @@ func clampEnvelopeFrontmatter(env *WikiActionEnvelope, root string) {
 		}
 		kept = append(kept, a)
 	}
-	if dropped+retyped+redomained+stamped+deduped+nested+refenced+futured > 0 {
-		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped, %d duplicate key(s) collapsed, %d nested frontmatter stripped, %d opening fence(s) normalized, %d future date(s) set to today", dropped, retyped, redomained, stamped, deduped, nested, refenced, futured)
+	if dropped+retyped+redomained+stamped+deduped+nested+refenced+futured+normalized > 0 {
+		logMsg("envelope", "clamp: %d dropped, %d type-clamped, %d domain-clamped, %d field(s) stamped, %d duplicate key(s) collapsed, %d nested frontmatter stripped, %d opening fence(s) normalized, %d future date(s) set to today, %d date/confidence value(s) normalized", dropped, retyped, redomained, stamped, deduped, nested, refenced, futured, normalized)
 	}
 	env.Actions = kept
+}
+
+// normalizeEnvelopeValues makes the value repairs `lint --fix` makes, so
+// they never land: a date in an alternate format or with a stray quote, and
+// a numeric or synonym confidence. Returns the content and the repair count.
+func normalizeEnvelopeValues(content string, fm *Frontmatter) (string, int) {
+	n := 0
+	for _, kv := range [...]struct{ key, have string }{
+		{"created", stringFromAny(fm.Created)},
+		{"updated", stringFromAny(fm.Updated)},
+	} {
+		if fixed, ok := normalizeDateValue(kv.have); ok && kv.have != "" {
+			content = setFrontmatterScalar(content, kv.key, fixed)
+			n++
+		}
+	}
+	if mapped, ok := normalizeConfidence(fm.Confidence); ok {
+		content = setFrontmatterScalar(content, "confidence", mapped)
+		n++
+	}
+	return content, n
 }
 
 // parseEnvelope unmarshals one JSON envelope and validates the

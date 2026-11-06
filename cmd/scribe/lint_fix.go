@@ -3,9 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,7 +23,10 @@ import (
 //   - add missing domain: general
 //   - add missing updated: <today>
 //   - add missing created: <today> (only when file mtime unavailable)
-//   - reformat 2026/04/20 or 2026.04.20 → 2026-04-20 in created/updated
+//   - reformat 2026/04/20 or 2026.04.20 → 2026-04-20 in created/updated,
+//     and drop a lone stray quote (2026-04-20" → 2026-04-20)
+//   - map confidence: 0.85 / 85% / moderate / High onto high|medium|low
+//     (>= 0.8 high, >= 0.5 medium, else low)
 //   - clamp a future created/updated to today (a past one may be real)
 //   - strip trailing whitespace on every line
 //   - rejoin related: entries cut at a comma inside a title and drop
@@ -41,7 +46,7 @@ import (
 // Skipped (require human / LLM decision):
 //
 //   - missing title (author must pick)
-//   - invalid confidence (silent "fix" would misrepresent)
+//   - any other invalid confidence (a silent "fix" would misrepresent)
 //   - frontmatter that does not parse even after the above (no closing
 //     ---, unescaped `:` in a value, etc.) — returned as an error so
 //     the caller SKIPs and reports it instead of writing a file lint
@@ -230,21 +235,7 @@ func autoFixArticleWith(root, rel string, content []byte, known func(string) boo
 		changes = append(changes, fmt.Sprintf("stripped trailing whitespace (%d line(s))", trailingStripped))
 	}
 
-	// Normalize slash/dot dates on created/updated.
-	for i, line := range lines {
-		key, rest, ok := splitFrontmatterLine(line)
-		if !ok {
-			continue
-		}
-		if key != "created" && key != "updated" {
-			continue
-		}
-		normalized, didFix := normalizeDateValue(rest)
-		if didFix {
-			lines[i] = key + ": " + normalized
-			changes = append(changes, fmt.Sprintf("normalized %s date format", key))
-		}
-	}
+	changes = append(changes, normalizeValueLines(lines)...)
 
 	today := time.Now().Format(time.DateOnly)
 	changes = append(changes, clampFutureDates(lines, time.Now())...)
@@ -811,15 +802,97 @@ var (
 
 func normalizeDateValue(val string) (string, bool) {
 	val = strings.TrimSpace(val)
+	raw := val
 	val = strings.Trim(val, `"'`)
 	if dateRE.MatchString(val) {
-		return val, false
+		// A lone quote on one side (`2026-10-14"`, from a model that
+		// closed a quote it never opened) parses as a string that keeps
+		// the quote, which validate rejects. A balanced pair is valid
+		// YAML and stays as written.
+		return val, !balancedQuotes(raw)
 	}
 	if m := slashDateRE.FindStringSubmatch(val); m != nil {
 		y, mo, d := m[1], padTwo(m[2]), padTwo(m[3])
 		return fmt.Sprintf("%s-%s-%s", y, mo, d), true
 	}
 	return val, false
+}
+
+// normalizeValueLines rewrites, in place, created/updated dates in an
+// alternate format or with a stray quote, and a numeric or synonym
+// confidence, returning one change note per rewrite.
+func normalizeValueLines(lines []string) []string {
+	var changes []string
+	for i, line := range lines {
+		key, rest, ok := splitFrontmatterLine(line)
+		if !ok {
+			continue
+		}
+		switch key {
+		case "created", "updated":
+			if normalized, didFix := normalizeDateValue(rest); didFix {
+				lines[i] = key + ": " + normalized
+				changes = append(changes, fmt.Sprintf("normalized %s date format", key))
+			}
+		case "confidence":
+			if mapped, didFix := normalizeConfidence(rest); didFix {
+				lines[i] = "confidence: " + mapped
+				changes = append(changes, fmt.Sprintf("mapped confidence %s → %s", rest, mapped))
+			}
+		}
+	}
+	return changes
+}
+
+// balancedQuotes reports whether s is unquoted or wrapped in one matching
+// pair of quotes.
+func balancedQuotes(s string) bool {
+	lead := strings.HasPrefix(s, `"`) || strings.HasPrefix(s, "'")
+	trail := strings.HasSuffix(s, `"`) || strings.HasSuffix(s, "'")
+	if !lead && !trail {
+		return true
+	}
+	return lead && trail && len(s) >= 2 && s[0] == s[len(s)-1]
+}
+
+// confidenceSynonyms are the non-enum words models write for medium.
+var confidenceSynonyms = map[string]string{"moderate": "medium", "med": "medium", "mid": "medium"}
+
+// normalizeConfidence maps a confidence value onto high/medium/low when the
+// meaning is unambiguous: a case variant, a synonym of medium, or a score in
+// [0, 1] (or a percentage), where >= 0.8 is high, >= 0.5 medium, else low.
+// Returns ("", false) when there is no such mapping or val is already valid.
+func normalizeConfidence(val string) (string, bool) {
+	raw := strings.TrimSpace(val)
+	if validConfidence[raw] {
+		return "", false
+	}
+	v := strings.ToLower(strings.Trim(raw, `"'`))
+	if validConfidence[v] {
+		return v, true
+	}
+	if mapped, ok := confidenceSynonyms[v]; ok {
+		return mapped, true
+	}
+	scale := 1.0
+	if pct, ok := strings.CutSuffix(v, "%"); ok {
+		v, scale = strings.TrimSpace(pct), 100
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || math.IsNaN(f) {
+		return "", false
+	}
+	f /= scale
+	switch {
+	case f < 0 || f > 1:
+		return "", false
+	case f >= 0.8:
+		return "high", true
+	case f >= 0.5:
+		return "medium", true
+	default:
+		return "low", true
+	}
 }
 
 func padTwo(s string) string {
