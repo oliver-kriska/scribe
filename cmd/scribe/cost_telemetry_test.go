@@ -143,6 +143,63 @@ func TestDenialSample_RedactsURLTokens(t *testing.T) {
 	}
 }
 
+func TestRedactCommandSecrets(t *testing.T) {
+	cases := []struct{ in, secret string }{
+		{`GITHUB_TOKEN=ghp_abc123 gh api /user`, "ghp_abc123"},
+		{`export API_KEY='k-777' && ls`, "k-777"},
+		{`curl -H "Authorization: Bearer sk-live-999" https://x`, "sk-live-999"},
+		{`curl -H 'authorization: token tok42' https://x`, "tok42"},
+		{`curl -u alice:hunter2 https://x`, "hunter2"},
+		{`curl --user=alice:hunter2 https://x`, "hunter2"},
+		{`git clone https://bob:pw123@example.com/r.git`, "pw123"},
+		{`tool --token xyz789 run`, "xyz789"},
+		{`tool --api-key=xyz789 run`, "xyz789"},
+		{`tool --password "p a s s" run`, "p a s s"},
+		{`curl https://api.example.com/x?access_token=qq11`, "qq11"},
+	}
+	for _, c := range cases {
+		got := redactCommandSecrets(c.in)
+		if strings.Contains(got, c.secret) {
+			t.Errorf("redactCommandSecrets(%q) = %q, leaked %q", c.in, got, c.secret)
+		}
+		if !strings.Contains(got, "REDACTED") {
+			t.Errorf("redactCommandSecrets(%q) = %q, want a REDACTED marker", c.in, got)
+		}
+	}
+	// Ordinary commands pass through unchanged.
+	for _, in := range []string{`ls wiki/ | wc -l`, `find . -name "*.md"`, `wc -l a.txt`} {
+		if got := redactCommandSecrets(in); got != in {
+			t.Errorf("redactCommandSecrets(%q) = %q, want unchanged", in, got)
+		}
+	}
+}
+
+// A telemetry field in a shape this build does not expect must not break the
+// core envelope parse: on exit 0 a failed parse falls through to text mode and
+// returns the raw JSON line as the call's output.
+func TestParseClaudeResult_TelemetryShapeDriftKeepsCoreParse(t *testing.T) {
+	line := `{"type":"result","subtype":"success","is_error":false,"result":"hello",` +
+		`"usage":{"input_tokens":10,"output_tokens":5},` +
+		`"modelUsage":{"claude-sonnet-5-5":{}},` +
+		`"permission_denials":"unexpected-string",` +
+		`"subagent_stats":{"spawned":[1,2],"completed":"x"},` +
+		`"terminal_reason":{"nested":true}}`
+	env, ok := parseClaudeResult(line)
+	if !ok {
+		t.Fatal("core envelope did not parse when telemetry fields drifted")
+	}
+	if env.Result != "hello" || env.Usage.OutputTokens != 5 {
+		t.Errorf("core fields lost: result=%q output=%d", env.Result, env.Usage.OutputTokens)
+	}
+	if len(env.ModelUsage) != 1 {
+		t.Errorf("well-formed modelUsage should still decode, got %v", env.ModelUsage)
+	}
+	if env.PermissionDenials != nil || env.SubagentStats != nil || env.TerminalReason != "" {
+		t.Errorf("drifted fields should be left unset, got denials=%v subagents=%v reason=%q",
+			env.PermissionDenials, env.SubagentStats, env.TerminalReason)
+	}
+}
+
 // installEnvelopeClaude puts a `claude` shim first on PATH that drains stdin,
 // prints envelope on stdout, and exits with exitCode — the shape of a real
 // claude -p run, including the failure case where the CLI exits 1 but still

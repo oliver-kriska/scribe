@@ -117,13 +117,53 @@ type claudeResultEnvelope struct {
 		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 	} `json:"usage"`
+	// The fields below are telemetry only. They are decoded leniently by
+	// decodeEnvelopeTelemetry, never by the strict json.Unmarshal above:
+	// if a future CLI changes one of their shapes, the core envelope
+	// (result text, is_error, usage) must still parse, or an exit-0 call
+	// falls through to text mode and returns the raw JSON as its output.
+
 	// ModelUsage is keyed by the model id that actually ran (e.g.
 	// "claude-sonnet-5-5"), which can differ from the alias passed to
 	// --model. Only the keys are used.
-	ModelUsage        map[string]json.RawMessage `json:"modelUsage"`
-	PermissionDenials []claudeDenial             `json:"permission_denials"`
-	TerminalReason    string                     `json:"terminal_reason"`
-	SubagentStats     *claudeSubagentStats       `json:"subagent_stats"`
+	ModelUsage        map[string]json.RawMessage `json:"-"`
+	PermissionDenials []claudeDenial             `json:"-"`
+	TerminalReason    string                     `json:"-"`
+	SubagentStats     *claudeSubagentStats       `json:"-"`
+}
+
+// claudeEnvelopeTelemetryRaw holds the telemetry fields undecoded, so each
+// one can fail on its own without affecting the others or the core parse.
+type claudeEnvelopeTelemetryRaw struct {
+	ModelUsage        json.RawMessage `json:"modelUsage"`
+	PermissionDenials json.RawMessage `json:"permission_denials"`
+	TerminalReason    json.RawMessage `json:"terminal_reason"`
+	SubagentStats     json.RawMessage `json:"subagent_stats"`
+}
+
+// decodeLenient decodes raw into a T, returning the zero T when raw is
+// absent or has an unexpected shape.
+func decodeLenient[T any](raw json.RawMessage) T {
+	var v T
+	if len(raw) == 0 || json.Unmarshal(raw, &v) != nil {
+		var zero T
+		return zero
+	}
+	return v
+}
+
+// decodeEnvelopeTelemetry fills env's telemetry fields from line. Every
+// field is best-effort: a shape this build does not expect leaves that
+// field unset and is otherwise ignored.
+func decodeEnvelopeTelemetry(line []byte, env *claudeResultEnvelope) {
+	var raw claudeEnvelopeTelemetryRaw
+	if json.Unmarshal(line, &raw) != nil {
+		return
+	}
+	env.ModelUsage = decodeLenient[map[string]json.RawMessage](raw.ModelUsage)
+	env.PermissionDenials = decodeLenient[[]claudeDenial](raw.PermissionDenials)
+	env.TerminalReason = decodeLenient[string](raw.TerminalReason)
+	env.SubagentStats = decodeLenient[*claudeSubagentStats](raw.SubagentStats)
 }
 
 // claudeDenial is one tool call the CLI refused under the granted tools.
@@ -158,6 +198,7 @@ func parseClaudeResult(stdout string) (claudeResultEnvelope, bool) {
 		}
 		var env claudeResultEnvelope
 		if err := json.Unmarshal([]byte(trimmed), &env); err == nil && env.Type == "result" {
+			decodeEnvelopeTelemetry([]byte(trimmed), &env)
 			return env, true
 		}
 	}
@@ -249,8 +290,40 @@ func denialSample(d claudeDenial) string {
 	if err := json.Unmarshal(d.ToolInput, &input); err != nil || input.Command == "" {
 		return d.ToolName
 	}
-	cmd := redactURLToken(leadingCDPrefix.ReplaceAllString(input.Command, ""))
+	cmd := redactCommandSecrets(leadingCDPrefix.ReplaceAllString(input.Command, ""))
 	return d.ToolName + ": " + truncateBytes(cmd, deniedSampleMaxBytes)
+}
+
+// commandSecretRules redact credential shapes that commonly appear in a
+// shell command, on top of redactURLToken's query-string rule. They are
+// deliberately greedy: a denied-call sample is a debugging aid, so
+// over-redacting a harmless value is the cheap failure.
+var commandSecretRules = []struct {
+	re   *regexp.Regexp
+	repl string
+}{
+	// Authorization headers, any scheme: -H "Authorization: Bearer x".
+	{regexp.MustCompile(`(?i)(authorization:\s*(?:bearer\s+|basic\s+|token\s+)?)[^\s"']+`), "${1}REDACTED"},
+	// A bare bearer token outside a header.
+	{regexp.MustCompile(`(?i)(\bbearer\s+)[^\s"']+`), "${1}REDACTED"},
+	// Userinfo in a URL: https://user:pass@host.
+	{regexp.MustCompile(`(://)[^/\s:@]+:[^/\s@]+@`), "${1}REDACTED@"},
+	// curl -u user:pass / --user user:pass.
+	{regexp.MustCompile(`((?:^|\s)(?:-u|--user)(?:\s+|=))[^\s:]+:\S+`), "${1}REDACTED"},
+	// Flags: --token x, --api-key=x, --password "x".
+	{regexp.MustCompile(`(?i)((?:^|\s)--?[a-z0-9_-]*(?:token|key|secret|password|passwd|auth)[a-z0-9_-]*)(=|\s+)("[^"]*"|'[^']*'|[^\s"']+)`), "${1}${2}REDACTED"},
+	// Assignments: GITHUB_TOKEN=x cmd, export API_KEY='x'.
+	{regexp.MustCompile(`(?i)\b([a-z0-9_]*(?:token|key|secret|password|passwd|auth|credential)[a-z0-9_]*)=("[^"]*"|'[^']*'|[^\s"']+)`), "${1}=REDACTED"},
+}
+
+// redactCommandSecrets redacts URL query tokens and the credential shapes
+// in commandSecretRules from a shell command before it is stored.
+func redactCommandSecrets(cmd string) string {
+	cmd = redactURLToken(cmd)
+	for _, r := range commandSecretRules {
+		cmd = r.re.ReplaceAllString(cmd, r.repl)
+	}
+	return cmd
 }
 
 // isRateLimitSubtype detects rate-limit errors from the JSON

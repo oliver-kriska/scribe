@@ -22,8 +22,12 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   `num_turns`, `terminal_reason`, subagent counts, and refused tool calls
   (`denials`, a per-tool `denied_tools` tally, and up to 3
   `denied_samples`: Bash commands cut to 120 bytes with a leading
-  `cd <dir> &&` dropped and URL query tokens redacted; other tools store
-  their name only). `scribe cost` labels a row `sonnet → <resolved id>`
+  `cd <dir> &&` dropped and credentials redacted: URL query tokens,
+  `Authorization`/`Bearer` values, `user:pass@` and `-u user:pass`,
+  `--token`/`--api-key`-style flags and `*_TOKEN=`/`*_KEY=` assignments;
+  other tools store their name only). Telemetry fields are decoded
+  leniently, so a future CLI changing one of their shapes cannot break the
+  core envelope parse. `scribe cost` labels a row `sonnet → <resolved id>`
   when they differ and prints the window's denied-call total.
 
 ### Changed
