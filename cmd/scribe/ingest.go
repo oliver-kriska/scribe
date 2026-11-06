@@ -116,6 +116,9 @@ func contextualizeThenAbsorb(root, rawPath string) error {
 	if err != nil {
 		return fmt.Errorf("absorb: %w", err)
 	}
+	// Outside sync there is no Phase 3 rebuild, and the absorb prompts
+	// leave the generated files to scribe.
+	rebuildIndexAndBacklinks(root)
 
 	// Record in absorb log so subsequent sync runs skip this file.
 	// Phase 3C: typed log + sha so re-imports of the same file are

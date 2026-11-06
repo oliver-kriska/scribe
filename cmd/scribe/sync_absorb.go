@@ -303,7 +303,9 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 // Pass 2 (s.Model, typically Sonnet) is called once per entity, sequentially,
 // writing one focused wiki page each. Pass 2 invocations do NOT touch
 // _index.md or _backlinks.json — those are rebuilt by the sync-level
-// rebuildAndReindex call after all absorbs complete.
+// rebuildAndReindex call after all absorbs complete (or, for the
+// one-shot `scribe absorb` / `ingest --absorb` paths, by their own
+// rebuildIndexAndBacklinks call).
 //
 // Sequential Pass 2 avoids concurrent writes to the same wiki page when two
 // entities target the same article (rare but possible when Pass 1 proposes

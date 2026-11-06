@@ -42,7 +42,7 @@ Step 5: For durable NEW findings that did not exist before:
   - Append 1-3 entries to {{KB_DIR}}/projects/{{PROJECT_LOWER}}/learnings.md if the learnings file exists; skip if it does not exist (do not create)
   - Append 1-3 entries to {{KB_DIR}}/projects/{{PROJECT_LOWER}}/decisions-log.md if the decisions-log file exists; skip if it does not exist (do not create)
 
-Step 6: Rebuild {{KB_DIR}}/wiki/_index.md and {{KB_DIR}}/wiki/_backlinks.json.
+Step 6: Do not edit `_`-prefixed generated files such as `wiki/_index.md` or `wiki/_backlinks.json`; scribe regenerates them after this run.
 
 Writing standards (strict):
 - Flat, factual, encyclopedic. Not AI-cheerful.

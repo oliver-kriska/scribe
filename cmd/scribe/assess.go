@@ -200,6 +200,11 @@ func (a *AssessCmd) Run() error {
 	}
 	logMsg("assess", "consolidation done in %s", time.Since(consStart).Round(time.Second))
 
+	// The consolidate prompt leaves _index.md / _backlinks.json to scribe
+	// (they are generated, and _backlinks.json is keyed by canonical
+	// title), so rebuild them here, as the envelope path above does.
+	rebuildIndexAndBacklinks(root)
+
 	// Best-effort reindex. Non-fatal, but no longer silent.
 	if err := reindexQMD(root, "assess"); err != nil {
 		logMsg("assess", "qmd reindex failed: %v", err)

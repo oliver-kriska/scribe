@@ -136,6 +136,9 @@ func (c *AbsorbCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("absorb: %w", err)
 	}
+	// Outside sync there is no Phase 3 rebuild, and the absorb prompts
+	// leave the generated files to scribe.
+	rebuildIndexAndBacklinks(root)
 
 	absorbLogPath := filepath.Join(root, "wiki", "_absorb_log.json")
 	absorbLog, _ := loadAbsorbLog(absorbLogPath)

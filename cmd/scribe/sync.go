@@ -448,7 +448,13 @@ func (s *SyncCmd) commitAndPush(root, message string) (bool, error) {
 // test binary in tests, and running it with "backlinks" as argv
 // re-enters the test suite instead of the production CLI). Same guard
 // as WriteCmd.reindex.
-func rebuildIndexAndBacklinks(root string) {
+//
+// A package variable (pointing at realRebuildIndexAndBacklinks) so driver
+// tests can assert a command path rebuilds the generated files without
+// re-executing the test binary; production code never reassigns it.
+var rebuildIndexAndBacklinks = realRebuildIndexAndBacklinks
+
+func realRebuildIndexAndBacklinks(root string) {
 	if os.Getenv("SCRIBE_SKIP_REINDEX") == "1" {
 		return
 	}

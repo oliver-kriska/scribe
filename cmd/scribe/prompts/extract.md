@@ -10,7 +10,7 @@ Step 4.5: For learnings and decisions discovered during extraction, append entri
   - projects/{name}/decisions-log.md — decisions with context
   Create these files if they don't exist. Use frontmatter with 'rolling: true'. Entry format: '## YYYY-MM-DD | One-line summary' followed by Context/Source paragraphs, separated by '---'. Newest entries go at the top (after frontmatter). Only add genuinely new findings — not summaries of existing articles.
 Step 5: After all writes, check line counts on every article you modified. Split any article over 150 lines into focused sub-articles. For files with 'rolling: true' in frontmatter, archive oldest entries (from bottom) to {name}-archive-YYYY.md instead of splitting. Project articles go in projects/{lowercase-name}/overview.md, never projects/Name.md.
-Step 6: Rebuild {{KB_DIR}}/wiki/_index.md and {{KB_DIR}}/wiki/_backlinks.json.
+Step 6: Do not edit `_`-prefixed generated files such as `wiki/_index.md` or `wiki/_backlinks.json`; scribe regenerates them after this run.
 {{FILELIST}}
 
 Do NOT git commit. Do NOT use subagents. Keep it focused: extract the non-obvious knowledge, not file summaries.

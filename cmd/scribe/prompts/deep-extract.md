@@ -6,7 +6,7 @@ Step 3: For each piece of extractable knowledge (decisions, patterns, tools, res
 Step 3.5: Research before creating — for EACH candidate new article, Grep {{KB_DIR}}/wiki/_index.md for the candidate title's distinctive words and Grep the content dirs for 2-3 topic keywords. On a match (any domain), UPDATE the existing article — append a section, cross-reference, extend `sources:` — and reuse its exact `title:` in wikilinks. Create only when the search comes back empty; a near-duplicate page splits future updates and corrupts contradiction resolution.
 Step 4: For learnings and decisions, append entries to rolling memory files (projects/{name}/learnings.md, projects/{name}/decisions-log.md).
 Step 5: Check line counts. Split any article over 150 lines. Project articles go in projects/{lowercase-name}/.
-Step 6: Rebuild {{KB_DIR}}/wiki/_index.md and {{KB_DIR}}/wiki/_backlinks.json.
+Step 6: Do not edit `_`-prefixed generated files such as `wiki/_index.md` or `wiki/_backlinks.json`; scribe regenerates them after this run.
 
 Extract the non-obvious knowledge — research findings, design decisions with reasoning, evaluation results, quantitative data, patterns. Not file summaries. When the source documents a debugging or decision process, also capture what was tried and rejected (and why) and the conditions under which the chosen approach breaks — not just the fix or verdict; a reader avoiding a known dead end is often more valuable than the fix itself. This is a guideline, not a required section — skip it when the source has no failed attempts or known failure conditions to report.
 Do NOT git commit. Do NOT use subagents.

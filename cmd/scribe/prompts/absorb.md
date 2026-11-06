@@ -45,7 +45,7 @@ The wiki layer exists for **structure** (typed entity pages, wikilinks, backlink
 
 7. **Post-write size check.** If any article you wrote exceeds 150 lines, split it per CLAUDE.md rule 9. For dense sources this should rarely trigger because you already split by topic in step 3; if it does, the topic was too broad — split again.
 
-8. **Update `wiki/_index.md` and `wiki/_backlinks.json`.**
+8. **Do not edit `_`-prefixed generated files** such as `wiki/_index.md` or `wiki/_backlinks.json`; scribe regenerates them after this run.
 
 9. **Do NOT git commit.**
 
