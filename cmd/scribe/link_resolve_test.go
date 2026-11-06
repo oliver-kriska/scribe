@@ -111,7 +111,7 @@ func TestResolve_SlashTitle(t *testing.T) {
 }
 
 func TestNormalizeLinkTarget(t *testing.T) {
-	cases := []struct{ raw, want string }{{" Foo # x ", "Foo"}, {"#x", ""}, {"a.md", "a.md"}}
+	cases := []struct{ raw, want string }{{" Foo # x ", "Foo"}, {"#x", ""}, {"a.md", "a.md"}, {"A\\ ", "A"}}
 	for _, tc := range cases {
 		raw, want := tc.raw, tc.want
 		if got := normalizeLinkTarget(raw); got != want {
@@ -143,4 +143,53 @@ func TestResolve_TitleWithCodeSpans(t *testing.T) {
 		t.Fatalf("extractWikilinks = %v, want one link", links)
 	}
 	assertResolve(t, resolver, links[0], "Title with `code` inside", linkFuzzy)
+}
+
+func TestResolve_HashInTitle(t *testing.T) {
+	alone := newLinkResolver([]resolverEntry{
+		{Title: "C#", Path: "tools/c-sharp.md"},
+		{Title: "Issue #139", Path: "projects/issue-139.md"},
+		{Title: "Foo", Path: "tools/foo.md"},
+	})
+	assertResolve(t, alone, "C#", "C#", linkExact)
+	assertResolve(t, alone, "c#", "C#", linkFuzzy)
+	assertResolve(t, alone, "C##Usage", "C#", linkExact)
+	assertResolve(t, alone, "Issue #139", "Issue #139", linkExact)
+	assertResolve(t, alone, "Foo#Bar", "Foo", linkExact)
+
+	withC := newLinkResolver([]resolverEntry{
+		{Title: "C#", Path: "tools/c-sharp.md"},
+		{Title: "C", Path: "tools/c.md"},
+	})
+	assertResolve(t, withC, "C#", "C#", linkExact)
+	assertResolve(t, withC, "C#Usage", "C", linkExact)
+	assertResolve(t, withC, "C", "C", linkExact)
+}
+
+func TestResolve_LossySlugIsMissing(t *testing.T) {
+	resolver := newLinkResolver([]resolverEntry{
+		{Title: "C", Path: "tools/c.md"},
+		{Title: "Calculus", Path: "tools/calculus.md"},
+		{Title: "AJ", Path: "tools/aj.md"},
+		{Title: "C++ Templates", Path: "tools/cpp-templates.md"},
+		{Title: "Go Modules", Path: "tools/go-modules.md"},
+	})
+	assertResolve(t, resolver, "C++", "C++", linkMissing)
+	assertResolve(t, resolver, "λ calculus", "λ calculus", linkMissing)
+	assertResolve(t, resolver, "Čaj", "Čaj", linkMissing)
+	// The title side is lossy too: "C++ Templates" must not own "c-templates".
+	assertResolve(t, resolver, "c templates", "c templates", linkMissing)
+	// Legitimate slug wins still resolve.
+	assertResolve(t, resolver, "go_modules", "Go Modules", linkFuzzy)
+	assertResolve(t, resolver, "Go-Modules.md", "Go Modules", linkFuzzy)
+}
+
+func TestResolve_TableEscapedPipe(t *testing.T) {
+	resolver := newLinkResolver([]resolverEntry{{Title: "A", Path: "wiki/a.md"}})
+	links := extractWikilinks([]byte("| [[A\\|label]] | [[a\\|x]] |"))
+	if len(links) != 2 {
+		t.Fatalf("extractWikilinks = %v, want two links", links)
+	}
+	assertResolve(t, resolver, links[0], "A", linkExact)
+	assertResolve(t, resolver, links[1], "A", linkFuzzy)
 }

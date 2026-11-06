@@ -46,7 +46,10 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
      `scribe orphans`.
   5. A link that matches more than one article is neither missing nor
      credited; `lint` reports how many there are.
-  6. Links that resolve by case, slug or path are no longer missing.
+  6. Links that resolve by case, slug or path are no longer missing. A
+     slug match that would drop a symbol or non-ASCII letter (`C++`,
+     `C#`, `Čaj`) is not made, and a title containing `#` matches whole
+     before the `#anchor` is cut.
   7. Articles whose frontmatter fails to parse are no longer orphan
      candidates; the `lint` warning about files unreadable or unparsed
      during the link scan reports them instead.

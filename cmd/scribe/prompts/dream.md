@@ -42,6 +42,7 @@ List every contradiction you found with its classification before proceeding to 
 ## Phase 3 — CONSOLIDATE (the core work)
 
 - Fix every broken link in the link report: edit the source file so the link names the canonical title.
+  Before rewriting a link, open the canonical article and confirm it is the article the link means; if it is not, leave the link alone.
 - Fix contradictions at source using the classification from Phase 2.5:
   - **Solid-vs-Vague:** rewrite or remove the vague claim. The high-confidence article wins.
   - **Solid-vs-Solid:** this is a Rule 11 + Rule 12 case. Determine which claim reflects current reality (prefer newer `updated:`, prefer primary sources in `sources:`, prefer the project closer to the subject). Rewrite the losing article in place to match reality, and append a `Status: reconsidered YYYY-MM-DD — superseded claim "X" with "Y" after dream contradiction pass` line at the top of the rewritten article. Do not delete the history, do not carry both versions in the same article.

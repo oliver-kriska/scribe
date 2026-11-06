@@ -135,11 +135,10 @@ func buildLinkGraph(root string) (linkGraph, error) {
 		seenTargets := map[string]bool{}
 		seenCanonical := map[string]bool{}
 		for _, raw := range extractWikilinks(content) {
-			target := normalizeLinkTarget(raw)
+			target, canonical, status := resolver.resolveTarget(raw)
 			if target == "" || seenTargets[target] {
 				continue
 			}
-			canonical, status := resolver.resolve(target)
 			if status != linkMissing && canonical == sourceTitle {
 				continue
 			}
@@ -148,7 +147,7 @@ func buildLinkGraph(root string) (linkGraph, error) {
 			// extractWikilinks strips code spans, so a link to a title with
 			// code arrives without it; the file text is already right.
 			if status == linkFuzzy && !edge.Generated && collapseSpace(stripCodeSpans(canonical)) != collapseSpace(target) {
-				graph.Broken = append(graph.Broken, brokenLink{Raw: raw, Canonical: canonical, SourcePath: rel})
+				graph.Broken = append(graph.Broken, brokenLink{Raw: cleanLinkTarget(raw), Canonical: canonical, SourcePath: rel})
 			}
 			if seenCanonical[canonical] {
 				continue

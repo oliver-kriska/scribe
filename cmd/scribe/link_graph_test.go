@@ -213,3 +213,26 @@ func TestBacklinks_KeysAreCanonical(t *testing.T) {
 		}
 	}
 }
+
+func TestLinkGraph_TableEscapeAndLossySlug(t *testing.T) {
+	root := resolverTestKB(t)
+	head := "---\ntitle: \"%s\"\ntype: solution\ndomain: general\n---\n\n"
+	writeKBFile(t, root, "wiki/csharp.md", fmt.Sprintf(head, "C#")+"body\n")
+	writeKBFile(t, root, "wiki/t.md", fmt.Sprintf(head, "T")+"| [[A\\|label]] | [[b\\|x]] | [[C#]] | [[C++]] |\n")
+	g := buildTestGraph(t, root)
+	var fromT []brokenLink
+	for _, broken := range g.Broken {
+		if broken.SourcePath == "wiki/t.md" {
+			fromT = append(fromT, broken)
+		}
+	}
+	if want := []brokenLink{{Raw: "b", Canonical: "B", SourcePath: "wiki/t.md"}}; !slices.Equal(fromT, want) {
+		t.Errorf("Broken from t.md = %v, want %v", fromT, want)
+	}
+	if got := edgeTitles(g.Inbound["C#"]); !slices.Equal(got, []string{"T"}) {
+		t.Errorf("Inbound[C#] = %v, want [T]", got)
+	}
+	if _, ok := g.Missing["C++"]; !ok {
+		t.Errorf("[[C++]] should be missing; Missing = %v", g.Missing)
+	}
+}

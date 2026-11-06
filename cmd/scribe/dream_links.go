@@ -6,11 +6,12 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
 	dreamLinkListMax = 40
-	dreamLinkLineMax = 200
+	dreamLinkLineMax = 320
 	// wantedPageMinArticles is the linking-article count at which a dangling
 	// target becomes a Phase 3.5 stub candidate.
 	wantedPageMinArticles = 3
@@ -44,20 +45,40 @@ func escapeBraceRuns(text string) string {
 	return text
 }
 
-// renderCappedList cuts each line, keeps the first dreamLinkListMax and
-// says exactly how many were dropped.
+// renderCappedList keeps the first dreamLinkListMax lines that fit in
+// dreamLinkLineMax bytes and says exactly how many were dropped. A line too
+// long to fit is dropped whole, never cut: a cut canonical title would tell
+// the dream to rewrite a link to half a title.
 func renderCappedList(lines []string) string {
 	if len(lines) == 0 {
 		return "- none\n"
 	}
 	var sb strings.Builder
-	for _, line := range lines[:min(len(lines), dreamLinkListMax)] {
-		sb.WriteString(truncateBytes(line, dreamLinkLineMax) + "\n")
+	shown := 0
+	for _, line := range lines {
+		line = stripControlChars(line)
+		if shown == dreamLinkListMax || len(line) > dreamLinkLineMax {
+			continue
+		}
+		sb.WriteString(line + "\n")
+		shown++
 	}
-	if extra := len(lines) - dreamLinkListMax; extra > 0 {
+	if extra := len(lines) - shown; extra > 0 {
 		fmt.Fprintf(&sb, "- (+%d more not shown)\n", extra)
 	}
 	return sb.String()
+}
+
+// stripControlChars turns control characters and line separators into
+// spaces, so a title like "x\n## Phase 5" cannot add a heading or line to
+// the prompt.
+func stripControlChars(text string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return ' '
+		}
+		return r
+	}, text)
 }
 
 func brokenLinkLines(g linkGraph) []string {

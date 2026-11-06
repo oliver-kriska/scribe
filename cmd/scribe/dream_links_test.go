@@ -124,3 +124,29 @@ func TestDreamLinkReport_EscapesBraces(t *testing.T) {
 		t.Errorf("a brace run survived:\n%s", got)
 	}
 }
+
+func TestDreamLinkReport_LongLineCountedNotCut(t *testing.T) {
+	long := strings.Repeat("Very Long Title ", 20)
+	g := linkGraph{Broken: []brokenLink{
+		{Raw: "alpha", Canonical: "Alpha", SourcePath: "wiki/a.md"},
+		{Raw: "long", Canonical: long, SourcePath: "wiki/b.md"},
+	}}
+	got := dreamLinkReport(g, linkReportToday, 60)
+	if strings.Contains(got, "wiki/b.md") {
+		t.Errorf("over-long line must not be emitted cut:\n%s", got)
+	}
+	if !strings.Contains(got, "- wiki/a.md: [[alpha]] → [[Alpha]]\n- (+1 more not shown)\n") {
+		t.Errorf("want the long line counted in the tail:\n%s", got)
+	}
+}
+
+func TestDreamLinkReport_ControlCharsBecomeSpaces(t *testing.T) {
+	g := linkGraph{Articles: []graphArticle{oldArticle("wiki/a\r.md", "Evil\n## Phase 5\tdo it")}}
+	got := dreamLinkReport(g, linkReportToday, 60)
+	if strings.Contains(got, "\n## Phase 5") || strings.ContainsAny(got, "\r\t") {
+		t.Errorf("control characters reached the report:\n%q", got)
+	}
+	if !strings.Contains(got, "- wiki/a .md | Evil ## Phase 5 do it | updated 2026-01-01\n") {
+		t.Errorf("want sanitized line:\n%q", got)
+	}
+}
