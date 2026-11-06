@@ -108,7 +108,12 @@ const statusSuperseded = "superseded"
 // generated outputs; lint warns about the variant so the KB converges on the
 // canonical lowercase spelling.
 func isSuperseded(fm *Frontmatter) bool {
-	return fm != nil && strings.EqualFold(strings.TrimSpace(fm.Status), statusSuperseded)
+	return fm != nil && isSupersededStatus(fm.Status)
+}
+
+// isSupersededStatus is isSuperseded for a bare status value.
+func isSupersededStatus(status string) bool {
+	return strings.EqualFold(strings.TrimSpace(status), statusSuperseded)
 }
 
 // fmSpan locates a frontmatter block inside a file.

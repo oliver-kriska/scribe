@@ -54,15 +54,14 @@ type StalenessEntry struct {
 }
 
 // halfLifeDays returns the date-staleness threshold per article type.
-// Returning 0 disables the date signal for that article (never stale).
+// Returning 0 disables the date signal for that article (never stale):
+// a superseded article of any type is history kept on purpose, not
+// knowledge that ages.
 //
 // Defaults are conservative — better to under-flag than to nag the user
 // into ignoring the ledger. scribe.yaml override ships in v2.
 func halfLifeDays(articleType, status string) int {
-	if articleType == "research" && status == statusSuperseded {
-		return 0
-	}
-	if articleType == "decision" && status == statusSuperseded {
+	if isSupersededStatus(status) {
 		return 0
 	}
 	switch articleType {
@@ -146,6 +145,11 @@ func buildStalenessLedger(root string, opts BuildStaleOpts, now time.Time) (Stal
 		fm, err := parseFrontmatter(content)
 		if err != nil {
 			return nil //nolint:nilerr // unparseable article: skip it, keep walking
+		}
+		// A superseded article is left out of the ledger entirely, source
+		// probe included: neither its age nor a dead source is actionable.
+		if isSuperseded(fm) {
+			return nil
 		}
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)

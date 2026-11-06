@@ -1,9 +1,12 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -47,6 +50,9 @@ func TestHalfLifeDays_PerType(t *testing.T) {
 		{"solution", "", 365},
 		{"research", "active", 90},
 		{"research", "superseded", 0},
+		{"pattern", "superseded", 0},
+		{"solution", "superseded", 0},
+		{"tool", "Superseded", 0},
 		{"tool", "", 365},
 		{"idea", "", 90},
 		{"project", "", 60},
@@ -113,6 +119,50 @@ func TestBuildStalenessLedger_SupersededResearchNeverStale(t *testing.T) {
 	}
 	if counts.Total != 0 {
 		t.Errorf("superseded research should never be date-stale; got %+v", counts)
+	}
+}
+
+// Every superseded article is exempt, not only research and decisions:
+// a pattern, solution or tool replaced by a newer one is history.
+func TestBuildStalenessLedger_SupersededPatternNeverStale(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	ancient := now.AddDate(-3, 0, 0).Format("2006-01-02")
+	writeArticleForStale(t, dir, "patterns", "old", "Old Pattern", "pattern", "superseded", ancient, "")
+	writeArticleForStale(t, dir, "tools", "old", "Old Tool", "tool", "Superseded", ancient, "")
+	writeArticleForStale(t, dir, "patterns", "live", "Live Pattern", "pattern", "", ancient, "")
+
+	counts, err := buildStalenessLedger(dir, BuildStaleOpts{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := readStalenessLedger(dir)
+	if counts.Total != 1 || len(entries) != 1 || entries[0].Title != "Live Pattern" {
+		t.Errorf("only the live pattern should be stale; counts=%+v entries=%+v", counts, entries)
+	}
+}
+
+// A superseded article's source_url is not probed: a dead source on a
+// replaced article is not actionable.
+func TestBuildStalenessLedger_SupersededSourceNotProbed(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	now := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	recent := now.AddDate(0, 0, -1).Format("2006-01-02")
+	writeArticleForStale(t, dir, "solutions", "old", "Old Solution", "solution", "superseded", recent, srv.URL+"/gone")
+
+	counts, err := buildStalenessLedger(dir, BuildStaleOpts{CheckURLs: true, URLTimeout: time.Second}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.Total != 0 || hits.Load() != 0 {
+		t.Errorf("superseded source probed or flagged: counts=%+v probes=%d", counts, hits.Load())
 	}
 }
 
