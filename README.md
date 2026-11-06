@@ -4,7 +4,7 @@
 
 **Not a second brain.** scribe writes a personal *context corpus* — durable LLM memory that survives session boundaries and crosses projects. You almost never read the KB directly; Claude Code and Codex do, every session. The human is at the end of the pipeline, consuming an answer, not navigating a graph. The corpus is plain markdown in git, so it outlives the pipeline that wrote it — if scribe disappears tomorrow, the KB is still yours.
 
-**Not a RAG pipeline. Not a Karpathy-style LLM wiki.** scribe keeps raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are indexed, both are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch the implicit entities that aren't literally named in the text. The whole pipeline can run fully local on Ollama (qwen3 / gemma4 / gemma3, $0 API cost).
+**An LLM wiki, not a RAG pipeline.** scribe implements the [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) Andrej Karpathy described, with the sources kept: it stores raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are indexed, both are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch the implicit entities that aren't literally named in the text. The whole pipeline can run fully local on Ollama (qwen3 / gemma4 / gemma3, $0 API cost).
 
 Your KB is a private git repo you own. `scribe init` scaffolds it from embedded templates; you pick the KB name, domains, owner context, and capture handles. After the first run you edit `scribe.yaml` freely — everything that used to be hardcoded lives there. Then `scribe cron install` drops a set of macOS LaunchAgents (Linux: paste-ready crontab lines) and the KB starts growing on its own every time you commit code, use Claude Code, or text yourself a link.
 
@@ -32,14 +32,16 @@ Only the **user-level** files are scribe-managed. Amp also reads `~/.config/AGEN
 **2. It runs itself.** Set it up once, then go back to your regular work. Cron handles the rest:
 
 - Every hour: auto-commit the KB.
-- Every 2 hours: scan git repos for new decisions, patterns, learnings; extract them via `claude -p`.
+- Every 2 hours: scan git repos for new decisions, patterns, learnings; extract them with the configured LLM (`claude -p` by default).
 - 3×/day (03:00, 12:00, 18:00): mine coding-agent sessions via ccrider's FTS5 index — plus direct Codex CLI rollouts when `codex.mine` is enabled — scored by keyword density so boilerplate sessions cost nothing.
 - Every 30 min: drain queued URLs into `raw/articles/`.
-- Every 4 hours: pull bookmark-links you texted yourself.
+- Hourly at :17: pull configured integrations (Pinboard) into the ingest queue (`scribe pull`).
+- Every 4 hours (macOS): capture links you texted yourself (`capture --fetch`).
 - Daily 06:30: retry previously-unfetched link stubs (`capture-refetch`).
 - Daily 07:30: health report — `scribe doctor --write-attention` writes `NEEDS-ATTENTION.md` in the KB root while something is failing, and removes it once nothing is.
 - Daily 12:30: structural lint pass over the KB.
 - Sat 01:00: weekly frontmatter auto-repair (`lint-fix`).
+- Sat 01:15: content-duplicate scan → `wiki/_duplicates.md` (`lint-duplicates`).
 - Sat 01:30: conflict-resolution LLM pass over contradictions (`lint-resolve`).
 - Sat 01:45: identity-clustering pass — finds alias clusters across people/tools (`lint-identities`).
 - Sat 01:55: auto-apply high-confidence alias clusters (`apply-identities`).
@@ -127,7 +129,7 @@ curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.s
 Pin a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh | bash -s -- --version v0.5.1
+curl -fsSL https://raw.githubusercontent.com/oliver-kriska/scribe/main/install.sh | bash -s -- --version v0.5.10
 ```
 
 The installer writes to `$HOME/.local/bin/scribe` by default; pass `--prefix` to change it.
@@ -522,7 +524,7 @@ llm:
   num_ctx: 16384                 # safe floor for envelope-mode ops
 ```
 
-That's it. Every per-op block (`dream`, `assess`, `deep_ingest`, `session_mine`, `relations`, `absorb.pass1`, `absorb.pass2`, `absorb.single_pass`, `absorb.facts`, `absorb.contextualize`) inherits `provider` + `model` + `ollama_url` + `num_ctx` from `llm:` when its own fields are empty. Set any per-op `provider:`/`model:` to override for that op only (typical: pin a bigger model on `absorb.pass2`, keep the small fast model everywhere else).
+That's it. Every per-op setting inherits `provider` + `model` + `ollama_url` + `num_ctx` from `llm:` when its own fields are empty: the `dream`, `assess`, `deep_ingest`, `session_mine`, `relations`, and `absorb.contextualize` blocks, plus the flat absorb keys `absorb.pass1_provider`/`pass1_model`, `pass2_provider`/`pass2_model`, `single_pass_provider`/`single_pass_model`, and `facts_provider`/`facts_model`. Set any per-op provider/model to override for that op only (typical: pin a bigger model on `absorb.pass2_model`, keep the small fast model everywhere else).
 
 **Auto-flip:** scribe forces the right *mode* on each op when `llm.provider: ollama` so the `claude -p` paths can't silently no-op. You'll see config log lines like:
 
@@ -539,11 +541,11 @@ config: absorb.pass2_provider="ollama" forces pass2_mode=json (was "tools")
 scribe doctor --section localmode
 ```
 
-Validates: Ollama reachable; `llm.model` pulled; `absorb.pass2_model` pulled; `absorb.atomic_facts` on (recommended under local pass-2); `sync.daily_anthropic_output_token_ceiling` configured.
+Validates: Ollama reachable; `llm.model` pulled; `absorb.pass2_model` pulled; `absorb.atomic_facts` on (recommended under local pass-2); `sync.daily_output_token_ceiling` configured (the older `daily_anthropic_output_token_ceiling` name is still read as a fallback).
 
 **What runs where on a typical 32–64 GB Mac:**
 
-| Op                            | Default model       | num_ctx | Notes                                    |
+| Op                            | Suggested model     | num_ctx | Notes                                    |
 | ----------------------------- | ------------------- | ------- | ---------------------------------------- |
 | `absorb.pass1`, `facts`       | `gemma3:4b`         | 8192    | Cheap, high-throughput per-chunk pass    |
 | `contextualize`               | `qwen3:30b-a3b`    | 16384   | Quality-critical; `gemma4` is the lighter fallback if RAM-constrained |
@@ -691,7 +693,9 @@ provider. Per-op `provider`/`model` always win over the top-level block.
 > one machine they share one API key and bill, so also set a machine-wide
 > `daily_output_token_ceiling` in `~/.config/scribe/config.yaml` — it sums
 > today's metered tokens across **every registered KB**, and whichever ceiling
-> (per-KB or machine) is hit first aborts the call. `scribe cost` rolls up tokens (and dollars, when
+> (per-KB or machine) is hit first aborts the call. Tokens from failed
+> `claude -p` runs count too when the CLI still reports usage, since they were
+> billed. `scribe cost` rolls up tokens (and dollars, when
 > `pricing` is set) per `provider/model`. By default it aggregates **every
 > registered KB** — hosted providers bill per API key, and one key usually
 > serves all your KBs, so the combined total matches the provider dashboard.
@@ -719,24 +723,28 @@ llm_api_key: tok-xxxxxxxx          # single key, covers whichever provider llm.p
 #   pinboard: "username:HEXTOKEN"  # from pinboard.in/settings/password
 ```
 
-Resolution order is **env var → this file**: a one-off `export GROQ_API_KEY=…` still wins, but with the key in this file nothing needs exporting (this is what makes cron work without touching `~/.zshenv`). `chmod 600` it. The key never goes in a KB's `scribe.yaml`.
+Resolution order is **env var → this file**: the per-provider env var (or the one `llm.api_key_env` names), then `SCRIBE_LLM_API_KEY`, then `llm_api_keys[<provider>]`, then `llm_api_key`. A one-off `export GROQ_API_KEY=…` still wins, but with the key in this file nothing needs exporting (this is what makes cron work without touching `~/.zshenv`). `chmod 600` it. The key never goes in a KB's `scribe.yaml`.
 
 ### Environment variables
 
 | Variable                   | Purpose                                                                                                                   |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `SCRIBE_KB`                | Override KB root for one command                                                                                          |
-| `SCRIBE_SELF_CHAT_ID`      | Override `capture.self_chat_handle` (accepts comma-separated values for accounts with phone + Apple-ID email)             |
+| `SCRIBE_KB`                | Override KB root for one command (`-C/--root` wins over it; both win over the cwd walk and `kb_dir`)                      |
+| `SCRIBE_SELF_CHAT_ID`      | Replaces `capture.self_chat_handles` (comma-separated, for accounts with phone + Apple-ID email)                          |
 | `SCRIBE_PINBOARD_TOKEN`    | Pinboard API token (`username:HEXTOKEN`) for `scribe pull pinboard`; overrides `integration_tokens.pinboard`             |
 | `SCRIBE_SKIP_REINDEX`      | Skip the final `qmd` reindex (useful in tests / CI)                                                                       |
-| `SCRIBE_PROJECT_ROOTS`     | Colon-separated list of parent dirs treated as top-level project roots (default: `Projects:projects:src:code:repos:work`) |
+| `SCRIBE_PROJECT_ROOTS`     | Extra colon-separated parent dirs treated as project roots, added to the built-in `Projects:projects:src:code:repos:work` |
 | `SCRIBE_PASS2_MODE`        | Override `absorb.pass2_mode` (`tools` or `json`) for one run without editing scribe.yaml                                  |
-| `SCRIBE_PASS2_PROVIDER`    | Override `absorb.pass2_provider` (`anthropic` or `ollama`) for one run                                                    |
+| `SCRIBE_PASS2_PROVIDER`    | Override `absorb.pass2_provider` (`anthropic`, `ollama`, or a hosted provider name) for one run                           |
 | `SCRIBE_PASS2_MODEL`       | Override `absorb.pass2_model` for one run                                                                                  |
 | `SCRIBE_BYPASS_BUDGET`     | Bypass `sync.daily_output_token_ceiling` for one invocation (cron-safe ceiling otherwise aborts and exits 0)              |
 | `SCRIBE_DOCTOR_SKIP_OLLAMA`| Skip the Ollama `/api/tags` probe in `scribe doctor --section localmode` (offline CI)                                     |
 | `TOGETHER_API_KEY` etc.    | Hosted-provider API key, per provider (`TOGETHER_API_KEY`, `GROQ_API_KEY`, `FIREWORKS_API_KEY`, `HF_TOKEN`)               |
 | `SCRIBE_LLM_API_KEY`       | Generic hosted-provider key fallback when the per-provider env var (or `llm.api_key_env`) is unset                        |
+| `SCRIBE_NO_CONFIG_BACKFILL`| Stop `sync` from appending newly added default keys to a hand-curated `scribe.yaml`                                      |
+| `SCRIBE_LOG_LEVEL`         | `debug`, `warn`, or `error` (default info)                                                                                |
+| `SCRIBE_LOG_FORMAT`        | `json` for structured log lines                                                                                           |
+| `XDG_CONFIG_HOME`          | Relocates the user config dir (`$XDG_CONFIG_HOME/scribe/` instead of `~/.config/scribe/`)                                 |
 
 ---
 
@@ -829,41 +837,55 @@ scribe config diff  # team KBs: show sensitive scribe.yaml keys changed since la
 scribe config trust # team KBs: approve the current sensitive keys
 scribe config update # append commented docs for options added since your scribe.yaml was scaffolded
 scribe sync --sessions       # mine all ccrider providers + direct Codex rollouts (when codex.mine is on)
-scribe sync --dry-run --estimate  # token estimate for pending work (no writes or LLM calls)
+scribe sync --dry-run --estimate  # token estimate for pending extraction + absorb work; add --sessions to price mining (no writes or LLM calls)
 scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml
+scribe sync --max N          # max projects extracted per run (default 3; cron passes 2)
+scribe sync --discover       # discovery only (also: --reindex, --extract <project>, --force)
 scribe triage       # score unprocessed sessions by knowledge density
 scribe capture      # pull links you iMessaged to yourself as bookmarks (macOS only; needs Full Disk Access)
+scribe pull [pinboard]       # pull bookmarks from configured integrations into the ingest queue
 scribe ingest url <url> --absorb   # queue-less ingest + contextualize + absorb
+scribe ingest drain          # process queued URLs into raw/articles/ (cron runs this every 30 min)
+scribe ingest file <path>    # convert + ingest a local PDF/DOCX/EPUB/HTML/TXT/MD
 scribe absorb <file>         # absorb a local file (md/txt/html) end-to-end
 scribe drop --title "..." --type solution   # author a validated drop file in the CURRENT project (what agents use via the scribe-kb skill)
 scribe contextualize --scope raw|wiki|all   # insert retrieval-context paragraphs
 scribe status       # one-shot KB scoreboard (raw/wiki/backlog) — splits held-by-policy from genuinely-pending
-scribe projects {list,approve,ignore,review}  # approve/ignore discovered projects before they enter the pipeline
+scribe projects {list,add,approve,ignore,review}  # approve/ignore discovered projects before they enter the pipeline
 scribe dream        # weekly memory consolidation (4-phase)
 scribe dream --hot          # daily mini consolidation of the busiest domain (auto-gates)
 scribe lint         # frontmatter + size + orphan checks, incl. future or updated-before-created dates (grouped by class; closes with a "To fix, run:" footer; -v per-file, -q errors-only)
 scribe lint --contradictions # LLM pass for factual disagreements across articles
+scribe lint --fix            # deterministic frontmatter repair (weekly cron)
+scribe lint --duplicates     # no-LLM duplicate scan → wiki/_duplicates.md (report-only)
+scribe lint --resolve        # weigh contradiction pairs → wiki/_resolution-proposals.md (never auto-applies)
+scribe lint --identities     # alias-cluster proposals → wiki/_identity-proposals.md; --apply-identities applies them
 scribe link         # link orphan articles to contextual hosts via See Also sections
 scribe watch        # long-running fsnotify watcher on ccrider DB (near-real-time session extraction)
 scribe assess <project>      # one-shot parallel deep assessment of a project (5 tracks + consolidation)
-scribe cost         # summarize LLM calls (tokens, wallclock, USD) — aggregates all registered KBs; scope with --kb
+scribe cost         # summarize LLM calls (tokens, wallclock, USD) over the last 7 days (--days N, 0 = all time) — aggregates all registered KBs; scope with --kb
 scribe sections {build,list,get}            # H1/H2/H3 section sidecars for wiki articles (Phase 5A)
 scribe tier {compute,list,set,write}        # index_tier hint (stub|brief|standard|deep|reference) (Phase 5B)
 scribe relations {get,set,rm,graph,check,migrate,migrate-revert}   # typed edges between articles (Phase 6A)
 scribe contradictions {build,list,show,resolve}                    # contradiction ledger (Phase 6B)
 scribe stale {build,list,show}                                      # staleness ledger (date + source signals) (Phase 6C)
 scribe view {<name>,--list}                 # declarative views over wiki frontmatter (Phase 7B)
-scribe skill {install,list}                 # embedded agent skills: scribe-kb + scribe-kb-tidy + scribe-cli; install --agent claude,codex,opencode,pi,all (Phase 7A)
+scribe skill {install,list}                 # embedded agent skills: scribe-kb + scribe-kb-tidy + scribe-cli; install --agent claude,codex,agents,opencode,pi,all (default claude,agents); install --check exits non-zero on drift (Phase 7A)
 scribe install-tools         # bootstrap optional tools (uv + marker-pdf) for full PDF/DOCX/PPTX/XLSX/EPUB ingestion
-scribe doctor       # deps + config + cron + freshness + errors + localmode + vault + stale + contradictions
+scribe doctor       # deps + config + cron + state + freshness + errors + convert + contradictions + stale + vault + localmode
+scribe doctor --section <name>   # one section only; --json for structured output
+scribe doctor --write-attention  # write NEEDS-ATTENTION.md while something fails, remove it once clean (daily cron)
+scribe commit       # auto-commit + push pending KB changes (hourly cron); --check runs the secret + stop-word gate on the staged index (pre-commit hook)
+scribe digest       # regenerate wiki/_digest.md, a deterministic team dashboard (--days 7)
 scribe fda          # macOS Full Disk Access probe + interactive grant flow
 scribe promote --to <kb> <article>  # copy an article into another KB with provenance (personal → team)
 scribe kb {add,list,remove}  # machine-level KB registry the scheduler iterates
 scribe each -- <subcommand>  # run a subcommand in every registered KB (cron uses this)
-scribe cron {install,status,uninstall}
+scribe cron {install,status,uninstall}   # install also takes --dry-run, --force, --if-installed
+scribe version      # or -V; global -C/--root <dir> overrides the KB root for any command
 ```
 
-Run `scribe <cmd> --help` for the full flag set of each. A handful of internal plumbing commands (`backlinks`, `index`, `orphans`, `validate`, `hook`, `hot`, `write`, `debug`, `sessions`, `commit`, `scan`, `deep`) are also available — they're invoked by `scribe sync` and `scribe dream` under the hood, but can be run standalone for debugging.
+Run `scribe <cmd> --help` for the full flag set of each. Lower-level commands (`backlinks`, `index`, `orphans`, `validate`, `hot`, `write`, `scan`, `deep`, `debug`, `sessions`) are also available. Most are invoked by `scribe sync` and `scribe dream` under the hood but can be run standalone for debugging; `write` is the CLI write surface the agent skills use, and `hook` holds the Claude Code SessionEnd hook you register in `~/.claude/settings.json`.
 
 ---
 
@@ -879,7 +901,7 @@ needs. [Topologies](https://getscribe.dev/topologies.md) is the reference for
 every arrangement, what each one coordinates, and what it does not.
 
 The flag name is a misnomer here, and skipping it is the most common way to
-corrupt a second-machine setup. Three things are gated behind it, and none of
+corrupt a second-machine setup. Four things are gated behind it, and none of
 them fail loudly when missing:
 
 | Gated on `team: true` | Without it |
@@ -914,8 +936,8 @@ repo config.** That is deliberate — they are personal sources, and a pushed
 `enabled: true` must not switch them on for every machine reading the repo. Move
 both blocks verbatim into the gitignored `scribe.local.yaml` of the one machine
 that should run them. Pick exactly one: Messages is iCloud-synced, so capturing
-on two Macs double-ingests every URL and makes them fight over
-`scripts/imessage-state.json`.
+on two Macs ingests a URL twice whenever both capture between pulls, and makes
+them fight over `scripts/imessage-state.json`.
 
 Full step-by-step, including onboarding the second machine and which scheduled
 jobs to throttle there, is in the
@@ -1013,10 +1035,14 @@ runs `init --bind --yes` inside it. Teammates do not each create a new team KB.
      approval and extraction state private while articles stay shared.
    - **Config trust** (`team: true` in scribe.yaml, written by `--team`): the
      repo's scribe.yaml is writable by every member and auto-pulled before each
-     sync, so its *sensitive* keys — source filters, ingestion dirs, capture,
-     the credential gate, and the entire LLM routing surface (`provider`,
-     `model`, `base_url`, `api_key_env`, `ollama_url`, plus every per-op
-     override) — are locked to a per-machine snapshot trusted at first sync.
+     sync, so its *sensitive* keys — source filters, session/ingestion dirs,
+     capture and pull integrations, `qmd_path`, `codex.mine`,
+     `sync.auto_approve`, the credential gate, and the entire LLM routing
+     surface (`provider`, `model`, `base_url`, `api_key_env`, `ollama_url`,
+     plus every per-op override) — are locked to a per-machine snapshot
+     trusted at first sync. Capture, integrations, and `qmd_path` from the
+     shared file are ignored outright in a team KB (a pushed `qmd_path` would
+     be code execution on every member's machine).
      When a pushed change alters them, your scribe keeps running on the values
      you trusted and warns (`scribe doctor`, sync log); you review with
      `scribe config diff` and accept with `scribe config trust`. Pushing
@@ -1025,9 +1051,12 @@ runs `init --bind --yes` inside it. Teammates do not each create a new team KB.
      routing lock shipped keep working unchanged; the next `scribe sync`
      silently records the current provider/model as trusted.)
    - **`scribe.local.yaml`** (gitignored, same schema) holds per-user overrides
-     that always win over the repo config. iMessage capture **never** runs from
-     the shared scribe.yaml in team mode — it's off until a member enables it
-     here, locally, themselves.
+     that win over the repo config, except `sources.include`/`exclude`, which
+     are unioned with the committed lists (a local file can add scope or
+     exclusions, never shrink the team's excludes). In a team KB the file is
+     ignored, with a warning, if git tracks it or it is a symlink. iMessage
+     capture and pull integrations **never** run from the shared scribe.yaml
+     in team mode — they're off until a member enables them here, locally.
    - **`contributor:` frontmatter** is stamped automatically on every new article
      from each member's git identity (`git config user.name`, overridable via
      `contributor:` in `~/.config/scribe/config.yaml`) — provenance without git
@@ -1048,19 +1077,25 @@ runs `init --bind --yes` inside it. Teammates do not each create a new team KB.
      like; personal repos can't slip into the team manifest. Like the other
      `sources` keys, it's trust-locked — a pushed change to it warns instead of
      applying.
-   - **Secret-scan gate**: before any team-mode commit, staged articles are
-     scanned for credential-shaped values (AWS/GitHub/Slack/Stripe/OpenAI/
-     Anthropic key formats, PEM headers, JWTs, passwords in URLs — gitleaks-style
-     rules with entropy confirmation). A file with a hit is **held back** from
+   - **Secret-scan gate**: before any team-mode commit, staged text files
+     (`.md`, `.txt`, `.json`, `.yaml`, `.url`, `.sh`, `.py`, `.toml`, `.env*`)
+     are scanned for credential-shaped values (AWS/GCP/GitHub/GitLab/Slack/
+     Stripe/OpenAI/Anthropic/Hugging Face and other provider key formats, PEM
+     headers, JWTs, passwords in URLs — gitleaks-style rules with entropy
+     confirmation). It fails closed: an unreadable staged file is held, and an
+     unparseable `scribe.yaml` stops the commit. A file with a hit is **held back** from
      the commit and logged loudly (`SECRET HELD: file:line [rule]` — never the
      value itself); everything clean still commits, so cron keeps flowing. Mark
-     deliberate placeholders with `scribe:allow` on the line, exempt paths via
+     deliberate placeholders with `scribe:allow` (or `gitleaks:allow`) on the line, exempt paths via
      `secret_scan.allow_paths`, or opt into the noisier generic
      `key = "value"` rule with `secret_scan.generic: true`. Solo KBs can
-     switch the same gate on with `secret_scan.enable: true`. The `secret_scan`
+     switch the same gate on with `secret_scan.enable: true`; team KBs opt out
+     with `secret_scan.disable: true`. The `secret_scan`
      block is trust-locked like `sources` — a pushed change weakening it warns
-     instead of applying. `scribe doctor` also scans the whole KB on disk, so
-     leaks that predate the gate surface too.
+     instead of applying. In team KBs `scribe doctor` also scans the whole KB
+     on disk, so leaks that predate the gate surface too. Run the same gate by
+     hand with `scribe commit --check` (exits non-zero on a finding; the
+     shipped pre-commit hook uses it).
    - **Stop-words gate**: your own words on top of the credential scanner, and
      active for solo KBs too. Matched **whole-word and case-insensitively** by
      default (`Falcon` hits "the Falcon project" but not "falconry"); wrap an
@@ -1075,24 +1110,27 @@ runs `init --bind --yes` inside it. Teammates do not each create a new team KB.
      whole team in the personal half, which never leaves your machine. Unlike
      `secret_scan` it is deliberately **not** trust-locked: the shared list
      evolves constantly and the personal half is the sovereign guarantee.
-   - **Push conflicts** retry once through `git pull --rebase`; scribe never
-     force-pushes. KB history is append-only.
+   - **Push conflicts** retry once through scribe's own `pull --rebase
+     --autostash`; scribe never force-pushes. KB history is append-only.
 
 ### Quality control
 
-forest's worry — "easier to get dirty or bad patterns" — is handled by machinery
-that already runs per-KB: the `confidence:` rubric is scored at extraction time,
-`authority:` ranks canonical decisions over opinions when articles disagree, and
-the weekly `scribe dream` cycle detects and resolves contradictions across the
-whole KB. The `contributor:` field gives dream a provenance signal when weighing
-competing claims.
+The worry that a shared KB gets "dirty" or picks up bad patterns is handled by
+machinery that already runs per-KB. The `confidence:` rubric is scored at
+extraction time. The weekly `scribe dream` cycle detects contradictions across
+the whole KB and arbitrates them by `confidence:`, `updated:`, and sources.
+`scribe lint --resolve` weighs contradiction pairs by `authority:` (canonical
+decisions over opinions), recency, and confidence, and writes proposals for a
+human to review; it never auto-applies. `contributor:` is provenance for people
+and for `scribe digest`; dream does not read it.
 
 ### Caveats (honest ones)
 
 - **Dream coordination is automatic** in team mode: a committed lease file
-  (`scripts/dream-lease.json`) lets one machine claim the weekly cycle; the
-  others see the active claim after their pull and skip. Expired leases are
-  stealable. Best-effort — with the remote unreachable, two machines may dream
+  (`scripts/dream-lease.json`) lets one machine claim the weekly cycle and the
+  daily `dream --hot`; the others see the active claim after their pull and
+  skip. The holder releases the lease when its run ends; a lease left behind
+  expires after 6 hours and becomes stealable. Best-effort — with the remote unreachable, two machines may dream
   once concurrently, which only costs duplicate consolidation churn.
 - **One machine-level schedule serves every registered KB.** The macOS
   LaunchAgents and generated Linux crontab lines run `scribe each` across
@@ -1106,16 +1144,21 @@ competing claims.
 - **Only `dream` and extraction are coordinated across machines.** The lease
   covers the weekly cycle and the ledger covers repo extraction, but the
   maintenance jobs — `lint --fix`, `lint --duplicates`, `lint --resolve`,
-  `lint --identities`, `lint --apply-identities` — mutate shared KB state with
-  neither, and `scribe cron install` gives every machine the same schedule, so
-  they fire together. `scribe sync` also drains the committed
+  `lint --identities`, `lint --apply-identities`, and the daily `lint` — mutate
+  shared KB state with neither, and `scribe cron install` gives every machine
+  the same schedule, so they fire together. `scribe sync` also drains the committed
   `ingest.inbox_path` on every machine with no dedup. Let one machine own
   maintenance and throttle those jobs elsewhere with `each.cadence` in the
   secondary machine's gitignored `scribe.local.yaml`; the
   [setup runbook](https://getscribe.dev/setup.md#one-kb-on-several-machines)
   has the block to paste.
 - **Concurrent edits to the same article can conflict** like any git repo. The
-  append-heavy article layout keeps this rare; resolve by hand and re-run sync.
+  append-heavy article layout keeps this rare. scribe-managed shared files
+  resolve themselves during the rebase: derived files (`wiki/_index.md`,
+  `_backlinks.json`, `_digest.md`, `_hot.md`) are regenerated, and the
+  extraction ledger, dream lease, `log.md`, and session logs merge
+  semantically. Any other conflict aborts the rebase cleanly and logs "needs
+  manual resolution"; resolve it by hand and re-run sync.
 - **Session transcripts never leave the machine.** Only the distilled wiki
   articles are committed — but review what extraction writes before you wire a
   team remote, and keep anything sensitive behind `sources.exclude` (in your
@@ -1127,7 +1170,7 @@ competing claims.
 
 Since Karpathy's LLM-wiki gist in April 2026, a handful of open-source takes have appeared. Scribe lives in the same neighborhood but optimizes for different tradeoffs. A quick honest map.
 
-> **Snapshot: 2026-04-21.** The tools listed below are moving targets — feature sets, stars, and design decisions change month-to-month. The comparison reflects what their public source looked like on this date, verified by reading the code rather than the README. If you're reading this months later, check each repo for recent changes before making a decision.
+> **Snapshot: 2026-04-21 (LangChain OpenWiki row added 2026-10-23).** The tools listed below are moving targets — feature sets, stars, and design decisions change month-to-month. The comparison reflects what their public source looked like on this date, verified by reading the code rather than the README. If you're reading this months later, check each repo for recent changes before making a decision.
 
 | Tool                             | Session mining                   | Cron-driven             | Density pre-filter    | Two-pass absorb | Multi-project | Local-mode option  |
 | -------------------------------- | -------------------------------- | ----------------------- | --------------------- | --------------- | ------------- | ------------------ |
@@ -1136,15 +1179,17 @@ Since Karpathy's LLM-wiki gist in April 2026, a handful of open-source takes hav
 | `AgriciDaniel/claude-obsidian`   | ❌ read-time only                 | ❌                       | n/a                   | ❌              | read-only     | ❌                  |
 | `nvk/llm-wiki`                   | ❌                                | ❌ one-shot `/wiki:assess` | n/a                  | ❌              | ❌             | ❌                  |
 | `basicmachines-co/basic-memory`  | ❌ (open issue #669 since 2026-03) | ❌ cron suggested        | n/a                   | ❌              | ✅ via projects | ❌                  |
+| `langchain-ai/openwiki`          | ❌ no session connector (repo source, Notion, Gmail, Slack, X, web search, HN, LangSmith traces) | ⚠️ CI job opens a docs PR; no local daemon | n/a (clean updates skip model calls) | ❌ one job per page | ✅ `openwiki link` workspaces over per-repo wikis | ✅ Ollama / LM Studio via OpenAI-compatible |
 | LangChain / LlamaIndex RAG       | ❌                                | n/a (indexing only)     | n/a                   | ❌ chunks only   | ✅             | varies             |
 | Obsidian / Notion / Reflect      | ❌ manual                         | ❌                       | n/a                   | ❌              | ✅ manual      | n/a                |
 
 ### Where scribe's niche is
 
-- **Against RAG stacks (LlamaIndex, LangChain, classic embedding pipelines).** RAG stores chunks and retrieves at query time — there's no curation layer, no named entity pages, no decision log. Scribe keeps raw sources AND compiles a structural wiki on top. The wiki is the product; qmd embedding is the index into it.
+- **Against RAG stacks (LlamaIndex, LangChain retrievers, classic embedding pipelines).** RAG stores chunks and retrieves at query time — there's no curation layer, no named entity pages, no decision log. Scribe keeps raw sources AND compiles a structural wiki on top. The wiki is the product; qmd embedding is the index into it.
 - **Against manual note-taking (Obsidian, Notion).** Those expect you to do the writing. Scribe watches your git commits, coding-agent sessions, and self-sent URLs, then writes the notes. You review and curate, the LLM does the data-entry.
 - **Against `claude-memory-compiler`.** Memory-compiler runs an LLM call on *every* Claude Code session with ≥1 turn. A single Max-20x user burned $115 in 20 minutes on issue #3. Scribe's `scribe triage` scores sessions with weighted FTS5 keyword matching *before* calling Claude, so boilerplate sessions never cost anything. `sync --max` caps project-extraction work; the rate-limit bail-out hands cleanly to the next cron run instead of blocking.
 - **Against `claude-obsidian` and `nvk/llm-wiki`.** Those are read-time research companions — plugin skills and slash commands, no binary, no cron. Great for interactive investigations, not for background absorption of weeks of work. Scribe runs as a scheduled daemon and produces the KB whether or not you open a terminal that day.
+- **Against LangChain `openwiki`.** The closest relative, and a good tool for a different job. OpenWiki documents *what a repository's code is*: an agent reads the source and tests and writes an `openwiki/` reference wiki into the repo, with Grounded Claims that pin each fact to source lines (`repo://src/server.ts#L40-L82`) so an update reworks only what drifted. Scheduling is a CI job that opens a docs PR. Its personal mode pulls from Notion, Gmail, Slack, X, web search, and Hacker News. What it doesn't do is read your coding-agent sessions, so it never sees *why* a change was made, which tool you rejected, or how you fixed a bug three projects ago. Its own issue #822 notes that the updater only receives changed paths, so "the intent of a change never reaches it". Scribe mines exactly that layer, on a local schedule, into one KB that spans every project. The two compose: OpenWiki answers "how does this repo work?", scribe answers "what did I decide, reject, or solve before, and why?". OpenWiki is ahead on code-level grounding, agent integrations (10 hosts, can run on the host agent's own session), Windows support, and community size; it also ships telemetry on by default, which scribe doesn't have.
 - **Against `basic-memory`.** Basic-memory has the best graph model of the bunch (inline `[decision]` observations, auto-generated relations). What it doesn't do is ingest Claude Code session transcripts (open feature request since March 2026) or iMessage self-chat URLs, and its Dream-analog skills aren't scheduled. Scribe covers those; if you want the richer graph DSL, basic-memory is the reference.
 
 ### What scribe is *not* trying to be

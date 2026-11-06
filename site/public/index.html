@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>scribe — your knowledge base, written by your tools</title>
-<meta name="description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable." />
+<title>scribe — an LLM wiki, written by your tools</title>
+<meta name="description" content="The LLM wiki pattern as a single-binary CLI: turns your git repos, coding-agent sessions, and self-sent links into a curated markdown wiki with BM25 and local vector search. Cron-driven, fully local-capable." />
 <meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#1a1d22" media="(prefers-color-scheme: dark)" />
 
@@ -24,8 +24,8 @@
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="scribe" />
 <meta property="og:url" content="https://getscribe.dev/" />
-<meta property="og:title" content="scribe — your knowledge base, written by your tools" />
-<meta property="og:description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Runs on cron. Fully local-capable." />
+<meta property="og:title" content="scribe — an LLM wiki, written by your tools" />
+<meta property="og:description" content="The LLM wiki pattern as a single-binary CLI: turns your git repos, coding-agent sessions, and self-sent links into a curated markdown wiki with BM25 and local vector search. Runs on cron. Fully local-capable." />
 <meta property="og:image" content="https://getscribe.dev/og-v4.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
@@ -38,8 +38,8 @@
 <meta name="twitter:site" content="@quatermain32" />
 <meta name="twitter:creator" content="@quatermain32" />
 <meta name="twitter:url" content="https://getscribe.dev/" />
-<meta name="twitter:title" content="scribe — your knowledge base, written by your tools" />
-<meta name="twitter:description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, searchable knowledge base. Runs on cron. Local-capable." />
+<meta name="twitter:title" content="scribe — an LLM wiki, written by your tools" />
+<meta name="twitter:description" content="The LLM wiki pattern as a single-binary CLI: git repos, coding-agent sessions, and self-sent links compiled into a curated, searchable markdown wiki. Runs on cron. Local-capable." />
 <meta name="twitter:image" content="https://getscribe.dev/og-v4.png" />
 <meta name="twitter:image:alt" content="scribe — over 7,400 docs, $0/sync, ~70s per run." />
 
@@ -49,7 +49,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "scribe",
-  "description": "A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable.",
+  "description": "The LLM wiki pattern as a single-binary CLI: turns your git repos, coding-agent sessions, and self-sent links into a curated markdown wiki with BM25 and local vector search. Cron-driven, fully local-capable.",
   "url": "https://getscribe.dev/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Linux",
@@ -167,7 +167,7 @@
       "name": "What does it cost to run?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Zero on the local-mode path (Ollama) for the entire pipeline: per-project extraction, both absorb passes, and the weekly Dream cycle all run against your own server. On a hosted OpenAI-compatible API a full week of work billed $0.55 (Together). On the Anthropic path the same week billed $103.57 — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed $1.16. Routing is per-op in scribe.yaml, so the bill follows what you point at a paid provider, not how many KBs you run. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview any run with scribe sync --dry-run --estimate."
+        "text": "Zero on the local-mode path (Ollama) for the entire pipeline: per-project extraction, both absorb passes, and the weekly Dream cycle all run against your own server. On a hosted OpenAI-compatible API a full week of work billed $0.55 (Together). On the Anthropic path the same week billed $103.57 — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed $1.16. Routing is per-op in scribe.yaml, so the bill follows what you point at a paid provider, not how many KBs you run. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview a run with scribe sync --dry-run --estimate: it prices project extraction, session mining (with --sessions) and absorb from your own ledger's per-call medians."
       }
     },
     {
@@ -207,7 +207,7 @@
       "name": "Is scribe an alternative to RAG for a personal knowledge base?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front — the digest and the index — stay small enough to read whole."
+        "text": "Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there is no vector DB to run: qmd keeps its BM25 and embedding index in one local SQLite file that scribe refreshes on every sync. Most lookups are plain-text BM25 matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front — the digest and the index — stay small enough to read whole."
       }
     },
     {
@@ -272,11 +272,17 @@
   "@context": "https://schema.org",
   "@type": "TechArticle",
   "headline": "scribe — the compiled, LLM-written knowledge base for AI coding sessions",
-  "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your coding-agent sessions, git repos, and self-sent URLs into a curated, BM25-searchable wiki your agents read before they decide. Local-first and capable of running 100% on Ollama.",
+  "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your coding-agent sessions, git repos, and self-sent URLs into a curated wiki, searchable by BM25 keyword and local vector search, that your agents read before they decide. Local-first and capable of running 100% on Ollama.",
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og-v4.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
-  "dateModified": "2026-10-01T00:00:00+02:00",
+  "dateModified": "2026-10-23T00:00:00+02:00",
+  "isBasedOn": {
+    "@type": "CreativeWork",
+    "name": "LLM Wiki",
+    "url": "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f",
+    "author": { "@type": "Person", "name": "Andrej Karpathy" }
+  },
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -909,6 +915,8 @@
     max-width: 58ch;
   }
   .hero__sub strong { color: var(--fg); font-weight: 600; }
+  .hero__sub a { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .hero__sub a:hover { color: var(--accent-hover); }
   .hero__cta {
     display: flex;
     flex-wrap: wrap;
@@ -2596,7 +2604,7 @@
           Your knowledge base, <span class="accent">written by your tools.</span>
         </h1>
         <p class="hero__sub">
-          <strong>scribe turns git history, coding-agent sessions, and saved links into a private markdown wiki your next agent reads before it acts.</strong> It runs across projects, on cron, and fully locally on Ollama for zero API spend.
+          <strong>scribe turns git history, coding-agent sessions, and saved links into a private markdown wiki your next agent reads before it acts.</strong> It implements the <a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f">LLM Wiki pattern</a> Andrej Karpathy described, and runs across projects, on cron, and fully locally on Ollama for zero API spend.
         </p>
         <div class="hero__install">
           <span class="hero__install-sigil" aria-hidden="true">$</span>
@@ -2899,7 +2907,7 @@ advisory locks table-ambiguous under load.
     <header class="s__head">
       <div class="s__eyebrow">How it compares</div>
       <h2 class="s__title">Not RAG. Not Obsidian. Not another LLM-on-every-session burner.</h2>
-      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25, so there's nothing to embed and nothing to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that. It's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler): a curated wiki on top of raw sources kept verbatim, with a digest and index small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
+      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25 and local vector search, so there's no vector database to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that. It's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler): a curated wiki on top of raw sources kept verbatim, with a digest and index small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
       <p class="s__sub"><a href="/vs">Full comparison: scribe vs RAG, AnythingLLM, and a plain markdown vault →</a></p>
     </header>
 
@@ -3343,11 +3351,10 @@ Finish with the runbook's verification checklist and report what passed and what
   <span class="kw">num_ctx</span>: <span class="num">16384</span>               <span class="comment"># keeps dense-article tails intact</span>
 
 <span class="comment"># per-op overrides still work, e.g.</span>
-<span class="kw">ops</span>:
+<span class="kw">absorb</span>:
   <span class="kw">contextualize</span>:
     <span class="kw">model</span>: <span class="str">qwen3:30b-a3b</span>       <span class="comment"># quality-critical (MoE, fast)</span>
-  <span class="kw">pass2</span>:
-    <span class="kw">model</span>: <span class="str">qwen3:30b-a3b</span>       <span class="comment"># highest-quality writes</span></pre>
+  <span class="kw">pass2_model</span>: <span class="str">qwen3:30b-a3b</span>   <span class="comment"># highest-quality writes</span></pre>
         <p class="code-note">Plan for RAM: <code>gemma3:12b</code> wants ~10&nbsp;GB resident and <code>qwen3:30b-a3b</code> (4-bit MoE) ~20&nbsp;GB, so the pair above assumes 32&nbsp;GB or more. On 16&nbsp;GB, run <code>gemma3:4b</code> as the cross-op default and keep <code>gemma3:12b</code> for <code>contextualize</code> and <code>pass2</code> only &mdash; slower and blunter, still $0.</p>
       </div>
 
@@ -3397,7 +3404,7 @@ mcp__plugin_qmd_qmd__query</pre>
 
       <div class="code-panel" data-tab="doctor" id="panel-doctor" role="tabpanel" aria-labelledby="tab-doctor" tabindex="0">
         <button class="copy-btn" data-copy-target="code-doctor">copy</button>
-<pre id="code-doctor"><span class="comment"># validate setup, cron, git remote, Ollama models</span>
+<pre id="code-doctor"><span class="comment"># validate deps, config, cron, run freshness, Ollama models</span>
 scribe doctor
 
 <span class="comment"># validate just the local-mode pipeline</span>
@@ -3427,7 +3434,7 @@ scribe doctor <span class="flag">--section</span> localmode
           <span class="stage__pill">Claude Code + Codex</span>
         </div>
         <p class="stage__body">A single walk over <code>~/.claude/projects/*</code> and <code>~/.codex/sessions/*</code> finds every repo you've opened in either agent. Each one becomes an entry in the manifest with a stable name, last-seen timestamp, and source provenance. No config, no manual list; if you've coded there, scribe sees it.</p>
-        <div class="stage__src">cmd/scribe/sync.go: <code>discover()</code> + cmd/scribe/codex.go: <code>discoverCodex()</code> → <code>~/.claude/projects/*</code> + <code>~/.codex/sessions/*</code> → <code>manifest.Projects</code></div>
+        <div class="stage__src">cmd/scribe/sync_discover.go: <code>discover()</code> + cmd/scribe/codex.go: <code>discoverCodex()</code> → <code>~/.claude/projects/*</code> + <code>~/.codex/sessions/*</code> → <code>manifest.Projects</code></div>
       </article>
 
       <article class="stage">
@@ -3446,8 +3453,8 @@ scribe doctor <span class="flag">--section</span> localmode
           <h3>Cron sweeps move drop files into the absorb pipeline</h3>
           <span class="stage__pill">2h / 4h / 30min</span>
         </div>
-        <p class="stage__body">Three cron entries do the boring work: <code>sync</code> for session mining and per-project extraction, <code>capture</code> for queued URLs and self-sent iMessage links, and <code>sync --sessions</code> on a faster cadence. Drop files written by an agent in any repo are picked up on the next tick and flow through density triage → contextualize → atomic facts → pass-2 absorb.</p>
-        <div class="stage__src">cmd/scribe/cron.go: <code>CronInstallCmd.Run()</code> → launchd / systemd / crontab entries → <code>scribe sync</code> + <code>scribe capture</code></div>
+        <p class="stage__body">Cron does the boring work: <code>sync</code> every 2 hours for per-project extraction and drop files, <code>sync --sessions</code> three times a day for session mining, <code>ingest drain</code> every 30 minutes for queued URLs, and <code>capture</code> every 4 hours for self-sent iMessage links. Drop files written by an agent in any repo are picked up on the next tick and flow through density triage → contextualize → atomic facts → pass-2 absorb.</p>
+        <div class="stage__src">cmd/scribe/cron.go: <code>CronInstallCmd.Run()</code> → launchd agents / crontab lines → <code>scribe each -- sync</code> + <code>ingest drain</code> + <code>capture</code></div>
       </article>
 
       <article class="stage">
@@ -3457,7 +3464,7 @@ scribe doctor <span class="flag">--section</span> localmode
           <span class="stage__pill">hourly</span>
         </div>
         <p class="stage__body">A separate cron entry runs <code>scribe commit</code> every hour: it stages everything the absorb pipeline produced, writes a structured commit message, and pushes to your private remote (GitHub, Gitea, Forgejo, anywhere). On non-fast-forward it runs <code>git pull --rebase</code> and retries once; force-push is never attempted. Your KB is version-controlled, diffable, and recoverable, with no web UI; the source of truth is markdown in git.</p>
-        <div class="stage__src">cmd/scribe/commit.go: <code>CommitCmd.Run()</code> + cmd/scribe/gitops.go → <code>git add</code> · <code>git commit</code> · <code>git push origin main</code></div>
+        <div class="stage__src">cmd/scribe/commit.go: <code>CommitCmd.Run()</code> + cmd/scribe/gitops.go → <code>git add</code> · <code>git commit</code> · <code>git push</code></div>
       </article>
 
       <article class="stage">
@@ -3496,11 +3503,12 @@ scribe doctor <span class="flag">--section</span> localmode
         <pre class="commands__lines"><code><span class="cmd-prompt">$</span> <span class="cmd-name">scribe init --bind</span>                 <span class="cmd-cmt"># bootstrap a KB, wire the agent handshake</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span>                        <span class="cmd-cmt"># discover → extract → absorb → reindex</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--sessions</span>             <span class="cmd-cmt"># mine coding-agent transcripts</span>
-<span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--dry-run --estimate</span>   <span class="cmd-cmt"># token estimate, no writes or LLM calls</span>
-<span class="cmd-prompt">$</span> <span class="cmd-name">scribe doctor</span>                      <span class="cmd-cmt"># validate setup, cron, git remote, Ollama</span>
+<span class="cmd-prompt">$</span> <span class="cmd-name">scribe sync</span> <span class="cmd-arg">--dry-run --estimate</span>   <span class="cmd-cmt"># token estimate for queued extraction + absorb work, no writes or LLM calls</span>
+<span class="cmd-prompt">$</span> <span class="cmd-name">scribe doctor</span>                      <span class="cmd-cmt"># validate deps, config, cron, run freshness, Ollama</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe commit</span>                      <span class="cmd-cmt"># stage + push the KB to your private remote</span>
-<span class="cmd-prompt">$</span> <span class="cmd-name">scribe dream</span>                       <span class="cmd-cmt"># weekly consolidation (Ollama-driven)</span>
-<span class="cmd-prompt">$</span> <span class="cmd-name">scribe capture</span>                     <span class="cmd-cmt"># drain queued URLs / iMessage links</span>
+<span class="cmd-prompt">$</span> <span class="cmd-name">scribe dream</span>                       <span class="cmd-cmt"># weekly 4-phase consolidation</span>
+<span class="cmd-prompt">$</span> <span class="cmd-name">scribe capture</span>                     <span class="cmd-cmt"># pull self-sent iMessage links (macOS)</span>
+<span class="cmd-prompt">$</span> <span class="cmd-name">scribe ingest</span> <span class="cmd-arg">drain</span>                <span class="cmd-cmt"># fetch queued URLs into raw/articles/</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe relations migrate</span>           <span class="cmd-cmt"># classify `related:` into typed edges</span>
 <span class="cmd-prompt">$</span> <span class="cmd-name">scribe cron</span> <span class="cmd-arg">install</span> / <span class="cmd-arg">uninstall</span> / <span class="cmd-arg">status</span>
 </code></pre>
@@ -3591,7 +3599,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>What does it cost to run?</summary>
-        <div class="answer"><strong>Zero</strong> on the local-mode path (Ollama) for the entire pipeline: per-project extraction, both absorb passes, and the weekly Dream cycle all run against your own server. On a hosted OpenAI-compatible API a full week of work billed <strong>$0.55</strong> (Together). On the Anthropic path the same week billed <strong>$103.57</strong> — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed <strong>$1.16</strong>. Routing is per-op in <code>scribe.yaml</code>, so the bill follows what you point at a paid provider, not how many KBs you run. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview any run with <code>scribe sync --dry-run --estimate</code>.</div>
+        <div class="answer"><strong>Zero</strong> on the local-mode path (Ollama) for the entire pipeline: per-project extraction, both absorb passes, and the weekly Dream cycle all run against your own server. On a hosted OpenAI-compatible API a full week of work billed <strong>$0.55</strong> (Together). On the Anthropic path the same week billed <strong>$103.57</strong> — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed <strong>$1.16</strong>. Routing is per-op in <code>scribe.yaml</code>, so the bill follows what you point at a paid provider, not how many KBs you run. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview a run with <code>scribe sync --dry-run --estimate</code>: it prices project extraction, session mining (with <code>--sessions</code>) and absorb from your own ledger's per-call medians.</div>
       </details>
 
       <details class="q">
@@ -3616,7 +3624,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>Is scribe an alternative to RAG for a personal knowledge base?</summary>
-        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong>: it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front &mdash; the digest and the index &mdash; stay small enough to read whole.</div>
+        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong>: it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there is no vector DB to run: qmd keeps its BM25 and embedding index in one local SQLite file that scribe refreshes on every sync. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front &mdash; the digest and the index &mdash; stay small enough to read whole.</div>
       </details>
 
       <details class="q">
@@ -3745,12 +3753,12 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <article class="feature">
         <h3>Secrets never reach shared history</h3>
-        <p>scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path. On a solo KB the gate is off and the KB pushes to a private remote you own; <code>team: true</code> is what turns it on — and it is a multi-writer switch, not a headcount, so one person with two machines can set it.</p>
+        <p>scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path. On a solo KB the gate is off by default and the KB pushes to a private remote you own; <code>team: true</code> turns it on (a solo KB can opt in with <code>secret_scan.enable: true</code>) — and <code>team: true</code> is a multi-writer switch, not a headcount, so one person with two machines can set it.</p>
       </article>
 
       <article class="feature">
         <h3>Extraction is paid for once, not per laptop</h3>
-        <p>Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync lists each approved repo through git &mdash; tracked and untracked files, with <code>.gitignore</code> honored &mdash; and extracts it once before the ledger takes over. Preview it with <code>scribe sync --dry-run --estimate</code>.</p>
+        <p>Every <code>scribe sync</code> pulls, merges, and reindexes <em>before</em> it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync lists each approved repo through git &mdash; tracked and untracked files, with <code>.gitignore</code> honored &mdash; and extracts it once before the ledger takes over. <code>scribe sync --dry-run</code> lists the repos and changed files it would extract, and <code>--estimate</code> prices this run's extraction slots (<code>--max</code>, default 3) at the KB's median per call. Budget that first run above the estimate: a never-extracted repo reads its whole tree, and the median comes from incremental runs.</p>
       </article>
 
       <article class="feature">
@@ -3760,7 +3768,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <article class="feature">
         <h3>Curate privately, promote deliberately</h3>
-        <p><code>scribe promote &lt;article&gt; --to team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.</p>
+        <p><code>scribe promote &lt;article&gt; --to ~/team-kb</code> copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.</p>
       </article>
 
       <article class="feature">
@@ -3864,7 +3872,7 @@ scribe doctor <span class="flag">--section</span> localmode
       </div>
     </div>
     <div class="footer__bottom">
-      <span>MIT · last updated 2026-10-01</span>
+      <span>MIT · last updated 2026-10-23</span>
       <span>github.com/oliver-kriska/scribe</span>
     </div>
   </div>

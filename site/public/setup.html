@@ -295,9 +295,9 @@ reference</a></td>
 <code>--provider ollama</code> bills nothing and runs at your hardware's
 speed. A hosted <code>/v1</code> endpoint ran a full week of one KB's
 work for well under a dollar. The Anthropic path is the expensive one
-and scales with how much you actually mine — preview any run with
-<code>scribe sync --dry-run --estimate</code> before you let cron loose
-on it.</p>
+and scales with how much you actually mine — set a <a
+href="#set-a-spend-ceiling-anthropic-and-hosted-providers">spend
+ceiling</a> before you let cron loose on it.</p>
 <p>The deciding question is how many machines write to one KB, not how
 many people. Two machines owned by one person need the same coordination
 as a five-person team; <a
@@ -323,7 +323,8 @@ below.</p>
 <p>Do not paste API keys into a prompt, command history, committed
 <code>scribe.yaml</code>, or a team repository. Hosted-provider keys
 belong in the per-machine <code>~/.config/scribe/config.yaml</code>
-(mode <code>0600</code>) or an environment variable.</p>
+(restrict it with <code>chmod 600</code>) or an environment
+variable.</p>
 <h2 id="install-the-cli-and-required-tools">Install the CLI and required
 tools</h2>
 <h3 id="homebrew-macos-or-linuxbrew">Homebrew (macOS or Linuxbrew)</h3>
@@ -346,15 +347,21 @@ The formula is now built MLX-only (it depends on <code>mlx-c</code>) and
 no longer ships the GGUF/llama-server backend the local pipeline needs —
 a formula install looks successful and then fails to run the recommended
 models.</p>
-<p>Plan for RAM before you pick models. <code>gemma3:12b</code> — the
-recommended cross-op default — wants roughly 10 GB resident, and
-<code>qwen3:30b-a3b</code> at 4-bit, used for <code>contextualize</code>
-and <code>pass2</code>, wants roughly 20 GB. The recommended pair
-therefore assumes 32 GB or more. On 16 GB, set <code>gemma3:4b</code> as
-the cross-op default and keep <code>gemma3:12b</code> for the two
-quality-critical ops only: slower and blunter, still $0. Below 16 GB,
-use a hosted <code>/v1</code> endpoint instead — the local path will
-swap and every cron job will overrun its window.</p>
+<p>Plan for RAM before you pick models.
+<code>scribe init --provider ollama</code> scaffolds
+<code>gemma3:4b</code> for every op, which fits 16 GB. With 32 GB or
+more, the higher-quality pair is <code>gemma3:12b</code> as the cross-op
+default (roughly 10 GB resident) and <code>qwen3:30b-a3b</code> at 4-bit
+for <code>contextualize</code> and pass 2 (roughly 20 GB). Switch to it
+by editing <code>scribe.yaml</code> after init:</p>
+<pre class="yaml"><code>llm:
+  model: gemma3:12b
+absorb:
+  pass2_model: qwen3:30b-a3b
+  contextualize:
+    model: qwen3:30b-a3b</code></pre>
+<p>Below 16 GB, use a hosted <code>/v1</code> endpoint instead — the
+local path will swap and every cron job will overrun its window.</p>
 <p>On macOS the cask registers a launchd service, so the server is
 normally already running; do not start a second one if
 <code>ollama list</code> works. When it is not running, start
@@ -382,6 +389,28 @@ installs the scribe handshake into <code>~/.claude/CLAUDE.md</code>,
 <code>~/.config/amp/AGENTS.md</code>. Without it, init may deliberately
 leave machine-global state untouched, especially when another KB is
 already configured.</p>
+<p>Register the KB with qmd once per machine. scribe reindexes qmd but
+does not create the collection. Name it after the KB's
+<code>kb_name</code> (the directory name unless you passed
+<code>--kb-name</code>):</p>
+<pre class="sh"><code>qmd collection add &quot;$KB&quot; --name &quot;$(basename &quot;$KB&quot;)&quot;</code></pre>
+<p>Then add <code>ignore: ["output/**"]</code> under that collection in
+<code>~/.config/qmd/index.yml</code>, so drop-file staging and absorb
+chunks stay out of search. <code>scribe doctor</code> warns while no
+collection covers the KB or <code>output/</code> is indexed.</p>
+<h3 id="set-a-spend-ceiling-anthropic-and-hosted-providers">Set a spend
+ceiling (Anthropic and hosted providers)</h3>
+<p><code>cron install</code> starts unattended runs over every approved
+project. On a paid provider, cap them in <code>scribe.yaml</code>
+first:</p>
+<pre class="yaml"><code>sync:
+  daily_output_token_ceiling: 2000000</code></pre>
+<p>When today's metered output tokens cross the ceiling, further paid
+calls abort and the run exits 0. Local Ollama calls are exempt.
+<code>scribe doctor</code> warns while no ceiling is set. A machine-wide
+ceiling summed across every registered KB goes in
+<code>~/.config/scribe/config.yaml</code> as
+<code>daily_output_token_ceiling</code>.</p>
 <p>Continue with either provider:</p>
 <pre class="sh"><code>cd &quot;$KB&quot;
 scribe skill install
@@ -398,10 +427,20 @@ binary and KB exist.</li>
 <li><code>sync --discover</code> records candidate repositories without
 extracting them.</li>
 <li><code>projects review</code> is the consent gate. Approve only
-repositories this KB is allowed to read.</li>
-<li><code>sync --dry-run --estimate</code> previews pending work without
-writes or LLM calls. A real <code>scribe sync</code> can spend tokens;
-run it only after reviewing the estimate.</li>
+repositories this KB is allowed to read. It is interactive; an agent
+that cannot drive the prompt runs
+<code>scribe projects list --pending</code>, confirms the list with the
+human, then <code>scribe projects approve &lt;name&gt;…</code>.</li>
+<li><code>sync --dry-run --estimate</code> prints a token estimate for
+the run without writes or LLM calls: project extraction (up to
+<code>--max</code>, default 3), session mining when you add
+<code>--sessions</code>, and the queued raw-article work (contextualize
+and absorb). Extraction and mining are priced at this KB's median per
+call from <code>output/costs/</code>, or a labeled default before there
+is any history. <code>scribe sync --dry-run</code> on its own lists the
+projects and changed files a run would extract. A real
+<code>scribe sync</code> can spend tokens; run it only after reviewing
+both.</li>
 <li><code>cron install</code> installs macOS LaunchAgents or prints
 Linux crontab entries.</li>
 <li><code>doctor</code> checks dependencies, configuration, scheduling,
@@ -436,7 +475,12 @@ block before you publish the config. A personal user starts with the
 Anthropic personal recipe above. A team owner starts with the team-owner
 recipe below. In either case, replace the generated top-level
 <code>llm:</code> block with the chosen provider's real model and
-endpoint policy before publishing the configuration. Example:</p>
+endpoint policy before publishing the configuration, and delete the
+<code>provider: anthropic</code> and <code>model: haiku</code> lines
+under <code>absorb.contextualize</code>. The Anthropic scaffold sets
+them explicitly, and an explicit per-op provider wins over
+<code>llm:</code>, so contextualize would keep calling Claude.
+Example:</p>
 <pre class="yaml"><code>llm:
   provider: together
   model: MiniMaxAI/MiniMax-M3
@@ -444,14 +488,17 @@ endpoint policy before publishing the configuration. Example:</p>
   pricing:
     &quot;together/MiniMaxAI/MiniMax-M3&quot;:
       input: 0.30
-      output: 1.20</code></pre>
+      output: 1.20
+sync:
+  daily_output_token_ceiling: 2000000</code></pre>
 <p>Named providers (<code>together</code>, <code>groq</code>,
 <code>fireworks</code>, <code>huggingface</code>) have built-in base
 URLs. Use <code>provider: openai-compat</code> plus
 <code>base_url</code> for another compatible
-<code>/v1/chat/completions</code> endpoint. Confirm the exact serverless
-model ID and current pricing with the provider; catalog names and rates
-change.</p>
+<code>/v1/chat/completions</code> endpoint; <code>base_url</code> must
+be <code>https://</code> unless it points at this machine, and redirects
+to another host are refused. Confirm the exact serverless model ID and
+current pricing with the provider; catalog names and rates change.</p>
 <p>The key must stay outside the KB. Have the human place it in an
 environment variable or add <code>llm_api_key</code> / provider-specific
 <code>llm_api_keys</code> to <code>~/.config/scribe/config.yaml</code>,
@@ -485,10 +532,18 @@ scribe init \
   --team \
   --kb-name acme-kb \
   --allow &#39;~/work&#39; \
-  --provider anthropic
+  --provider anthropic \
+  --owner-name &quot;Alice Example&quot; \
+  --owner-context &quot;Shared knowledge base for Acme&#39;s engineering repositories.&quot; \
+  --domains platform,infra \
+  --yes
 
 cd &quot;$KB&quot;
-scribe skill install</code></pre>
+scribe skill install
+qmd collection add &quot;$KB&quot; --name acme-kb</code></pre>
+<p><code>--yes</code> keeps init non-interactive. Without it, init
+prompts for an iMessage handle, and anything typed there lands in the
+committed <code>scribe.yaml</code>.</p>
 <p>Use <code>--provider ollama</code> only if every participating
 machine will run the chosen Ollama model. If teammates keep repositories
 in different directory layouts, prefer a git-identity allowlist. Before
@@ -501,8 +556,11 @@ pushing, edit the generated <code>scribe.yaml</code>:</p>
 <p><code>allowed_remotes</code> rejects repositories without a matching
 <code>origin</code>, regardless of checkout location. Keep
 personal/client repositories out with shared
-<code>sources.exclude</code> rules or stricter per-person rules in the
-gitignored <code>scribe.local.yaml</code>.</p>
+<code>sources.exclude</code> rules, or add per-person
+<code>sources.exclude</code> entries in the gitignored
+<code>scribe.local.yaml</code>. Local source lists are unioned with the
+shared ones, so a local file can add exclusions but never remove a
+shared one.</p>
 <p>Init creates the scaffold commit before skills or later config edits,
 so commit those additions and publish the private repository:</p>
 <pre class="sh"><code>git add scribe.yaml .claude/skills .agents/skills
@@ -540,7 +598,7 @@ git config user.name &quot;Alice Example&quot;
 git config user.email &quot;alice@example.com&quot;
 
 scribe init --bind --yes
-scribe config diff
+qmd collection add &quot;$KB&quot; --name acme-kb   # the kb_name in scribe.yaml
 scribe config trust
 scribe skill install --check
 scribe sync --discover
@@ -555,12 +613,17 @@ scribe doctor</code></pre>
 in <code>scribe.yaml</code>. This init invocation checks the checkout
 and installs that member's machine-local default and agent handshakes
 without recreating the KB.</p>
-<p><code>scribe config diff</code> shows the trust boundary;
-<code>scribe config trust</code> explicitly accepts the cloned sensitive
-settings on that machine. <code>skill install --check</code> ensures the
-committed skills match the member's binary. If it reports drift,
-coordinate one skill update through the shared repository instead of
-having every member create competing updates.</p>
+<p>On a fresh clone there is no trust snapshot yet, so
+<code>scribe config diff</code> has nothing to compare against. Read the
+committed <code>scribe.yaml</code> instead (<code>sources</code>,
+<code>llm.base_url</code> and <code>ollama_url</code>, every per-op
+provider) before running <code>scribe config trust</code>, which accepts
+the cloned sensitive settings on that machine. From then on,
+<code>config diff</code> shows what a teammate's push changed.
+<code>skill install --check</code> ensures the committed skills match
+the member's binary. If it reports drift, coordinate one skill update
+through the shared repository instead of having every member create
+competing updates.</p>
 <p>Each member has their own gitignored
 <code>scripts/projects.json</code>, so each must run discovery and
 approve repositories. Those approvals and absolute paths are not shared.
@@ -609,8 +672,10 @@ one exception: a machine that has never extracted a repository lists it
 through git — tracked and untracked files, with <code>.gitignore</code>
 honored — then extracts it once at full model cost, because the
 never-extracted case is decided before the ledger is consulted. Run
-<code>scribe sync --dry-run --estimate</code> before the first real sync
-on a new machine. <a
+<code>scribe sync --dry-run</code> before the first real sync on a new
+machine to see that list. <code>--estimate</code> prices those
+extractions at the KB's median per call, which comes from incremental
+runs, so expect a first full pass to cost more. <a
 href="https://getscribe.dev/topologies.md">Topologies</a> is the
 canonical reference for what is and is not coordinated.</p>
 <h3 id="step-1--prepare-the-kb-once-on-the-machine-that-has-it">Step 1 —
@@ -641,10 +706,10 @@ integrations:
     enabled: true</code></pre>
 <p>Give capture to exactly one machine. Messages is iCloud-synced, so
 every Mac on the same Apple ID sees identical messages; capturing on two
-double-ingests every URL and makes them fight over the committed
-<code>scripts/imessage-state.json</code>. The per-machine Full Disk
-Access grant is a useful forcing function — simply never run
-<code>scribe fda</code> on the second machine.</p>
+ingests a URL twice whenever both capture between pulls, and makes them
+fight over the committed <code>scripts/imessage-state.json</code>. The
+per-machine Full Disk Access grant is a useful forcing function — simply
+never run <code>scribe fda</code> on the second machine.</p>
 <p>Turning the flag on also activates the secret gate, which adds a
 whole-KB audit to <code>scribe doctor</code>. Pre-existing
 credential-shaped strings in old articles surface as a new warning; they
@@ -664,6 +729,7 @@ cd ~/your-kb
 git config user.name &quot;Your Name&quot; &amp;&amp; git config user.email &quot;you@example.com&quot;
 
 scribe init --bind --yes
+qmd collection add ~/your-kb --name &quot;$(basename ~/your-kb)&quot;   # use the kb_name in scribe.yaml if it differs
 scribe config trust
 scribe sync --discover
 scribe projects review
@@ -732,9 +798,11 @@ session history but not the repositories, so every candidate is skipped.
 Clone the repositories you will work on there, re-run
 <code>scribe sync --discover</code>, then
 <code>scribe projects review</code> — new projects arrive as pending.
-<code>scribe projects add &lt;path&gt;</code> enrolls one directly.
-Session mining stays at <code>0 pending</code> until projects
-exist.</li>
+<code>scribe projects add &lt;path&gt; --local</code> enrolls one
+directly; without <code>--local</code> it widens the committed
+<code>sources.include</code>, which every other machine then sees as
+config drift. Session mining stays at <code>0 pending</code> until
+projects exist.</li>
 <li><strong>A lower qmd file count than the first machine.</strong>
 Derived artifacts are gitignored and do not clone. Compare against
 <code>git ls-files '*.md' | wc -l</code>, not against the other
@@ -753,8 +821,11 @@ git clone git@github.com:acme/team-kb.git &quot;$KB&quot;
 cd &quot;$KB&quot;
 
 scribe init --check
+qmd collection add &quot;$KB&quot; --name acme-kb   # the kb_name in scribe.yaml
 scribe config trust
 scribe kb add &quot;$KB&quot;
+scribe sync --discover
+scribe projects review
 scribe cron install
 scribe doctor</code></pre>
 <p>Do not use <code>--bind</code> in this profile: it would repoint the
@@ -834,7 +905,9 @@ provider is selected.</li>
 <li>The KB appears in <code>scribe kb list</code>, and cron is installed
 (or its Linux block has actually been added).</li>
 <li>Only intended repositories are approved.</li>
-<li>The dry-run estimate is plausible before any paid sync.</li>
+<li><code>scribe sync --dry-run</code> lists only intended projects, and
+a paid-provider KB has a daily token ceiling before its first real
+sync.</li>
 <li>Agent skills match, and team config has no unreviewed drift.</li>
 <li>The KB git remote is private and the worktree contains no accidental
 secret or machine-local file.</li>

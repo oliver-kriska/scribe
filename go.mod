@@ -6,10 +6,10 @@ module github.com/oliver-kriska/scribe
 // runtime bug fixes, and scribe is a cgo build. CI reads this via setup-go's
 // `go-version-file: go.mod`; GOTOOLCHAIN=auto fetches it for local and
 // release-container builds. Bump here and everything follows.
-go 1.26.9
+go 1.26.10
 
 require (
-	github.com/alecthomas/kong v1.16.1
+	github.com/alecthomas/kong v1.17.0
 	github.com/mattn/go-sqlite3 v1.14.52
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -18,7 +18,7 @@ require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 )
 
 require (

@@ -4,6 +4,42 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **`sync --dry-run --estimate` prices project extraction and session
+  mining.** It used to cover only the contextualize and absorb queues, so
+  the most expensive phases of a run never showed up. Extraction now counts
+  the projects a run would pick (capped by `--max`), and `--sessions` counts
+  the sessions triage and the hook queue would admit, both read-only. Each
+  call is priced at the median of that op's successful calls in the KB's
+  cost ledger over the last 30 days, or at a default the row labels as one.
+  Ollama rows are marked free. When a daily output ceiling is set, the
+  estimate also prints today's headroom and warns if the run would hit it.
+
+- **The cost ledger records what each `claude -p` call actually did
+  (#139).** Each row now carries the model id that ran (`resolved_models`
+  — the `sonnet` alias can move to a new model with no config change),
+  `num_turns`, `terminal_reason`, subagent counts, and refused tool calls
+  (`denials`, a per-tool `denied_tools` tally, and up to 3
+  `denied_samples`: Bash commands cut to 120 bytes with a leading
+  `cd <dir> &&` dropped and credentials redacted: URL query tokens,
+  `Authorization`/`Bearer` values, `user:pass@` and `-u user:pass`,
+  `--token`/`--api-key`-style flags and `*_TOKEN=`/`*_KEY=` assignments;
+  other tools store their name only). Telemetry fields are decoded
+  leniently, so a future CLI changing one of their shapes cannot break the
+  core envelope parse. `scribe cost` labels a row `sonnet → <resolved id>`
+  when they differ and prints the window's denied-call total.
+
+### Changed
+
+- **Failed `claude -p` runs that still printed a result envelope now
+  record their usage and cost.** Previously a non-zero exit (or a stderr
+  rate-limit banner) discarded the envelope, so those tokens were
+  invisible to the ledger. They now count toward `scribe cost` and toward
+  `daily_output_token_ceiling`, both per-KB and machine-wide. Runs that
+  exited 0 with `is_error` already counted and are unchanged. Per-op
+  estimates (`sync --dry-run --estimate`) still use successful calls only.
+
 ### Fixed
 
 - **Envelope-mode extraction sends the changed files again (#138).** The
@@ -19,6 +55,11 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   `.git` entry, and the tools-mode extract and assess prompts say so too.
   The tooling half of #131 (whether `.claude/agents`, `rules`, `skills`
   count as project knowledge) is left open.
+- **`init --path` no longer scaffolds over a team clone.** The existing-KB
+  guard looked only for `scripts/projects.json`, which team KBs gitignore,
+  so `scribe init --path <fresh clone>` rewrote the committed `scribe.yaml`,
+  `CLAUDE.md`, `.gitignore` and `log.md`. An existing `scribe.yaml` now
+  refuses too; `--force` still overrides.
 
 ## [0.5.10] — 2026-10-15
 

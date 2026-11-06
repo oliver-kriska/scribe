@@ -50,9 +50,9 @@ var scribeDeps = []depSpec{
 }
 
 // InitCmd creates a new scribe knowledge base, or checks/upgrades an existing
-// one. Running in a directory that already has `scripts/projects.json` acts
-// as status/check; running elsewhere creates a fresh KB from embedded
-// templates.
+// one. Running inside an existing KB acts as status/check; running elsewhere
+// creates a fresh KB from embedded templates. `--path` at an existing KB
+// (scribe.yaml or scripts/projects.json present) refuses without --force.
 type InitCmd struct {
 	Path         string   `help:"Create a fresh KB at this path. Defaults to current directory when bootstrapping." short:"p"`
 	OwnerName    string   `help:"Owner name (e.g. your display name)."`
@@ -187,6 +187,17 @@ func (c *InitCmd) Run() error {
 
 // --- bootstrap mode ---
 
+// existingKBMarker returns the KB-relative path of the first file that
+// marks root as an existing scribe KB, or "" when there is none.
+func existingKBMarker(root string) string {
+	for _, rel := range []string{"scribe.yaml", filepath.Join("scripts", "projects.json")} {
+		if fileExists(filepath.Join(root, rel)) {
+			return rel
+		}
+	}
+	return ""
+}
+
 func (c *InitCmd) runBootstrap() error {
 	target := c.Path
 	if target == "" {
@@ -201,10 +212,15 @@ func (c *InitCmd) runBootstrap() error {
 		return fmt.Errorf("resolve path: %w", err)
 	}
 
-	// Refuse to overwrite an existing KB unless --force was given.
-	manifestPath := filepath.Join(abs, "scripts", "projects.json")
-	if fileExists(manifestPath) && !c.Force {
-		return fmt.Errorf("%s already looks like a scribe KB (scripts/projects.json exists)\nRe-run with --force to overwrite, or drop --path to run status checks", abs)
+	// Refuse to overwrite an existing KB unless --force was given. Either
+	// marker counts: a team clone gitignores scripts/projects.json, so a
+	// fresh checkout has scribe.yaml but no manifest, and the scaffold
+	// write would replace the committed scribe.yaml, CLAUDE.md, .gitignore
+	// and log.md.
+	if !c.Force {
+		if marker := existingKBMarker(abs); marker != "" {
+			return fmt.Errorf("%s already looks like a scribe KB (%s exists)\nRe-run with --force to overwrite, or drop --path and run init inside it for status checks (team clone: `scribe init --bind --yes`)", abs, marker)
+		}
 	}
 
 	// Phase 1 — collect: every prompt happens here, before anything is

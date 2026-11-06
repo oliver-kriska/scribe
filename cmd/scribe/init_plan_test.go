@@ -112,6 +112,45 @@ func TestRunBootstrapCheckIsPlanOnly(t *testing.T) {
 	}
 }
 
+// TestRunBootstrapRefusesExistingKB: `init --path` at an existing KB must
+// refuse before writing anything. A team clone has scribe.yaml but no
+// scripts/projects.json (gitignored), so scribe.yaml alone has to count.
+func TestRunBootstrapRefusesExistingKB(t *testing.T) {
+	tests := []struct {
+		name   string
+		marker string
+	}{
+		{"team clone (scribe.yaml only)", "scribe.yaml"},
+		{"solo KB (manifest)", filepath.Join("scripts", "projects.json")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeHome := t.TempDir()
+			t.Setenv("HOME", fakeHome)
+			t.Setenv("XDG_CONFIG_HOME", "")
+			kb := filepath.Join(t.TempDir(), "existing-kb")
+			const committed = "team: true\nkb_name: acme-kb\n"
+			writeKBFile(t, kb, tt.marker, committed)
+
+			c := &InitCmd{Path: kb, Yes: true, NoGit: true, Domains: []string{"general"}}
+			err := c.runBootstrap()
+			if err == nil || !strings.Contains(err.Error(), "already looks like a scribe KB") {
+				t.Fatalf("runBootstrap err = %v, want existing-KB refusal", err)
+			}
+			if !strings.Contains(err.Error(), tt.marker) {
+				t.Errorf("refusal %q does not name the marker %s", err, tt.marker)
+			}
+			got, rerr := os.ReadFile(filepath.Join(kb, tt.marker))
+			if rerr != nil || string(got) != committed {
+				t.Errorf("%s changed after refusal: %q (%v)", tt.marker, got, rerr)
+			}
+			if tt.marker != "scribe.yaml" && fileExists(filepath.Join(kb, "scribe.yaml")) {
+				t.Error("refusal still wrote scribe.yaml")
+			}
+		})
+	}
+}
+
 func TestProjectArticleCount(t *testing.T) {
 	root := t.TempDir()
 	writeKBFile(t, root, "projects/foo/insight.md", "# a\n")

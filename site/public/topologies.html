@@ -285,7 +285,7 @@ owner</a> and <a
 href="https://getscribe.dev/setup.md#team-member-clone-and-onboard">Team
 member</a> for a shared KB. The mechanics are identical; only who runs
 step 1 differs.</p>
-<p>Three guarantees switch on with <code>team: true</code>, and each
+<p>Four guarantees switch on with <code>team: true</code>, and each
 fails silently when it is missing:</p>
 <div class="table-scroll"><table>
 <thead>
@@ -336,10 +336,12 @@ ledger is consulted, so <strong>the first sync on a new machine
 re-extracts every approved repository once</strong>, at full model cost,
 even though a sibling machine already did that revision. That first pass
 asks git for tracked and untracked files with <code>.gitignore</code>
-honored, so ignored dependency trees do not inflate the estimate. After
-that first pass the ledger takes over. Preview it with
-<code>scribe sync --dry-run --estimate</code> before the first real
-run.</p>
+honored, so ignored dependency trees do not inflate it. After that first
+pass the ledger takes over. <code>scribe sync --dry-run</code> lists
+what the first real run will extract. <code>--estimate</code> prices
+that run's extraction slots at the KB's median per call, which comes
+from incremental runs, so a first full pass costs more than it
+shows.</p>
 <h3 id="what-turning-it-on-takes-away">What turning it on takes
 away</h3>
 <p><code>team: true</code> hard-disables <strong>iMessage
@@ -509,15 +511,16 @@ one machine only</td>
 </tbody>
 </table></div>
 <h3 id="known-limitations">Known limitations</h3>
-<p>Honest ones, accurate as of 2026-09-02:</p>
+<p>Honest ones, accurate as of 2026-10-23:</p>
 <ul>
 <li><p><strong>Some accumulating files are still not
 merge-aware.</strong> <code>wiki/_unfetched-links.md</code>,
 <code>wiki/_identity-proposals.md</code>,
 <code>wiki/_absorb_log.json</code>,
-<code>wiki/_extraction_outcomes.json</code> and
-<code>wiki/_contextualized_log.json</code> are committed, grow from
-every machine, and have no registered conflict handler. The list is not
+<code>wiki/_extraction_outcomes.json</code>,
+<code>wiki/_contextualized_log.json</code> and the file inbox's
+<code>raw/inbox/.inbox-state.json</code> are committed, grow from every
+machine, and have no registered conflict handler. The list is not
 exhaustive.</p>
 <p>An unregistered conflict aborts the rebase, and until it is resolved
 every later pull fails on the same conflict while local commits pile up
@@ -534,18 +537,28 @@ before committing.</strong> If a rebase is paused or <code>HEAD</code>
 is detached, cron will keep committing onto it and the branch will not
 advance. Never leave a rebase half-finished on a machine whose cron is
 running — see below.</p></li>
-<li><p><strong>The file inbox is shared and undeduplicated.</strong>
-<code>ingest.inbox_path</code> (default <code>raw/inbox</code>) is
-inside the committed tree, and every <code>scribe sync</code> drains it.
-Two machines that pull the same queued file before either has drained it
-will both convert it, producing duplicate articles. Drop files in on the
-maintenance machine, or accept the occasional duplicate. Note this is
-<em>not</em> what <code>scribe ingest drain</code> handles — that job
-works on <code>output/inbox</code>, which is gitignored and strictly
-machine-local, so it needs no coordination.</p></li>
+<li><p><strong>The file inbox is shared and only deduplicated after a
+pull.</strong> <code>ingest.inbox_path</code> (default
+<code>raw/inbox</code>) is inside the committed tree, and every
+<code>scribe sync</code> drains it. A content-hash index
+(<code>raw/inbox/.inbox-state.json</code>) skips a file whose content
+was already ingested, but only once that drain has been pulled. Two
+machines that pull the same queued file before either has pushed its
+drain will both convert it, producing duplicate articles. Drop files in
+on the maintenance machine, or accept the occasional duplicate. Note
+this is <em>not</em> what <code>scribe ingest drain</code> handles —
+that job works on <code>output/inbox</code>, which is gitignored and
+strictly machine-local, so it needs no coordination.</p></li>
 <li><p><strong><code>capture</code> is coordinated by convention
 only.</strong> Nothing stops two machines running it against the same
-KB.</p></li>
+KB. In a team KB the committed <code>capture</code> block is ignored, so
+capture runs only where <code>scribe.local.yaml</code> (or
+<code>SCRIBE_SELF_CHAT_ID</code>) opts that machine in; two opted-in
+machines both capture. Its cursor,
+<code>scripts/imessage-state.json</code>, records captured URLs and is
+committed, so a machine that has pulled it skips URLs already taken. It
+has no conflict handler, though, so two machines capturing between pulls
+can ingest the same URL twice and conflict on that file.</p></li>
 </ul>
 <h2 id="operating-rules-for-a-multi-writer-kb">Operating rules for a
 multi-writer KB</h2>
@@ -559,9 +572,11 @@ the lease makes it safe, and the weekly cycle still runs when your main
 machine is asleep.</p></li>
 <li><p><strong>One machine owns capture.</strong> On macOS, Messages is
 synced across devices, so every Mac signed into the same account sees
-identical messages. Capturing on two double-ingests every URL. The
-per-machine Full Disk Access grant is a useful forcing function — simply
-never run <code>scribe fda</code> on the others.</p></li>
+identical messages. Capturing on two ingests URLs twice whenever both
+capture between pulls, and both rewrite
+<code>scripts/imessage-state.json</code>, which has no conflict handler.
+The per-machine Full Disk Access grant is a useful forcing function —
+simply never run <code>scribe fda</code> on the others.</p></li>
 <li><p><strong>Match git's pull behaviour to cron's.</strong> scribe
 always pulls with <code>--rebase --autostash</code>; a hand-run
 <code>git pull</code> does not, and fails on a diverged clone. On every

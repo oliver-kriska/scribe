@@ -79,8 +79,9 @@ func (s *SyncCmd) Run() error {
 		if s.MaxAbsorb > 0 {
 			cfg.Absorb.MaxPerRun = s.MaxAbsorb
 		}
-		ests := estimateSync(root, cfg)
+		ests := append(s.estimateWorkPhases(root, cfg, manifest), estimateSync(root, cfg)...)
 		printEstimate(ests)
+		printCeilingHeadroom(root, cfg, ests)
 		return nil
 	}
 

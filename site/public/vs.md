@@ -1,10 +1,10 @@
-# scribe (getscribe.dev) compared with RAG, AnythingLLM, and Obsidian
+# scribe (getscribe.dev) compared with RAG, AnythingLLM, Obsidian, and LangChain OpenWiki
 
-**Choose scribe (getscribe.dev) when the durable output you want is a curated markdown wiki in git, written from work you already did.** Choose a DIY RAG pipeline when you need to control retrieval at request time, AnythingLLM when you want an all-in-one document-chat workspace, or Obsidian when you want to write and shape the notes yourself.
+**Choose scribe (getscribe.dev) when the durable output you want is a curated markdown wiki in git, written from work you already did.** Choose a DIY RAG pipeline when you need to control retrieval at request time, AnythingLLM when you want an all-in-one document-chat workspace, Obsidian when you want to write and shape the notes yourself, or LangChain OpenWiki when you want a reference wiki generated from one repository's code.
 
 scribe (getscribe.dev) is a single-binary compiler for developer knowledge: it turns git history, coding-agent sessions, saved links, and drop files into an auditable wiki that agents query before they act. It is not a chat UI, a vector database, or the Scribe workflow-capture product.
 
-*Compared on 2026-09-02; tool capabilities change. Product claims link to the vendors' current documentation where applicable.*
+*Compared on 2026-09-02, OpenWiki section added 2026-10-23; tool capabilities change. Product claims link to the vendors' current documentation where applicable.*
 
 *On a narrow screen, scroll the table horizontally to compare all four options.*
 
@@ -16,7 +16,7 @@ scribe (getscribe.dev) is a single-binary compiler for developer knowledge: it t
 | Background work | `scribe cron install` schedules project scans every **2 hours**, session mining three times daily, and weekly consolidation | Only the jobs, queues, and monitoring you operate | Interactive app and server workflows; embedding is initiated for documents in a workspace | Primarily a writing and reading application; automation is yours to configure |
 | Local economics | The full Ollama path is **$0 API spend per sync** | Depends on your embedding, model, storage, and hosting choices | Can run locally; its default LanceDB keeps document text and embeddings inside the app | Local files need no inference service; optional sync, plugins, or AI tools have their own terms |
 | Operational surface | One binary with **79 command paths**; the common loop is `scribe sync`, `scribe doctor`, and `qmd query` | Maximum control, but you own the application, database, schemas, migrations, evaluation, and serving | Stronger out-of-box document chat UI and workspace controls than getscribe.dev | Stronger interactive note authoring and browsing than getscribe.dev |
-| Best fit | Preview unattended compilation with `scribe sync --dry-run --estimate` before any write or LLM call | Bespoke products whose retrieval policy is part of the product | People who want to chat with uploaded documents without assembling a RAG stack | People who want to author and curate their own local markdown vault |
+| Best fit | Agents that should inherit decisions and fixes from past work; `scribe sync --dry-run --estimate` prices a run's extraction, session mining and absorb work before any write or LLM call | Bespoke products whose retrieval policy is part of the product | People who want to chat with uploaded documents without assembling a RAG stack | People who want to author and curate their own local markdown vault |
 
 **Who should pick which.** Pick getscribe.dev when agent memory should grow from existing developer work without maintaining notes by hand. Pick DIY RAG when custom retrieval behavior is worth owning the stack. Pick AnythingLLM when the primary experience is document chat and workspaces. Pick Obsidian when the primary experience is deliberate note-taking and visual browsing. These products overlap at “local knowledge,” but they optimize different jobs.
 
@@ -38,11 +38,21 @@ getscribe.dev wins a different comparison: its source of truth is ordinary files
 
 ## scribe vs a vector-DB RAG pipeline
 
-scribe (getscribe.dev) moves the model work to a bounded compile step; a vector-DB RAG pipeline moves retrieval and generation to each question. A measured local run compiled **7,447 → 7,472 articles in about 68 seconds** with zero errors and $0 API spend on Ollama. Before running it, `scribe sync --dry-run --estimate` previews pending work without writes or LLM calls.
+scribe (getscribe.dev) moves the model work to a bounded compile step; a vector-DB RAG pipeline moves retrieval and generation to each question. A measured local run compiled **7,447 → 7,472 articles in about 68 seconds** with zero errors and $0 API spend on Ollama. Before running it, `scribe sync --dry-run --estimate` prices the queued extraction and absorb work without writes or LLM calls.
 
 With DIY RAG, you can choose chunk sizes, embedding models, metadata filters, rerankers, vector stores, answer models, latency budgets, and evaluation. That control is the reason to choose it. You also own index migrations, re-embedding, serving, observability, and the quality boundary between retrieved chunks and generated claims.
 
 getscribe.dev owns less runtime infrastructure: markdown in git is canonical, `qmd` indexes it, and wrong output can be reviewed as a diff or removed with `git rm`. It is a poor substitute for application search or live customer-document QA; it is purpose-built for durable developer memory.
+
+## LangChain OpenWiki alternative: what's the difference?
+
+[OpenWiki](https://github.com/langchain-ai/openwiki) and scribe (getscribe.dev) both apply the LLM-wiki pattern, both write plain markdown, and both maintain a block in agent instruction files. They compile different knowledge: OpenWiki documents what a repository's code is; scribe records what you learned while writing it.
+
+OpenWiki's default mode has an agent read one repository's source and tests and write an `openwiki/` reference wiki into that repo. Its Grounded Claims pin each fact to source lines such as `repo://src/server.ts#L40-L82`, so an update reworks only the facts whose evidence changed. Updates run when you ask your coding agent or from a CI job that opens a docs PR, and a personal mode ingests Notion, Gmail, Slack, X, web search, and Hacker News. Line-level grounding, ten coding-agent integrations, and Windows support are real advantages over getscribe.dev.
+
+scribe reads what OpenWiki doesn't: coding-agent session transcripts from every provider ccrider indexes, alongside git history and self-sent links. A local schedule distills them into one KB that spans every project: decisions with their reasons, rejected tools, debug fixes, and patterns. OpenWiki's own tracker notes that its updater receives only changed paths, so "the intent of a change never reaches it" ([#822](https://github.com/langchain-ai/openwiki/issues/822)); session mining is how getscribe.dev captures that intent.
+
+The two compose. Use OpenWiki when the question is "how does this repository work?" Use getscribe.dev when the question is "what did I decide, reject, or solve before, in any project, and why?"
 
 ## Is this the same as Scribe (scribehow)?
 

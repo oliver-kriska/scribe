@@ -36,7 +36,7 @@ fi
 DOCS=$(cat <<'LIST'
 setup|setup.md|Runbook|Setup runbook|Zero-to-running setup for scribe: personal, Ollama, hosted provider, team, several machines, and Linux scheduling.
 topologies|topologies.md|Reference|Topologies|Every way to write to a scribe KB — one machine, several machines, a team — what each coordinates, and what it does not.
-vs|vs.md|Comparison|scribe compared with RAG, AnythingLLM, and Obsidian|When to choose scribe (getscribe.dev), a DIY vector-DB RAG pipeline, AnythingLLM, or an Obsidian markdown vault.
+vs|vs.md|Comparison|scribe compared with RAG, AnythingLLM, Obsidian, and OpenWiki|When to choose scribe (getscribe.dev), a DIY vector-DB RAG pipeline, AnythingLLM, an Obsidian markdown vault, or LangChain OpenWiki.
 LIST
 )
 
@@ -54,7 +54,7 @@ while IFS='|' read -r slug md kicker title desc; do
   schema=""
   if [[ "$slug" == "vs" ]]; then
     # Keep FAQPage answers derived from the visible source instead of maintaining
-    # a second copy. The four comparison H2s are a deliberate public contract.
+    # a second copy. The five comparison H2s are a deliberate public contract.
     schema=$(BODY_HTML="$body" python3 - <<'PY'
 import html
 import json
@@ -73,10 +73,11 @@ expected = [
     "What's an alternative to RAG for a personal developer knowledge base?",
     "AnythingLLM alternative for a local markdown knowledge base",
     "scribe vs a vector-DB RAG pipeline",
+    "LangChain OpenWiki alternative: what's the difference?",
     "Is this the same as Scribe (scribehow)?",
 ]
 if [question for question, _ in questions] != expected:
-    print("vs.md must contain exactly the four contracted comparison H2s", file=sys.stderr)
+    print("vs.md must contain exactly the five contracted comparison H2s", file=sys.stderr)
     sys.exit(1)
 
 schema = [
@@ -85,10 +86,10 @@ schema = [
         "@type": "WebPage",
         "@id": "https://getscribe.dev/vs#webpage",
         "url": "https://getscribe.dev/vs",
-        "name": "scribe (getscribe.dev) compared with RAG, AnythingLLM, and Obsidian",
-        "description": "When to choose scribe (getscribe.dev), a DIY vector-DB RAG pipeline, AnythingLLM, or an Obsidian markdown vault.",
+        "name": "scribe (getscribe.dev) compared with RAG, AnythingLLM, Obsidian, and LangChain OpenWiki",
+        "description": "When to choose scribe (getscribe.dev), a DIY vector-DB RAG pipeline, AnythingLLM, an Obsidian markdown vault, or LangChain OpenWiki.",
         "datePublished": "2026-09-02",
-        "dateModified": "2026-09-02",
+        "dateModified": "2026-10-23",
         "isPartOf": {"@id": "https://getscribe.dev/#website"},
     },
     {
@@ -96,7 +97,7 @@ schema = [
         "@type": "FAQPage",
         "@id": "https://getscribe.dev/vs#faq",
         "url": "https://getscribe.dev/vs",
-        "dateModified": "2026-09-02",
+        "dateModified": "2026-10-23",
         "mainEntity": [
             {
                 "@type": "Question",
