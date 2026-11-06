@@ -31,7 +31,7 @@ import (
 type DoctorCmd struct {
 	WriteAttention bool          `help:"Write fail-level checks to NEEDS-ATTENTION.md; remove the generated report when no failures remain (requires all sections)."`
 	JSON           bool          `help:"Emit structured JSON instead of text."`
-	Section        string        `help:"Run only one section: deps | config | cron | state | freshness | errors | convert | contradictions | stale | vault | localmode." enum:"deps,config,cron,state,freshness,errors,convert,contradictions,stale,vault,localmode," default:""`
+	Section        string        `help:"Run only one section: deps | config | cron | state | freshness | errors | telemetry | convert | contradictions | stale | vault | localmode." enum:"deps,config,cron,state,freshness,errors,telemetry,convert,contradictions,stale,vault,localmode," default:""`
 	ErrorWindow    time.Duration `help:"How long to display recovered errors (max 720h); ongoing streaks use a 30-day scan." default:"24h"`
 }
 
@@ -70,7 +70,7 @@ func (c *DoctorCmd) Run() error {
 	}
 	cfg := loadConfig(root)
 
-	sectionOrder := []string{"deps", "config", "localmode", "convert", "cron", "state", "freshness", "errors", "contradictions", "stale", "vault"}
+	sectionOrder := []string{"deps", "config", "localmode", "convert", "cron", "state", "freshness", "errors", "telemetry", "contradictions", "stale", "vault"}
 	var all []check
 	for _, name := range sectionOrder {
 		if c.Section != "" && c.Section != name {
@@ -95,6 +95,8 @@ func (c *DoctorCmd) Run() error {
 			all = append(all, checkProviderMining(cfg, time.Now())...)
 		case "errors":
 			all = append(all, checkRecentErrors(root, time.Now(), c.ErrorWindow)...)
+		case "telemetry":
+			all = append(all, checkTelemetry(root, time.Now())...)
 		case "contradictions":
 			all = append(all, checkContradictions(root)...)
 		case "stale":
