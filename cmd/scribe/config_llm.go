@@ -519,6 +519,9 @@ func applyExtractDefaults(cfg *ExtractConfig, llm LLMConfig) {
 	cfg.Provider, cfg.Model = coerceProviderModel("extract", cfg.Provider, cfg.Model)
 }
 
+// defaultTranscriptMaxChars is session_mine.transcript_max_chars when unset.
+const defaultTranscriptMaxChars = 24000
+
 // applySessionMineDefaults fills SessionMineConfig + the Phase 4C
 // auto-flip: a non-anthropic provider forces envelope mode because
 // `claude -p` is the only backend that supports the ccrider MCP tools
@@ -531,7 +534,7 @@ func applySessionMineDefaults(cfg *SessionMineConfig, llm LLMConfig) {
 		cfg.Mode = "tools"
 	}
 	if cfg.TranscriptMaxChars <= 0 {
-		cfg.TranscriptMaxChars = 24000
+		cfg.TranscriptMaxChars = defaultTranscriptMaxChars
 	}
 	if cfg.TimeoutMin <= 0 {
 		cfg.TimeoutMin = 8

@@ -15,10 +15,11 @@ import (
 // These replace the ad-hoc Python one-liners we used to reach for
 // when the sync pipeline behaved unexpectedly.
 type SessionsCmd struct {
-	Stats   SessionsStatsCmd   `cmd:"" help:"Show _sessions_log.json counts and breakdown."`
-	Inspect SessionsInspectCmd `cmd:"" help:"Dump filter verdict + stats for one session ID."`
-	Unskip  SessionsUnskipCmd  `cmd:"" help:"Re-evaluate skipped entries and remove ones that now pass the pre-filter."`
-	Filter  SessionsFilterCmd  `cmd:"" help:"Preview pre-filter behavior on top triaged sessions."`
+	Stats              SessionsStatsCmd              `cmd:"" help:"Show _sessions_log.json counts and breakdown."`
+	Inspect            SessionsInspectCmd            `cmd:"" help:"Dump filter verdict + stats for one session ID."`
+	Unskip             SessionsUnskipCmd             `cmd:"" help:"Re-evaluate skipped entries and remove ones that now pass the pre-filter."`
+	BackfillWatermarks SessionsBackfillWatermarksCmd `cmd:"" name:"backfill-watermarks" help:"Give mined entries from before watermarks one, so the remine pass reads what their mine did not (#146)."`
+	Filter             SessionsFilterCmd             `cmd:"" help:"Preview pre-filter behavior on top triaged sessions."`
 }
 
 // --- shared helpers ---

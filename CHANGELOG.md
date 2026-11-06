@@ -4,6 +4,19 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **`scribe sessions backfill-watermarks [-n] [--cap N] [--mined-before
+  YYYY-MM-DD]`** (#146) gives entries mined before watermarks existed the
+  watermark their mine most likely reached, so the remine pass can read
+  what those mines did not: messages stamped after the mine, and, in
+  envelope mode, the middle of a transcript over the cap (assumed
+  `min(transcript_max_chars, 24000)` unless `--cap` says otherwise; in
+  tools mode, everything after message 50 of a session over 300
+  messages). Opt-in; `-n` reports the sessions and characters it would
+  queue. A KB whose cap changed over time can backfill in passes with
+  `--mined-before`.
+
 ### Fixed
 
 - **A mined session is no longer frozen at the moment it was mined
