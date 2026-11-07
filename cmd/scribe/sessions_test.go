@@ -610,7 +610,7 @@ func TestSessionsRequeueCmd(t *testing.T) {
 	}
 
 	captureLintStdout(t, func() {
-		if err := (&SessionsRequeueCmd{IDs: []string{"lost-one", "already-queued"}}).Run(); err != nil {
+		if err := (&SessionsRequeueCmd{IDs: []string{"lost-one:", "already-queued"}}).Run(); err != nil {
 			t.Fatal(err)
 		}
 	})

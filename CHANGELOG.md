@@ -9,7 +9,7 @@ every call now returns `400 endpoint_not_configured`. KBs pinned to it
 should switch to `MiniMaxAI/MiniMax-M3.1-Flash` (README §Hosted mode) and
 run `scribe config trust`. Sessions whose earlier mine came back empty
 were likely hit by the bug below and are marked processed; list them with
-`grep -o 'session envelope [^:]*: applied 0' /tmp/scribe-sync.log | awk '{print $3}'`
+`grep -o 'session envelope [^:]*: applied 0 ' /tmp/scribe-sync.log | awk '{print $3}' | tr -d : | sort -u`
 and pass the IDs to `scribe sessions requeue` to mine them again.
 
 ### Fixed

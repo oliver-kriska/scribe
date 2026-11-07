@@ -431,7 +431,7 @@ func (c *SessionsUnskipCmd) Run() error {
 // _sessions_log.json and appends it to the pending queue, so the next
 // sync mines it again. Find candidates in the sync log:
 //
-//	grep -o 'session envelope [^:]*: applied 0' /tmp/scribe-sync.log | awk '{print $3}'
+//	grep -o 'session envelope [^:]*: applied 0 ' /tmp/scribe-sync.log | awk '{print $3}' | tr -d : | sort -u
 type SessionsRequeueCmd struct {
 	IDs    []string `arg:"" name:"id" help:"Session IDs to mine again."`
 	DryRun bool     `help:"Show what would change without writing." short:"n"`
@@ -449,7 +449,8 @@ func (c *SessionsRequeueCmd) Run() error {
 	queue := pendingSessionsFile()
 	forgot, queued := 0, 0
 	for _, id := range c.IDs {
-		id = strings.TrimSpace(id)
+		// IDs pasted from a log line often keep its trailing ":" or ",".
+		id = strings.TrimRight(strings.TrimSpace(id), ":,")
 		if id == "" {
 			continue
 		}
