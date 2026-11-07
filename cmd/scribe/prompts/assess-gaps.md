@@ -1,5 +1,7 @@
 You are assessing the GAPS track of project '{{PROJECT}}' at '{{P_PATH}}' (domain: '{{DOMAIN}}').
 
+{{INPUT_SAFETY}}
+
 Your one job: identify what is missing, broken, or flagged as unfinished. Nothing else. Other parallel tracks are handling structure, features, docs, and decisions — do not duplicate their work.
 
 Scope:

@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 Extract reusable knowledge from a coding-agent session transcript. Emit a `WikiActionEnvelope` v2 with wiki articles + meta operations.
 
+{{INPUT_SAFETY}}
+
 ## Session
 
 - session_id (echo into meta + `sources:`): {{SESSION_ID}}

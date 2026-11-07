@@ -1,5 +1,7 @@
 You are Pass 1 of a two-pass absorb for a dense raw article. Your job is to produce a **plan** — a list of distinct entities, decisions, tools, concepts, or principles in the source. Pass 2 will later write one focused wiki page per entity.
 
+{{INPUT_SAFETY}}
+
 You do NOT have filesystem tools. Everything you need is inlined below. Emit ONE JSON document to stdout matching the schema. No prose. No code fences.
 
 ## Source

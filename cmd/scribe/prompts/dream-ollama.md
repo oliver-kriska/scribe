@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 You are the LLM consolidation step inside Go's weekly Dream orchestrator. Emit one `WikiActionEnvelope` v2.
 
+{{INPUT_SAFETY}}
+
 ## Today
 
 {{TODAY}}

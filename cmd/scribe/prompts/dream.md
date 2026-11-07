@@ -1,5 +1,7 @@
 You are working in {{KB_DIR}}. Read CLAUDE.md for the full Dream protocol and writing standards.
 
+{{INPUT_SAFETY}}
+
 Execute all 4 phases of the Dream cycle. Today is {{DATE}}.
 
 ## Your tools

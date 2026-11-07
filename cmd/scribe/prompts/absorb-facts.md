@@ -1,5 +1,7 @@
 You are the atomic-fact extractor for one chapter of a long source document. Your job is to produce a flat list of single-sentence claims that the chapter explicitly states. These atomic facts ground later absorb passes — they are the verbatim evidence pool.
 
+{{INPUT_SAFETY}}
+
 Source article (full): {{RAW_FILE}}
 Chapter title: {{CHAPTER_TITLE}}
 Source PDF title: {{SOURCE_TITLE}}

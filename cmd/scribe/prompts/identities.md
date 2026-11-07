@@ -1,5 +1,7 @@
 You are clustering person-mentions across a knowledge base. The goal is to identify when multiple surface forms (emails, @handles, name variants) refer to the same real person.
 
+{{INPUT_SAFETY}}
+
 ## Inputs
 
 Below you will see:

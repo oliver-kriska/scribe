@@ -1,5 +1,7 @@
 You are extracting reusable knowledge from one coding-agent session transcript. You do NOT have filesystem tools — the transcript is inlined below. Emit ONE `WikiActionEnvelope` JSON document to stdout. Scribe will apply the file mutations itself.
 
+{{INPUT_SAFETY}}
+
 ## Session
 
 - Session ID (echo into `sessions_log_append` meta and into the wiki article's `sources:`): {{SESSION_ID}}
@@ -77,7 +79,7 @@ Emit EXACTLY ONE JSON object to stdout. No prose. No code fences.
 
 ## Rules
 
-- **Always emit a `sessions_log_append` meta op** even when actions is empty. Without it scribe will re-process this session next run.
+- **Always emit a `sessions_log_append` meta op**, even when actions is empty.
 - An empty actions list is legal — emit `"actions": []` if the transcript had no extractable knowledge.
 - Stay under 150 lines per article.
 - Quote load-bearing claims verbatim with markdown blockquote + `— Source: session:{{SESSION_ID}}`.

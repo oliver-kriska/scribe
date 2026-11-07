@@ -1,5 +1,7 @@
 You are the LLM consolidation step inside a Go orchestrator running `scribe assess` against the project **{{PROJECT}}**. You do NOT have filesystem tools — every file you need is inlined below. Emit ONE `WikiActionEnvelope` v2 JSON document with the assessment output. Scribe writes the files itself.
 
+{{INPUT_SAFETY}}
+
 ## Project
 
 - Name: {{PROJECT}}

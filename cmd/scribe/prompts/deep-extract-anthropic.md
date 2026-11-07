@@ -1,5 +1,7 @@
 You are extracting knowledge from one directory of project **{{PROJECT}}** via the Go orchestrator. You do NOT have filesystem tools — the relevant files are inlined below. Emit ONE `WikiActionEnvelope` v2 JSON document. Scribe writes the files.
 
+{{INPUT_SAFETY}}
+
 ## Source
 
 - Project: {{PROJECT}}

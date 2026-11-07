@@ -1,5 +1,7 @@
 You are working in {{KB_DIR}}. Extract knowledge from project '{{PROJECT}}' at '{{P_PATH}}' (domain: '{{DOMAIN}}').
 
+{{INPUT_SAFETY}}
+
 Step 1: Read {{KB_DIR}}/CLAUDE.md for schema and frontmatter conventions.
 {{DROP_INSTRUCTION}}Step 2: {{STEP2}}
 Step 3: Read the knowledge-dense .md files in the project (docs/, decisions/, research/, plans/, analysis/, .claude/ subdirs — including .claude/research/, .claude/plans/, .claude/analysis/, .claude/solutions/, .claude/inspector/, .claude/lessons/). Use Glob to find them, then Read. Skip Claude Code tooling, which is configuration rather than project knowledge: {{CLAUDE_TOOLING_DIRS}}. Skip source code, test files, build artifacts, evals/, and nested checkouts (.claude/worktrees/, .worktrees/, submodules — any subdirectory with its own .git).
