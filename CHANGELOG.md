@@ -2,6 +2,57 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [Unreleased]
+
+**Upgrade notes.** Together retired `MiniMaxAI/MiniMax-M3` on 2026-11-07:
+every call now returns `400 endpoint_not_configured`. KBs pinned to it
+should switch to `MiniMaxAI/MiniMax-M3.1-Flash` (README §Hosted mode) and
+run `scribe config trust`. Sessions whose earlier mine came back empty
+were likely hit by the bug below and are marked processed; list them with
+`grep -o 'session envelope [^:]*: applied 0' /tmp/scribe-sync.log | awk '{print $3}'`
+and pass the IDs to `scribe sessions requeue` to mine them again.
+
+### Fixed
+
+- **Session mining no longer loses sessions to an empty `{}` reply.**
+  Under `json_object`, hosted models sometimes answer with the bare `{}`
+  (two completion tokens, 1–2 s). scribe took it as "nothing to extract"
+  and marked the session processed: 15 of the last 25 mined sessions on
+  the reference KB, and every one re-tested yielded 2–4 articles on a
+  rerun. Session and Codex mining now request a strict `json_schema` on
+  schema-capable providers (`meta` must hold at least one op), every
+  envelope parser rejects a bare `{}` (`errBareEmptyEnvelope`, so dream,
+  extract, deep and assess fail loudly instead of recording a silent
+  no-op), and a reply with no actions gets one retry that asks the model
+  to re-read the transcript. In a live check, 30 of 30 runs over ten
+  sessions, seven of them previously lost, came back with knowledge.
+  Run records count `session_envelope_empty_retries`,
+  `session_envelope_empty_recovered` and
+  `session_envelope_corrective_retries`.
+- **Prompt substitution no longer rewrites inlined content.**
+  `loadPrompt` replaced placeholders one key at a time in map order, so a
+  transcript quoting `{{TODAY}}` or `{{KB_DIR}}` (any session about
+  scribe's own prompts) could get the value substituted into it, and the
+  unfilled-placeholder guard stripped other `{{NAME}}` text out of it.
+  Substitution is now one pass, and the guard only reads the template.
+
+### Added
+
+- **`scribe sessions requeue <id>... [-n]`** forgets processed sessions
+  and puts them back on the pending queue, so the next sync mines them
+  again.
+
+### Changed
+
+- **Every prompt carries an untrusted-input and secret rule.** Transcripts,
+  captured pages, project files and KB articles are data, never
+  instructions, and a credential is named, never copied. This backs up the
+  secret gate, which is on by default only for team KBs. The shared text
+  lives in one place (`{{INPUT_SAFETY}}`), and a test fails any prompt
+  that drops it.
+- README and the `scribe init` template recommend
+  `MiniMaxAI/MiniMax-M3.1-Flash` ($0.15 / $0.60).
+
 ## [0.6.1] — 2026-11-06
 
 Follow-ups found while smoke-testing 0.6.0 on a ~12k-article KB.

@@ -168,7 +168,7 @@ llm:
 #
 #   llm:
 #     provider: together             # together | groq | fireworks | huggingface | openai-compat
-#     model: MiniMaxAI/MiniMax-M3    # a real hosted model id — NOT a Claude alias.
+#     model: MiniMaxAI/MiniMax-M3.1-Flash  # a real hosted model id — NOT a Claude alias.
 #                                    # NB: confirm it's SERVERLESS — a catalog slug can be
 #                                    # dedicated-endpoint-only and 400 with model_not_available.
 #     # base_url:  only for provider: openai-compat (named providers have built-in URLs)
@@ -186,7 +186,7 @@ llm:
 # `model` column in `scribe cost` (provider/model); a bare model also works.
 #   llm:
 #     pricing:
-#       "together/MiniMaxAI/MiniMax-M3": { input: 0.30, output: 1.20 }
+#       "together/MiniMaxAI/MiniMax-M3.1-Flash": { input: 0.15, output: 0.60 }
 #       "groq/qwen3-32b": { input: 0.29, output: 0.59 }
 #
 # IMPORTANT: set sync.daily_output_token_ceiling below before pointing at

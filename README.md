@@ -612,26 +612,35 @@ entirely:
 # scribe.yaml — top-level llm block routes ALL ops
 llm:
   provider: together
-  model: MiniMaxAI/MiniMax-M3  # the provider's exact model slug, NOT a Claude alias
+  model: MiniMaxAI/MiniMax-M3.1-Flash  # the provider's exact model slug, NOT a Claude alias
   # base_url:                 # only for provider: openai-compat
   # api_key_env: TOGETHER_API_KEY  # per-provider default; SCRIBE_LLM_API_KEY is a generic fallback
   pricing:                    # optional — lets `scribe cost` report dollars
-    "together/MiniMaxAI/MiniMax-M3": { input: 0.30, output: 1.20 }
+    "together/MiniMaxAI/MiniMax-M3.1-Flash": { input: 0.15, output: 0.60 }
 
 sync:
   daily_output_token_ceiling: 2000000   # REQUIRED backstop for any paid provider (see below)
 ```
 
 Use the **exact model id from the provider's catalog** (e.g. Together lists
-`MiniMaxAI/MiniMax-M3`, `zai-org/GLM-5.2`, `deepseek-ai/DeepSeek-V4-Pro`, …) —
+`MiniMaxAI/MiniMax-M3.1-Flash`, `zai-org/GLM-5.3`, `deepseek-ai/DeepSeek-V4.1-Flash`, …) —
 the local ollama tag (`qwen3:30b-a3b`) won't resolve. Any chat model the
 provider hosts works; pick by price/quality. **Watch for non-serverless
 models:** a slug can appear in the catalog yet require a paid dedicated
 endpoint — a plain chat call then returns `model_not_available`. Verify the
 model is *serverless* before pinning it (a one-off `curl` to
-`/v1/chat/completions` is the fastest check).
+`/v1/chat/completions` is the fastest check). Serverless models also get
+**retired**: on 2026-11-07 Together pulled `MiniMaxAI/MiniMax-M3` and every
+call returned `400 endpoint_not_configured`; `scribe doctor` and the run
+records (`status: degraded`/`error`) show it, and the fix is a new slug.
 
-**Hosted-model benchmark (2026-07).** Each model ran scribe's real absorb
+**Current pick (2026-11): `MiniMaxAI/MiniMax-M3.1-Flash`** ($0.15 / $0.60),
+the serverless successor to M3. On scribe's real session-mine prompt it
+returned 6/6 valid envelopes across six real transcripts and accepts strict
+`json_schema`; `deepseek-ai/DeepSeek-V4.1-Flash` was faster but failed 1/6
+and invented a top-level directory.
+
+**Hosted-model benchmark (2026-07; `MiniMax-M3` has since been retired).** Each model ran scribe's real absorb
 envelope (`prompts/absorb-ollama.md`) in non-streaming `json_object` mode — a
 20-call reliability burst plus a richness probe, on the same source. "Graph
 output" = how well it populates the wiki's `tags:`/`related:` wikilink surface,
@@ -640,7 +649,7 @@ availability before pinning — these slugs churn fast.**
 
 | Model | $/1M (in / out) | Reliability (20 calls) | Latency p50 | Graph output | When to pick |
 | ----- | --------------- | ---------------------- | ----------- | ------------ | ------------ |
-| `MiniMaxAI/MiniMax-M3` | $0.30 / $1.20 | 100% valid JSON+schema, 0% fence/leak/trunc | ~8s | **Richest** — populates `related:[]` links, more tags/sections | **Best quality/$. Recommended.** 1M ctx, GA serverless. |
+| `MiniMaxAI/MiniMax-M3` (retired 2026-11) | $0.30 / $1.20 | 100% valid JSON+schema, 0% fence/leak/trunc | ~8s | **Richest** — populates `related:[]` links, more tags/sections | Was the pick; use `MiniMax-M3.1-Flash` now. |
 | `google/gemini-3.1-flash-lite` (via `openai-compat`) | $0.25 / $1.50 | 100% valid, 0% failure modes | **~2s** | Thin — left `related:[]` empty 8/8 | Fastest + cheapest/call if you don't need dense wiki links. |
 | `google/gemma-4-31B-it` | $0.39 / $0.97 | 100% valid | ~35s | Good | Quality is fine but slow + verbose. |
 | `zai-org/GLM-5.2` | $1.40 / $4.40 | 100% valid | ~5s | Good | Solid, ~4× the price for no quality edge here. |
@@ -650,7 +659,8 @@ availability before pinning — these slugs churn fast.**
 All six produced valid, schema-clean envelopes — reliability was a wash at
 100%. The real spread is **latency**, **cost**, and **how richly each populates
 the wiki graph**. For a cron pipeline (latency-insensitive) that leans on
-wikilink traversal, `MiniMaxAI/MiniMax-M3` is the quality-per-dollar pick; a
+wikilink traversal, `MiniMaxAI/MiniMax-M3` was the quality-per-dollar pick
+(now `MiniMaxAI/MiniMax-M3.1-Flash`, see above); a
 Google key + `provider: openai-compat` pointing at Gemini's OpenAI endpoint is
 the faster/cheaper alternative if terse output is fine.
 
