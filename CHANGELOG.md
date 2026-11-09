@@ -14,6 +14,14 @@ and pass the IDs to `scribe sessions requeue` to mine them again.
 
 ### Fixed
 
+- **`doctor --section telemetry` no longer reports "no dream runs" when
+  dreams ran.** The check counted only rows with `claude -p` envelope
+  fields, so a KB dreaming on a hosted provider (Together, Ollama) got
+  `[ok] no dream runs …` even while every dream was failing. When no row
+  carries telemetry, the line now names the newest dream run, its
+  provider/model and outcome, and why it has no telemetry (a non-claude
+  provider, or a row from before 0.6.0). Drift and denial comparisons are
+  unchanged.
 - **Session mining no longer loses sessions to an empty `{}` reply.**
   Under `json_object`, hosted models sometimes answer with the bare `{}`
   (two completion tokens, 1–2 s). scribe took it as "nothing to extract"

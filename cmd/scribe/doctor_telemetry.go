@@ -27,8 +27,11 @@ import (
 //     telemetryDenialHistory runs of the same op). A CLI update that
 //     narrows the dream's tool grant shows up here first.
 //
-// Rows written before 0.6.0 carry neither resolved_models nor num_turns
-// and are ignored, so a KB without telemetry gets one quiet OK line.
+// Rows written before 0.6.0 carry neither resolved_models nor num_turns,
+// and neither do rows from non-claude providers (orchestrator dreams on
+// Together or Ollama). Both are left out of the comparisons; when no row
+// carries telemetry, one OK line names the newest dream row and why it has
+// none, so "no telemetry" never reads as "no dream runs".
 //
 // Budget: doctor must stay under ~1s. Only day files from the last
 // telemetryLookbackDays are opened, newest first; each is read from at
@@ -58,7 +61,7 @@ func hasEnvelopeTelemetry(e CostEntry) bool {
 }
 
 func checkTelemetry(root string, now time.Time) []check {
-	rows, err := loadDreamTelemetry(root, now)
+	rows, untracked, err := loadDreamTelemetry(root, now)
 	if err != nil {
 		return []check{{
 			Section: "telemetry", Name: "cost ledger", Status: statusWarn,
@@ -73,10 +76,31 @@ func checkTelemetry(root string, now time.Time) []check {
 	if len(out) == 0 {
 		return []check{{
 			Section: "telemetry", Name: "dream telemetry", Status: statusOK,
-			Detail: fmt.Sprintf("no dream runs with envelope telemetry in the last %dd (recorded since 0.6.0)", telemetryLookbackDays),
+			Detail: noTelemetryDetail(untracked),
 		}}
 	}
 	return out
+}
+
+// noTelemetryDetail explains an empty telemetry section: no dream rows at
+// all, or the newest dream row and why it carries no envelope fields.
+func noTelemetryDetail(latest *CostEntry) string {
+	if latest == nil {
+		return fmt.Sprintf("no dream runs in the cost ledger in the last %dd", telemetryLookbackDays)
+	}
+	model := latest.Model
+	if latest.Provider != "" && !strings.HasPrefix(model, latest.Provider+"/") {
+		model = latest.Provider + "/" + model
+	}
+	outcome := "ok"
+	if !latest.OK {
+		outcome = "failed"
+	}
+	why := "envelope telemetry is recorded for claude -p dreams only"
+	if latest.Provider == "" || latest.Provider == "anthropic" {
+		why = "written before envelope telemetry was recorded (0.6.0)"
+	}
+	return fmt.Sprintf("latest %s run %s on %s (%s) has no telemetry: %s", latest.Op, ledgerDay(latest.Timestamp), model, outcome, why)
 }
 
 // telemetryChecksForOp evaluates one op's rows (oldest first). No rows,
@@ -160,15 +184,16 @@ func denialSpikeCheck(op string, latest CostEntry, prev []CostEntry) (check, boo
 }
 
 // loadDreamTelemetry returns, per dream op, the telemetry-bearing ledger
-// rows of the lookback window, oldest first.
-func loadDreamTelemetry(root string, now time.Time) (map[string][]CostEntry, error) {
+// rows of the lookback window, oldest first, and the newest dream row of
+// the files it read that carries no telemetry (nil if none).
+func loadDreamTelemetry(root string, now time.Time) (map[string][]CostEntry, *CostEntry, error) {
 	dir := filepath.Join(root, "output", "costs")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	// One extra day for rows whose UTC date trails local time.
 	cutoff := now.UTC().AddDate(0, 0, -telemetryLookbackDays-1).Format("2006-01-02") + ".jsonl"
@@ -183,6 +208,7 @@ func loadDreamTelemetry(root string, now time.Time) (map[string][]CostEntry, err
 	sort.Sort(sort.Reverse(sort.StringSlice(names)))
 
 	out := map[string][]CostEntry{}
+	var untracked *CostEntry
 	enough := func() bool {
 		for _, op := range dreamLedgerOps {
 			if len(out[op]) <= telemetryDenialHistory {
@@ -194,10 +220,19 @@ func loadDreamTelemetry(root string, now time.Time) (map[string][]CostEntry, err
 	for _, n := range names {
 		rows, err := readDreamRows(filepath.Join(dir, n))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for op, r := range rows {
-			out[op] = append(r, out[op]...) // older file goes in front
+			var tracked []CostEntry
+			for i := range r {
+				switch {
+				case hasEnvelopeTelemetry(r[i]):
+					tracked = append(tracked, r[i])
+				case untracked == nil || r[i].Timestamp > untracked.Timestamp:
+					untracked = &r[i]
+				}
+			}
+			out[op] = append(tracked, out[op]...) // older file goes in front
 		}
 		if enough() {
 			break
@@ -206,11 +241,11 @@ func loadDreamTelemetry(root string, now time.Time) (map[string][]CostEntry, err
 	for op := range out {
 		sort.SliceStable(out[op], func(i, j int) bool { return out[op][i].Timestamp < out[op][j].Timestamp })
 	}
-	return out, nil
+	return out, untracked, nil
 }
 
 // readDreamRows reads at most the last telemetryFileTailBytes of one day
-// file and returns its telemetry-bearing dream rows by op, in file order.
+// file and returns its dream rows by op, in file order.
 func readDreamRows(path string) (map[string][]CostEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -238,7 +273,7 @@ func readDreamRows(path string) (map[string][]CostEntry, error) {
 			continue
 		}
 		var e CostEntry
-		if json.Unmarshal(line, &e) != nil || !slices.Contains(dreamLedgerOps, e.Op) || !hasEnvelopeTelemetry(e) {
+		if json.Unmarshal(line, &e) != nil || !slices.Contains(dreamLedgerOps, e.Op) {
 			continue
 		}
 		out[e.Op] = append(out[e.Op], e)
