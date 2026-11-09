@@ -11,6 +11,8 @@ You are extracting reusable knowledge from one coding-agent session transcript. 
 
 {{RELATED_SESSIONS}}
 
+{{CONTINUATION}}
+
 ## Transcript
 
 <<<TRANSCRIPT_BEGIN>>>

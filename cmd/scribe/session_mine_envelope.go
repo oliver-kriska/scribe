@@ -118,6 +118,9 @@ func runSessionEnvelopeOnce(parent context.Context, provider llmProviderGenerato
 		"RELATED_SESSIONS": relatedSessions,
 		"TRANSCRIPT":       transcript,
 		"TODAY":            time.Now().UTC().Format("2006-01-02"),
+		// Filled only on a re-mine (envelopeTranscript); empty keeps the
+		// placeholder guard quiet on first mines.
+		"CONTINUATION": "",
 	}
 	for k, v := range extraVars {
 		vars[k] = v
@@ -173,6 +176,13 @@ func runSessionEnvelopeWithRetry(ctx context.Context, provider llmProviderGenera
 	if len(env.Actions) > 0 {
 		return env, nil
 	}
+	if opLabel == remineLabel {
+		// A delta past the watermark often holds nothing new, and the
+		// check suffix ("sessions reach you only after triage scored
+		// them knowledge-rich… extract it now") would push the model to
+		// re-extract what earlier mines already wrote.
+		return env, nil
+	}
 	logMsg("sync", "%s envelope %s: no actions — retrying once with an extraction check", opLabel, sessionID)
 	addRunStat("session_envelope_empty_retries", 1)
 	checked, err := once(envelopeEmptyCheckSuffix)
@@ -226,7 +236,7 @@ func providerNameFor(p llmProviderGenerator) string {
 func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, provider llmProviderGenerator, cfg SessionMineConfig, opLabel, promptBase string) (bool, error) {
 	ctx = withOllamaNumCtx(ctx, cfg.NumCtx)
 	related := queryRelatedSessions(dbPath, sessionID, 7, 10)
-	transcript, mark := envelopeTranscript(root, dbPath, sessionID, cfg.TranscriptMaxChars)
+	transcript, continuation, mark := envelopeTranscript(root, dbPath, sessionID, cfg.TranscriptMaxChars)
 	if transcript == "" {
 		// Empty / unreadable transcript (or nothing new past the
 		// watermark): record the session as processed so the next run
@@ -236,7 +246,7 @@ func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, pr
 	}
 	projectPath := lookupSessionProjectPath(dbPath, sessionID)
 	timeout := time.Duration(cfg.TimeoutMin) * time.Minute
-	env, err := runSessionEnvelopeWithRetry(ctx, provider, opLabel, promptBase, projectPath, sessionID, formatRelatedSessions(related), transcript, nil, timeout)
+	env, err := runSessionEnvelopeWithRetry(ctx, provider, opLabel, promptBase, projectPath, sessionID, formatRelatedSessions(related), transcript, map[string]string{"CONTINUATION": continuation}, timeout)
 	if err != nil {
 		return isBudgetStop(err), err
 	}
@@ -261,33 +271,41 @@ func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, pr
 	return false, nil
 }
 
-// envelopeTranscript returns the transcript to inline and the watermark
-// it reaches. A session with no watermark is a first mine: the whole
-// transcript, head/tail-truncated as before, with the watermark at the
-// end of the head half when the middle was dropped. A session with a
-// watermark is a re-mine: only the turns after it, as a prefix that fits
-// the cap (no middle drop — what does not fit stays for the next run),
-// behind a continuation header.
-func envelopeTranscript(root, dbPath, sessionID string, maxChars int) (string, mineMark) {
-	view, _ := loadSessionsLogView(root)
+// envelopeTranscript returns the transcript to inline, the continuation
+// block for the prompt's {{CONTINUATION}} slot ("" on a first mine), and
+// the watermark the transcript reaches. A session with no watermark is a
+// first mine: the whole transcript, head/tail-truncated as before, with
+// the watermark at the end of the head half when the middle was dropped.
+// A session with a watermark is a re-mine: only the turns after it, as a
+// prefix that fits the cap (no middle drop — what does not fit stays for
+// the next run).
+func envelopeTranscript(root, dbPath, sessionID string, maxChars int) (transcript, continuation string, mark mineMark) {
+	view, err := loadSessionsLogView(root)
+	if err != nil {
+		// Without the log we cannot tell a first mine from a re-mine,
+		// and guessing "first" would re-mine a whole session. Skip; the
+		// caller records nothing new (a zero mark never lowers an entry).
+		logMsg("sync", "sessions log unreadable, skipping %s: %v", sessionID, err)
+		return "", "", mineMark{}
+	}
 	prev, remine := entryThroughSeq(view.processed[sessionID])
 	turns, err := fetchSessionTranscript(dbPath, sessionID)
 	if err != nil {
 		// Unreadable: same outcome as before watermarks — the caller
 		// records the session and skips the LLM.
 		logMsg("sync", "transcript fetch %s: %v", sessionID, err)
-		return "", mineMark{ThroughSeq: prev}
+		return "", "", mineMark{ThroughSeq: prev}
 	}
 	if !remine {
-		return renderTranscriptForPrompt(turns, maxChars), renderedThroughSeq(turns, maxChars)
+		return renderTranscriptForPrompt(turns, maxChars), "", renderedThroughSeq(turns, maxChars)
 	}
 	delta := turnsAfter(turns, prev)
 	if len(delta) == 0 {
-		return "", mineMark{ThroughSeq: prev}
+		return "", "", mineMark{ThroughSeq: prev}
 	}
-	header := remineContext(firstUserText(turns), pagesFromSession(root, sessionID))
-	body, mark := renderTranscriptPrefix(delta, max(maxChars-len(header), maxChars/2))
-	return header + body, mark
+	continuation = remineContext(firstUserText(turns), pagesFromSession(root, sessionID))
+	body, mark := renderTranscriptPrefix(delta, max(maxChars-len(continuation), maxChars/2))
+	return body, continuation, mark
 }
 
 // promptBaseForSessionLabel maps a runtime op label like

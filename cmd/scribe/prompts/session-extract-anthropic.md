@@ -11,6 +11,8 @@ You are extracting knowledge from one coding-agent session for the project at `{
 
 {{RELATED_SESSIONS}}
 
+{{CONTINUATION}}
+
 ## Transcript
 
 <<<TRANSCRIPT_BEGIN>>>

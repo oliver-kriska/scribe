@@ -13,6 +13,8 @@ Extract project-specific knowledge from one coding-agent session for the project
 
 {{RELATED_SESSIONS}}
 
+{{CONTINUATION}}
+
 ## Transcript
 
 <<<TRANSCRIPT_BEGIN>>>

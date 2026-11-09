@@ -275,7 +275,12 @@ func runSessionBench(t *testing.T, models []string, reps int, root string) {
 	var jobs []benchJob
 	for _, id := range ids {
 		id = strings.TrimSpace(id)
-		transcript := fetchAndRenderTranscript(db, id, 24000)
+		turns, err := fetchSessionTranscript(db, id)
+		if err != nil {
+			t.Logf("skip %s: %v", id, err)
+			continue
+		}
+		transcript := renderTranscriptForPrompt(turns, 24000)
 		if transcript == "" {
 			t.Logf("skip %s: empty transcript", id)
 			continue

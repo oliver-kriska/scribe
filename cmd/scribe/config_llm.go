@@ -217,7 +217,8 @@ type SessionMineConfig struct {
 	// so an open session is mined once it settles, not on every run.
 	// Default 6.
 	RemineQuietHours int `yaml:"remine_quiet_hours"`
-	// RemineMaxPerRun caps re-mines per sync run (each is one LLM call).
+	// RemineMaxPerRun caps re-mines per sync run (each is one LLM call, two
+	// when the first reply does not parse).
 	// Default 2.
 	RemineMaxPerRun int `yaml:"remine_max_per_run"`
 }

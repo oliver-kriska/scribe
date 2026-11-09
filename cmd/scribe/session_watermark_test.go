@@ -219,9 +219,9 @@ func TestEnvelopeTranscriptRemine(t *testing.T) {
 	insertSeqMessage(t, db, row, "user", "NEW follow-up", 14)
 
 	// First mine: whole transcript, watermark at the last turn.
-	text, mark := envelopeTranscript(root, dbPath, "s1", 10000)
-	if mark != (mineMark{ThroughSeq: 14}) || !strings.Contains(text, "OLD answer") || strings.Contains(text, "[CONTINUATION]") {
-		t.Fatalf("first mine: mark=%+v text=%q", mark, text)
+	text, cont, mark := envelopeTranscript(root, dbPath, "s1", 10000)
+	if mark != (mineMark{ThroughSeq: 14}) || !strings.Contains(text, "OLD answer") || cont != "" {
+		t.Fatalf("first mine: mark=%+v text=%q cont=%q", mark, text, cont)
 	}
 
 	// Re-mine: watermark at 9 → only the delta, behind the header that
@@ -231,14 +231,19 @@ func TestEnvelopeTranscriptRemine(t *testing.T) {
 		t.Fatal(err)
 	}
 	recordSessionProcessed(root, "s1", mineMark{ThroughSeq: 9})
-	text, mark = envelopeTranscript(root, dbPath, "s1", 10000)
+	text, cont, mark = envelopeTranscript(root, dbPath, "s1", 10000)
 	if mark != (mineMark{ThroughSeq: 14}) {
 		t.Fatalf("remine mark=%+v, want through 14", mark)
 	}
-	for _, want := range []string{"[CONTINUATION]", "FRAMING question", "NEW follow-up", "x.md"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("remine transcript missing %q:\n%s", want, text)
+	// The instructions travel in the continuation block, never inside
+	// the transcript (which the prompt fences off as data).
+	for _, want := range []string{"Continuation of an earlier mine", "FRAMING question", "x.md"} {
+		if !strings.Contains(cont, want) {
+			t.Errorf("continuation missing %q:\n%s", want, cont)
 		}
+	}
+	if !strings.Contains(text, "NEW follow-up") || strings.Contains(text, "Continuation") {
+		t.Errorf("remine transcript should be the bare delta:\n%s", text)
 	}
 	if strings.Contains(text, "OLD answer") {
 		t.Errorf("remine transcript repeats mined content:\n%s", text)
@@ -246,7 +251,7 @@ func TestEnvelopeTranscriptRemine(t *testing.T) {
 
 	// Nothing new past the watermark → empty, watermark unchanged.
 	recordSessionProcessed(root, "s1", mineMark{ThroughSeq: 14})
-	if text, mark = envelopeTranscript(root, dbPath, "s1", 10000); text != "" || mark.ThroughSeq != 14 {
+	if text, _, mark = envelopeTranscript(root, dbPath, "s1", 10000); text != "" || mark.ThroughSeq != 14 {
 		t.Fatalf("no delta: text=%q mark=%+v", text, mark)
 	}
 }
@@ -331,5 +336,47 @@ func TestRemineOrderRotatesDaily(t *testing.T) {
 	}
 	if len(seen) < 2 {
 		t.Fatal("the first slot must rotate across days, or one failing session starves the lane")
+	}
+}
+
+// The continuation block must land outside the transcript markers in
+// every session prompt: inside them, the input-safety rule makes the
+// model treat it as data.
+func TestContinuationSlotOutsideTranscriptMarkers(t *testing.T) {
+	for _, name := range []string{"session-mine-anthropic", "session-mine-ollama", "session-extract-anthropic", "session-extract-ollama"} {
+		raw, err := promptFS.ReadFile("prompts/" + name + ".md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(raw)
+		slot, begin := strings.Index(s, "{{CONTINUATION}}"), strings.Index(s, "<<<TRANSCRIPT_BEGIN>>>")
+		if slot < 0 || begin < 0 || slot > begin {
+			t.Errorf("%s: {{CONTINUATION}} at %d, transcript begin at %d; want the slot before the markers", name, slot, begin)
+		}
+	}
+}
+
+// A first turn longer than the head half (a resumed session opening with
+// a long summary) must still give a non-zero partial watermark; a zero
+// one records a bare timestamp, which the remine lane never picks up.
+func TestRenderedThroughSeqOversizedFirstTurn(t *testing.T) {
+	turns := []sessionTurn{
+		{Role: "user", Text: strings.Repeat("s", 5000), Sequence: 3},
+		{Role: "assistant", Text: "mid", Sequence: 7},
+		{Role: "user", Text: strings.Repeat("t", 5000), Sequence: 11},
+	}
+	got := renderedThroughSeq(turns, 2000)
+	if got != (mineMark{ThroughSeq: 3, Partial: true}) {
+		t.Fatalf("got %+v, want through 3, partial", got)
+	}
+}
+
+// A re-mine that reaches no further than the stored watermark (nothing
+// new, a fetch error) must keep the partial flag.
+func TestSessionsLogEntryKeepsPartialOnEqualMark(t *testing.T) {
+	existing := map[string]any{"extracted": "2026-11-01T00:00:00Z", "through_seq": float64(9), "partial": true}
+	got := sessionsLogEntry(existing, "2026-11-09T00:00:00Z", mineMark{ThroughSeq: 9})
+	if seq, _ := entryThroughSeq(got); seq != 9 || !entryPartial(got) {
+		t.Fatalf("got %#v, want through 9 still partial", got)
 	}
 }
