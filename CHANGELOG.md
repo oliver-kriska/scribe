@@ -6,6 +6,16 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Added
 
+- **Agent blocks and the scribe-kb skill ask for one KB query before
+  the first file edit** (#150), including continuations, hand-backs,
+  reviews and ship runs; review findings are checked against recorded
+  decisions, and subagent briefs carry the same instruction. On one KB,
+  sessions that queried before their first edit went from 32% to 79%
+  over 7 days. The blocks now say "knowledge base" rather than "personal
+  knowledge base", and address "the user" where they meant the person in
+  the session, so a team KB reads correctly for every member. Existing
+  installs pick it up on the next `scribe init --yes`.
+
 - **`scribe sessions backfill-watermarks [-n] [--cap N] [--mode
   tools|envelope] [--mined-before YYYY-MM-DD]`** (#146) gives entries mined before watermarks existed the
   watermark their mine most likely reached, so the remine pass can read
