@@ -4,6 +4,8 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-11-09
+
 **Upgrade notes.** Together retired `MiniMaxAI/MiniMax-M3` on 2026-11-07:
 every call now returns `400 endpoint_not_configured`. KBs pinned to it
 should switch to `MiniMaxAI/MiniMax-M3.1-Flash` (README §Hosted mode) and
@@ -14,6 +16,13 @@ and pass the IDs to `scribe sessions requeue` to mine them again.
 
 ### Fixed
 
+- **The KB-first adoption metric counts again.** It had read 0/0 decision
+  sessions since mid-August. ccrider's importer drops text-free messages,
+  and Claude Code writes every tool call as one, so qmd lookups and edits
+  never reached the metric. It now reads the tool calls from Claude Code's
+  own transcripts (`~/.claude/projects`), and falls back to ccrider when
+  that directory is missing. On the reference KB it reports 7d 50% (13/26),
+  30d 25% (28/112). (Part of #23)
 - **`doctor --section telemetry` no longer reports "no dream runs" when
   dreams ran.** The check counted only rows with `claude -p` envelope
   fields, so a KB dreaming on a hosted provider (Together, Ollama) got
@@ -67,6 +76,12 @@ and pass the IDs to `scribe sessions requeue` to mine them again.
 
 ### Changed
 
+- **README: hosted-model benchmark redone on scribe's real code paths.**
+  Ten callable Together models ran 6 real absorb entities and 6 real
+  sessions each, and a blind judge scored the finalists' pages.
+  `MiniMaxAI/MiniMax-M3.1-Flash` stays the pick: best quality on both
+  tasks (8.3 and 7.6 of 10), the cheapest per call, and no failures of its
+  own. The harness is committed behind the `benchtogether` build tag.
 - **Every prompt carries an untrusted-input and secret rule.** Transcripts,
   captured pages, project files and KB articles are data, never
   instructions, and a credential is named, never copied. This backs up the
