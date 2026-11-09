@@ -118,6 +118,9 @@ func runSessionEnvelopeOnce(parent context.Context, provider llmProviderGenerato
 		"RELATED_SESSIONS": relatedSessions,
 		"TRANSCRIPT":       transcript,
 		"TODAY":            time.Now().UTC().Format("2006-01-02"),
+		// Filled only on a re-mine (envelopeTranscript); empty keeps the
+		// placeholder guard quiet on first mines.
+		"CONTINUATION": "",
 	}
 	for k, v := range extraVars {
 		vars[k] = v
@@ -173,6 +176,13 @@ func runSessionEnvelopeWithRetry(ctx context.Context, provider llmProviderGenera
 	if len(env.Actions) > 0 {
 		return env, nil
 	}
+	if opLabel == remineLabel {
+		// A delta past the watermark often holds nothing new, and the
+		// check suffix ("sessions reach you only after triage scored
+		// them knowledge-rich… extract it now") would push the model to
+		// re-extract what earlier mines already wrote.
+		return env, nil
+	}
 	logMsg("sync", "%s envelope %s: no actions — retrying once with an extraction check", opLabel, sessionID)
 	addRunStat("session_envelope_empty_retries", 1)
 	checked, err := once(envelopeEmptyCheckSuffix)
@@ -207,20 +217,6 @@ func providerNameFor(p llmProviderGenerator) string {
 	return "anthropic"
 }
 
-// fetchAndRenderTranscript pulls a transcript via the ccrider DB and
-// renders it into a flat string the prompt can inline. Returns "" on
-// any error (the caller should treat empty as "skip this session").
-func fetchAndRenderTranscript(dbPath, sessionID string, maxChars int) string {
-	turns, err := fetchSessionTranscript(dbPath, sessionID)
-	if err != nil {
-		return ""
-	}
-	if len(turns) == 0 {
-		return ""
-	}
-	return renderTranscriptForPrompt(turns, maxChars)
-}
-
 // mineSessionEnvelope runs one session through the envelope path:
 // fetch transcript → render → call LLM → apply envelope. Returns
 // (rateLimited, err). nil err and rateLimited=false means success
@@ -240,17 +236,17 @@ func fetchAndRenderTranscript(dbPath, sessionID string, maxChars int) string {
 func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, provider llmProviderGenerator, cfg SessionMineConfig, opLabel, promptBase string) (bool, error) {
 	ctx = withOllamaNumCtx(ctx, cfg.NumCtx)
 	related := queryRelatedSessions(dbPath, sessionID, 7, 10)
-	transcript := fetchAndRenderTranscript(dbPath, sessionID, cfg.TranscriptMaxChars)
+	transcript, continuation, mark := envelopeTranscript(root, dbPath, sessionID, cfg.TranscriptMaxChars)
 	if transcript == "" {
-		// Empty / unreadable transcript: record the session as
-		// processed via a direct meta apply so the next run doesn't
-		// re-queue it. Skip the LLM entirely.
-		recordSessionProcessed(root, sessionID)
+		// Empty / unreadable transcript (or nothing new past the
+		// watermark): record the session as processed so the next run
+		// doesn't re-queue it. Skip the LLM entirely.
+		recordSessionProcessed(root, sessionID, mark)
 		return false, nil
 	}
 	projectPath := lookupSessionProjectPath(dbPath, sessionID)
 	timeout := time.Duration(cfg.TimeoutMin) * time.Minute
-	env, err := runSessionEnvelopeWithRetry(ctx, provider, opLabel, promptBase, projectPath, sessionID, formatRelatedSessions(related), transcript, nil, timeout)
+	env, err := runSessionEnvelopeWithRetry(ctx, provider, opLabel, promptBase, projectPath, sessionID, formatRelatedSessions(related), transcript, map[string]string{"CONTINUATION": continuation}, timeout)
 	if err != nil {
 		return isBudgetStop(err), err
 	}
@@ -271,8 +267,45 @@ func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, pr
 	// Go owns wiki/_sessions_log.json: the model's sessions_log_append is
 	// accepted but never applied (see applyMetaAction), so the session
 	// that was actually mined is recorded here, unconditionally.
-	recordSessionProcessed(root, sessionID)
+	recordSessionProcessed(root, sessionID, mark)
 	return false, nil
+}
+
+// envelopeTranscript returns the transcript to inline, the continuation
+// block for the prompt's {{CONTINUATION}} slot ("" on a first mine), and
+// the watermark the transcript reaches. A session with no watermark is a
+// first mine: the whole transcript, head/tail-truncated as before, with
+// the watermark at the end of the head half when the middle was dropped.
+// A session with a watermark is a re-mine: only the turns after it, as a
+// prefix that fits the cap (no middle drop — what does not fit stays for
+// the next run).
+func envelopeTranscript(root, dbPath, sessionID string, maxChars int) (transcript, continuation string, mark mineMark) {
+	view, err := loadSessionsLogView(root)
+	if err != nil {
+		// Without the log we cannot tell a first mine from a re-mine,
+		// and guessing "first" would re-mine a whole session. Skip; the
+		// caller records nothing new (a zero mark never lowers an entry).
+		logMsg("sync", "sessions log unreadable, skipping %s: %v", sessionID, err)
+		return "", "", mineMark{}
+	}
+	prev, remine := entryThroughSeq(view.processed[sessionID])
+	turns, err := fetchSessionTranscript(dbPath, sessionID)
+	if err != nil {
+		// Unreadable: same outcome as before watermarks — the caller
+		// records the session and skips the LLM.
+		logMsg("sync", "transcript fetch %s: %v", sessionID, err)
+		return "", "", mineMark{ThroughSeq: prev}
+	}
+	if !remine {
+		return renderTranscriptForPrompt(turns, maxChars), "", renderedThroughSeq(turns, maxChars)
+	}
+	delta := turnsAfter(turns, prev)
+	if len(delta) == 0 {
+		return "", "", mineMark{ThroughSeq: prev}
+	}
+	continuation = remineContext(firstUserText(turns), pagesFromSession(root, sessionID))
+	body, mark := renderTranscriptPrefix(delta, max(maxChars-len(continuation), maxChars/2))
+	return body, continuation, mark
 }
 
 // promptBaseForSessionLabel maps a runtime op label like

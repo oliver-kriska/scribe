@@ -535,9 +535,9 @@ func TestRecordSessionProcessed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recordSessionProcessed(root, "sess-alpha")
-	recordSessionProcessed(root, "sess-beta")
-	recordSessionProcessed(root, "sess-alpha") // idempotent re-record must not duplicate
+	recordSessionProcessed(root, "sess-alpha", mineMark{})
+	recordSessionProcessed(root, "sess-beta", mineMark{})
+	recordSessionProcessed(root, "sess-alpha", mineMark{}) // idempotent re-record must not duplicate
 
 	raw, err := os.ReadFile(filepath.Join(root, "wiki", "_sessions_log.json"))
 	if err != nil {

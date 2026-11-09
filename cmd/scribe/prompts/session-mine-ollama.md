@@ -13,6 +13,8 @@ Extract reusable knowledge from a coding-agent session transcript. Emit a `WikiA
 
 {{RELATED_SESSIONS}}
 
+{{CONTINUATION}}
+
 ## Transcript
 
 <<<TRANSCRIPT_BEGIN>>>

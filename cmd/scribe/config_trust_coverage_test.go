@@ -128,6 +128,12 @@ var nonSensitiveAllowlist = map[string]bool{
 	"SessionMine.TranscriptMaxChars": true,
 	"SessionMine.TimeoutMin":         true,
 	"SessionMine.NumCtx":             true,
+	// Remine lane (#146): tuning. Default on; a pushed config can only
+	// change how often a mined session is re-read, bounded per run.
+	"SessionMine.Remine":            true,
+	"SessionMine.RemineMinNewChars": true,
+	"SessionMine.RemineQuietHours":  true,
+	"SessionMine.RemineMaxPerRun":   true,
 
 	// Codex mining tuning (the Mine enable flag itself is locked).
 	"Codex.SessionsMax":   true,

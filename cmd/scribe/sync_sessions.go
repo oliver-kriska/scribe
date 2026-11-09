@@ -489,6 +489,9 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 	var stop atomic.Bool
 
 	logMsg("sync", "%s: processing %d sessions (parallel=%d)", label, len(sessionIDs), parallel)
+	// Snapshot before any model call: messages added while the model runs
+	// were not shown to it and must stay past the watermark.
+	watermarks := toolsModeWatermarks(dbPath, sessionIDs, promptName)
 
 	for i, sid := range sessionIDs {
 		wg.Add(1)
@@ -564,7 +567,7 @@ func (s *SyncCmd) mineSessionBatches(root string, sessionIDs []string, parallel 
 		totalMined++
 		sinceCheckpoint++
 		batchIDs = append(batchIDs, r.sessionID)
-		recordSessionProcessed(root, r.sessionID) // Go owns the _sessions_log write, not the model
+		recordSessionProcessed(root, r.sessionID, watermarks[r.sessionID]) // Go owns the _sessions_log write, not the model
 		logMsg("sync", "%s: %s complete (%d/%d mined)", label, r.sessionID, totalMined, len(sessionIDs))
 
 		// Checkpoint after every N successful extractions.
@@ -595,6 +598,7 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 	totalMined := 0
 	cfg := loadConfig(root)
 	var batchIDs []string
+	watermarks := toolsModeWatermarks(cfg.CcriderDB, sessionIDs, promptName)
 
 	for i, sid := range sessionIDs {
 		logMsg("sync", "%s [%d/%d] extracting %s", label, i+1, len(sessionIDs), sid)
@@ -626,7 +630,7 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 
 		totalMined++
 		batchIDs = append(batchIDs, sid)
-		recordSessionProcessed(root, sid) // Go owns the _sessions_log write, not the model
+		recordSessionProcessed(root, sid, watermarks[sid]) // Go owns the _sessions_log write, not the model
 		logMsg("sync", "%s [%d/%d] complete (%d mined)", label, i+1, len(sessionIDs), totalMined)
 
 		// Checkpoint.
@@ -648,7 +652,7 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 
 // recordSessionProcessed marks a session as processed in
 // wiki/_sessions_log.json, via Go, under sessionsLogMu (through
-// applyMetaSessionsLogAppend). The legacy tools prompt used to delegate
+// appendSessionsLogEntry). The legacy tools prompt used to delegate
 // this to the model's own Write/Edit tool call — but with parallel=N that
 // meant N uncoordinated `claude -p` subprocesses read-modify-writing one
 // JSON file, a cross-process lost-update race that left sessions
@@ -659,21 +663,25 @@ func (s *SyncCmd) mineSessionsSerial(root string, sessionIDs []string, timeout t
 // candidate pool and is re-mined next run, so a unit of work is repeated
 // at full LLM cost. Phase name matches the pre-filter skip-marker write
 // so `scribe doctor` groups both writes to this file under one phase.
-func recordSessionProcessed(root, sessionID string) {
+//
+// mark is the sequence of the last message the model was shown, and
+// whether older content lies past it (session_watermark.go); zero when
+// unknown.
+func recordSessionProcessed(root, sessionID string, mark mineMark) {
 	// Direct call, not applyMetaAction: the meta op is a no-op for model
 	// output on purpose (Go is the only writer of the sessions log).
-	if err := applyMetaSessionsLogAppend(root, MetaAction{Op: "sessions_log_append", SessionID: sessionID}, ApplyOptions{}); err != nil {
+	if err := appendSessionsLogEntry(root, MetaAction{Op: "sessions_log_append", SessionID: sessionID}, mark, ApplyOptions{}); err != nil {
 		logPhaseDegraded("sync", "session log update",
 			"could not record session %s as processed (it will be re-mined): %v", sessionID, err)
 	}
 }
 
 // updateSessionsLog serializes a Go write to wiki/_sessions_log.json through
-// sessionsLogMu — the same mutex applyMetaSessionsLogAppend holds — so the
+// sessionsLogMu — the same mutex appendSessionsLogEntry holds — so the
 // several in-process writers (per-session record, mechanical skip-mark,
 // last_scan bump) can't interleave their read-modify-writes and drop each
 // other's updates. Do NOT call this from a path that already holds
-// sessionsLogMu (e.g. inside applyMetaSessionsLogAppend); the mutex is not
+// sessionsLogMu (e.g. inside appendSessionsLogEntry); the mutex is not
 // reentrant.
 func updateSessionsLog(sessionsLog string, fn func(data map[string]any)) error {
 	sessionsLogMu.Lock()
@@ -1064,10 +1072,19 @@ func (s *SyncCmd) mineSessions(root string) (int, error) {
 			func(ids []string) []string { return filterSessionsByScope(root, cfg.CcriderDB, ids) })
 		if len(largeIDs) > 0 {
 			logMsg("sync", "priority lanes found %d large sessions (>300 msgs)", len(largeIDs))
-			mined, rateLimited := s.mineSessionBatches(root, largeIDs, 1, 20*time.Minute, "session-extract-large.md", "large-session")
+			mined, rateLimited := s.mineSessionBatches(root, largeIDs, 1, 20*time.Minute, largeSessionPrompt, "large-session")
 			totalMined += mined
 			largeRateLimited = rateLimited
 		}
+	}
+
+	// Pass 3: sessions that grew past their watermark since they were
+	// mined (issue #146). After the first-mine passes so new sessions
+	// keep priority; skipped when a pass already hit a rate limit.
+	if !largeRateLimited {
+		mined, rateLimited := s.mineGrownSessions(root, cfg)
+		totalMined += mined
+		largeRateLimited = rateLimited
 	}
 
 	s.updateScanTimestamp(sessionsLog)

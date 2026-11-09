@@ -130,3 +130,29 @@ func TestSessionEnvelopeNamesAllowedDomains(t *testing.T) {
 		t.Fatal("no domains must mean no enum")
 	}
 }
+
+// A re-mine delta that holds nothing new is a normal answer: no check
+// retry, whose "extract it now" nudge would re-extract what earlier
+// mines already wrote. The continuation block reaches the prompt, before
+// the transcript markers.
+func TestSessionEnvelopeRetry_RemineSkipsCheckRetry(t *testing.T) {
+	t.Setenv("SCRIBE_KB", t.TempDir())
+	stub := &stubLLM{DefaultReply: envEmptyActions}
+	cont := "## Continuation of an earlier mine\n\nMARKER-CONT\n"
+	env, err := runSessionEnvelopeWithRetry(t.Context(), stub, remineLabel, "session-mine", "/p", "sid", "", "user: hi",
+		map[string]string{"CONTINUATION": cont}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := stub.Calls()
+	if len(env.Actions) != 0 || len(calls) != 1 {
+		t.Fatalf("want one call and the empty answer; actions=%d calls=%d", len(env.Actions), len(calls))
+	}
+	p := calls[0].Prompt
+	if i, j := strings.Index(p, "MARKER-CONT"), strings.Index(p, "<<<TRANSCRIPT_BEGIN>>>"); i < 0 || j < 0 || i > j {
+		t.Fatalf("continuation block missing or inside the transcript (at %d, markers at %d)", i, j)
+	}
+	if strings.Contains(p, "{{CONTINUATION}}") {
+		t.Fatal("placeholder left unfilled")
+	}
+}
