@@ -157,6 +157,10 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 				logMsg("sync", "daily anthropic budget ceiling reached during absorb — stopping cleanly (%v)", absorbErr)
 				break
 			}
+			if errors.Is(absorbErr, ErrModelUnavailable) {
+				logPhaseDegraded("sync", "absorb", "provider does not serve the absorb model — stopping absorb for this run (%v). scribe runs on the trusted config: check `scribe config diff`", absorbErr)
+				break
+			}
 			logPhaseDegraded("sync", "absorb", "absorb failed for %s: %v", entry.Name(), absorbErr)
 			continue
 		}
