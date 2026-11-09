@@ -167,3 +167,54 @@ func TestRunRetrievalEvalSkipsMissingAndAggregates(t *testing.T) {
 		t.Errorf("run stats = %v", f)
 	}
 }
+
+// qmd 2.1.0 ignores --json on `bench` and prints this table (captured
+// verbatim from a live run, 2026-11-09).
+const qmdBenchTableFixture = `
+Query                     Backend  P@k    Recall  MRR    F1     ms      
+----------------------------------------------------------------------
+q001-direct               bm25      0.00  0.00   0.00  0.00     107ms
+q001-direct               vector    1.00  1.00   0.25  1.00    2627ms
+q001-direct               hybrid    0.00  1.00   0.17  0.00    4868ms
+q001-direct               full      1.00  1.00   0.20  1.00   12062ms
+
+q001-indirect             bm25      0.00  0.00   0.00  0.00     134ms
+q001-indirect             full      0.00  0.00   0.00  0.00    9658ms
+
+Summary:
+----------------------------------------------------------------------
+  bm25     P@k= 0.000 Recall= 0.000 MRR= 0.000 F1= 0.000 Avg=121ms
+  full     P@k= 0.500 Recall= 0.500 MRR= 0.100 F1= 0.500 Avg=10860ms
+`
+
+func TestParseQMDBenchOutputTable(t *testing.T) {
+	queries := []qmdBenchQuery{
+		{ID: "q001-direct", Query: "d", Type: evalTypeDirect},
+		{ID: "q001-indirect", Query: "i", Type: evalTypeIndirect},
+	}
+	res, err := parseQMDBenchOutput([]byte(qmdBenchTableFixture), queries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Results) != 2 {
+		t.Fatalf("results = %d, want 2 (summary rows must be ignored)", len(res.Results))
+	}
+	d := res.Results[0]
+	if d.Type != evalTypeDirect || len(d.Backends) != 4 {
+		t.Errorf("direct row = %+v", d)
+	}
+	if h := d.Backends["hybrid"]; h.PrecisionAtK != 0 || h.Recall != 1 || h.MRR != 0.17 || h.LatencyMS != 4868 {
+		t.Errorf("hybrid = %+v", h)
+	}
+	if res.Results[1].Type != evalTypeIndirect {
+		t.Errorf("type must come from the fixture by ID, got %q", res.Results[1].Type)
+	}
+
+	// JSON (a fixed qmd) still parses.
+	if r, err := parseQMDBenchOutput([]byte(`{"results":[{"id":"q001-direct","type":"exact","backends":{"bm25":{"mrr":1}}}]}`), queries); err != nil || len(r.Results) != 1 {
+		t.Errorf("json path: %v %+v", err, r)
+	}
+	if _, err := parseQMDBenchOutput([]byte("qmd: something broke"), queries); err == nil {
+		t.Error("garbage must be an error, not an empty report")
+	}
+}

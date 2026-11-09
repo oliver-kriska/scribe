@@ -402,13 +402,77 @@ func runRetrievalEval(root, fixturePath, collection string) (evalReport, error) 
 	if err != nil {
 		return report, err
 	}
-	var res qmdBenchResult
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return report, fmt.Errorf("parse qmd bench output: %w", err)
+	res, err := parseQMDBenchOutput(raw, fx.Queries)
+	if err != nil {
+		return report, err
+	}
+	// Store the normalized result, never the raw table: Raw must be JSON.
+	if raw, err = json.Marshal(res); err != nil {
+		return report, err
 	}
 	report.Raw = raw
 	report.Cells = aggregateEval(res)
 	return report, nil
+}
+
+// parseQMDBenchOutput accepts both shapes `qmd bench` can print. qmd
+// 2.1.0 never emits JSON: its CLI stores --json as opts.format="json",
+// but the bench case reads opts.json, so the flag is silently ignored and
+// the human table is printed. The table has every metric scribe scores,
+// but not top_files, so the misses list can't name the wrong top hit in
+// that case. The query type is taken from the fixture by ID.
+func parseQMDBenchOutput(raw []byte, queries []qmdBenchQuery) (qmdBenchResult, error) {
+	var res qmdBenchResult
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		if err := json.Unmarshal(trimmed, &res); err != nil {
+			return res, fmt.Errorf("parse qmd bench JSON: %w", err)
+		}
+		return res, nil
+	}
+	byID := make(map[string]qmdBenchQuery, len(queries))
+	for _, q := range queries {
+		byID[q.ID] = q
+	}
+	index := map[string]int{}
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		// "<id>  <backend>  <P@k> <Recall> <MRR> <F1> <N>ms"
+		f := strings.Fields(line)
+		if len(f) != 7 || !strings.HasSuffix(f[6], "ms") {
+			continue
+		}
+		q, ok := byID[f[0]]
+		if !ok {
+			continue // header, separator or summary row
+		}
+		nums := make([]float64, 5)
+		bad := false
+		for i, s := range []string{f[2], f[3], f[4], f[5], strings.TrimSuffix(f[6], "ms")} {
+			if _, err := fmt.Sscanf(s, "%g", &nums[i]); err != nil {
+				bad = true
+				break
+			}
+		}
+		if bad {
+			continue
+		}
+		i, seen := index[q.ID]
+		if !seen {
+			i = len(res.Results)
+			index[q.ID] = i
+			res.Results = append(res.Results, struct {
+				ID       string                     `json:"id"`
+				Query    string                     `json:"query"`
+				Type     string                     `json:"type"`
+				Backends map[string]qmdBenchBackend `json:"backends"`
+			}{ID: q.ID, Query: q.Query, Type: q.Type, Backends: map[string]qmdBenchBackend{}})
+		}
+		res.Results[i].Backends[f[1]] = qmdBenchBackend{PrecisionAtK: nums[0], Recall: nums[1], MRR: nums[2], LatencyMS: nums[4]}
+	}
+	if len(res.Results) == 0 {
+		return res, fmt.Errorf("parse qmd bench output: neither JSON nor a result table (%d bytes)", len(raw))
+	}
+	return res, nil
 }
 
 // runQMDBenchFn is a seam so tests can score a scripted bench result
@@ -543,7 +607,7 @@ func formatEvalMisses(r evalReport, limit int) string {
 		if n == 0 {
 			b.WriteString("\nmissed by full (not in top 10):\n")
 		}
-		got := "(nothing)"
+		got := "(not reported: qmd printed its table, not JSON)"
 		if len(full.TopFiles) > 0 {
 			got = full.TopFiles[0]
 		}
