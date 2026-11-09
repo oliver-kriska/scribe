@@ -32,7 +32,10 @@ CREATE TABLE messages (
     -- sequence mirrors ccrider's per-session monotonic ordinal.
     -- Defaults to 0 so pre-existing fixture inserts that don't set it
     -- still sort deterministically (ORDER BY sequence ASC, id ASC).
-    sequence     INTEGER DEFAULT 0
+    sequence     INTEGER DEFAULT 0,
+    -- timestamp mirrors ccrider's per-message DATETIME (Go time.String()
+    -- text). Additive; NULL for fixture inserts that do not set it.
+    timestamp    DATETIME
 );
 
 -- External-content FTS5 tables; tests insert rows manually with

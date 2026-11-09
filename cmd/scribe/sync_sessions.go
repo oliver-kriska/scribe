@@ -748,13 +748,17 @@ func backfillMsgCounts(dbPath string, entries []pendingEntry) []pendingEntry {
 	return entries
 }
 
+// largeSessionMinMessages is where the large-session lane (and its
+// first-50/last-50 tools prompt) starts.
+const largeSessionMinMessages = 301
+
 // partitionBySize splits entries into the normal (<=300 msgs, or
 // unknown — fail open) and large (>300 msgs) size pools that carry
 // largeSessionBudget's wall-clock safety cap forward (see
 // docs/issue-22-priority-lanes-plan.md §2.3).
 func partitionBySize(entries []pendingEntry) (normal, large []pendingEntry) {
 	for _, e := range entries {
-		if e.MsgCount > 300 {
+		if e.MsgCount >= largeSessionMinMessages {
 			large = append(large, e)
 		} else {
 			normal = append(normal, e)

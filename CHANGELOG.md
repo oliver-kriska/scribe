@@ -4,6 +4,24 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **`scribe sessions backfill-watermarks [-n] [--cap N] [--mode
+  tools|envelope] [--mined-before YYYY-MM-DD]`** (#146) gives entries mined before watermarks existed the
+  watermark their mine most likely reached, so the remine pass can read
+  what those mines did not: messages stamped after the mine, and, in
+  envelope mode, the middle of a transcript over the cap (assumed
+  `min(transcript_max_chars, 24000)` unless `--cap` says otherwise; in
+  tools mode, everything after message 50 of a session over 300
+  messages). Messages stamped within `--margin` (default 2h) before
+  the processed time count as unread, since the mine and ccrider's
+  indexing both ran before that time was stamped. Opt-in; `-n` reports
+  the sessions the remine lane would actually pick (in scope, and partial
+  or past `remine_min_new_chars`) with an estimate of the LLM calls and
+  sync runs it takes to drain them. The write takes the sync lock. A KB
+  whose mode or cap changed over time can backfill in passes with
+  `--mode`, `--cap` and `--mined-before`.
+
 ### Fixed
 
 - **A mined session is no longer frozen at the moment it was mined
