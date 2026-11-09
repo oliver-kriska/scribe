@@ -129,6 +129,7 @@ type CLI struct {
 	Stale          StaleCmd          `cmd:"" group:"quality" help:"Build/list/show the staleness ledger (Phase 6C)."`
 	Contradictions ContradictionsCmd `cmd:"" group:"quality" help:"Build/list/show/resolve the contradiction ledger (Phase 6B)."`
 	Dream          DreamCmd          `cmd:"" group:"quality" help:"Run structured memory consolidation (4-phase dream cycle)."`
+	Eval           EvalCmd           `cmd:"" group:"quality" help:"Benchmark the KB: retrieval quality (does search find the right article?)."`
 
 	// Team — shared-KB workflows.
 	Promote PromoteCmd `cmd:"" group:"team" help:"Copy an article into another scribe KB with provenance (personal → team promotion)."`

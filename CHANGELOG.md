@@ -22,6 +22,22 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   whose mode or cap changed over time can backfill in passes with
   `--mode`, `--cap` and `--mined-before`.
 
+- **`scribe eval retrieval` measures whether KB search finds the right
+  article.** `--generate N` samples N articles across the KB's top-level
+  dirs and asks the configured contextualize model for two queries per
+  article:
+  - a *direct* one, in the article's own words
+  - an *indirect* one, which describes the situation without the title's
+    words. Questions that reuse a title word are dropped.
+
+  The set is written once to `eval/retrieval-fixture.json` in the KB, so
+  later runs measure the same questions. A plain run feeds it to
+  `qmd bench` and scores four backends (bm25, vector, hybrid, hybrid +
+  rerank) on hit@5, hit@10, MRR and p50 latency. It stores the result
+  under `output/eval/`, prints the change in MRR since the last run, and
+  lists questions the full pipeline missed with what it returned instead.
+  Questions whose article has since been removed are skipped and counted.
+
 ### Fixed
 
 - **A mined session is no longer frozen at the moment it was mined
