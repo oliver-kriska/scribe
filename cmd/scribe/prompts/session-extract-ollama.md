@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 Extract project-specific knowledge from one coding-agent session for the project at `{{PROJECT_PATH}}`.
 
+{{INPUT_SAFETY}}
+
 ## Session
 
 - session_ids: {{SESSION_ID_LIST}}
@@ -10,6 +12,8 @@ Extract project-specific knowledge from one coding-agent session for the project
 ## Related sessions (don't duplicate)
 
 {{RELATED_SESSIONS}}
+
+{{CONTINUATION}}
 
 ## Transcript
 
@@ -46,7 +50,7 @@ Extract project-specific knowledge from one coding-agent session for the project
 - Path rooted in: research/, solutions/, tools/, decisions/, patterns/, ideas/, people/. Pick the directory whose type fits the entity.
 - NEVER target a file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 - ≤150 lines per article.
-- Optional rolling_memory_append: `{"op": "rolling_memory_append", "domain": "general", "target": "learnings", "content": "one paragraph"}`. Target MUST be `learnings` or `decisions-log`.
+- Optional rolling_memory_append: `{"op": "rolling_memory_append", "domain": "general", "target": "learnings", "content": "one paragraph"}`. Target MUST be `learnings` or `decisions-log`. Domain MUST be exactly one of: {{DOMAINS}}. If none fits, leave the op out.
 
 - One topic = one article: never two `create` ops with near-identical titles or slugs. If a relevant article is visible in the context you were given, `append` to it instead of creating a parallel page, and reuse its exact title in `related:` wikilinks.
 - Generic knowledge that almost certainly has a page already (well-known patterns, common tool facts) gets NO new stub — use rolling_memory_append or drop it. Near-duplicate pages split future updates and corrupt contradiction resolution.

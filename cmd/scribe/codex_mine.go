@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 )
@@ -93,10 +92,10 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 		}
 
 		ctx := withOllamaNumCtx(context.Background(), cfg.SessionMine.NumCtx)
-		env, err := runSessionEnvelopeOnce(ctx, provider, "codex-session", "session-extract",
-			c.cwd, c.id, "", rendered, nil, timeout, false)
+		env, err := runSessionEnvelopeWithRetry(ctx, provider, "codex-session", "session-extract",
+			c.cwd, c.id, "", rendered, nil, timeout)
 		if err != nil {
-			if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
+			if isBudgetStop(err) {
 				// Don't mark processed — resume cleanly next run.
 				logMsg("sync", "codex mining rate/budget limited on %s — resuming next run", c.id)
 				setRunStat("codex_rate_limited", true)
@@ -105,17 +104,10 @@ func (s *SyncCmd) mineCodexSessions(root string, cfg *ScribeConfig) (int, error)
 				}
 				return mined, nil
 			}
-			// One corrective retry, same posture as mineSessionEnvelope:
-			// local models occasionally wrap the envelope in prose.
-			logMsg("sync", "codex envelope %s: first attempt failed (%v) — retrying with corrective prompt", c.id, err)
-			env, err = runSessionEnvelopeOnce(ctx, provider, "codex-session", "session-extract",
-				c.cwd, c.id, "", rendered, nil, timeout, true)
-			if err != nil {
-				// Leave it unmarked so a future run retries — a
-				// transient model failure shouldn't lose the session.
-				logPhaseDegraded("sync", "codex session mining", "codex envelope %s failed after retry: %v", c.id, err)
-				continue
-			}
+			// Leave it unmarked so a future run retries — a
+			// transient model failure shouldn't lose the session.
+			logPhaseDegraded("sync", "codex session mining", "codex envelope %s failed after retry: %v", c.id, err)
+			continue
 		}
 
 		// Same class as session-mine: entities distilled from a Codex

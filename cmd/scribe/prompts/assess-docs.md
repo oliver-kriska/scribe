@@ -1,5 +1,7 @@
 You are assessing the DOCS track of project '{{PROJECT}}' at '{{P_PATH}}' (domain: '{{DOMAIN}}').
 
+{{INPUT_SAFETY}}
+
 Your one job: inventory the documentation that already exists inside this project. Nothing else. Other parallel tracks are handling structure, features, decisions, and gaps — do not duplicate their work.
 
 Scope:

@@ -157,6 +157,10 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 				logMsg("sync", "daily anthropic budget ceiling reached during absorb — stopping cleanly (%v)", absorbErr)
 				break
 			}
+			if errors.Is(absorbErr, ErrModelUnavailable) {
+				logPhaseDegraded("sync", "absorb", "provider does not serve the absorb model — stopping absorb for this run (%v). scribe runs on the trusted config: check `scribe config diff`", absorbErr)
+				break
+			}
 			logPhaseDegraded("sync", "absorb", "absorb failed for %s: %v", entry.Name(), absorbErr)
 			continue
 		}
@@ -814,39 +818,45 @@ func wikiEnvelopeSchema() jsonSchemaSpec {
 				"actions": map[string]any{
 					"type":     "array",
 					"minItems": 1,
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"op":      map[string]any{"type": "string"},
-							"path":    map[string]any{"type": "string"},
-							"content": map[string]any{"type": "string"},
-							"heading": map[string]any{"type": "string"},
-						},
-						// `content` is required, and that is load-bearing.
-						// 2026-08-10: 253 of 253 captured body-less replies
-						// omitted the content KEY ENTIRELY — the model emitted
-						// {op, path} (exactly the old required set), then used
-						// `notes` to describe the page it did not write. The
-						// old schema permitted it, so the corrective retries
-						// could not help: 107 first attempts, 83 on retry 1, 63
-						// on retry 2, all identical. Requiring the key makes a
-						// content-free action structurally impossible under
-						// strict decoding, the same way minItems:1 killed the
-						// empty-"{}" escape.
-						//
-						// Require the KEY, never a minLength. A tested
-						// minLength forces the grammar to keep emitting when
-						// the model has nothing left to say: MiniMax M3 ran
-						// 62,528 chars / 326s and DeepSeek-V4-Flash 40,992,
-						// both unparseable at finish=length. Ops that ignore
-						// Content (update_frontmatter) can satisfy this with
-						// "" at no cost.
-						"required": []any{"op", "path", "content"},
-					},
+					"items":    wikiActionItemSchema(),
 				},
 			},
 			"required": []any{"entity", "actions"},
 		},
+	}
+}
+
+// wikiActionItemSchema is the per-action JSON Schema shared by every
+// schema-constrained envelope caller (pass-2 absorb, session mining).
+func wikiActionItemSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"op":      map[string]any{"type": "string"},
+			"path":    map[string]any{"type": "string"},
+			"content": map[string]any{"type": "string"},
+			"heading": map[string]any{"type": "string"},
+		},
+		// `content` is required, and that is load-bearing.
+		// 2026-08-10: 253 of 253 captured body-less replies
+		// omitted the content KEY ENTIRELY — the model emitted
+		// {op, path} (exactly the old required set), then used
+		// `notes` to describe the page it did not write. The
+		// old schema permitted it, so the corrective retries
+		// could not help: 107 first attempts, 83 on retry 1, 63
+		// on retry 2, all identical. Requiring the key makes a
+		// content-free action structurally impossible under
+		// strict decoding, the same way minItems:1 killed the
+		// empty-"{}" escape.
+		//
+		// Require the KEY, never a minLength. A tested
+		// minLength forces the grammar to keep emitting when
+		// the model has nothing left to say: MiniMax M3 ran
+		// 62,528 chars / 326s and DeepSeek-V4-Flash 40,992,
+		// both unparseable at finish=length. Ops that ignore
+		// Content (update_frontmatter) can satisfy this with
+		// "" at no cost.
+		"required": []any{"op", "path", "content"},
 	}
 }
 

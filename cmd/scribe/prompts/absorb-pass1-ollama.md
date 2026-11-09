@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 You are Pass 1 of a two-pass absorb. Read the raw article body and produce a JSON plan listing 3–10 distinct entities (tools, decisions, patterns, solutions, research findings, people, concepts) that each warrant their own wiki page.
 
+{{INPUT_SAFETY}}
+
 ## Raw article path (echo into the `raw_file` field)
 
 {{RAW_FILE}}

@@ -1,5 +1,7 @@
 You are resolving a set of contradiction pairs across a knowledge base. For each pair, decide which article should be treated as the authoritative one and which should be marked as superseded.
 
+{{INPUT_SAFETY}}
+
 ## Authority ranking (highest → lowest)
 
 1. `authority: canonical` — intentional decisions/policies. Always wins over contextual/opinion.

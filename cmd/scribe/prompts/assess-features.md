@@ -1,5 +1,7 @@
 You are assessing the FEATURES track of project '{{PROJECT}}' at '{{P_PATH}}' (domain: '{{DOMAIN}}').
 
+{{INPUT_SAFETY}}
+
 Your one job: enumerate what this project DOES from the user's perspective. Nothing else. Other parallel tracks are handling structure, docs, decisions, and gaps — do not duplicate their work.
 
 Scope:

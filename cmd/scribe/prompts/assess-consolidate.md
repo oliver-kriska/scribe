@@ -1,5 +1,7 @@
 You are consolidating the output of 5 parallel assessment tracks for project '{{PROJECT}}' at '{{P_PATH}}' (domain: '{{DOMAIN}}').
 
+{{INPUT_SAFETY}}
+
 The tracks have already written their findings to:
   - Structure: {{STRUCTURE_OUT}}
   - Features:  {{FEATURES_OUT}}

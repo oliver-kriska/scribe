@@ -1,5 +1,7 @@
 You are Pass 1 of a two-pass absorb for a dense raw article. Your job is to produce a **plan** — a list of distinct entities, decisions, tools, concepts, or principles in the source. Pass 2 will later write one focused wiki page per entity.
 
+{{INPUT_SAFETY}}
+
 Raw article: {{RAW_FILE}}
 Plan output path: {{PLAN_FILE}}
 

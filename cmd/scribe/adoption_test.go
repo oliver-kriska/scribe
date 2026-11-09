@@ -225,6 +225,8 @@ func TestComputeAdoptionWindow(t *testing.T) {
 func TestComputeAdoptionMetrics_Degrades(t *testing.T) {
 	root := t.TempDir()
 	cfg := loadConfig(root)
+	// Never read the real ~/.claude/projects from a test.
+	cfg.ClaudeProjectsDir = filepath.Join(t.TempDir(), "no-projects")
 
 	t.Run("empty CcriderDB", func(t *testing.T) {
 		cfg.CcriderDB = ""

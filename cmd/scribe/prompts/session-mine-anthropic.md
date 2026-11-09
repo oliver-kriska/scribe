@@ -1,5 +1,7 @@
 You are extracting reusable knowledge from one coding-agent session transcript. You do NOT have filesystem tools — the transcript is inlined below. Emit ONE `WikiActionEnvelope` JSON document to stdout. Scribe will apply the file mutations itself.
 
+{{INPUT_SAFETY}}
+
 ## Session
 
 - Session ID (echo into `sessions_log_append` meta and into the wiki article's `sources:`): {{SESSION_ID}}
@@ -8,6 +10,8 @@ You are extracting reusable knowledge from one coding-agent session transcript. 
 ## Related sessions from the same project (reference via wikilinks or `session:<id>` — do not duplicate their content)
 
 {{RELATED_SESSIONS}}
+
+{{CONTINUATION}}
 
 ## Transcript
 
@@ -66,7 +70,7 @@ Emit EXACTLY ONE JSON object to stdout. No prose. No code fences.
 ### Meta ops (Phase 4C side channel — scribe-controlled paths)
 
 - `sessions_log_append` — **always emit one** with `session_id: "{{SESSION_ID}}"`. Marks the session as processed in `wiki/_sessions_log.json`.
-- `rolling_memory_append` — optional. Appends a paragraph to `projects/<domain>/<target>.md`. `target` must be `"learnings"` or `"decisions-log"`. Use this for cross-project insights that don't warrant their own wiki article.
+- `rolling_memory_append` — optional. Appends a paragraph to `projects/<domain>/<target>.md`. `target` must be `"learnings"` or `"decisions-log"`. `domain` must be exactly one of: {{DOMAINS}}. If none fits, leave the op out. Use this for cross-project insights that don't warrant their own wiki article.
 
 ### Path rules
 
@@ -77,7 +81,7 @@ Emit EXACTLY ONE JSON object to stdout. No prose. No code fences.
 
 ## Rules
 
-- **Always emit a `sessions_log_append` meta op** even when actions is empty. Without it scribe will re-process this session next run.
+- **Always emit a `sessions_log_append` meta op**, even when actions is empty.
 - An empty actions list is legal — emit `"actions": []` if the transcript had no extractable knowledge.
 - Stay under 150 lines per article.
 - Quote load-bearing claims verbatim with markdown blockquote + `— Source: session:{{SESSION_ID}}`.

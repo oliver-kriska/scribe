@@ -20,6 +20,7 @@ type SessionsCmd struct {
 	Unskip             SessionsUnskipCmd             `cmd:"" help:"Re-evaluate skipped entries and remove ones that now pass the pre-filter."`
 	BackfillWatermarks SessionsBackfillWatermarksCmd `cmd:"" name:"backfill-watermarks" help:"Give mined entries from before watermarks one, so the remine pass reads what their mine did not (#146)."`
 	Filter             SessionsFilterCmd             `cmd:"" help:"Preview pre-filter behavior on top triaged sessions."`
+	Requeue            SessionsRequeueCmd            `cmd:"" help:"Forget processed sessions and queue them to be mined again."`
 }
 
 // --- shared helpers ---
@@ -420,6 +421,66 @@ func (c *SessionsUnskipCmd) Run() error {
 		return fmt.Errorf("save sessions log: %w", err)
 	}
 	fmt.Printf("\nReset %d wrongly-skipped sessions for reprocessing.\n", len(toRemove))
+	return nil
+}
+
+// --- sessions requeue ---
+
+// SessionsRequeueCmd undoes "processed" for sessions whose mine came back
+// empty when it should not have (before the empty-envelope fix a bare "{}" reply marked a
+// session processed with nothing written). It removes each ID from
+// _sessions_log.json and appends it to the pending queue, so the next
+// sync mines it again. Find candidates in the sync log:
+//
+//	grep -o 'session envelope [^:]*: applied 0 ' /tmp/scribe-sync.log | awk '{print $3}' | tr -d : | sort -u
+type SessionsRequeueCmd struct {
+	IDs    []string `arg:"" name:"id" help:"Session IDs to mine again."`
+	DryRun bool     `help:"Show what would change without writing." short:"n"`
+}
+
+func (c *SessionsRequeueCmd) Run() error {
+	root, err := kbDir()
+	if err != nil {
+		return err
+	}
+	view, err := loadSessionsLogView(root)
+	if err != nil {
+		return err
+	}
+	queue := pendingSessionsFile()
+	forgot, queued := 0, 0
+	for _, id := range c.IDs {
+		// IDs pasted from a log line often keep its trailing ":" or ",".
+		id = strings.TrimRight(strings.TrimSpace(id), ":,")
+		if id == "" {
+			continue
+		}
+		_, wasProcessed := view.processed[id]
+		inQueue := pendingContainsID(queue, id)
+		fmt.Printf("  %s  processed=%v queued=%v\n", id, wasProcessed, inQueue)
+		if c.DryRun {
+			continue
+		}
+		if wasProcessed {
+			delete(view.processed, id)
+			forgot++
+		}
+		if !inQueue {
+			if err := appendPendingEntry(queue, pendingEntry{ID: id, MsgCount: -1}); err != nil {
+				return fmt.Errorf("queue %s: %w", id, err)
+			}
+			queued++
+		}
+	}
+	if c.DryRun {
+		return nil
+	}
+	if forgot > 0 {
+		if err := view.save(); err != nil {
+			return fmt.Errorf("save sessions log: %w", err)
+		}
+	}
+	fmt.Printf("Forgot %d processed session(s), queued %d for the next sync.\n", forgot, queued)
 	return nil
 }
 

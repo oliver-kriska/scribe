@@ -1,5 +1,7 @@
 You are working in {{KB_DIR}}. Extract knowledge from directory '{{REL_DIR}}' in project '{{PROJECT}}' at '{{P_PATH}}' (domain: '{{DOMAIN}}').
 
+{{INPUT_SAFETY}}
+
 Step 1: Read {{KB_DIR}}/CLAUDE.md for schema and frontmatter conventions.
 Step 2: Read these files: {{FILE_LIST}}
 Step 3: For each piece of extractable knowledge (decisions, patterns, tools, research findings, evaluations, analyses), write or update wiki articles in {{KB_DIR}} following CLAUDE.md frontmatter conventions. Set domain: '{{DOMAIN}}'. Set sources to the original file paths.

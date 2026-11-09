@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 Extract reusable knowledge from a coding-agent session transcript. Emit a `WikiActionEnvelope` v2 with wiki articles + meta operations.
 
+{{INPUT_SAFETY}}
+
 ## Session
 
 - session_id (echo into meta + `sources:`): {{SESSION_ID}}
@@ -10,6 +12,8 @@ Extract reusable knowledge from a coding-agent session transcript. Emit a `WikiA
 ## Related sessions (reference via [[wikilinks]] or `session:<id>`, don't duplicate)
 
 {{RELATED_SESSIONS}}
+
+{{CONTINUATION}}
 
 ## Transcript
 
@@ -50,7 +54,7 @@ SKIP: conversation summaries, routine code changes, transient debug noise.
 - Slug: lowercase, spaces → `-`, strip punctuation, `.md`.
 - Frontmatter required keys: title, type, created: {{TODAY}}, updated: {{TODAY}}, domain, confidence (low|medium|high), tags (≥3 kebab-case), related (array of "[[Title]]" strings), sources (array containing "session:{{SESSION_ID}}").
 - ≤150 lines per article. Quote load-bearing claims as markdown blockquotes ending `— Source: session:{{SESSION_ID}}`.
-- Optional rolling_memory_append: `{"op": "rolling_memory_append", "domain": "<domain>", "target": "learnings", "content": "one paragraph"}`. Target MUST be `learnings` or `decisions-log`. Domain MUST be one already in scribe.yaml.
+- Optional rolling_memory_append: `{"op": "rolling_memory_append", "domain": "<domain>", "target": "learnings", "content": "one paragraph"}`. Target MUST be `learnings` or `decisions-log`. Domain MUST be exactly one of: {{DOMAINS}}. If none fits, leave the op out.
 
 - One topic = one article: never two `create` ops with near-identical titles or slugs. If a relevant article is visible in the context you were given, `append` to it instead of creating a parallel page, and reuse its exact title in `related:` wikilinks.
 - Generic knowledge that almost certainly has a page already (well-known patterns, common tool facts) gets NO new stub — use rolling_memory_append or drop it. Near-duplicate pages split future updates and corrupt contradiction resolution.

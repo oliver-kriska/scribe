@@ -1,5 +1,7 @@
 You are Pass 1 of a chapter-aware two-pass absorb for a long, multi-chapter raw article. Your job is to produce a **plan** for **this single chapter only** — a list of distinct entities, decisions, tools, concepts, or principles that appear in this chapter. A separate plan is generated for each chapter; they will be merged before Pass 2 writes the wiki pages.
 
+{{INPUT_SAFETY}}
+
 You do NOT have filesystem tools. Everything you need is inlined below. Emit ONE JSON document to stdout matching the schema. No prose. No code fences.
 
 ## Source

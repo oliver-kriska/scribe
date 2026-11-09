@@ -612,47 +612,66 @@ entirely:
 # scribe.yaml — top-level llm block routes ALL ops
 llm:
   provider: together
-  model: MiniMaxAI/MiniMax-M3  # the provider's exact model slug, NOT a Claude alias
+  model: MiniMaxAI/MiniMax-M3.1-Flash  # the provider's exact model slug, NOT a Claude alias
   # base_url:                 # only for provider: openai-compat
   # api_key_env: TOGETHER_API_KEY  # per-provider default; SCRIBE_LLM_API_KEY is a generic fallback
   pricing:                    # optional — lets `scribe cost` report dollars
-    "together/MiniMaxAI/MiniMax-M3": { input: 0.30, output: 1.20 }
+    "together/MiniMaxAI/MiniMax-M3.1-Flash": { input: 0.15, output: 0.60 }
 
 sync:
   daily_output_token_ceiling: 2000000   # REQUIRED backstop for any paid provider (see below)
 ```
 
 Use the **exact model id from the provider's catalog** (e.g. Together lists
-`MiniMaxAI/MiniMax-M3`, `zai-org/GLM-5.2`, `deepseek-ai/DeepSeek-V4-Pro`, …) —
+`MiniMaxAI/MiniMax-M3.1-Flash`, `zai-org/GLM-5.3`, `deepseek-ai/DeepSeek-V4.1-Flash`, …) —
 the local ollama tag (`qwen3:30b-a3b`) won't resolve. Any chat model the
 provider hosts works; pick by price/quality. **Watch for non-serverless
 models:** a slug can appear in the catalog yet require a paid dedicated
 endpoint — a plain chat call then returns `model_not_available`. Verify the
 model is *serverless* before pinning it (a one-off `curl` to
-`/v1/chat/completions` is the fastest check).
+`/v1/chat/completions` is the fastest check). Serverless models also get
+**retired**: on 2026-11-07 Together pulled `MiniMaxAI/MiniMax-M3` and every
+call returned `400 endpoint_not_configured`; `scribe doctor` and the run
+records (`status: degraded`/`error`) show it, and the fix is a new slug.
 
-**Hosted-model benchmark (2026-07).** Each model ran scribe's real absorb
-envelope (`prompts/absorb-ollama.md`) in non-streaming `json_object` mode — a
-20-call reliability burst plus a richness probe, on the same source. "Graph
-output" = how well it populates the wiki's `tags:`/`related:` wikilink surface,
-which drives retrieval. Prices are per 1M tokens; **verify current serverless
-availability before pinning — these slugs churn fast.**
+**Current pick (2026-11): `MiniMaxAI/MiniMax-M3.1-Flash`** ($0.15 / $0.60).
+It won the 2026-11-09 benchmark below on quality and price, with no failures of
+its own.
 
-| Model | $/1M (in / out) | Reliability (20 calls) | Latency p50 | Graph output | When to pick |
-| ----- | --------------- | ---------------------- | ----------- | ------------ | ------------ |
-| `MiniMaxAI/MiniMax-M3` | $0.30 / $1.20 | 100% valid JSON+schema, 0% fence/leak/trunc | ~8s | **Richest** — populates `related:[]` links, more tags/sections | **Best quality/$. Recommended.** 1M ctx, GA serverless. |
-| `google/gemini-3.1-flash-lite` (via `openai-compat`) | $0.25 / $1.50 | 100% valid, 0% failure modes | **~2s** | Thin — left `related:[]` empty 8/8 | Fastest + cheapest/call if you don't need dense wiki links. |
-| `google/gemma-4-31B-it` | $0.39 / $0.97 | 100% valid | ~35s | Good | Quality is fine but slow + verbose. |
-| `zai-org/GLM-5.2` | $1.40 / $4.40 | 100% valid | ~5s | Good | Solid, ~4× the price for no quality edge here. |
-| `deepseek-ai/DeepSeek-V4-Pro` | $1.74 / $3.48 | 100% valid | ~11s | Good | Solid, pricey. |
-| `openai/gpt-oss-120b` | $0.15 / $0.60 | 100% valid | ~40s | Over-split (3 pages for 1 topic) | Cheapest sticker, but slow and fragments topics. |
+**Hosted-model benchmark (2026-11-09, Together).** The harness drives scribe's
+real code paths:
+- the shipped prompts, strict `json_schema` and parsers;
+- 6 entities from 4 real absorb plans (pass 2, the bulk of hosted tokens);
+- 6 real coding-agent sessions (session mining).
 
-All six produced valid, schema-clean envelopes — reliability was a wash at
-100%. The real spread is **latency**, **cost**, and **how richly each populates
-the wiki graph**. For a cron pipeline (latency-insensitive) that leans on
-wikilink traversal, `MiniMaxAI/MiniMax-M3` is the quality-per-dollar pick; a
-Google key + `provider: openai-compat` pointing at Gemini's OpenAI endpoint is
-the faster/cheaper alternative if terse output is fine.
+Each was run twice per model. A blind judge
+(Opus) then scored the finalists' pages 1–10 against the source articles, with
+labels shuffled per item. Of the 20 chat models in the price range, 10 were
+callable: the rest are dedicated-endpoint only (`MiniMax-M2.7`,
+`gemma-4-31B-it`, `GLM-4.7`, `Kimi-K2.5-fp4`, `Llama-4-Scout`,
+`Qwen3.5-397B`, …) or streaming-only (`Qwen3.8-Flash`, `Qwen3.7-Plus`),
+which scribe's client does not send.
+
+| Model | $/1M (in / out) | Absorb valid · p50 | Sessions valid · p50 | Blind quality (absorb / sessions) | $ per absorb call | Notes |
+| ----- | --------------- | ------------------ | -------------------- | ------------------------------- | ----------------- | ----- |
+| **`MiniMaxAI/MiniMax-M3.1-Flash`** | $0.15 / $0.60 | 11/11 · 8s | 12/12 · 22s | **8.3 / 7.6** | **$0.0024** | Richest session output (median 4 pages, 10.6k chars). Neither judge found a defect. |
+| `deepseek-ai/DeepSeek-V4.1-Flash` | $0.30 / $1.20 | 11/11 · **4s** | 11/12 · **8s** | 6.8 / 7.4 | $0.0045 | Fastest. One empty placeholder page, one 67 KB runaway reply with no JSON, two misattributions. |
+| `zai-org/GLM-5.3` | $1.40 / $4.40 | 12/12 · 24s | 12/12 · 36s | 7.7 / 6.4 | $0.0202 | Good absorb pages at 8× the price. Session pages invented `sessions/`, `lessons/` and `learnings/` and repeated YAML keys. |
+| `reflection/Beam-1.0-501B-A23B` | $0.40 / $1.20 | 12/12 · 8s | 12/12 · 21s | 6.2 / 5.8 | $0.0082 | Thin pages that quote the source instead of synthesizing it. |
+| `deepseek-ai/DeepSeek-V4-Pro-0813` | $1.32 / $3.96 | 11/12 · 10s | 12/12 · 23s | — | $0.0230 | One unparseable reply. Priciest. |
+| `openai/gpt-oss-120b` | $0.15 / $0.60 | 12/12 · 19s | 12/12 · 29s | — | $0.0029 | Absorb pages with no sections and no wikilinks (median). |
+| `ricursive-ai/Ripple-65B-Preview` | $0.20 / $0.60 | 12/12 · 5s | 12/12 · 8s | — | $0.0031 | Session pages lacked the opening `---` fence (frontmatter valid on 20%). Preview slug. |
+| `nvidia/NVIDIA-Nemotron-3.5-Super-VL` | $0.15 / $0.50 | 12/12 · 37s | 12/12 · 42s | — | $0.0053 | Slow. Frontmatter valid on 67% of session pages. |
+| `meta-models/Muse-Glimmer-30B` | $0.35 / $1.50 | 12/12 · 74s | — | — | $0.0147 | Too slow for cron. |
+| `zai-org/GLM-5.3-Flash` | $0.15 / $0.50 | 8/9 · 118s | — | — | $0.0059 | Minutes per call, plus one unparseable reply. |
+
+"Valid" means the reply parsed into an envelope with at least one action and a
+body. Transient 503s from Together are excluded: three models hit the same blip
+in the same second. Cost is a rounding error at cron volume; reliability and
+page quality decide. On a stalled pipeline, check `scribe doctor` and
+`scribe cost` before switching models: since 2026-07 every hosted failure on
+the reference KB was a retired slug or a schema gap, not a weak model. The
+harness is `cmd/scribe/bench_together_test.go` (build tag `benchtogether`).
 
 Provide the key once in the **user config** (`~/.config/scribe/config.yaml`,
 per-machine, never in the KB) so interactive runs *and* cron pick it up with no

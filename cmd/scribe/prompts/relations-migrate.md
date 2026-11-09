@@ -1,5 +1,7 @@
 You are classifying edges in a personal knowledge base. Each edge points from one article (the *source*) to another article it references (the *target*). Your job is to label the relationship that best describes the edge, drawing only from the closed set provided.
 
+{{INPUT_SAFETY}}
+
 The source article's `type:` field constrains which kinds are allowed. Only emit a kind that appears in the **Allowed kinds** list. If no listed kind clearly fits, emit `null` — that signals "leave the link in untyped `related:`."
 
 ## Allowed kinds (closed set)

@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 You are absorbing one raw article into a wiki. Emit a `WikiActionEnvelope` with one or more `create` actions, one per distinct topic.
 
+{{INPUT_SAFETY}}
+
 ## Source
 
 - Raw article path (echo into `sources:`): {{RAW_FILE}}

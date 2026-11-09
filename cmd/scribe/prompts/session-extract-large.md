@@ -1,5 +1,7 @@
 You are working in {{KB_DIR}}. Read CLAUDE.md for schema and writing standards.
 
+{{INPUT_SAFETY}}
+
 Extract knowledge from this LARGE coding-agent session ({{MESSAGE_COUNT}} messages):
 
 Session ID: {{SESSION_ID}}

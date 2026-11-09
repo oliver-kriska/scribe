@@ -1,5 +1,7 @@
 You are running an absorb pass on one raw article. You do NOT have filesystem tools — the article body is inlined below. Emit ONE `WikiActionEnvelope` JSON document to stdout describing every file you want scribe to write or update. Scribe applies those mutations itself.
 
+{{INPUT_SAFETY}}
+
 ## Source
 
 - Raw article path (for `sources:` frontmatter): {{RAW_FILE}}

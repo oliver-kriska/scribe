@@ -64,8 +64,9 @@ func TestCheckTelemetry(t *testing.T) {
 		wantDetail string
 	}{
 		{
-			name: "no ledger",
-			want: map[string]checkStatus{"dream telemetry": statusOK},
+			name:       "no ledger",
+			want:       map[string]checkStatus{"dream telemetry": statusOK},
+			wantDetail: "no dream runs in the cost ledger",
 		},
 		{
 			name: "pre-0.6.0 rows only",
@@ -73,7 +74,19 @@ func TestCheckTelemetry(t *testing.T) {
 				ledgerRow("2026-11-01", "dream", "sonnet", nil, 0, 0),
 				ledgerRow("2026-11-05", "dream", "sonnet", nil, 0, 0),
 			},
-			want: map[string]checkStatus{"dream telemetry": statusOK},
+			want:       map[string]checkStatus{"dream telemetry": statusOK},
+			wantDetail: "latest dream run 2026-11-05 on anthropic/sonnet (ok) has no telemetry: written before envelope telemetry was recorded",
+		},
+		{
+			// Orchestrator dreams on a hosted provider never carry claude -p
+			// telemetry; the check must not read as "no dream runs".
+			name: "non-claude provider rows only",
+			rows: []CostEntry{
+				{Timestamp: "2026-11-04T01:00:00Z", Provider: "together", Model: "together/M3", Op: "dream", OK: true},
+				{Timestamp: "2026-11-05T02:10:00Z", Provider: "together", Model: "together/M3", Op: "dream-hot", ErrKind: "other"},
+			},
+			want:       map[string]checkStatus{"dream telemetry": statusOK},
+			wantDetail: "latest dream-hot run 2026-11-05 on together/M3 (failed) has no telemetry: envelope telemetry is recorded for claude -p dreams only",
 		},
 		{
 			name: "single telemetry run",
@@ -200,14 +213,18 @@ func TestCheckTelemetry(t *testing.T) {
 			writeLedger(t, root, tc.rows)
 			got := checkTelemetry(root, telemetryNow)
 			names := map[string]checkStatus{}
+			detailFound := tc.wantDetail == ""
 			for _, c := range got {
 				if c.Section != "telemetry" {
 					t.Errorf("check %q has section %q", c.Name, c.Section)
 				}
 				names[c.Name] = c.Status
-				if tc.wantDetail != "" && c.Status == statusWarn && !strings.Contains(c.Detail, tc.wantDetail) {
-					t.Errorf("detail %q lacks %q", c.Detail, tc.wantDetail)
+				if tc.wantDetail != "" && strings.Contains(c.Detail, tc.wantDetail) {
+					detailFound = true
 				}
+			}
+			if !detailFound {
+				t.Errorf("no check detail contains %q: %+v", tc.wantDetail, got)
 			}
 			if len(names) != len(tc.want) {
 				t.Errorf("checks = %v, want %v", got, tc.want)

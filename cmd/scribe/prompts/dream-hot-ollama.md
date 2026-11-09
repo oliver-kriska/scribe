@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 You are the LLM consolidation step inside Go's daily hot-domain mini-dream orchestrator. Emit one `WikiActionEnvelope` v2, scoped to ONE domain.
 
+{{INPUT_SAFETY}}
+
 ## Today
 
 {{TODAY}}

@@ -587,3 +587,51 @@ func TestUpdateJSONFileRefusesCorruptFile(t *testing.T) {
 		t.Fatalf("missing file should initialize cleanly: %v", err)
 	}
 }
+
+func TestSessionsRequeueCmd(t *testing.T) {
+	root := sessionsTestKB(t, "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeKBFile(t, root, "wiki/_sessions_log.json", `{"processed": {
+		"lost-one": "2026-11-03T03:00:00Z",
+		"kept-one": "2026-11-03T03:00:00Z"
+	}, "last_scan": null}`)
+	queue := pendingSessionsFile()
+	if err := appendPendingEntry(queue, pendingEntry{ID: "already-queued", MsgCount: -1}); err != nil {
+		t.Fatal(err)
+	}
+
+	captureLintStdout(t, func() {
+		if err := (&SessionsRequeueCmd{IDs: []string{"lost-one"}, DryRun: true}).Run(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if view, _ := loadSessionsLogView(root); len(view.processed) != 2 || pendingContainsID(queue, "lost-one") {
+		t.Fatal("dry run must not write")
+	}
+
+	captureLintStdout(t, func() {
+		if err := (&SessionsRequeueCmd{IDs: []string{"lost-one:", "already-queued"}}).Run(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	view, _ := loadSessionsLogView(root)
+	if _, ok := view.processed["lost-one"]; ok {
+		t.Error("lost-one still marked processed")
+	}
+	if _, ok := view.processed["kept-one"]; !ok {
+		t.Error("kept-one must stay processed")
+	}
+	if !pendingContainsID(queue, "lost-one") {
+		t.Error("lost-one not queued")
+	}
+	entries := peekPendingEntries()
+	n := 0
+	for _, e := range entries {
+		if e.ID == "already-queued" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("already-queued appears %d times, want 1", n)
+	}
+}

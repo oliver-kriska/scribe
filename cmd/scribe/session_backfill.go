@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -17,7 +18,10 @@ import (
 // watermark its mine most likely reached, so the lane can read the rest:
 //
 //  1. Time: the sequence just before the first message stamped after the
-//     processed time. Scanning in sequence order and stopping at the first
+//     processed time minus --margin. The processed time is stamped when
+//     the mine finished, and ccrider indexes on its own schedule, so the
+//     messages the mine actually read can end well before it; the margin
+//     covers both. Scanning in sequence order and stopping at the first
 //     later message keeps a stray out-of-order timestamp from pulling in
 //     messages that were really added after the mine.
 //  2. What the prompt showed: with a cap (envelope mode), a transcript
@@ -42,10 +46,13 @@ type SessionsBackfillWatermarksCmd struct {
 	Cap    int  `help:"Transcript cap (chars) the old envelope mines used. Default: min(session_mine.transcript_max_chars, 24000)."`
 	// Mode lets a KB that switched session_mine.mode backfill the entries
 	// from before the switch with the rule that mined them.
-	Mode string `enum:",tools,envelope" default:"" help:"Mode the old mines ran in (tools|envelope). Default: the current session_mine.mode. Run between scheduled syncs: the log write is not locked against another process."`
+	Mode string `enum:",tools,envelope" default:"" help:"Mode the old mines ran in (tools|envelope). Default: the current session_mine.mode."`
 	// MinedBefore lets a KB whose cap changed over time backfill in
 	// passes: the older entries with the old cap, then the rest.
 	MinedBefore string `name:"mined-before" help:"Only entries processed before this date (YYYY-MM-DD, UTC)."`
+	// Margin is subtracted from each processed time before the time rule
+	// runs: re-reading a little is duplication, over-claiming is loss.
+	Margin time.Duration `default:"2h" help:"Treat messages stamped within this long before an entry's processed time as unread (the mine ran, and ccrider indexed, before the time was stamped)."`
 }
 
 // backfillMessage is one row of the per-session scan.
@@ -139,15 +146,23 @@ func legacyMinedEntries(processed map[string]any) (ids []string, minedAt map[str
 	return ids, minedAt, unparsable
 }
 
+// backfillOutcome says why deriveBackfill did or did not produce a mark.
+type backfillOutcome int
+
+const (
+	backfillMarked     backfillOutcome = iota
+	backfillNoMessages                 // ccrider has no messages for the session
+	backfillUnmarkable                 // nothing counts as seen and no sequence sits below the first message
+)
+
 // deriveBackfill computes the watermark for one legacy session.
-// found=false when ccrider has no messages for it.
-func deriveBackfill(db *sql.DB, dbPath, sessionID string, minedAt time.Time, capChars int) (backfillResult, bool, error) {
+func deriveBackfill(db *sql.DB, dbPath, sessionID string, minedAt time.Time, capChars int) (backfillResult, backfillOutcome, error) {
 	messages, err := scanBackfillMessages(db, sessionID)
 	if err != nil {
-		return backfillResult{}, false, err
+		return backfillResult{}, backfillNoMessages, err
 	}
 	if len(messages) == 0 {
-		return backfillResult{}, false, nil
+		return backfillResult{}, backfillNoMessages, nil
 	}
 	through, ok := throughSeqAt(messages, minedAt)
 	if !ok {
@@ -158,7 +173,7 @@ func deriveBackfill(db *sql.DB, dbPath, sessionID string, minedAt time.Time, cap
 
 	turns, err := fetchSessionTranscript(dbPath, sessionID)
 	if err != nil {
-		return backfillResult{}, false, err
+		return backfillResult{}, backfillNoMessages, err
 	}
 	shown := make([]sessionTurn, 0, len(turns))
 	for _, t := range turns {
@@ -184,14 +199,14 @@ func deriveBackfill(db *sql.DB, dbPath, sessionID string, minedAt time.Time, cap
 		// that is not positive the entry cannot be marked and is left.
 		mark = mineMark{ThroughSeq: messages[0].Sequence - 1, Partial: true}
 		if mark.ThroughSeq <= 0 {
-			return backfillResult{}, false, nil
+			return backfillResult{}, backfillUnmarkable, nil
 		}
 	}
 	remaining := 0
 	for _, t := range turnsAfter(turns, mark.ThroughSeq) {
 		remaining += len(renderTurn(t))
 	}
-	return backfillResult{ID: sessionID, Mark: mark, Remaining: remaining}, true, nil
+	return backfillResult{ID: sessionID, Mark: mark, Remaining: remaining}, backfillMarked, nil
 }
 
 func (c *SessionsBackfillWatermarksCmd) Run() error {
@@ -203,6 +218,9 @@ func (c *SessionsBackfillWatermarksCmd) Run() error {
 	view, err := loadSessionsLogView(root)
 	if err != nil {
 		return err
+	}
+	if c.Margin < 0 {
+		return errors.New("--margin must not be negative")
 	}
 	ids, minedAt, unparsable := legacyMinedEntries(view.processed)
 	if c.MinedBefore != "" {
@@ -225,39 +243,49 @@ func (c *SessionsBackfillWatermarksCmd) Run() error {
 	defer db.Close()
 
 	var results []backfillResult
-	notInDB := 0
+	noMessages, unmarkable, failed := 0, 0, 0
 	for _, id := range ids {
-		r, found, err := deriveBackfill(db, cfg.CcriderDB, id, minedAt[id], capChars)
+		r, outcome, err := deriveBackfill(db, cfg.CcriderDB, id, minedAt[id].Add(-c.Margin), capChars)
 		if err != nil {
-			return err
-		}
-		if !found {
-			notInDB++
+			// One unreadable session must not cost the others their mark;
+			// it stays unmarked and a later run can retry it.
+			logMsg("sessions", "backfill %s: %v", id, err)
+			failed++
 			continue
 		}
-		results = append(results, r)
+		switch outcome {
+		case backfillMarked:
+			results = append(results, r)
+		case backfillNoMessages:
+			noMessages++
+		case backfillUnmarkable:
+			unmarkable++
+		}
 	}
 
-	partial, withRemainder, remainingChars := 0, 0, 0
-	for _, r := range results {
-		if r.Mark.Partial {
-			partial++
-		}
-		if r.Remaining > 0 {
-			withRemainder++
-			remainingChars += r.Remaining
-		}
-	}
+	q := estimateRemineQueue(cfg.SessionMine, results, func(ids []string) []string {
+		return filterSessionsByScope(root, cfg.CcriderDB, ids)
+	})
 	capNote := "none (tools mode: whole session, or first 50 messages over 300)"
 	if capChars > 0 {
 		capNote = fmt.Sprintf("%d chars", capChars)
 	}
-	fmt.Printf("Legacy mined entries: %d (assumed cap: %s)\n", len(ids), capNote)
-	fmt.Printf("  watermark derived : %d\n", len(results))
-	fmt.Printf("  partial           : %d (unread content the session held at mine time)\n", partial)
-	fmt.Printf("  content past mark : %d sessions, ~%d chars\n", withRemainder, remainingChars)
-	if notInDB > 0 {
-		fmt.Printf("  not markable      : %d (no messages in ccrider, or no sequence to mark before the first; left as they are)\n", notInDB)
+	fmt.Printf("Legacy mined entries: %d (assumed cap: %s, margin: %s)\n", len(ids), capNote, c.Margin)
+	fmt.Printf("  watermark derived : %d (%d partial: unread content the session held at mine time)\n", len(results), q.partial)
+	fmt.Printf("  content past mark : %d sessions, ~%d chars\n", q.withRemainder, q.remainingChars)
+	fmt.Printf("  remine queue      : %d sessions, ~%d chars (in scope, and partial or past remine_min_new_chars)\n", len(q.queued), q.queuedChars)
+	if len(q.queued) > 0 {
+		fmt.Printf("  remine cost       : ~%d LLM calls at transcript_max_chars %d, ~%d sync runs at remine_max_per_run %d\n",
+			q.calls, cfg.SessionMine.TranscriptMaxChars, q.runs, cfg.SessionMine.RemineMaxPerRun)
+	}
+	if noMessages > 0 {
+		fmt.Printf("  not in ccrider    : %d (no messages; left as they are)\n", noMessages)
+	}
+	if unmarkable > 0 {
+		fmt.Printf("  not markable      : %d (no message predates the mine, and none sits below the first sequence; left as they are)\n", unmarkable)
+	}
+	if failed > 0 {
+		fmt.Printf("  read errors       : %d (see stderr; left as they are)\n", failed)
 	}
 	if unparsable > 0 {
 		fmt.Printf("  bad timestamp     : %d (left as they are)\n", unparsable)
@@ -265,31 +293,41 @@ func (c *SessionsBackfillWatermarksCmd) Run() error {
 
 	if c.DryRun {
 		sort.Slice(results, func(i, j int) bool { return results[i].Remaining > results[j].Remaining })
-		fmt.Println("\nLargest remainders:")
+		if len(results) > 0 {
+			fmt.Println("\nLargest remainders:")
+		}
 		for _, r := range results[:min(10, len(results))] {
 			fmt.Printf("  %s  through %d  partial=%v  ~%d chars\n", r.ID, r.Mark.ThroughSeq, r.Mark.Partial, r.Remaining)
 		}
 		return nil
 	}
+	if len(results) == 0 {
+		fmt.Println("\nNothing to write.")
+		return nil
+	}
 
 	written := 0
-	err = updateSessionsLog(filepath.Join(root, "wiki", "_sessions_log.json"), func(data map[string]any) {
-		processed, _ := data["processed"].(map[string]any)
-		if processed == nil {
-			return
-		}
-		for _, r := range results {
-			entry, ok := processed[r.ID]
-			// Re-check under the lock: a sync may have mined it since.
-			if !ok || entryIsSkipped(entry) {
-				continue
+	// Under the sync lock: a running sync rewrites the log as it mines,
+	// and the in-process mutex in updateSessionsLog does not reach it.
+	err = withSyncLock(root, func() error {
+		return updateSessionsLog(filepath.Join(root, "wiki", "_sessions_log.json"), func(data map[string]any) {
+			processed, _ := data["processed"].(map[string]any)
+			if processed == nil {
+				return
 			}
-			if _, has := entryThroughSeq(entry); has {
-				continue
+			for _, r := range results {
+				entry, ok := processed[r.ID]
+				// Re-check: a sync may have mined it since the scan.
+				if !ok || entryIsSkipped(entry) {
+					continue
+				}
+				if _, has := entryThroughSeq(entry); has {
+					continue
+				}
+				processed[r.ID] = withBackfilledMark(entry, minedAt[r.ID], r.Mark)
+				written++
 			}
-			processed[r.ID] = withBackfilledMark(entry, minedAt[r.ID], r.Mark)
-			written++
-		}
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("write sessions log: %w", err)
@@ -297,6 +335,50 @@ func (c *SessionsBackfillWatermarksCmd) Run() error {
 	fmt.Printf("\nWrote watermarks for %d sessions. The remine pass of `sync --sessions` mines what lies past them, %d per run (session_mine.remine_max_per_run).\n",
 		written, cfg.SessionMine.RemineMaxPerRun)
 	return nil
+}
+
+// remineQueueEstimate is what a backfill hands the remine lane.
+type remineQueueEstimate struct {
+	partial, withRemainder, remainingChars int
+	queued                                 []string
+	queuedChars                            int
+	calls, runs                            int
+}
+
+// estimateRemineQueue counts the backfilled sessions the remine lane
+// would actually pick (shouldRemine's size rule, then scope, which is
+// filterSessionsByScope in production) and what draining them costs: a
+// re-mine reads one cap-sized prefix of the remainder per call.
+func estimateRemineQueue(cfg SessionMineConfig, results []backfillResult, scope func([]string) []string) remineQueueEstimate {
+	var q remineQueueEstimate
+	chars := map[string]int{}
+	var eligible []string
+	for _, r := range results {
+		if r.Mark.Partial {
+			q.partial++
+		}
+		if r.Remaining <= 0 {
+			continue
+		}
+		q.withRemainder++
+		q.remainingChars += r.Remaining
+		if r.Mark.Partial || r.Remaining >= cfg.RemineMinNewChars {
+			eligible = append(eligible, r.ID)
+			chars[r.ID] = r.Remaining
+		}
+	}
+	if len(eligible) > 0 {
+		q.queued = scope(eligible)
+	}
+	perCall := max(cfg.TranscriptMaxChars, 1)
+	for _, id := range q.queued {
+		q.queuedChars += chars[id]
+		q.calls += (chars[id] + perCall - 1) / perCall
+	}
+	if perRun := cfg.RemineMaxPerRun; perRun > 0 {
+		q.runs = (q.calls + perRun - 1) / perRun
+	}
+	return q
 }
 
 // withBackfilledMark returns a copy of a legacy entry with the derived

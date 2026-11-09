@@ -1,5 +1,7 @@
 You are working in {{KB_DIR}}. Read CLAUDE.md for schema conventions.
 
+{{INPUT_SAFETY}}
+
 Absorb this raw article into the wiki: {{RAW_FILE}}
 
 The wiki layer exists for **structure** (typed entity pages, wikilinks, backlinks, confidence scoring, cross-references) — not compression. The raw article stays on disk forever and is chunk-indexed by qmd, so retrieval of verbatim claims is always possible from raw. Your job is to make the source **navigable**, not to summarize it down.

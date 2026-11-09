@@ -1,5 +1,7 @@
 You are assessing the STRUCTURE track of project '{{PROJECT}}' at '{{P_PATH}}' (domain: '{{DOMAIN}}').
 
+{{INPUT_SAFETY}}
+
 Your one job: produce a structural map of this project. Nothing else. Other parallel tracks are handling features, docs, decisions, and gaps — do not duplicate their work.
 
 Scope:

@@ -181,3 +181,66 @@ func TestSessionsBackfillWatermarksRun(t *testing.T) {
 		t.Errorf("existing watermark changed: %s", data)
 	}
 }
+
+// --margin moves the time rule back: the answer stamped 30 minutes
+// before the processed time counts as unread under a 45-minute margin.
+func TestSessionsBackfillWatermarksMargin(t *testing.T) {
+	db, dbPath := newCcriderDB(t)
+	root := sessionsTestKB(t, dbPath)
+	mined := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	stamp := func(d time.Duration) string { return mined.Add(d).Format("2006-01-02 15:04:05.999999999 -0700 MST") }
+	row := insertFixtureSession(t, db, "s", "/p", 2, stamp(-time.Hour), stamp(-30*time.Minute), "")
+	for _, m := range []struct {
+		seq int
+		at  time.Duration
+	}{{3, -time.Hour}, {5, -30 * time.Minute}} {
+		//nolint:noctx // test fixture
+		if _, err := db.Exec(`INSERT INTO messages (session_id, type, text_content, sequence, timestamp) VALUES (?, 'user', 'text', ?, ?)`,
+			row, m.seq, stamp(m.at)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logPath := filepath.Join(root, "wiki", "_sessions_log.json")
+	if err := os.WriteFile(logPath, []byte(`{"processed": {"s": "2026-09-01T12:00:00Z"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&SessionsBackfillWatermarksCmd{Margin: 45 * time.Minute}).Run(); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(logPath)
+	var doc struct {
+		Processed map[string]any `json:"processed"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if seq, _ := entryThroughSeq(doc.Processed["s"]); seq != 3 {
+		t.Fatalf("through %d, want 3 (message 5 falls inside the margin): %s", seq, data)
+	}
+}
+
+func TestEstimateRemineQueue(t *testing.T) {
+	cfg := SessionMineConfig{RemineMinNewChars: 1000, TranscriptMaxChars: 400, RemineMaxPerRun: 2}
+	results := []backfillResult{
+		{ID: "big", Mark: mineMark{ThroughSeq: 5}, Remaining: 1000},                   // 3 calls
+		{ID: "partial", Mark: mineMark{ThroughSeq: 5, Partial: true}, Remaining: 100}, // 1 call
+		{ID: "small", Mark: mineMark{ThroughSeq: 5}, Remaining: 999},                  // below min, not partial
+		{ID: "done", Mark: mineMark{ThroughSeq: 5}},                                   // nothing past the mark
+		{ID: "ignored", Mark: mineMark{ThroughSeq: 5}, Remaining: 5000},               // out of scope
+	}
+	q := estimateRemineQueue(cfg, results, func(ids []string) []string {
+		var kept []string
+		for _, id := range ids {
+			if id != "ignored" {
+				kept = append(kept, id)
+			}
+		}
+		return kept
+	})
+	if q.partial != 1 || q.withRemainder != 4 || q.remainingChars != 7099 {
+		t.Errorf("counts: %+v", q)
+	}
+	if len(q.queued) != 2 || q.queuedChars != 1100 || q.calls != 4 || q.runs != 2 {
+		t.Errorf("queue: %+v, want big+partial, 1100 chars, 4 calls, 2 runs", q)
+	}
+}

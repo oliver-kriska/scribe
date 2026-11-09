@@ -1,5 +1,7 @@
 You are assessing the DECISIONS track of project '{{PROJECT}}' at '{{P_PATH}}' (domain: '{{DOMAIN}}').
 
+{{INPUT_SAFETY}}
+
 Your one job: extract the architectural and technical decisions visible in this project. Nothing else. Other parallel tracks are handling structure, features, docs, and gaps — do not duplicate their work.
 
 Scope:
