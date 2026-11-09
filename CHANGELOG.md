@@ -43,6 +43,21 @@ and pass the IDs to `scribe sessions requeue` to mine them again.
   scribe's own prompts) could get the value substituted into it, and the
   unfilled-placeholder guard stripped other `{{NAME}}` text out of it.
   Substitution is now one pass, and the guard only reads the template.
+- **Absorb stops on a model the provider no longer serves.** A retired or
+  non-serverless model fails every article the same way, yet absorb tried
+  each one in turn and logged one failure per article per run: a KB still
+  on a retired Together slug logged about 10,000 a day for three weeks.
+  The hosted provider now marks such a 400 as `ErrModelUnavailable`, and
+  absorb stops on the first one with a single line pointing at
+  `scribe config diff`. scribe runs on the trusted model, so a repo edit
+  that switches models does nothing until it is trusted.
+- **Session mining names the KB's domains.** The session prompts never
+  listed the allowed domains, so the model invented them ("writing",
+  "claude-code") or left them out, and `rolling_memory_append` failed on
+  every one of 10 sessions in a live run. The prompts now list them, and
+  on schema-capable providers the domain is an enum. In the follow-up run
+  invented domains were gone, though some replies still leave the
+  optional domain out.
 
 ### Added
 

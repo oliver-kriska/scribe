@@ -43,7 +43,20 @@ const envelopeEmptyCheckSuffix = "\n\n## CHECK\n\nYour previous response extract
 // escape is meta minItems:1: the sessions_log_append op every reply must
 // carry. Providers without json_schema degrade to json_object or plain
 // text; parseEnvelopeV2's bare-empty check covers them.
-func sessionEnvelopeSchema() jsonSchemaSpec {
+//
+// domains, when non-empty, becomes an enum on meta[].domain: the KB's
+// allow-list, which applyMetaRollingAppend enforces. Without it the model
+// guessed ("writing", "claude-code") or left the field out, and the
+// rolling_memory_append op of most sessions was dropped.
+func sessionEnvelopeSchema(domains []string) jsonSchemaSpec {
+	domain := map[string]any{"type": "string"}
+	if len(domains) > 0 {
+		enum := make([]any, len(domains))
+		for i, d := range domains {
+			enum[i] = d
+		}
+		domain["enum"] = enum
+	}
 	return jsonSchemaSpec{
 		Name: "WikiActionEnvelope",
 		Schema: map[string]any{
@@ -63,7 +76,7 @@ func sessionEnvelopeSchema() jsonSchemaSpec {
 						"properties": map[string]any{
 							"op":         map[string]any{"type": "string"},
 							"session_id": map[string]any{"type": "string"},
-							"domain":     map[string]any{"type": "string"},
+							"domain":     domain,
 							"target":     map[string]any{"type": "string"},
 							"content":    map[string]any{"type": "string"},
 						},
@@ -94,8 +107,11 @@ func sessionEnvelopeSchema() jsonSchemaSpec {
 // after a parse failure, envelopeEmptyCheckSuffix after an empty reply),
 // so the retry is never the identical input the first attempt failed on.
 func runSessionEnvelopeOnce(parent context.Context, provider llmProviderGenerator, opLabel, promptBase, projectPath, sessionID, relatedSessions, transcript string, extraVars map[string]string, timeout time.Duration, suffix string) (WikiActionEnvelope, error) {
+	root := mustKBRoot()
+	domains := kbDomainList(root)
 	vars := map[string]string{
-		"KB_DIR":           mustKBRoot(),
+		"KB_DIR":           root,
+		"DOMAINS":          strings.Join(domains, ", "),
 		"SESSION_ID":       sessionID,
 		"SESSION_ID_LIST":  sessionID,
 		"PROJECT_PATH":     projectPath,
@@ -114,7 +130,7 @@ func runSessionEnvelopeOnce(parent context.Context, provider llmProviderGenerato
 	prompt += suffix
 	callCtx, cancel := context.WithTimeout(withOpLabel(parent, opLabel), timeout)
 	defer cancel()
-	out, err := generateWithSchema(callCtx, provider, prompt, sessionEnvelopeSchema())
+	out, err := generateWithSchema(callCtx, provider, prompt, sessionEnvelopeSchema(domains))
 	if err != nil {
 		return WikiActionEnvelope{}, err
 	}

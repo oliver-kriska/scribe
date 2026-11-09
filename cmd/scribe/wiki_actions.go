@@ -784,6 +784,15 @@ func applyUpdateFrontmatterAction(res *ApplyResult, i int, abs string, a WikiAct
 // for rolling_memory_append. We pull from scribe.yaml + universal
 // domains so a model can't invent a new directory by mis-spelling a
 // domain.
+// kbDomainList is allowedDomainsForRoot as an ordered list (configured
+// domains first, then the universal ones) for prompts and schemas.
+func kbDomainList(root string) []string {
+	if cfg := loadConfig(root); cfg != nil {
+		return cfg.AllDomains()
+	}
+	return append([]string(nil), universalDomains...)
+}
+
 func allowedDomainsForRoot(root string) map[string]bool {
 	out := map[string]bool{}
 	cfg := loadConfig(root)

@@ -53,7 +53,7 @@ You are extracting knowledge from one coding-agent session for the project at `{
 - Allowed `type` values (exactly one): decision, pattern, solution, research, tool, project, idea, person. The directory MUST match the type — decisions/→decision, patterns/→pattern, solutions/→solution, research/→research, tools/→tool, ideas/→idea, people/→person.
 - ≤150 lines per article. Quote claims with `> "..."\n> — Source: session:<id>`.
 - NEVER target a file whose basename starts with `_` (e.g. `_index.md`, `_backlinks.json`, `_absorb_log.json`) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
-- For rolling_memory_append, target must be `learnings` or `decisions-log`.
+- For rolling_memory_append, target must be `learnings` or `decisions-log`, and domain must be exactly one of: {{DOMAINS}}. If none fits, leave the op out.
 
 ## Avoid duplicates
 

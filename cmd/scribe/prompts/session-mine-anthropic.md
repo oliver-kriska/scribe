@@ -68,7 +68,7 @@ Emit EXACTLY ONE JSON object to stdout. No prose. No code fences.
 ### Meta ops (Phase 4C side channel — scribe-controlled paths)
 
 - `sessions_log_append` — **always emit one** with `session_id: "{{SESSION_ID}}"`. Marks the session as processed in `wiki/_sessions_log.json`.
-- `rolling_memory_append` — optional. Appends a paragraph to `projects/<domain>/<target>.md`. `target` must be `"learnings"` or `"decisions-log"`. Use this for cross-project insights that don't warrant their own wiki article.
+- `rolling_memory_append` — optional. Appends a paragraph to `projects/<domain>/<target>.md`. `target` must be `"learnings"` or `"decisions-log"`. `domain` must be exactly one of: {{DOMAINS}}. If none fits, leave the op out. Use this for cross-project insights that don't warrant their own wiki article.
 
 ### Path rules
 

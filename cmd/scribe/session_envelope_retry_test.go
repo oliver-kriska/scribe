@@ -107,3 +107,26 @@ func TestSessionEnvelopeRetry_TwoBareEmptyRepliesFail(t *testing.T) {
 		t.Fatalf("want errBareEmptyEnvelope, got %v", err)
 	}
 }
+
+// The model is told which domains rolling_memory_append may use, and on
+// schema-capable providers the domain is an enum. Before this, the prompt
+// never named them and every live session lost its rolling-memory op to
+// "domain required" or an invented domain.
+func TestSessionEnvelopeNamesAllowedDomains(t *testing.T) {
+	stub := &stubLLM{DefaultReply: envOneAction}
+	if _, err := runRetryForTest(t, stub); err != nil {
+		t.Fatal(err)
+	}
+	if p := stub.Calls()[0].Prompt; !strings.Contains(p, "personal, general") || strings.Contains(p, "{{DOMAINS}}") {
+		t.Fatalf("prompt must list the allowed domains")
+	}
+	meta := sessionEnvelopeSchema([]string{"general"}).Schema["properties"].(map[string]any)["meta"].(map[string]any)
+	dom := meta["items"].(map[string]any)["properties"].(map[string]any)["domain"].(map[string]any)
+	if enum, ok := dom["enum"].([]any); !ok || len(enum) != 1 || enum[0] != "general" {
+		t.Fatalf("want domain enum [general], got %v", dom)
+	}
+	meta = sessionEnvelopeSchema(nil).Schema["properties"].(map[string]any)["meta"].(map[string]any)
+	if _, ok := meta["items"].(map[string]any)["properties"].(map[string]any)["domain"].(map[string]any)["enum"]; ok {
+		t.Fatal("no domains must mean no enum")
+	}
+}
