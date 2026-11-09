@@ -315,9 +315,10 @@ func shouldRemine(c remineCandidate, minNewChars int, quiet time.Duration, now t
 }
 
 // findGrownSessions returns watermarked sessions that pass shouldRemine,
-// in an order that rotates daily (remineOrderKey). Cheap filter first
-// (quiet long enough, from the sessions row), then one indexed
-// per-session sum only for the survivors. The size estimate matches
+// in an order that rotates hourly (remineOrderKey). Cheap filters first
+// (quiet long enough, from the sessions row; any message past the
+// watermark, from MAX(sequence)), then one indexed per-session sum only
+// for the survivors. The size estimate matches
 // renderTranscriptForPrompt: text whole, tool payloads capped at 1200
 // bytes.
 func findGrownSessions(dbPath string, processed map[string]any, cfg SessionMineConfig, now time.Time) ([]grownSession, error) {
