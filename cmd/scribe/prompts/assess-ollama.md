@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 Assess project **{{PROJECT}}** and produce a wiki overview as a single envelope.
 
+{{INPUT_SAFETY}}
+
 ## Project
 
 - name: {{PROJECT}}

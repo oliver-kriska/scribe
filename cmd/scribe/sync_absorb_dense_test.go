@@ -12,6 +12,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -826,5 +827,30 @@ func TestAbsorbRaw_AllEntitiesBodylessLeavesSourceUnabsorbed(t *testing.T) {
 		if strings.Contains(string(data), rawName) {
 			t.Errorf("absorb log stamped %s despite zero pages written — article lost:\n%s", rawName, data)
 		}
+	}
+}
+
+// TestAbsorbRaw_StopsOnModelUnavailable: a model the provider does not
+// serve fails every article the same way. The loop stops after the first
+// one instead of burning a call (and a log line) per queued article.
+func TestAbsorbRaw_StopsOnModelUnavailable(t *testing.T) {
+	root := stubHarnessKB(t, denseAbsorbYAML)
+	longBody := strings.Repeat("knowledge worth keeping flows through this paragraph again and again. ", 12)
+	for _, name := range []string{"2026-06-01-one.md", "2026-06-02-two.md", "2026-06-03-three.md"} {
+		content := "---\ntitle: " + name + "\nsource_url: https://example.invalid/" + name + "\n---\n\n" + longBody
+		if err := os.WriteFile(filepath.Join(root, "raw", "articles", name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stub := &stubLLM{DefaultErr: fmt.Errorf("together http 400: non-serverless model: %w", ErrModelUnavailable)}
+	installStubLLM(t, stub)
+
+	sc := &SyncCmd{Model: "sonnet"}
+	absorbed, err := sc.absorbRaw(root)
+	if err != nil || absorbed != 0 {
+		t.Fatalf("absorbRaw = %d, %v; want 0, nil", absorbed, err)
+	}
+	if n := len(stub.CallsWithOp("absorb-single")); n != 1 {
+		t.Fatalf("absorb-single calls = %d, want 1 (stop on the first dead-model error)", n)
 	}
 }

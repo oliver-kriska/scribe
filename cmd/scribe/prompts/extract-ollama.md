@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 Extract reusable knowledge from project **{{PROJECT}}** (domain `{{DOMAIN}}`) into the knowledge base at `{{KB_DIR}}`.
 
+{{INPUT_SAFETY}}
+
 ## Source
 
 - project: {{PROJECT}}

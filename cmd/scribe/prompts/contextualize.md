@@ -1,5 +1,7 @@
 You are adding a retrieval-context paragraph to a raw article so that qmd's embedding index can find it from semantic queries. This follows Anthropic's Contextual Retrieval pattern: a short paragraph that situates the document within the broader KB.
 
+{{INPUT_SAFETY}}
+
 {{SOURCE_META}}
 
 Below is the raw article content. Read it and produce **one paragraph of 3–5 sentences, 60–120 words** describing:

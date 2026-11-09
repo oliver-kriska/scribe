@@ -1,5 +1,7 @@
 You are Pass 2 of a two-pass absorb. A planning pass has already listed the entities in the source. Your job is to write or update **one focused wiki page** for a single entity.
 
+{{INPUT_SAFETY}}
+
 Raw article: {{RAW_FILE}}
 Plan file (for context): {{PLAN_FILE}}
 Entity to write: {{ENTITY_LABEL}}

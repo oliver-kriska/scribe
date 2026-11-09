@@ -29,6 +29,66 @@ import (
 // much extra wallclock.
 const envelopeCorrectiveSuffix = "\n\n## CORRECTION\n\nYour previous response could not be parsed as a JSON envelope. Output ONLY one JSON object matching the WikiActionEnvelope shape described above. No prose. No markdown fences. No explanation. The object is the entire response.\n"
 
+// envelopeEmptyCheckSuffix is appended to the one retry a session gets
+// when the model returned an envelope with no actions. Sessions reach the
+// miner only after triage scored them as knowledge-rich, and an empty
+// reply is usually the cheap way out, not a reading of the transcript:
+// every scriptorium session re-tested after an empty mine yielded 2-4
+// articles. A session that truly has nothing still comes back empty.
+const envelopeEmptyCheckSuffix = "\n\n## CHECK\n\nYour previous response extracted nothing from this session. Sessions reach you only after a triage pass scored them as knowledge-rich. Re-read the transcript: if it shows any decision with its reasoning, lesson, failure trace, measured result or reusable pattern, extract it now. If it truly has none, return the envelope again with an empty actions list.\n"
+
+// sessionEnvelopeSchema constrains session-mine replies on schema-capable
+// hosted providers. Unlike pass-2, an empty actions list is legal (a
+// session can hold nothing reusable), so the guard against the "{}"
+// escape is meta minItems:1: the sessions_log_append op every reply must
+// carry. Providers without json_schema degrade to json_object or plain
+// text; parseEnvelopeV2's bare-empty check covers them.
+//
+// domains, when non-empty, becomes an enum on meta[].domain: the KB's
+// allow-list, which applyMetaRollingAppend enforces. Without it the model
+// guessed ("writing", "claude-code") or left the field out, and the
+// rolling_memory_append op of most sessions was dropped.
+func sessionEnvelopeSchema(domains []string) jsonSchemaSpec {
+	domain := map[string]any{"type": "string"}
+	if len(domains) > 0 {
+		enum := make([]any, len(domains))
+		for i, d := range domains {
+			enum[i] = d
+		}
+		domain["enum"] = enum
+	}
+	return jsonSchemaSpec{
+		Name: "WikiActionEnvelope",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"version": map[string]any{"type": "integer"},
+				"entity":  map[string]any{"type": "string"},
+				"actions": map[string]any{
+					"type":  "array",
+					"items": wikiActionItemSchema(),
+				},
+				"meta": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"op":         map[string]any{"type": "string"},
+							"session_id": map[string]any{"type": "string"},
+							"domain":     domain,
+							"target":     map[string]any{"type": "string"},
+							"content":    map[string]any{"type": "string"},
+						},
+						"required": []any{"op"},
+					},
+				},
+			},
+			"required": []any{"version", "entity", "actions", "meta"},
+		},
+	}
+}
+
 // runSessionEnvelopeOnce is one call of the envelope-mode mine.
 // Returns the parsed envelope or an error. The caller decides
 // whether to retry, fall back, or accept the partial result.
@@ -43,12 +103,15 @@ const envelopeCorrectiveSuffix = "\n\n## CORRECTION\n\nYour previous response co
 // `scribe cost` output — the legacy tools path already drew this
 // distinction and the envelope path needs to preserve it.
 //
-// corrective=true appends envelopeCorrectiveSuffix to the prompt so
-// retries get a sharper "OUTPUT ONLY JSON" instruction rather than
-// the identical input the first attempt failed on.
-func runSessionEnvelopeOnce(parent context.Context, provider llmProviderGenerator, opLabel, promptBase, projectPath, sessionID, relatedSessions, transcript string, extraVars map[string]string, timeout time.Duration, corrective bool) (WikiActionEnvelope, error) {
+// suffix is appended to the prompt on a retry (envelopeCorrectiveSuffix
+// after a parse failure, envelopeEmptyCheckSuffix after an empty reply),
+// so the retry is never the identical input the first attempt failed on.
+func runSessionEnvelopeOnce(parent context.Context, provider llmProviderGenerator, opLabel, promptBase, projectPath, sessionID, relatedSessions, transcript string, extraVars map[string]string, timeout time.Duration, suffix string) (WikiActionEnvelope, error) {
+	root := mustKBRoot()
+	domains := kbDomainList(root)
 	vars := map[string]string{
-		"KB_DIR":           mustKBRoot(),
+		"KB_DIR":           root,
+		"DOMAINS":          strings.Join(domains, ", "),
 		"SESSION_ID":       sessionID,
 		"SESSION_ID_LIST":  sessionID,
 		"PROJECT_PATH":     projectPath,
@@ -64,12 +127,10 @@ func runSessionEnvelopeOnce(parent context.Context, provider llmProviderGenerato
 	if err != nil {
 		return WikiActionEnvelope{}, fmt.Errorf("load %s prompt: %w", promptBase, err)
 	}
-	if corrective {
-		prompt += envelopeCorrectiveSuffix
-	}
+	prompt += suffix
 	callCtx, cancel := context.WithTimeout(withOpLabel(parent, opLabel), timeout)
 	defer cancel()
-	out, err := generateMaybeJSON(callCtx, provider, prompt)
+	out, err := generateWithSchema(callCtx, provider, prompt, sessionEnvelopeSchema(domains))
 	if err != nil {
 		return WikiActionEnvelope{}, err
 	}
@@ -86,6 +147,49 @@ func runSessionEnvelopeOnce(parent context.Context, provider llmProviderGenerato
 		return WikiActionEnvelope{}, err
 	}
 	return env, nil
+}
+
+// runSessionEnvelopeWithRetry wraps runSessionEnvelopeOnce in the two
+// retries every session miner gets: one corrective retry when the reply
+// does not parse (including the bare "{}"), and one check retry when it
+// parses with no actions. A rate-limit or budget error is returned at
+// once so the caller leaves the session queued. A failed check retry
+// keeps the first, empty answer.
+func runSessionEnvelopeWithRetry(ctx context.Context, provider llmProviderGenerator, opLabel, promptBase, projectPath, sessionID, relatedSessions, transcript string, extraVars map[string]string, timeout time.Duration) (WikiActionEnvelope, error) {
+	once := func(suffix string) (WikiActionEnvelope, error) {
+		return runSessionEnvelopeOnce(ctx, provider, opLabel, promptBase, projectPath, sessionID, relatedSessions, transcript, extraVars, timeout, suffix)
+	}
+	env, err := once("")
+	if err != nil {
+		if isBudgetStop(err) {
+			return env, err
+		}
+		logMsg("sync", "%s envelope %s: first attempt failed (%v) — retrying with corrective prompt", opLabel, sessionID, err)
+		addRunStat("session_envelope_corrective_retries", 1)
+		if env, err = once(envelopeCorrectiveSuffix); err != nil {
+			return env, err
+		}
+	}
+	if len(env.Actions) > 0 {
+		return env, nil
+	}
+	logMsg("sync", "%s envelope %s: no actions — retrying once with an extraction check", opLabel, sessionID)
+	addRunStat("session_envelope_empty_retries", 1)
+	checked, err := once(envelopeEmptyCheckSuffix)
+	switch {
+	case err != nil && isBudgetStop(err):
+		return checked, err
+	case err != nil:
+		logMsg("sync", "%s envelope %s: check retry failed (%v) — keeping the empty answer", opLabel, sessionID, err)
+		return env, nil
+	case len(checked.Actions) > 0:
+		addRunStat("session_envelope_empty_recovered", 1)
+	}
+	return checked, nil
+}
+
+func isBudgetStop(err error) bool {
+	return errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted)
 }
 
 // providerNameFor returns "anthropic" or "ollama" so prompt selection
@@ -132,22 +236,9 @@ func mineSessionEnvelope(ctx context.Context, root, dbPath, sessionID string, pr
 	}
 	projectPath := lookupSessionProjectPath(dbPath, sessionID)
 	timeout := time.Duration(cfg.TimeoutMin) * time.Minute
-	env, err := runSessionEnvelopeOnce(ctx, provider, opLabel, promptBase, projectPath, sessionID, formatRelatedSessions(related), transcript, nil, timeout, false)
+	env, err := runSessionEnvelopeWithRetry(ctx, provider, opLabel, promptBase, projectPath, sessionID, formatRelatedSessions(related), transcript, nil, timeout)
 	if err != nil {
-		if errors.Is(err, ErrRateLimit) || errors.Is(err, ErrDailyBudgetExhausted) {
-			return true, err
-		}
-		// One-shot corrective retry on parse failure (same shape as
-		// pass-2 envelope at sync.go:1851). Anthropic rarely needs it;
-		// local models occasionally wrap the envelope in prose or
-		// markdown fences. The corrective suffix sharpens the
-		// "OUTPUT ONLY JSON" instruction so the retry isn't an
-		// identical-prompt do-over.
-		logMsg("sync", "%s envelope %s: first attempt failed (%v) — retrying with corrective prompt", opLabel, sessionID, err)
-		env, err = runSessionEnvelopeOnce(ctx, provider, opLabel, promptBase, projectPath, sessionID, formatRelatedSessions(related), transcript, nil, timeout, true)
-		if err != nil {
-			return false, err
-		}
+		return isBudgetStop(err), err
 	}
 	// Session-mine writes entities distilled from a transcript — a different
 	// source than any existing curated doc, so it must not overwrite one. A

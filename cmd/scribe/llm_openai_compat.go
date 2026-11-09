@@ -481,6 +481,13 @@ func (p *openaiCompatProvider) doRequest(ctx context.Context, prompt string, opt
 		if resp.Error != nil && resp.Error.Message != "" {
 			msg = resp.Error.Message
 		}
+		code := ""
+		if resp.Error != nil {
+			code = resp.Error.Code
+		}
+		if isModelUnavailable(status, code, msg) {
+			return "", oaiChatResponse{}, fmt.Errorf("%s http %d: %s: %w", p.providerName, status, tailLines(msg, 5), ErrModelUnavailable)
+		}
 		return "", oaiChatResponse{}, fmt.Errorf("%s http %d: %s", p.providerName, status, tailLines(msg, 5))
 	}
 	if resp.Error != nil && resp.Error.Message != "" {
@@ -497,6 +504,27 @@ func (p *openaiCompatProvider) doRequest(ctx context.Context, prompt string, opt
 		logMsg("llm", "%s: output truncated at max_tokens=%d (finish_reason=length) — downstream envelope/JSON parses may fail", p.providerName, reqBody.MaxTokens)
 	}
 	return content, resp, nil
+}
+
+// ErrModelUnavailable means the provider does not serve the configured
+// model at all: retired, or never serverless. Every call fails the same
+// way until the config changes, so loops stop on it instead of failing
+// once per item (enaia-kb's absorb logged ~10k such failures a day for
+// three weeks after Together retired its Qwen3-235B slug).
+var ErrModelUnavailable = errors.New("model not served by provider")
+
+func isModelUnavailable(status int, code, msg string) bool {
+	if status != http.StatusBadRequest && status != http.StatusNotFound {
+		return false
+	}
+	switch code {
+	case "endpoint_not_configured", "model_not_available", "model_not_found":
+		return true
+	}
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "non-serverless model") ||
+		strings.Contains(m, "endpoint_not_configured") ||
+		strings.Contains(m, "model_not_available")
 }
 
 // postChat marshals and sends one request, returning the decoded content,

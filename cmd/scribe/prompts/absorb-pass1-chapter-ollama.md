@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 You are Pass 1 of a chaptered absorb. Read THIS chapter only. List 0–4 distinct entities that warrant their own wiki page.
 
+{{INPUT_SAFETY}}
+
 ## Source metadata (echo back)
 
 - raw_file: {{RAW_FILE}}

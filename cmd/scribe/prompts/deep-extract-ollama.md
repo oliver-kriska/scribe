@@ -2,6 +2,8 @@ OUTPUT ONLY ONE JSON OBJECT. NO PROSE. NO CODE FENCES.
 
 Extract knowledge from one directory of project **{{PROJECT}}**.
 
+{{INPUT_SAFETY}}
+
 ## Source
 
 - project: {{PROJECT}}

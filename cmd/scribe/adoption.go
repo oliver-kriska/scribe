@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// NOTE (2026-11-09): the ccrider scan below is now only the FALLBACK. It
+// can see almost no tool calls (1 of 26,620 assistant rows in a 30-day
+// probe), so it reported 0/0 for months. computeAdoptionMetrics reads
+// Claude Code's raw transcripts first — see adoption_transcripts.go.
+//
 // adoption.go computes the KB-first adoption metric for issue #23: among
 // scoped Claude Code sessions that made at least one "decision" (an
 // Edit/Write/MultiEdit tool call), what fraction queried the KB via qmd
@@ -286,6 +292,25 @@ func computeAdoptionWindow(db *sql.DB, root string, days int) (adoptionWindowRes
 // returns nil, nil (caller skips the runStats fields, matching how other
 // sync phases degrade when ccrider is unavailable).
 func computeAdoptionMetrics(root string, cfg *ScribeConfig) ([]adoptionWindowResult, error) {
+	// Primary source: Claude Code's own transcripts, which keep every
+	// tool call (see adoption_transcripts.go for why ccrider can't).
+	if dirExists(cfg.ClaudeProjectsDir) {
+		var results []adoptionWindowResult
+		now := time.Now()
+		for _, days := range []int{7, 30} {
+			r, ok, err := computeAdoptionFromTranscripts(root, cfg.ClaudeProjectsDir, days, now)
+			if err != nil {
+				logMsg("sync", "adoption metric (%dd, transcripts) failed: %v", days, err)
+				continue
+			}
+			if ok {
+				results = append(results, r)
+			}
+		}
+		if len(results) > 0 {
+			return results, nil
+		}
+	}
 	if cfg.CcriderDB == "" || !fileExists(cfg.CcriderDB) {
 		return nil, nil
 	}

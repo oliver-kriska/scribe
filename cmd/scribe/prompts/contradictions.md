@@ -1,5 +1,7 @@
 You are reviewing a knowledge base for contradictions. You will be given a set of wiki articles. Your job is to identify pairs of articles (or passages inside the same article) that disagree with each other on a factual or decisional claim.
 
+{{INPUT_SAFETY}}
+
 Output format: one finding per line, in this exact shape:
 
 ```

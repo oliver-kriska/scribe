@@ -784,6 +784,15 @@ func applyUpdateFrontmatterAction(res *ApplyResult, i int, abs string, a WikiAct
 // for rolling_memory_append. We pull from scribe.yaml + universal
 // domains so a model can't invent a new directory by mis-spelling a
 // domain.
+// kbDomainList is allowedDomainsForRoot as an ordered list (configured
+// domains first, then the universal ones) for prompts and schemas.
+func kbDomainList(root string) []string {
+	if cfg := loadConfig(root); cfg != nil {
+		return cfg.AllDomains()
+	}
+	return append([]string(nil), universalDomains...)
+}
+
 func allowedDomainsForRoot(root string) map[string]bool {
 	out := map[string]bool{}
 	cfg := loadConfig(root)
@@ -1894,6 +1903,20 @@ func parseEnvelope(jsonText string) (WikiActionEnvelope, error) {
 	return env, nil
 }
 
+// errBareEmptyEnvelope marks a reply that is valid JSON but carries no
+// envelope at all: no version, entity, notes, actions or meta. Every
+// envelope prompt asks for at least version and entity, so "{}" is never
+// an answer. It is the json_object escape (the grammar only demands valid
+// JSON, and "{}" is the cheapest): MiniMax returns it in 1-2s with two
+// completion tokens. Accepted as "nothing to extract", it silently lost
+// 15 of 25 scriptorium session mines (2026-10-27..11-06); all of the
+// sessions re-tested yielded 2-4 articles on a rerun.
+var errBareEmptyEnvelope = errors.New("bare empty envelope ({}): no version, entity, actions or meta")
+
+func isBareEmptyEnvelope(env WikiActionEnvelope) bool {
+	return env.Version == 0 && env.Entity == "" && env.Notes == "" && len(env.Actions) == 0 && len(env.Meta) == 0
+}
+
 // parseEnvelopeV2 is the version-asserting parser for callers that
 // depend on the Meta block (dream / assess / deep / session-mine).
 // It accepts envelopes with version omitted (V1, no Meta — emits a
@@ -1912,6 +1935,9 @@ func parseEnvelopeV2(jsonText, callerLabel string) (WikiActionEnvelope, error) {
 	env, err := parseEnvelopeAllowEmpty(jsonText)
 	if err != nil {
 		return env, err
+	}
+	if isBareEmptyEnvelope(env) {
+		return env, errBareEmptyEnvelope
 	}
 	const maxKnownVersion = 2
 	switch {

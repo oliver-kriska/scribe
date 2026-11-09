@@ -437,3 +437,31 @@ func TestNewLLMProviderRoutesHosted(t *testing.T) {
 		}
 	}
 }
+
+// A retired or non-serverless model is a config problem, not a per-item
+// failure: the error wraps ErrModelUnavailable so loops can stop on it.
+func TestOpenAICompatModelUnavailable(t *testing.T) {
+	cases := []struct {
+		name string
+		body map[string]any
+		want bool
+	}{
+		{"together non-serverless", map[string]any{"error": map[string]string{"message": "Unable to access non-serverless model Qwen/X. Please visit ...", "code": "model_not_available"}}, true},
+		{"endpoint not configured", map[string]any{"error": map[string]string{"message": "endpoint_not_configured", "code": ""}}, true},
+		{"other 400", map[string]any{"error": map[string]string{"message": "max_tokens too large"}}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(tc.body)
+			}))
+			defer srv.Close()
+			p := &openaiCompatProvider{providerName: "together", baseURL: srv.URL + "/v1", apiKey: "k", model: "m"}
+			_, err := p.Generate(context.Background(), "hi")
+			if err == nil || errors.Is(err, ErrModelUnavailable) != tc.want {
+				t.Fatalf("err=%v, want ErrModelUnavailable=%v", err, tc.want)
+			}
+		})
+	}
+}

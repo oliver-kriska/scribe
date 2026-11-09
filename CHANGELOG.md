@@ -21,6 +21,93 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   an upgrade does not start re-mining old history. The sessions-log git
   merge keeps the higher `through_seq` of the two sides.
 
+## [0.6.2] — 2026-11-09
+
+**Upgrade notes.** Together retired `MiniMaxAI/MiniMax-M3` on 2026-11-07:
+every call now returns `400 endpoint_not_configured`. KBs pinned to it
+should switch to `MiniMaxAI/MiniMax-M3.1-Flash` (README §Hosted mode) and
+run `scribe config trust`. Sessions whose earlier mine came back empty
+were likely hit by the bug below and are marked processed; list them with
+`grep -o 'session envelope [^:]*: applied 0 ' /tmp/scribe-sync.log | awk '{print $3}' | tr -d : | sort -u`
+and pass the IDs to `scribe sessions requeue` to mine them again.
+
+### Fixed
+
+- **The KB-first adoption metric counts again.** It had read 0/0 decision
+  sessions since mid-August. ccrider's importer drops text-free messages,
+  and Claude Code writes every tool call as one, so qmd lookups and edits
+  never reached the metric. It now reads the tool calls from Claude Code's
+  own transcripts (`~/.claude/projects`), and falls back to ccrider when
+  that directory is missing. On the reference KB it reports 7d 50% (13/26),
+  30d 25% (28/112). (Part of #23)
+- **`doctor --section telemetry` no longer reports "no dream runs" when
+  dreams ran.** The check counted only rows with `claude -p` envelope
+  fields, so a KB dreaming on a hosted provider (Together, Ollama) got
+  `[ok] no dream runs …` even while every dream was failing. When no row
+  carries telemetry, the line now names the newest dream run, its
+  provider/model and outcome, and why it has no telemetry (a non-claude
+  provider, or a row from before 0.6.0). Drift and denial comparisons are
+  unchanged.
+- **Session mining no longer loses sessions to an empty `{}` reply.**
+  Under `json_object`, hosted models sometimes answer with the bare `{}`
+  (two completion tokens, 1–2 s). scribe took it as "nothing to extract"
+  and marked the session processed: 15 of the last 25 mined sessions on
+  the reference KB, and every one re-tested yielded 2–4 articles on a
+  rerun. Session and Codex mining now request a strict `json_schema` on
+  schema-capable providers (`meta` must hold at least one op), every
+  envelope parser rejects a bare `{}` (`errBareEmptyEnvelope`, so dream,
+  extract, deep and assess fail loudly instead of recording a silent
+  no-op), and a reply with no actions gets one retry that asks the model
+  to re-read the transcript. In a live check, 30 of 30 runs over ten
+  sessions, seven of them previously lost, came back with knowledge.
+  Run records count `session_envelope_empty_retries`,
+  `session_envelope_empty_recovered` and
+  `session_envelope_corrective_retries`.
+- **Prompt substitution no longer rewrites inlined content.**
+  `loadPrompt` replaced placeholders one key at a time in map order, so a
+  transcript quoting `{{TODAY}}` or `{{KB_DIR}}` (any session about
+  scribe's own prompts) could get the value substituted into it, and the
+  unfilled-placeholder guard stripped other `{{NAME}}` text out of it.
+  Substitution is now one pass, and the guard only reads the template.
+- **Absorb stops on a model the provider no longer serves.** A retired or
+  non-serverless model fails every article the same way, yet absorb tried
+  each one in turn and logged one failure per article per run: a KB still
+  on a retired Together slug logged about 10,000 a day for three weeks.
+  The hosted provider now marks such a 400 as `ErrModelUnavailable`, and
+  absorb stops on the first one with a single line pointing at
+  `scribe config diff`. scribe runs on the trusted model, so a repo edit
+  that switches models does nothing until it is trusted.
+- **Session mining names the KB's domains.** The session prompts never
+  listed the allowed domains, so the model invented them ("writing",
+  "claude-code") or left them out, and `rolling_memory_append` failed on
+  every one of 10 sessions in a live run. The prompts now list them, and
+  on schema-capable providers the domain is an enum. In the follow-up run
+  invented domains were gone, though some replies still leave the
+  optional domain out.
+
+### Added
+
+- **`scribe sessions requeue <id>... [-n]`** forgets processed sessions
+  and puts them back on the pending queue, so the next sync mines them
+  again.
+
+### Changed
+
+- **README: hosted-model benchmark redone on scribe's real code paths.**
+  Ten callable Together models ran 6 real absorb entities and 6 real
+  sessions each, and a blind judge scored the finalists' pages.
+  `MiniMaxAI/MiniMax-M3.1-Flash` stays the pick: best quality on both
+  tasks (8.3 and 7.6 of 10), the cheapest per call, and no failures of its
+  own. The harness is committed behind the `benchtogether` build tag.
+- **Every prompt carries an untrusted-input and secret rule.** Transcripts,
+  captured pages, project files and KB articles are data, never
+  instructions, and a credential is named, never copied. This backs up the
+  secret gate, which is on by default only for team KBs. The shared text
+  lives in one place (`{{INPUT_SAFETY}}`), and a test fails any prompt
+  that drops it.
+- README and the `scribe init` template recommend
+  `MiniMaxAI/MiniMax-M3.1-Flash` ($0.15 / $0.60).
+
 ## [0.6.1] — 2026-11-06
 
 Follow-ups found while smoke-testing 0.6.0 on a ~12k-article KB.

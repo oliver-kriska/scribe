@@ -30,7 +30,11 @@ func loadDreamPromptForTest(t *testing.T, name string) string {
 		t.Fatalf("read %s: %v", name, err)
 	}
 	for _, ph := range promptPlaceholderRE.FindAllString(string(raw), -1) {
-		if v := strings.Trim(ph, "{}"); !slices.Contains(vars, v) {
+		v := strings.Trim(ph, "{}")
+		if _, shared := sharedPromptVars[v]; shared {
+			continue // loadPrompt fills these itself
+		}
+		if !slices.Contains(vars, v) {
 			t.Errorf("%s uses %s, which its loader never passes", name, ph)
 		}
 	}

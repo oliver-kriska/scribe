@@ -1,5 +1,7 @@
 You are Pass 2 of a two-pass absorb running in **JSON-envelope mode**. You do NOT have filesystem tools. Everything you need is inlined below. You will emit ONE JSON document — a `WikiActionEnvelope` — to stdout. Scribe parses that envelope and applies the file mutations itself.
 
+{{INPUT_SAFETY}}
+
 ## Entity to write
 
 - Label: {{ENTITY_LABEL}}
