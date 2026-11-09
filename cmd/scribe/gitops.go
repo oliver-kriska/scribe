@@ -158,7 +158,7 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 		// leaves the repo mid-rebase with conflict markers on disk.
 		resolved, rErr := autoResolveDerivedConflicts(repoPath)
 		if resolved {
-			logMsg("git", "pull conflict on derived file(s) auto-resolved — content regenerates after pull")
+			logMsg("git", "pull conflicts auto-resolved (per-file lines above)")
 			invalidateRepoTrackedCache()
 			afterSHA := gitSHA(repoPath)
 			return true, beforeSHA != "" && afterSHA != "" && beforeSHA != afterSHA, nil
@@ -229,6 +229,7 @@ func autoResolveDerivedConflicts(repoPath string) (bool, error) {
 					_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
 					return false, fmt.Errorf("semantic merge of %s failed (rebase aborted)", f)
 				}
+				logMsg("git", "pull conflict in %s: merged both sides", f)
 				continue
 			}
 			// Either side works — the file regenerates right after the
@@ -237,12 +238,14 @@ func autoResolveDerivedConflicts(repoPath string) (bool, error) {
 			// so fall back to removing (regeneration recreates it).
 			if _, err := runCmdErr(repoPath, "git", "checkout", "--theirs", "--", f); err != nil {
 				_, _ = runCmdErr(repoPath, "git", "rm", "-q", "--", f)
+				logMsg("git", "pull conflict in %s: removed (regenerates after pull)", f)
 				continue
 			}
 			if _, err := runCmdErr(repoPath, "git", "add", "--", f); err != nil {
 				_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
 				return false, fmt.Errorf("staging %s during auto-resolve failed: %w (rebase aborted)", f, err)
 			}
+			logMsg("git", "pull conflict in %s: kept local side (regenerates after pull)", f)
 		}
 		// A resolution identical to the upstream side empties the
 		// replayed commit; `rebase --continue` refuses an empty commit,

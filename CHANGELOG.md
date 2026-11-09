@@ -24,6 +24,17 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Fixed
 
+- **Team KBs no longer stall on five shared `wiki/_` files** (#153).
+  `wiki/_contextualized_log.json` and `wiki/_absorb_log.json` union their
+  entries (newer wins per key), `wiki/_extraction_outcomes.json` unions
+  its entries oldest first, and `wiki/_duplicates.md` /
+  `wiki/_identity-proposals.md` resolve as regenerable reports. Before,
+  two members writing one of them between pulls aborted the rebase on
+  every later sync until someone merged by hand. Contextualize also stops
+  re-stamping already-logged raw articles, which changed the log (and
+  conflicted) on every run. Each auto-resolved pull conflict now logs one
+  line naming the file and whether both sides were merged or one was kept.
+
 - **A mined session is no longer frozen at the moment it was mined
   (#146).** Sessions are admitted while still open, and envelope mode (and
   the tools-mode large prompt) never showed the model the middle of a long
