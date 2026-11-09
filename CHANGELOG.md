@@ -55,6 +55,22 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   an upgrade does not start re-mining old history. The sessions-log git
   merge keeps the higher `through_seq` of the two sides.
 
+- **The dream consolidates again.** On the reference KB, every weekly and
+  daily dream since at least 2026-10-26 applied only its log line. It saw
+  the 40 newest articles, which by construction are never stale, plus
+  contradiction pairs from elsewhere in the KB, as metadata only, so it
+  never had grounds to act. Each run now gets up to 4 *focus pairs* (2 for
+  `--hot`), with bounded body excerpts. Go picks them from near-duplicate
+  bodies (the `lint --duplicates` detector), then from same-type articles
+  sharing two or more specific tags. Pairs reviewed in the last 60 days
+  are skipped (`output/dream-focus-reviewed.json`). The model may mark one
+  side of a duplicate pair `status: superseded`; Go enforces that and adds
+  the `related` link to the kept article, keeping existing links. It may
+  also append a conflict note to an overlapping pair. It no longer rewrites
+  bodies it never saw. New run-record fields `dream_focus_pairs`,
+  `dream_content_actions` and `dream_superseded` show whether a run changed
+  anything. `envelope_actions_applied` read 1 on every no-op run.
+
 ## [0.6.2] — 2026-11-09
 
 **Upgrade notes.** Together retired `MiniMaxAI/MiniMax-M3` on 2026-11-07:

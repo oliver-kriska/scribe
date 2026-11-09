@@ -327,7 +327,7 @@ func TestCollectContentDocsSkipsSupersededArticles(t *testing.T) {
 
 // The orchestrator and hot dreams build their packets from these samplers.
 // A superseded record is kept on purpose, so it must not be offered as a
-// stale (decay) candidate, a contradiction candidate or an inventory row.
+// stale (decay) candidate or an inventory row (dream focus pairs: dream_focus_test.go).
 func TestDreamSamplersSkipSupersededArticles(t *testing.T) {
 	root := t.TempDir()
 	writeKBFile(t, root, "wiki/live.md", "---\ntitle: Live Note\ntype: pattern\ndomain: general\ntags: [shared]\nupdated: 2020-01-01\n---\n\nbody\n")
@@ -339,9 +339,6 @@ func TestDreamSamplersSkipSupersededArticles(t *testing.T) {
 	}
 	if stale := dreamStaleCandidates(root, "", 60); strings.Contains(stale, "wiki/old.md") || !strings.Contains(stale, "wiki/live.md") {
 		t.Errorf("stale candidates should list live articles only: %q", stale)
-	}
-	if contra := dreamContradictionCandidates(root, ""); strings.Contains(contra, "Old Note") || !strings.Contains(contra, "Live Note") {
-		t.Errorf("contradiction candidates should list live articles only: %q", contra)
 	}
 }
 

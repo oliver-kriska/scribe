@@ -252,19 +252,6 @@ func TestDreamSamplers_DomainScoping(t *testing.T) {
 	if !strings.Contains(allStale, "wiki/personal-a.md") {
 		t.Errorf("full stale (domain=\"\") missing personal-a.md: %q", allStale)
 	}
-
-	// dreamContradictionCandidates
-	toolsContra := dreamContradictionCandidates(root, "tools")
-	if !strings.Contains(toolsContra, "Tools A") || !strings.Contains(toolsContra, "Tools B") {
-		t.Errorf("tools contradictions missing entries: %q", toolsContra)
-	}
-	if strings.Contains(toolsContra, "Personal A") {
-		t.Errorf("tools contradictions leaked personal domain: %q", toolsContra)
-	}
-	allContra := dreamContradictionCandidates(root, "")
-	if !strings.Contains(allContra, "Personal A") {
-		t.Errorf("full contradictions (domain=\"\") missing Personal A: %q", allContra)
-	}
 }
 
 // ---- 5.6 commitDreamCycle runStats regression ----
