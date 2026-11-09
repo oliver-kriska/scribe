@@ -6,6 +6,20 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Added
 
+- **Scheduled runs can use a long-lived Claude token** (#149). Put a
+  `claude setup-token` value under `integration_tokens.claude` in
+  `~/.config/scribe/config.yaml` (or export `SCRIBE_CLAUDE_TOKEN`), and
+  scribe passes it to every `claude -p` call as
+  `CLAUDE_CODE_OAUTH_TOKEN`. LaunchAgents run `zsh -lc`, which does not
+  read `~/.zshrc`, so a token exported there never reached cron runs, and
+  an expired keychain login failed every LLM step. An exported
+  `CLAUDE_CODE_OAUTH_TOKEN` still wins; with no token, claude keeps using
+  its keychain login.
+- **A failed `claude -p` names the reason** (#149). The envelope's result
+  text ("Failed to authenticate: OAuth session expired…") now leads the
+  error, so run records and `scribe doctor` show it instead of a bare
+  `exit status 1` followed by a truncated JSON line.
+
 - **`scribe sessions backfill-watermarks [-n] [--cap N] [--mode
   tools|envelope] [--mined-before YYYY-MM-DD]`** (#146) gives entries mined before watermarks existed the
   watermark their mine most likely reached, so the remine pass can read

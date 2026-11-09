@@ -178,6 +178,7 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd.Env = claudeCommandEnv()
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
@@ -235,7 +236,7 @@ func (a *anthropicProvider) Generate(ctx context.Context, prompt string) (string
 			StdoutTail:  tailLines(stdoutStr, 50),
 		})
 		tail := tailLines(combined, 15)
-		return tail, fmt.Errorf("claude -p: %w\n%s", err, tail)
+		return tail, claudeFailure(err, env, envOK, tail)
 	}
 
 	if envOK {

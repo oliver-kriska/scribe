@@ -145,6 +145,39 @@ func claudeArgs(root, model string, tools []string) []string {
 	return args
 }
 
+// claudeOAuthTokenVar is the env var the claude CLI reads a long-lived
+// `claude setup-token` token from.
+const claudeOAuthTokenVar = "CLAUDE_CODE_OAUTH_TOKEN" //nolint:gosec // env var name, not a credential
+
+// claudeCommandEnv returns the environment for a `claude -p` child, or nil
+// to inherit scribe's own. LaunchAgents run `zsh -lc`, which skips
+// ~/.zshrc, so a token exported there doesn't reach cron runs; integration_tokens.claude
+// in the per-machine user config (or SCRIBE_CLAUDE_TOKEN) does. An
+// exported CLAUDE_CODE_OAUTH_TOKEN always wins. With no token at all,
+// claude keeps using its keychain login.
+func claudeCommandEnv() []string {
+	if os.Getenv(claudeOAuthTokenVar) != "" {
+		return nil
+	}
+	token := integrationToken("claude")
+	if token == "" {
+		return nil
+	}
+	return append(os.Environ(), claudeOAuthTokenVar+"="+token)
+}
+
+// claudeFailure builds the error for a non-zero `claude -p` exit. The
+// error envelope's result text ("Failed to authenticate: …"), flattened
+// to one line, goes first: the tail behind it is one long JSON line, and
+// run records and doctor truncate long before the result field.
+func claudeFailure(err error, env claudeResultEnvelope, envOK bool, tail string) error {
+	reason := strings.Join(strings.Fields(env.Result), " ")
+	if envOK && env.IsError && reason != "" {
+		return fmt.Errorf("claude -p: %w: %s\n%s", err, truncateBytes(reason, 300), tail)
+	}
+	return fmt.Errorf("claude -p: %w\n%s", err, tail)
+}
+
 func realRunClaude(ctx context.Context, root, prompt, model string, tools []string, timeout time.Duration) (string, error) {
 	// Daily metered output-token ceiling: read once per call so a
 	// long-running absorb that crosses the ceiling mid-run aborts at
@@ -189,6 +222,7 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = root
+	cmd.Env = claudeCommandEnv()
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
@@ -250,7 +284,7 @@ func realRunClaude(ctx context.Context, root, prompt, model string, tools []stri
 			StderrTail:  tailLines(stderrStr, 50),
 			StdoutTail:  tailLines(stdoutStr, 50),
 		})
-		return tailLines(combined, 15), fmt.Errorf("claude -p: %w\n%s", err, tailLines(combined, 15))
+		return tailLines(combined, 15), claudeFailure(err, env, envOK, tailLines(combined, 15))
 	}
 
 	// Try to parse the JSON envelope. claude -p --output-format json

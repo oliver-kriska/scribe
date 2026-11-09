@@ -738,10 +738,13 @@ llm_api_key: tok-xxxxxxxx          # single key, covers whichever provider llm.p
 #   together: tok-aaaa
 #   groq:     gsk_bbbb
 
-# Pull-adapter API tokens (Pinboard, …). Same rule as the LLM key: lives here,
+# Pull-adapter API tokens (Pinboard, …), and a `claude setup-token` token that
+# every `claude -p` call gets as CLAUDE_CODE_OAUTH_TOKEN, so cron keeps working
+# after the keychain login expires. Same rule as the LLM key: lives here,
 # never in a KB's scribe.yaml, so it can't be committed to a shared KB.
 # integration_tokens:
 #   pinboard: "username:HEXTOKEN"  # from pinboard.in/settings/password
+#   claude: "sk-ant-oat01-…"       # from `claude setup-token`; an exported CLAUDE_CODE_OAUTH_TOKEN wins
 ```
 
 Resolution order is **env var → this file**: the per-provider env var (or the one `llm.api_key_env` names), then `SCRIBE_LLM_API_KEY`, then `llm_api_keys[<provider>]`, then `llm_api_key`. A one-off `export GROQ_API_KEY=…` still wins, but with the key in this file nothing needs exporting (this is what makes cron work without touching `~/.zshenv`). `chmod 600` it. The key never goes in a KB's `scribe.yaml`.
@@ -753,6 +756,7 @@ Resolution order is **env var → this file**: the per-provider env var (or the 
 | `SCRIBE_KB`                | Override KB root for one command (`-C/--root` wins over it; both win over the cwd walk and `kb_dir`)                      |
 | `SCRIBE_SELF_CHAT_ID`      | Replaces `capture.self_chat_handles` (comma-separated, for accounts with phone + Apple-ID email)                          |
 | `SCRIBE_PINBOARD_TOKEN`    | Pinboard API token (`username:HEXTOKEN`) for `scribe pull pinboard`; overrides `integration_tokens.pinboard`             |
+| `SCRIBE_CLAUDE_TOKEN`      | `claude setup-token` token passed to `claude -p` as `CLAUDE_CODE_OAUTH_TOKEN`; overrides `integration_tokens.claude`      |
 | `SCRIBE_SKIP_REINDEX`      | Skip the final `qmd` reindex (useful in tests / CI)                                                                       |
 | `SCRIBE_PROJECT_ROOTS`     | Extra colon-separated parent dirs treated as project roots, added to the built-in `Projects:projects:src:code:repos:work` |
 | `SCRIBE_PASS2_MODE`        | Override `absorb.pass2_mode` (`tools` or `json`) for one run without editing scribe.yaml                                  |
