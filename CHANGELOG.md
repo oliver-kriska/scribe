@@ -91,14 +91,22 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
     separator-only retitle broke them). The new title becomes an alias.
   - restores `status`, `contributor`, `index_tier` and `authority` when the
     new page omits them, so a dream supersede survives re-absorb.
-  - re-adds `## ` sections the new page dropped and doesn't cover
+  - can re-add `## ` sections the new page dropped and doesn't cover
     elsewhere (under half of the section's word trigrams found in the new
-    body). They go at the end, marked `<!-- scribe:carried DATE -->`, at
-    most 8 KB per overwrite, and every carry is logged. Rolling pages are
-    exempt, since compaction archives their old entries on purpose.
+    body). This is `absorb.carry_sections`, and it defaults to `report`:
+    it logs "would carry" and writes nothing. Set it to `on` to write them.
+    Carried sections are marked `<!-- scribe:carried DATE -->` and placed
+    before a trailing Sources / See Also block, with at most 8 KB of new
+    and 8 KB of earlier carries per overwrite. Rolling pages are exempt,
+    since compaction archives their old entries on purpose.
 
-  Replayed against the reference KB's 178 shrinking rewrites, this kept
-  502 sections on 122 pages that were deleted.
+  Replayed against the reference KB's 178 shrinking rewrites, section
+  carry would have restored 502 sections on 122 pages. In a hand-classified
+  sample of 20 of them, 10 were real losses, 4 were already covered under
+  another heading, 2 were stale (the new page corrected them) and 4 were
+  unclear. That's why it's opt-in. These guards cover the JSON pass-2 and
+  single-pass paths. Tools-mode pass-2 (`claude -p` writing files itself)
+  doesn't go through them.
 
 ## [0.6.2] — 2026-11-09
 

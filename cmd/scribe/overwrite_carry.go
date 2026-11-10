@@ -38,10 +38,19 @@ const (
 // (tier write / lint). Each is restored only when the new page lacks it.
 var carriedScalarKeys = []string{"status", "contributor", "index_tier", "authority"}
 
+// Section-carry modes (absorb.carry_sections in scribe.yaml).
+const (
+	carrySectionsReport = "report" // log what would be re-added; write nothing (default)
+	carrySectionsOn     = "on"
+	carrySectionsOff    = "off"
+)
+
 // carryOnOverwrite applies every overwrite guard. abs is the page being
 // replaced; content is the model's new page. A fresh create (no file at
-// abs) passes through untouched.
-func carryOnOverwrite(i int, abs, content string) string {
+// abs) passes through untouched. Title, related and scalar carry always
+// run; section carry follows opts.CarrySections. In a dry run every log
+// line says "would".
+func carryOnOverwrite(i int, abs, content string, opts ApplyOptions) string {
 	existing, err := os.ReadFile(abs)
 	if err != nil {
 		return content
@@ -51,14 +60,24 @@ func carryOnOverwrite(i int, abs, content string) string {
 		return content
 	}
 	name := filepath.Base(abs)
+	if opts.DryRun {
+		name += " (dry run, would)"
+	}
 	content = carryRelatedOnOverwrite(i, abs, content)
 	content = carryTitleOnOverwrite(i, name, old, content)
 	content = carryScalarsOnOverwrite(i, name, existing, content)
 	// Rolling pages (learnings, decisions-log) shed old entries on purpose:
 	// rolling compaction moves them to an archive file. Re-adding them would
 	// undo the compaction and duplicate the archive.
-	if !old.Rolling {
-		content = carrySectionsOnOverwrite(i, name, string(existing), content)
+	mode := opts.CarrySections
+	if mode == "" {
+		mode = carrySectionsReport
+	}
+	if !old.Rolling && mode != carrySectionsOff {
+		carried := carrySectionsOnOverwrite(i, name, string(existing), content, mode == carrySectionsReport)
+		if mode == carrySectionsOn {
+			content = carried
+		}
 	}
 	return content
 }
@@ -85,8 +104,15 @@ func carryTitleOnOverwrite(i int, name string, old *Frontmatter, content string)
 	content = setFrontmatterList(content, "aliases", aliases)
 	if span, err := frontmatterSpan(content); err == nil {
 		body := content[span.BodyStart:]
-		if h1 := "# " + newTitle; strings.HasPrefix(body, h1+"\n") || strings.Contains(body, "\n"+h1+"\n") {
-			content = content[:span.BodyStart] + strings.Replace(body, h1+"\n", "# "+oldTitle+"\n", 1)
+		h1 := "# " + newTitle + "\n"
+		at := -1
+		if strings.HasPrefix(body, h1) {
+			at = 0
+		} else if j := strings.Index(body, "\n"+h1); j >= 0 {
+			at = j + 1 // the real line start, never a "## X" or "### X" suffix
+		}
+		if at >= 0 {
+			content = content[:span.BodyStart] + body[:at] + "# " + oldTitle + "\n" + body[at+len(h1):]
 		}
 	}
 	logMsg("envelope", "action[%d] create %s: kept title %q (new title %q kept as an alias)", i, name, oldTitle, newTitle)
@@ -118,11 +144,14 @@ func carryScalarsOnOverwrite(i int, name string, existing []byte, content string
 // new body drops and does not cover. A section counts as covered, and is
 // not re-added, when its heading survives or at least
 // carrySectionCovered of its word trigrams appear in the new body (the
-// model merged it under another heading). Re-added sections go at the
-// end, each marked with a dated scribe:carried comment, up to
-// carrySectionMaxBytes per overwrite. Every carry and every skip-for-cap
-// is logged.
-func carrySectionsOnOverwrite(i int, name, existing, content string) string {
+// model merged it under another heading). Re-added sections are marked
+// with a dated scribe:carried comment and go at the end, before a
+// trailing Sources / See Also / References block. Sections carried by an
+// earlier overwrite and newly dropped ones each get their own
+// carrySectionMaxBytes budget, so old carries can't starve new losses.
+// Every carry and every skip-for-cap is logged; reportOnly logs "would
+// carry" and the caller discards the result.
+func carrySectionsOnOverwrite(i int, name, existing, content string, reportOnly bool) string {
 	oldSpan, err := frontmatterSpan(existing)
 	if err != nil {
 		return content
@@ -140,6 +169,7 @@ func carrySectionsOnOverwrite(i int, name, existing, content string) string {
 	today := time.Now().UTC().Format(time.DateOnly)
 	var add strings.Builder
 	var carried, capped []string
+	budget := map[bool]int{} // previously carried? → bytes used
 	for _, s := range splitH2Sections(existing[oldSpan.BodyStart:]) {
 		text := strings.TrimSpace(s.body)
 		if newHeadings[linkFoldKey(s.heading)] || len(text) < carrySectionMinBytes {
@@ -149,25 +179,54 @@ func carrySectionsOnOverwrite(i int, name, existing, content string) string {
 		if len(grams) == 0 || trigramCoverage(grams, newGrams) >= carrySectionCovered {
 			continue
 		}
-		if add.Len()+len(s.raw) > carrySectionMaxBytes {
+		prior := strings.Contains(s.raw, carriedMarker)
+		if budget[prior]+len(s.raw) > carrySectionMaxBytes {
 			capped = append(capped, s.heading)
 			continue
 		}
+		budget[prior] += len(s.raw)
 		block := s.raw
-		if !strings.Contains(block, carriedMarker) {
+		if !prior {
 			block = "## " + s.heading + "\n\n" + carriedMarker + today + " -->\n" + strings.TrimLeft(s.body, "\n")
 		}
 		add.WriteString("\n" + strings.TrimRight(block, "\n") + "\n")
 		carried = append(carried, s.heading)
 	}
+	verb := "kept"
+	if reportOnly {
+		verb = "would carry (absorb.carry_sections: report)"
+	}
 	if len(capped) > 0 {
-		logMsg("envelope", "action[%d] create %s: %d dropped section(s) over the %d-byte carry cap were not kept: %v", i, name, len(capped), carrySectionMaxBytes, capped)
+		logMsg("envelope", "action[%d] create %s: %d dropped section(s) over the %d-byte carry cap were not %s: %v", i, name, len(capped), carrySectionMaxBytes, verb, capped)
 	}
 	if len(carried) == 0 {
 		return content
 	}
-	logMsg("envelope", "action[%d] create %s: kept %d section(s) the overwrite dropped: %v", i, name, len(carried), carried)
-	return strings.TrimRight(content, "\n") + "\n" + add.String()
+	logMsg("envelope", "action[%d] create %s: %s %d section(s) the overwrite dropped: %v", i, name, verb, len(carried), carried)
+	return insertBeforeTrailer(content, add.String())
+}
+
+// trailerHeadings are end-of-page blocks carried sections go in front of.
+var trailerHeadings = map[string]bool{"sources": true, "see also": true, "references": true, "related": true}
+
+// insertBeforeTrailer inserts block before a run of trailing
+// Sources / See Also / References sections, or at the end.
+func insertBeforeTrailer(content, block string) string {
+	span, err := frontmatterSpan(content)
+	if err != nil {
+		return strings.TrimRight(content, "\n") + "\n" + block
+	}
+	body := content[span.BodyStart:]
+	secs := splitH2Sections(body)
+	cut := len(body)
+	for j := len(secs) - 1; j >= 0 && trailerHeadings[linkFoldKey(secs[j].heading)]; j-- {
+		cut -= len(secs[j].raw)
+	}
+	if cut == len(body) {
+		return strings.TrimRight(content, "\n") + "\n" + block
+	}
+	head := strings.TrimRight(body[:cut], "\n") + "\n" + block + "\n"
+	return content[:span.BodyStart] + head + body[cut:]
 }
 
 // h2Section is one `## ` section: heading text, body (without the heading

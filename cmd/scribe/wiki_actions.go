@@ -247,6 +247,9 @@ type ApplyOptions struct {
 	// carry a real earlier date, which no value check can tell from an
 	// invented one.
 	StampDates bool
+	// CarrySections is the pass-2 section-carry mode on overwrite
+	// (carryOnOverwrite): "report" (default when empty), "on" or "off".
+	CarrySections string
 	// ValidFactIDs: the set of fact IDs the facts pass produced for the
 	// source article. Brackets not in this set are stripped. Only
 	// consulted when SanitizeContent is true. nil ⇒ strip ALL [cNN-fM]
@@ -599,7 +602,7 @@ func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts A
 	if opts.StampDates {
 		a.Content = stampCreateDates(i, abs, a, time.Now().UTC().Format(time.DateOnly))
 	}
-	a.Content = carryOnOverwrite(i, abs, a.Content)
+	a.Content = carryOnOverwrite(i, abs, a.Content, opts)
 	if opts.DryRun {
 		res.Skipped = append(res.Skipped, a.Path)
 		return

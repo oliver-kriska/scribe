@@ -7,10 +7,15 @@ import (
 
 func overwritePage(t *testing.T, oldPage, newPage string) string {
 	t.Helper()
+	return overwritePageMode(t, oldPage, newPage, carrySectionsOn)
+}
+
+func overwritePageMode(t *testing.T, oldPage, newPage, mode string) string {
+	t.Helper()
 	root := t.TempDir()
 	writeTestArticle(t, root, "patterns/q.md", oldPage)
 	env := WikiActionEnvelope{Actions: []WikiAction{{Op: "create", Path: "patterns/q.md", Content: newPage}}}
-	if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true}); err != nil {
+	if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, CarrySections: mode}); err != nil {
 		t.Fatal(err)
 	}
 	return readBack(t, root, "patterns/q.md")
@@ -95,7 +100,7 @@ func TestOverwriteSectionCarryIsCapped(t *testing.T) {
 func TestFreshCreateIsUntouched(t *testing.T) {
 	root := t.TempDir()
 	page := "---\ntitle: Q\n" + carryHead + "---\nbody\n"
-	if got := carryOnOverwrite(0, root+"/missing.md", page); got != page {
+	if got := carryOnOverwrite(0, root+"/missing.md", page, ApplyOptions{}); got != page {
 		t.Errorf("fresh create changed:\n%s", got)
 	}
 }
@@ -107,5 +112,51 @@ func TestOverwriteDoesNotRestoreRollingEntries(t *testing.T) {
 		"---\ntitle: Q\nrolling: true\n"+carryHead+"---\n# Q\n\n## 2026-11-10 | New entry\n\nfresh\n")
 	if strings.Contains(got, entry) {
 		t.Errorf("rolling page got an archived entry back:\n%s", got)
+	}
+}
+
+func TestOverwriteSectionCarryDefaultsToReport(t *testing.T) {
+	lost := "Three incidents traced to the replica pool exhausting under burst load from the nightly importer job."
+	oldPage := "---\ntitle: Q\n" + carryHead + "---\n# Q\n\n## Evidence\n\n" + lost + "\n"
+	newPage := "---\ntitle: Q\n" + carryHead + "---\n# Q\n\nnew\n"
+	for _, mode := range []string{"", carrySectionsReport, carrySectionsOff} {
+		if got := overwritePageMode(t, oldPage, newPage, mode); strings.Contains(got, lost) {
+			t.Errorf("mode %q wrote a carried section:\n%s", mode, got)
+		}
+	}
+}
+
+func TestOverwriteH1RenameHitsTheRealH1(t *testing.T) {
+	got := overwritePage(t,
+		"---\ntitle: Old\n"+carryHead+"---\n# Old\n\nold\n",
+		"---\ntitle: New\n"+carryHead+"---\nintro\n\n## New\n\nsection\n\n# New\n\nbody\n")
+	if !strings.Contains(got, "\n## New\n") || !strings.Contains(got, "\n# Old\n") || strings.Contains(got, "\n# New\n") {
+		t.Errorf("H1 rename touched the wrong line:\n%s", got)
+	}
+}
+
+func TestOverwriteCarriedSectionsGoBeforeSources(t *testing.T) {
+	lost := "Three incidents traced to the replica pool exhausting under burst load from the nightly importer job."
+	got := overwritePage(t,
+		"---\ntitle: Q\n"+carryHead+"---\n# Q\n\n## Evidence\n\n"+lost+"\n",
+		"---\ntitle: Q\n"+carryHead+"---\n# Q\n\nnew\n\n## Sources\n\n- raw/x.md\n")
+	if e, src := strings.Index(got, "## Evidence"), strings.Index(got, "## Sources"); e < 0 || src < 0 || e > src {
+		t.Errorf("carried section should precede the trailing Sources block:\n%s", got)
+	}
+}
+
+func TestOverwriteOldCarriesDoNotStarveNewLosses(t *testing.T) {
+	var old strings.Builder
+	old.WriteString("---\ntitle: Q\n" + carryHead + "---\n# Q\n")
+	// An earlier carry that fills the whole cap on its own.
+	old.WriteString("\n## Old carry\n\n" + carriedMarker + "2026-01-01 -->\n")
+	for j := range 1300 {
+		old.WriteString("oldword" + strings.Repeat("y", j%9) + " ")
+	}
+	fresh := "A newly dropped section with enough distinct words to be carried on its own merits today."
+	old.WriteString("\n\n## Fresh loss\n\n" + fresh + "\n")
+	got := overwritePage(t, old.String(), "---\ntitle: Q\n"+carryHead+"---\n# Q\n\nnew\n")
+	if !strings.Contains(got, fresh) {
+		t.Errorf("a new loss was starved by an old carry")
 	}
 }
