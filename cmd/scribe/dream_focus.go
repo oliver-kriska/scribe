@@ -284,10 +284,21 @@ func guardDreamFocusActions(root string, env *WikiActionEnvelope, pairs []dreamF
 		fm["related"] = appendRelated(readRelatedList(root, a.Path), fm["related"], "")
 		a.Frontmatter = fm
 	}
-	// Drop actions the guard emptied, so they don't count as applied.
+	// Drop actions the guard emptied, so they don't count as applied. Also
+	// drop a bare `updated` bump on a focus-pair article: the prompt says a
+	// fine pair gets nothing, and a date bump on an article the model only
+	// compared would inflate dream_content_actions (seen live 2026-11-10).
+	inFocus := map[string]bool{}
+	for _, p := range pairs {
+		inFocus[p.A.Path], inFocus[p.B.Path] = true, true
+	}
 	actions := env.Actions[:0]
 	for _, a := range env.Actions {
 		if a.Op == "update_frontmatter" && len(a.Frontmatter) == 0 {
+			continue
+		}
+		if _, onlyUpdated := a.Frontmatter["updated"]; a.Op == "update_frontmatter" && inFocus[a.Path] && onlyUpdated && len(a.Frontmatter) == 1 {
+			logMsg("dream", "focus guard: dropped updated-only bump on focus article %s", a.Path)
 			continue
 		}
 		actions = append(actions, a)

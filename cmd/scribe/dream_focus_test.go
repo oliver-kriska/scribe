@@ -107,15 +107,14 @@ func TestGuardDreamFocusActions(t *testing.T) {
 	if kept != 1 {
 		t.Errorf("kept = %d, want 1", kept)
 	}
-	if len(env.Actions) != 3 {
-		t.Fatalf("actions = %d, want 3 (emptied one removed): %+v", len(env.Actions), env.Actions)
+	// The emptied supersede is removed; the overlap-pair one is stripped to
+	// a bare updated bump on a focus article, which is dropped too.
+	if len(env.Actions) != 2 || env.Actions[1].Op != "append" {
+		t.Fatalf("actions = %d, want 2 (supersede + append): %+v", len(env.Actions), env.Actions)
 	}
 	rel, ok := env.Actions[0].Frontmatter["related"].([]any)
 	if !ok || len(rel) != 2 || rel[0] != "[[Existing Link]]" || rel[1] != "[[Retry With Backoff]]" {
 		t.Errorf("related = %#v, want existing link kept + keeper link added", env.Actions[0].Frontmatter["related"])
-	}
-	if _, has := env.Actions[1].Frontmatter["status"]; has || env.Actions[1].Frontmatter["updated"] != "2026-11-09" {
-		t.Errorf("non-duplicate supersede not stripped correctly: %#v", env.Actions[1].Frontmatter)
 	}
 }
 
@@ -153,6 +152,21 @@ func TestGuardDreamFocusKeepsExistingRelated(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+// A "fine" pair gets nothing: a bare updated bump on a focus article is
+// dropped, while a bump on a non-focus article (stale-date work) is kept.
+func TestGuardDreamFocusDropsUpdatedOnlyBump(t *testing.T) {
+	root := setupFocusKB(t)
+	pairs := dreamFocusPairs(root, "general", 4, time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC))
+	env := WikiActionEnvelope{Actions: []WikiAction{
+		{Op: "update_frontmatter", Path: "decisions/cache-x.md", Frontmatter: map[string]any{"updated": "2026-11-10"}},
+		{Op: "update_frontmatter", Path: "tools/redis.md", Frontmatter: map[string]any{"updated": "2026-11-10"}},
+	}}
+	guardDreamFocusActions(root, &env, pairs)
+	if len(env.Actions) != 1 || env.Actions[0].Path != "tools/redis.md" {
+		t.Errorf("actions = %+v, want only the non-focus bump", env.Actions)
 	}
 }
 
