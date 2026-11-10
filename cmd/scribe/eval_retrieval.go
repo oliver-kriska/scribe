@@ -416,9 +416,10 @@ func runRetrievalEval(root, fixturePath, collection string) (evalReport, error) 
 }
 
 // parseQMDBenchOutput accepts both shapes `qmd bench` can print. qmd
-// 2.1.0 never emits JSON: its CLI stores --json as opts.format="json",
-// but the bench case reads opts.json, so the flag is silently ignored and
-// the human table is printed. The table has every metric scribe scores,
+// before 2.5.0 never emits JSON: the bench case read json from cli.opts
+// (which never holds it) instead of cli.values, so the flag is silently
+// ignored and the human table is printed. Fixed upstream in 2.5.0
+// (tobi/qmd 2e0c743); 2.8.x JSON is a superset of qmdBenchResult. The table has every metric scribe scores,
 // but not top_files, so the misses list can't name the wrong top hit in
 // that case. The query type is taken from the fixture by ID.
 func parseQMDBenchOutput(raw []byte, queries []qmdBenchQuery) (qmdBenchResult, error) {

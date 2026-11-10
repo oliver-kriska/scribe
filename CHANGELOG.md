@@ -37,9 +37,9 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   under `output/eval/`, prints the change in MRR since the last run, and
   lists questions the full pipeline missed with what it returned instead.
   Questions whose article has since been removed are skipped and counted.
-  qmd 2.1.0's `bench` ignores its own `--json` flag (the CLI stores it as
-  `format`), so scribe also parses the printed table. In that mode the
-  misses list can't name the wrong top hit.
+  qmd before 2.5.0 ignores `bench --json` and prints a table, so scribe
+  also parses the table. In that mode the misses list can't name the wrong
+  top hit; upgrade qmd to get it.
 
 ### Fixed
 
