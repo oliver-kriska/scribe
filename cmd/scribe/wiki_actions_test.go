@@ -1794,6 +1794,19 @@ func TestApplyCreateOverwriteKeepsRelated(t *testing.T) {
 			want:  "related: [\"[[Kept A]]\"]\n---\n",
 		},
 		{
+			// Review finding: dedup of the new list must not hide a carried link.
+			name:  "duplicate in the new list still carries old links",
+			old:   "related: [\"[[A]]\"]\n",
+			newFM: "related: [\"[[B]]\", \"[[b]]\"]\n",
+			want:  "related: [\"[[A]]\", \"[[B]]\"]\n",
+		},
+		{
+			name:  "split fragments in the old list are not resurrected",
+			old:   "related: [\"[[A\", \"B]]\", \"[[Kept]]\"]\n",
+			newFM: "related: [\"[[A, B]]\"]\n",
+			want:  "related: [\"[[Kept]]\", \"[[A, B]]\"]\n",
+		},
+		{
 			name:  "nothing to carry leaves the new page alone",
 			old:   "related: [\"[[New B]]\"]\n",
 			newFM: "related: [\"[[New B]]\", \"[[New C]]\"]\n",

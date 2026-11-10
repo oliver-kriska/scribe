@@ -82,7 +82,8 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   hand, was lost: about 3,500 links to live articles on the reference KB
   between May and November. The overwrite now keeps the existing links,
   then adds the new page's links that aren't already there. Links to pages
-  that no longer exist are still cleaned up by `link --fix-broken`.
+  that no longer exist are still cleaned up by `link --fix-broken`. A
+  regenerated page can no longer remove a link just by leaving it out.
 
 ## [0.6.2] — 2026-11-09
 

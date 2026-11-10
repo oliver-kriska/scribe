@@ -619,6 +619,11 @@ func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts A
 // already present (compared case- and separator-insensitively). Dead
 // links are left for `link --fix-broken`. The new page's related: style
 // (flow or block) is kept; a page with no related: gets a flow line.
+//
+// Limits: a scalar related: value (old or new) is not merged and the new
+// page wins as before; rendered lines use LF, so a CRLF page from the
+// model gets LF in its related region. A regenerated page can no longer
+// prune a link by omitting it.
 func carryRelatedOnOverwrite(i int, abs, content string) string {
 	existing, err := os.ReadFile(abs)
 	if err != nil {
@@ -657,16 +662,32 @@ func carryRelatedOnOverwrite(i int, abs, content string) string {
 			return -1
 		}, inner)
 	}
+	newKeys := map[string]bool{}
+	for _, e := range newEntries {
+		newKeys[key(e)] = true
+	}
+	carried := 0
 	merged := make([]string, 0, len(oldEntries)+len(newEntries))
 	seen := map[string]bool{}
-	for _, e := range append(append([]string{}, oldEntries...), newEntries...) {
+	for _, e := range oldEntries {
+		// Comma-split fragments ("[[A", "B]]") are lint debris; never resurrect them.
+		inner, _ := relatedEntryInner(e)
+		if k := key(e); k != "" && !seen[k] && bracketsBalanced(inner) {
+			seen[k] = true
+			merged = append(merged, e)
+			if !newKeys[k] {
+				carried++
+			}
+		}
+	}
+	if carried == 0 {
+		return content // nothing the new page lacks
+	}
+	for _, e := range newEntries {
 		if k := key(e); k != "" && !seen[k] {
 			seen[k] = true
 			merged = append(merged, e)
 		}
-	}
-	if len(merged) == len(newEntries) {
-		return content // nothing the new page lacks
 	}
 	var rendered []string
 	if start >= 0 {
@@ -687,7 +708,7 @@ func carryRelatedOnOverwrite(i int, abs, content string) string {
 	out = append(out, lines[:start]...)
 	out = append(out, rendered...)
 	out = append(out, lines[end:]...)
-	logMsg("envelope", "action[%d] create %s: kept %d related link(s) the overwrite would have dropped", i, filepath.Base(abs), len(merged)-len(newEntries))
+	logMsg("envelope", "action[%d] create %s: kept %d related link(s) the overwrite would have dropped", i, filepath.Base(abs), carried)
 	return content[:span.YAMLStart] + strings.Join(out, "\n") + content[span.YAMLEnd:]
 }
 
