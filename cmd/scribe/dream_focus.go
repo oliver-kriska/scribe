@@ -255,15 +255,34 @@ func guardDreamFocusActions(root string, env *WikiActionEnvelope, pairs []dreamF
 		}
 		used[pairOf[a.Path]] = true
 		kept++
-		link := "[[" + other.Title + "]]"
-		if !relatedMentions(a.Frontmatter["related"], other.Title) {
-			fm := make(map[string]any, len(a.Frontmatter)+1)
-			for k, v := range a.Frontmatter {
-				fm[k] = v
-			}
-			fm["related"] = appendRelated(readRelatedList(root, a.Path), fm["related"], link)
-			a.Frontmatter = fm
+		fm := make(map[string]any, len(a.Frontmatter)+1)
+		for k, v := range a.Frontmatter {
+			fm[k] = v
 		}
+		if !relatedMentions(fm["related"], other.Title) {
+			fm["related"] = appendRelated(nil, fm["related"], "[["+other.Title+"]]")
+		}
+		a.Frontmatter = fm
+	}
+	// update_frontmatter replaces related wholesale, so every proposal
+	// that sets it is merged with the article's existing links: a dream
+	// can add links but never drop them. Without this, a supersede whose
+	// proposed related already named the keeper wiped the article's
+	// other links (seen live 2026-11-10).
+	for i := range env.Actions {
+		a := &env.Actions[i]
+		if a.Op != "update_frontmatter" || a.Frontmatter == nil {
+			continue
+		}
+		if _, has := a.Frontmatter["related"]; !has {
+			continue
+		}
+		fm := make(map[string]any, len(a.Frontmatter))
+		for k, v := range a.Frontmatter {
+			fm[k] = v
+		}
+		fm["related"] = appendRelated(readRelatedList(root, a.Path), fm["related"], "")
+		a.Frontmatter = fm
 	}
 	// Drop actions the guard emptied, so they don't count as applied.
 	actions := env.Actions[:0]
@@ -316,6 +335,10 @@ func appendRelated(existing []string, proposed any, link string) []any {
 	switch t := proposed.(type) {
 	case string:
 		push(t)
+	case []string:
+		for _, s := range t {
+			push(s)
+		}
 	case []any:
 		for _, x := range t {
 			if s, ok := x.(string); ok {

@@ -119,6 +119,43 @@ func TestGuardDreamFocusActions(t *testing.T) {
 	}
 }
 
+// The model's proposed related already names the keeper: the article's
+// existing links must still survive (live regression 2026-11-10, where
+// update_frontmatter's wholesale replace wiped them).
+func TestGuardDreamFocusKeepsExistingRelated(t *testing.T) {
+	root := setupFocusKB(t)
+	pairs := dreamFocusPairs(root, "general", 4, time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC))
+	writeTestArticle(t, root, "tools/redis.md", focusArticle("Redis", "tool", "general", "cache, redis", uniqueWords("z", 60), "related: [\"[[Keep Me]]\"]\n"))
+
+	env := WikiActionEnvelope{Actions: []WikiAction{
+		{Op: "update_frontmatter", Path: "patterns/retry-b.md", Frontmatter: map[string]any{
+			"status": "superseded", "related": []any{"[[Retry With Backoff]]"},
+		}},
+		// Not a focus article: related is still merged, never replaced.
+		{Op: "update_frontmatter", Path: "tools/redis.md", Frontmatter: map[string]any{"related": []string{"[[New Link]]"}}},
+	}}
+	if kept := guardDreamFocusActions(root, &env, pairs); kept != 1 {
+		t.Fatalf("kept = %d, want 1", kept)
+	}
+	want := [][]any{
+		{"[[Existing Link]]", "[[Retry With Backoff]]"},
+		{"[[Keep Me]]", "[[New Link]]"},
+	}
+	for i, w := range want {
+		got, _ := env.Actions[i].Frontmatter["related"].([]any)
+		if len(got) != len(w) {
+			t.Errorf("action %d related = %#v, want %#v", i, got, w)
+			continue
+		}
+		for j := range w {
+			if got[j] != w[j] {
+				t.Errorf("action %d related = %#v, want %#v", i, got, w)
+				break
+			}
+		}
+	}
+}
+
 func TestDreamContentActions(t *testing.T) {
 	if n := dreamContentActions([]string{"meta:log_append", "patterns/a.md", "decisions/b.md"}); n != 2 {
 		t.Errorf("content actions = %d, want 2", n)
