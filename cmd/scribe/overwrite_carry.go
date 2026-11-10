@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -45,6 +46,25 @@ const (
 	carrySectionsOff    = "off"
 )
 
+var warnCarrySectionsOnce sync.Once
+
+// normalizeCarrySections lowercases the mode and maps anything other than
+// on/off to report, warning once so "On" or "true" doesn't silently mean
+// report to someone who thinks they enabled it.
+func normalizeCarrySections(v string) string {
+	switch m := strings.ToLower(strings.TrimSpace(v)); m {
+	case "", carrySectionsReport:
+		return carrySectionsReport
+	case carrySectionsOn, carrySectionsOff:
+		return m
+	default:
+		warnCarrySectionsOnce.Do(func() {
+			logMsg("envelope", "absorb.carry_sections: %q is not report, on or off; using report", v)
+		})
+		return carrySectionsReport
+	}
+}
+
 // carryOnOverwrite applies every overwrite guard. abs is the page being
 // replaced; content is the model's new page. A fresh create (no file at
 // abs) passes through untouched. Title, related and scalar carry always
@@ -63,16 +83,13 @@ func carryOnOverwrite(i int, abs, content string, opts ApplyOptions) string {
 	if opts.DryRun {
 		name += " (dry run, would)"
 	}
-	content = carryRelatedOnOverwrite(i, abs, content)
+	content = carryRelatedOnOverwrite(i, abs, name, content)
 	content = carryTitleOnOverwrite(i, name, old, content)
 	content = carryScalarsOnOverwrite(i, name, existing, content)
 	// Rolling pages (learnings, decisions-log) shed old entries on purpose:
 	// rolling compaction moves them to an archive file. Re-adding them would
 	// undo the compaction and duplicate the archive.
-	mode := opts.CarrySections
-	if mode == "" {
-		mode = carrySectionsReport
-	}
+	mode := normalizeCarrySections(opts.CarrySections)
 	if !old.Rolling && mode != carrySectionsOff {
 		carried := carrySectionsOnOverwrite(i, name, string(existing), content, mode == carrySectionsReport)
 		if mode == carrySectionsOn {

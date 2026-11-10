@@ -627,7 +627,7 @@ func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts A
 // page wins as before; rendered lines use LF, so a CRLF page from the
 // model gets LF in its related region. A regenerated page can no longer
 // prune a link by omitting it.
-func carryRelatedOnOverwrite(i int, abs, content string) string {
+func carryRelatedOnOverwrite(i int, abs, name, content string) string {
 	existing, err := os.ReadFile(abs)
 	if err != nil {
 		return content
@@ -711,7 +711,7 @@ func carryRelatedOnOverwrite(i int, abs, content string) string {
 	out = append(out, lines[:start]...)
 	out = append(out, rendered...)
 	out = append(out, lines[end:]...)
-	logMsg("envelope", "action[%d] create %s: kept %d related link(s) the overwrite would have dropped", i, filepath.Base(abs), carried)
+	logMsg("envelope", "action[%d] create %s: kept %d related link(s) the overwrite would have dropped", i, name, carried)
 	return content[:span.YAMLStart] + strings.Join(out, "\n") + content[span.YAMLEnd:]
 }
 

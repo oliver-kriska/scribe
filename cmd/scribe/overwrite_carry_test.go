@@ -160,3 +160,11 @@ func TestOverwriteOldCarriesDoNotStarveNewLosses(t *testing.T) {
 		t.Errorf("a new loss was starved by an old carry")
 	}
 }
+
+func TestNormalizeCarrySections(t *testing.T) {
+	for in, want := range map[string]string{"": "report", "ON": "on", "\toff\n": "off", "true": "report", "yes": "report", "Report": "report"} {
+		if got := normalizeCarrySections(in); got != want {
+			t.Errorf("normalizeCarrySections(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
