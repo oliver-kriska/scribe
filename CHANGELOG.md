@@ -73,6 +73,16 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   bodies it never saw. New run-record fields `dream_focus_pairs`,
   `dream_content_actions` and `dream_superseded` show whether a run changed
   anything. `envelope_actions_applied` read 1 on every no-op run.
+  Any dream `update_frontmatter` that sets `related` is merged with the
+  article's existing links; it can add links but never drop them.
+
+- **Re-absorbing a source no longer drops the page's `related` links.**
+  Pass-2 absorb regenerates a page from its source and overwrote it whole,
+  keeping only `created`. Every link added since, by other writers or by
+  hand, was lost: about 3,500 links to live articles on the reference KB
+  between May and November. The overwrite now keeps the existing links,
+  then adds the new page's links that aren't already there. Links to pages
+  that no longer exist are still cleaned up by `link --fix-broken`.
 
 ## [0.6.2] — 2026-11-09
 

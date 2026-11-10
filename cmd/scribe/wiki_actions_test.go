@@ -1773,3 +1773,48 @@ func TestYamlSafeNodeTimes(t *testing.T) {
 		})
 	}
 }
+
+// Pass-2 re-absorb overwrites a page from its source. Links added to the
+// old page since (by other writers or by hand) must survive; the new
+// page's own links are added after them, deduped case/separator-blind.
+func TestApplyCreateOverwriteKeepsRelated(t *testing.T) {
+	cases := []struct {
+		name, old, newFM, want string
+	}{
+		{
+			name:  "block list merged in block style",
+			old:   "related: [\"[[Kept A]]\", \"[[Shared]]\"]\n",
+			newFM: "related:\n  - \"[[shared]]\"\n  - \"[[New B]]\"\n",
+			want:  "related:\n  - \"[[Kept A]]\"\n  - \"[[Shared]]\"\n  - \"[[New B]]\"\n",
+		},
+		{
+			name:  "new page without related gets the old links",
+			old:   "related: [\"[[Kept A]]\"]\n",
+			newFM: "",
+			want:  "related: [\"[[Kept A]]\"]\n---\n",
+		},
+		{
+			name:  "nothing to carry leaves the new page alone",
+			old:   "related: [\"[[New B]]\"]\n",
+			newFM: "related: [\"[[New B]]\", \"[[New C]]\"]\n",
+			want:  "related: [\"[[New B]]\", \"[[New C]]\"]\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			head := "---\ntitle: Q\ntype: pattern\ndomain: general\ncreated: 2026-10-14\nupdated: 2026-10-14\nconfidence: medium\n"
+			writeTestArticle(t, root, "patterns/q.md", head+tc.old+"---\nold body\n")
+			env := WikiActionEnvelope{Actions: []WikiAction{{
+				Op: "create", Path: "patterns/q.md", Content: head + tc.newFM + "---\nnew body\n",
+			}}}
+			if _, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true}); err != nil {
+				t.Fatal(err)
+			}
+			s := readBack(t, root, "patterns/q.md")
+			if !strings.Contains(s, tc.want) || !strings.Contains(s, "new body") {
+				t.Errorf("want %q in:\n%s", tc.want, s)
+			}
+		})
+	}
+}

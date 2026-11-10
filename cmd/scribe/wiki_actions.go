@@ -599,6 +599,7 @@ func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts A
 	if opts.StampDates {
 		a.Content = stampCreateDates(i, abs, a, time.Now().UTC().Format(time.DateOnly))
 	}
+	a.Content = carryRelatedOnOverwrite(i, abs, a.Content)
 	if opts.DryRun {
 		res.Skipped = append(res.Skipped, a.Path)
 		return
@@ -608,6 +609,86 @@ func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts A
 		return
 	}
 	res.Applied = append(res.Applied, a.Path)
+}
+
+// carryRelatedOnOverwrite keeps an existing page's related: links when a
+// create replaces it. Pass-2 re-absorb regenerates a page from its source
+// and used to drop every link added since, by other writers or by hand:
+// ~3.5k links to live articles in the reference KB over seven months.
+// The result is the existing entries, then the new page's entries not
+// already present (compared case- and separator-insensitively). Dead
+// links are left for `link --fix-broken`. The new page's related: style
+// (flow or block) is kept; a page with no related: gets a flow line.
+func carryRelatedOnOverwrite(i int, abs, content string) string {
+	existing, err := os.ReadFile(abs)
+	if err != nil {
+		return content
+	}
+	old, err := parseFrontmatter(existing)
+	if err != nil || old == nil {
+		return content
+	}
+	oldEntries, ok := relatedStrings(old.Related)
+	if !ok || len(oldEntries) == 0 {
+		return content
+	}
+	span, err := frontmatterSpan(content)
+	if err != nil {
+		return content
+	}
+	lines := strings.Split(content[span.YAMLStart:span.YAMLEnd], "\n")
+	start, end := relatedRegion(lines)
+	var newEntries []string
+	if start >= 0 {
+		var parsed map[string]any
+		if err := yaml.Unmarshal([]byte(strings.Join(lines[start:end], "\n")), &parsed); err != nil {
+			return content // unparseable: leave it to the clamp/lint seams
+		}
+		if newEntries, ok = relatedStrings(parsed["related"]); !ok && parsed["related"] != nil {
+			return content
+		}
+	}
+	key := func(e string) string {
+		inner, _ := relatedEntryInner(e)
+		return strings.Map(func(r rune) rune {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				return unicode.ToLower(r)
+			}
+			return -1
+		}, inner)
+	}
+	merged := make([]string, 0, len(oldEntries)+len(newEntries))
+	seen := map[string]bool{}
+	for _, e := range append(append([]string{}, oldEntries...), newEntries...) {
+		if k := key(e); k != "" && !seen[k] {
+			seen[k] = true
+			merged = append(merged, e)
+		}
+	}
+	if len(merged) == len(newEntries) {
+		return content // nothing the new page lacks
+	}
+	var rendered []string
+	if start >= 0 {
+		rendered = renderRelatedLines(lines[start:end], merged)
+	} else {
+		quoted := make([]string, 0, len(merged))
+		for _, e := range merged {
+			quoted = append(quoted, relatedYAMLQuote(e))
+		}
+		rendered = []string{"related: [" + strings.Join(quoted, ", ") + "]"}
+		// Insert before the trailing empty element left by the YAML's final newline.
+		start, end = len(lines), len(lines)
+		if start > 0 && lines[start-1] == "" {
+			start, end = start-1, start-1
+		}
+	}
+	out := make([]string, 0, len(lines)+len(rendered))
+	out = append(out, lines[:start]...)
+	out = append(out, rendered...)
+	out = append(out, lines[end:]...)
+	logMsg("envelope", "action[%d] create %s: kept %d related link(s) the overwrite would have dropped", i, filepath.Base(abs), len(merged)-len(newEntries))
+	return content[:span.YAMLStart] + strings.Join(out, "\n") + content[span.YAMLEnd:]
 }
 
 // stampCreateDates applies ApplyOptions.StampDates to one create:
