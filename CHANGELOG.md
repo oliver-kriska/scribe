@@ -85,6 +85,21 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   that no longer exist are still cleaned up by `link --fix-broken`. A
   regenerated page can no longer remove a link just by leaving it out.
 
+- **Re-absorbing a source keeps the page's title, owned fields and lost
+  sections.** Overwriting a page now also:
+  - keeps its title, so `[[links]]` to it keep resolving (even a
+    separator-only retitle broke them). The new title becomes an alias.
+  - restores `status`, `contributor`, `index_tier` and `authority` when the
+    new page omits them, so a dream supersede survives re-absorb.
+  - re-adds `## ` sections the new page dropped and doesn't cover
+    elsewhere (under half of the section's word trigrams found in the new
+    body). They go at the end, marked `<!-- scribe:carried DATE -->`, at
+    most 8 KB per overwrite, and every carry is logged. Rolling pages are
+    exempt, since compaction archives their old entries on purpose.
+
+  Replayed against the reference KB's 178 shrinking rewrites, this kept
+  502 sections on 122 pages that were deleted.
+
 ## [0.6.2] — 2026-11-09
 
 **Upgrade notes.** Together retired `MiniMaxAI/MiniMax-M3` on 2026-11-07:

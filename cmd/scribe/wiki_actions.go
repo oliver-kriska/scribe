@@ -599,7 +599,7 @@ func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts A
 	if opts.StampDates {
 		a.Content = stampCreateDates(i, abs, a, time.Now().UTC().Format(time.DateOnly))
 	}
-	a.Content = carryRelatedOnOverwrite(i, abs, a.Content)
+	a.Content = carryOnOverwrite(i, abs, a.Content)
 	if opts.DryRun {
 		res.Skipped = append(res.Skipped, a.Path)
 		return
