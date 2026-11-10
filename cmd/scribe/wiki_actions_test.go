@@ -1717,3 +1717,59 @@ func TestApplyWikiActions_AppendMissingScaffoldsFrontmatter(t *testing.T) {
 		t.Errorf("a page with its own frontmatter was changed:\n%s", got)
 	}
 }
+
+// TestUpdateFrontmatterKeepsDates pins that updating one key leaves bare
+// dates as dates. yaml.v3 decodes `2026-04-20` into a midnight-UTC
+// time.Time, and its default encoder wrote that back as
+// `2026-04-20T00:00:00Z`, rewriting every date field of every article the
+// dream or a tier pass touched.
+func TestUpdateFrontmatterKeepsDates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.md")
+	original := "---\ncreated: 2026-04-20\ntitle: Foo\nupdated: 2026-05-01\n---\n\nbody\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := updateFrontmatter(path, map[string]any{"title": "Bar"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	want := "---\ncreated: 2026-04-20\ntitle: Bar\nupdated: 2026-05-01\n---\n\nbody\n"
+	if string(got) != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestYamlSafeNodeTimes(t *testing.T) {
+	cases := []struct {
+		name string
+		in   time.Time
+		want string
+	}{
+		{"midnight UTC is a date", time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC), "2026-04-20\n"},
+		{"instant keeps time", time.Date(2026, 4, 20, 9, 30, 0, 0, time.UTC), "2026-04-20T09:30:00Z\n"},
+		{"sub-second keeps time", time.Date(2026, 4, 20, 0, 0, 0, 1, time.UTC), "2026-04-20T00:00:00.000000001Z\n"},
+		{"midnight elsewhere keeps zone", time.Date(2026, 4, 20, 0, 0, 0, 0, time.FixedZone("CET", 3600)), "2026-04-20T00:00:00+01:00\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			n, err := yamlSafeNode(c.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := yaml.Marshal(n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(out) != c.want {
+				t.Fatalf("got %q, want %q", out, c.want)
+			}
+			var back time.Time
+			if err := yaml.Unmarshal(out, &back); err != nil {
+				t.Fatalf("re-parse: %v", err)
+			}
+			if !back.Equal(c.in) {
+				t.Errorf("round trip: got %v, want %v", back, c.in)
+			}
+		})
+	}
+}

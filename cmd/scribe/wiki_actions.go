@@ -1402,6 +1402,21 @@ func yamlSafeNode(v any) (*yaml.Node, error) {
 			n.Content = append(n.Content, kn, vn)
 		}
 		return n, nil
+	case time.Time:
+		// yaml.v3 decodes a bare `2026-04-20` into a midnight-UTC
+		// time.Time and its default encoder writes it back as
+		// `2026-04-20T00:00:00Z`, so every updateFrontmatter call used
+		// to rewrite each date field in the article. A midnight-UTC value
+		// goes back out as a plain date. Any other instant keeps the
+		// encoder's RFC 3339 form.
+		if t.Location() == time.UTC && t.Equal(t.Truncate(24*time.Hour)) {
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!timestamp", Value: t.Format(time.DateOnly)}, nil
+		}
+		n := &yaml.Node{}
+		if err := n.Encode(t); err != nil {
+			return nil, err
+		}
+		return n, nil
 	case []any:
 		n := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
 		for _, item := range t {
