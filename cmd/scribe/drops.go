@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,17 @@ func stagedDrops(staging string) []string {
 	drops, _ := filepath.Glob(filepath.Join(staging, "*.md"))
 	sort.Strings(drops)
 	return drops
+}
+
+// dropAlreadyStaged reports whether staging already holds a file with
+// exactly these bytes.
+func dropAlreadyStaged(staging string, data []byte) bool {
+	for _, p := range stagedDrops(staging) {
+		if have, err := os.ReadFile(p); err == nil && bytes.Equal(have, data) {
+			return true
+		}
+	}
+	return false
 }
 
 // stagedDropDest picks a destination name for src inside staging that

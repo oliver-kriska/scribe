@@ -37,7 +37,7 @@ Extract reusable knowledge from project **{{PROJECT}}** (domain `{{DOMAIN}}`) in
   ],
   "meta": [
     {"op": "log_append", "line": "## [{{TODAY}}] extract | {{PROJECT}}: <one-line summary of what landed>"},
-    {"op": "rolling_memory_append", "domain": "{{DOMAIN}}", "target": "learnings", "entry": "## {{TODAY}} | <one-line insight>\n\nContext: <2-3 sentences>\nSource: {{P_PATH}}/<file>"}
+    {"op": "rolling_memory_append", "domain": "{{DOMAIN}}", "target": "learnings", "content": "## {{TODAY}} | <one-line insight>\n\nContext: <2-3 sentences>\nSource: {{P_PATH}}/<file>"}
   ]
 }
 ```

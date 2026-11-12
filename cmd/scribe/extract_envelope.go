@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -33,7 +34,13 @@ import (
 // stay staged for the next extraction instead of being deleted unseen).
 func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *Manifest, pname string, entry *ProjectEntry, changed []string) ([]string, error) {
 	provider := newLLMProvider(cfg.Extract.Provider, cfg.Extract.Model, cfg.Extract.OllamaURL, root)
-	promptName := promptForProvider("extract", providerNameFor(provider))
+	// Always the envelope prompt. promptForProvider picks
+	// extract-anthropic.md for every non-Ollama provider, and that is the
+	// tool-mode prompt for `claude -p`: it tells the model to Read and
+	// Glob, and has no {{FILES_CONTENT}}. On a hosted provider the model
+	// never saw the project, and every extraction wrote nothing (96 of 96
+	// on the reference KB from 2026-10-19 to 2026-11-12).
+	const promptName = extractEnvelopePrompt
 
 	dropStaging := dropStagingDir(root, pname)
 	filesContent, consumed := gatherExtractFiles(root, entry, changed, dropStaging, cfg.Extract.MaxFileChars, cfg.Extract.MaxTotalChars)
@@ -45,15 +52,6 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 		"DOMAIN":        entry.Domain,
 		"TODAY":         time.Now().UTC().Format("2006-01-02"),
 		"FILES_CONTENT": filesContent,
-		// Legacy extract-anthropic.md uses these placeholders. Provide
-		// empty strings so it still loads when an admin has set
-		// extract.mode=envelope + extract.provider=anthropic (an
-		// unusual mix, but supported: the envelope path is provider-
-		// agnostic).
-		"STEP2":               "",
-		"FILELIST":            "",
-		"DROP_INSTRUCTION":    "",
-		"CLAUDE_TOOLING_DIRS": claudeToolingPromptList(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load extract prompt: %w", err)
@@ -80,11 +78,57 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	} else {
 		logMsg("sync", " [%s] envelope: applied %d action(s)", pname, len(res.Applied))
 	}
+	if len(consumed) > 0 && !wroteKnowledge(res) {
+		// The model saw these drops and wrote nothing from them. Deleting
+		// them (finishDropStaging) would lose a handoff to one empty
+		// reply; retrying them every run could loop forever. Park them
+		// where a person can look.
+		parkUnextractedDrops(root, pname, consumed)
+	}
 	setRunStatIfAbsent("mode", "envelope-extract")
 	setRunStatIfAbsent("project", pname)
 	addRunStat("envelope_actions_applied", len(res.Applied))
 	addRunStat("envelope_actions_errored", len(res.Errors))
 	return consumed, nil
+}
+
+// extractEnvelopePrompt is the extract prompt that carries the gathered
+// files ({{FILES_CONTENT}}) and asks for an envelope. The "-ollama" name
+// is historical: it serves every provider in envelope mode.
+const extractEnvelopePrompt = "extract-ollama.md"
+
+// wroteKnowledge reports whether an apply wrote anything beyond the
+// bookkeeping log lines: a page, or a rolling-memory paragraph.
+func wroteKnowledge(res ApplyResult) bool {
+	for _, a := range res.Applied {
+		if a != "meta:log_append" && !strings.HasPrefix(a, "meta:sessions_log_append") {
+			return true
+		}
+	}
+	return false
+}
+
+// parkUnextractedDrops moves drops an extraction saw but wrote nothing
+// from into output/drops-unextracted/<project>/ instead of letting
+// finishDropStaging delete them.
+func parkUnextractedDrops(root, pname string, drops []string) {
+	dir := filepath.Join(root, "output", "drops-unextracted", pname)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		logPhaseDegraded("sync", "drop parking", " [%s] mkdir %s: %v", pname, dir, err)
+		return
+	}
+	moved := 0
+	for _, p := range drops {
+		if err := os.Rename(p, stagedDropDest(dir, p)); err != nil {
+			logPhaseDegraded("sync", "drop parking", " [%s] park %s: %v", pname, p, err)
+			continue
+		}
+		moved++
+	}
+	if moved > 0 {
+		logMsg("sync", " [%s] extraction wrote nothing from %d drop file(s) — parked in %s for review", pname, moved, dir)
+		addRunStat("extract_drops_parked", moved)
+	}
 }
 
 // errEnvelopeUnparsable marks a reply that came back but is not a usable
@@ -148,7 +192,7 @@ func extractEnvelopeSchema() jsonSchemaSpec {
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"op": str, "line": str, "domain": str, "target": str, "entry": str, "content": str,
+							"op": str, "line": str, "domain": str, "target": str, "content": str,
 						},
 						"required": []any{"op"},
 					},

@@ -309,6 +309,14 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 			// Collision-safe: a worktree and the main checkout can each
 			// carry a same-named drop, and a deferred drop from the
 			// previous run may still be staged.
+			// A drop still staged from an earlier run (deferred, or its
+			// extraction failed) is collected again, because the manifest
+			// stamp only advances when something is consumed. Without
+			// this check every such run added another suffixed copy:
+			// 3 drops became 133 staged files over ~45 failed syncs.
+			if dropAlreadyStaged(staging, data) {
+				continue
+			}
 			dest := stagedDropDest(staging, d)
 			if err := os.WriteFile(dest, data, 0o644); err != nil {
 				logMsg("sync", " [%s] write %s: %v", pname, dest, err)

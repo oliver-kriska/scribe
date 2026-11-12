@@ -43,6 +43,25 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Fixed
 
+- **Project extraction on a hosted provider now sees the project.**
+  In envelope mode, every provider except Ollama loaded
+  `extract-anthropic.md`, the tool-mode prompt written for `claude -p`. It
+  tells the model to Read and Glob files and has no `{{FILES_CONTENT}}`,
+  so on Together, Groq or any OpenAI-compatible endpoint the model was
+  never shown a file. On the reference KB, all 96 project extractions
+  from 2026-10-19 to 2026-11-12 wrote nothing. Envelope extraction now
+  always uses the envelope prompt with the gathered files. In a live run
+  the same project went from a 1.3k-token prompt and no output to a
+  9.3k-token prompt and four articles. Its `rolling_memory_append`
+  example also named the field `entry` where the executor reads
+  `content`, so every rolling-memory note from extraction was dropped.
+- **Drop files are no longer staged again and again, or deleted unread.**
+  A drop still staged from a failed or deferred extraction was collected
+  again on every sync as another suffixed copy: three drops became 133
+  staged files. A byte-identical drop is now skipped. And when an
+  extraction shows the model drop files but writes nothing, those drops
+  move to `output/drops-unextracted/<project>/` for review instead of
+  being deleted (`extract_drops_parked` in run records).
 - **Project and deep extraction no longer fail every run on a bare `{}`.**
   0.6.2 made envelope parsers reject the empty `{}` reply instead of
   treating it as "nothing to extract". Project extraction and
