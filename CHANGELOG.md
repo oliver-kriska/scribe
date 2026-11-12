@@ -43,6 +43,17 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Fixed
 
+- **Project and deep extraction no longer fail every run on a bare `{}`.**
+  0.6.2 made envelope parsers reject the empty `{}` reply instead of
+  treating it as "nothing to extract". Project extraction and
+  `scribe deep` never got the strict schema and retry that session mining
+  got, so a small project with nothing new failed on every sync and
+  `scribe doctor` reported `sync` as failing. Both now request a strict
+  `json_schema` (`meta` must hold the `log_append` op) and retry an
+  unusable reply once with a corrective prompt. Run records count
+  `extract_envelope_corrective_retries` and
+  `deep_envelope_corrective_retries`.
+
 - **A mined session is no longer frozen at the moment it was mined
   (#146).** Sessions are admitted while still open, and envelope mode (and
   the tools-mode large prompt) never showed the model the middle of a long

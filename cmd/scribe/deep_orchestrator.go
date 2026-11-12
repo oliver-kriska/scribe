@@ -37,20 +37,9 @@ func runDeepExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig,
 	tagged := withOllamaNumCtx(withOpLabel(ctx, "deep-extract"), cfg.DeepIngest.NumCtx)
 	callCtx, cancel := context.WithTimeout(tagged, timeout)
 	defer cancel()
-	out, err := generateMaybeJSON(callCtx, provider, prompt)
+	env, err := runMetaEnvelopeWithRetry(callCtx, provider, prompt, "deep", project+"/"+relDir)
 	if err != nil {
-		if errors.Is(err, ErrRateLimit) {
-			return true, err
-		}
-		return false, fmt.Errorf("deep LLM: %w", err)
-	}
-	jsonText, ok := extractJSON(out)
-	if !ok {
-		return false, fmt.Errorf("deep: no JSON envelope in provider output (%d bytes)", len(out))
-	}
-	env, err := parseEnvelopeV2(jsonText, "deep")
-	if err != nil {
-		return false, fmt.Errorf("deep: parse envelope: %w", err)
+		return errors.Is(err, ErrRateLimit), err
 	}
 	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
 	if err != nil {

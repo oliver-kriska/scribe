@@ -65,20 +65,9 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	defer cancel()
 
 	logMsg("sync", " [%s] envelope: prompt %d chars, files %d chars, num_ctx=%d", pname, len(prompt), len(filesContent), cfg.Extract.NumCtx)
-	out, err := generateMaybeJSON(callCtx, provider, prompt)
+	env, err := runMetaEnvelopeWithRetry(callCtx, provider, prompt, "extract", pname)
 	if err != nil {
-		if errors.Is(err, ErrRateLimit) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("extract LLM: %w", err)
-	}
-	jsonText, ok := extractJSON(out)
-	if !ok {
-		return nil, fmt.Errorf("extract: no JSON envelope in provider output (%d bytes)", len(out))
-	}
-	env, err := parseEnvelopeV2(jsonText, "extract")
-	if err != nil {
-		return nil, fmt.Errorf("extract: parse envelope: %w", err)
+		return nil, err
 	}
 	// Project extraction creates new project entities; it must not overwrite
 	// an existing curated doc with a reconstruction.
@@ -96,6 +85,78 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	addRunStat("envelope_actions_applied", len(res.Applied))
 	addRunStat("envelope_actions_errored", len(res.Errors))
 	return consumed, nil
+}
+
+// errEnvelopeUnparsable marks a reply that came back but is not a usable
+// envelope (no JSON, or a bare "{}"): worth one corrective retry, unlike
+// a transport, rate-limit or model error.
+var errEnvelopeUnparsable = errors.New("reply is not a usable envelope")
+
+// runMetaEnvelopeOnce makes one extract/deep call: strict schema where
+// the provider supports it, then parse. label prefixes errors.
+func runMetaEnvelopeOnce(ctx context.Context, provider llmProviderGenerator, prompt, label string) (WikiActionEnvelope, error) {
+	out, err := generateWithSchema(ctx, provider, prompt, extractEnvelopeSchema())
+	if err != nil {
+		if errors.Is(err, ErrRateLimit) {
+			return WikiActionEnvelope{}, err
+		}
+		return WikiActionEnvelope{}, fmt.Errorf("%s LLM: %w", label, err)
+	}
+	jsonText, ok := extractJSON(out)
+	if !ok {
+		return WikiActionEnvelope{}, fmt.Errorf("%s: %w: no JSON envelope in provider output (%d bytes)", label, errEnvelopeUnparsable, len(out))
+	}
+	env, err := parseEnvelopeV2(jsonText, label)
+	if err != nil {
+		return WikiActionEnvelope{}, fmt.Errorf("%s: %w: parse envelope: %w", label, errEnvelopeUnparsable, err)
+	}
+	return env, nil
+}
+
+// runMetaEnvelopeWithRetry adds one corrective retry for an unusable
+// reply. A small project or directory with nothing new invites the bare
+// "{}" under json_object; strict json_schema closes that on
+// schema-capable providers, and the retry covers the rest. Without it
+// the item stayed pending and failed every run.
+func runMetaEnvelopeWithRetry(ctx context.Context, provider llmProviderGenerator, prompt, label, item string) (WikiActionEnvelope, error) {
+	env, err := runMetaEnvelopeOnce(ctx, provider, prompt, label)
+	if err == nil || !errors.Is(err, errEnvelopeUnparsable) {
+		return env, err
+	}
+	logMsg("sync", " [%s] envelope: %v — retrying with corrective prompt", item, err)
+	addRunStat(label+"_envelope_corrective_retries", 1)
+	return runMetaEnvelopeOnce(ctx, provider, prompt+envelopeCorrectiveSuffix, label)
+}
+
+// extractEnvelopeSchema constrains extract replies on schema-capable
+// providers. Empty actions are legal (nothing new in the project), so
+// the guard against the "{}" escape is meta minItems:1: the prompt's
+// always-present log_append op.
+func extractEnvelopeSchema() jsonSchemaSpec {
+	str := map[string]any{"type": "string"}
+	return jsonSchemaSpec{
+		Name: "WikiActionEnvelope",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"version": map[string]any{"type": "integer"},
+				"entity":  str,
+				"actions": map[string]any{"type": "array", "items": wikiActionItemSchema()},
+				"meta": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"op": str, "line": str, "domain": str, "target": str, "entry": str, "content": str,
+						},
+						"required": []any{"op"},
+					},
+				},
+			},
+			"required": []any{"version", "entity", "actions", "meta"},
+		},
+	}
 }
 
 // gatherExtractFiles assembles the FILES_CONTENT block. Reads in
