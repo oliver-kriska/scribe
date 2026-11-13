@@ -113,7 +113,11 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 			// and never logs on failure, so "logged but no marker" always
 			// means the file was rewritten — never an intentional skip.
 			if fileHasMarker(path, retrievalContextMarker) {
-				logMap[e.Name()] = time.Now().UTC().Format(time.RFC3339)
+				// Stamp only first sightings: re-stamping every run churns
+				// the committed log and conflicts across team machines.
+				if _, logged := logMap[e.Name()]; !logged {
+					logMap[e.Name()] = time.Now().UTC().Format(time.RFC3339)
+				}
 				continue
 			}
 		}

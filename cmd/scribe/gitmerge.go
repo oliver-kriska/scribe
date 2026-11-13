@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"maps"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -170,6 +172,90 @@ func mergeSessionsLogContent(ours, theirs []byte) []byte {
 	return append(data, '\n')
 }
 
+// mergeTimestampMapContent merges a flat {name: entry} log whose
+// entries are an RFC3339 string or an object with `at`/`extracted`
+// (_contextualized_log.json, _absorb_log.json). Keys union; on a shared
+// key the newer entry wins. Each machine processes its own files, so
+// the sides are mostly disjoint.
+func mergeTimestampMapContent(ours, theirs []byte) []byte {
+	parse := func(b []byte) map[string]json.RawMessage {
+		var m map[string]json.RawMessage
+		if len(b) == 0 || json.Unmarshal(b, &m) != nil || m == nil {
+			return map[string]json.RawMessage{}
+		}
+		return m
+	}
+	merged := parse(ours)
+	for name, theirEntry := range parse(theirs) {
+		ourEntry, ok := merged[name]
+		if !ok || sessionEntryNewer(theirEntry, ourEntry) {
+			merged[name] = theirEntry
+		}
+	}
+	data, err := json.MarshalIndent(merged, "", "  ")
+	if err != nil {
+		return ours
+	}
+	return append(data, '\n')
+}
+
+// mergeOutcomesContent merges wiki/_extraction_outcomes.json, an
+// append-only {"entries": [...]} list. Entries dedupe on their compacted
+// JSON (the shared base appears on both sides, possibly indented
+// differently) and sort oldest first. Unknown top-level keys survive.
+func mergeOutcomesContent(ours, theirs []byte) []byte {
+	parse := func(b []byte) (map[string]json.RawMessage, []json.RawMessage) {
+		var doc map[string]json.RawMessage
+		if len(b) == 0 || json.Unmarshal(b, &doc) != nil || doc == nil {
+			return map[string]json.RawMessage{}, nil
+		}
+		var entries []json.RawMessage
+		_ = json.Unmarshal(doc["entries"], &entries)
+		return doc, entries
+	}
+	ourDoc, ourEntries := parse(ours)
+	theirDoc, theirEntries := parse(theirs)
+
+	seen := map[string]bool{}
+	entries := []json.RawMessage{}
+	for _, entry := range append(ourEntries, theirEntries...) {
+		var compacted bytes.Buffer
+		if json.Compact(&compacted, entry) != nil {
+			continue
+		}
+		if !seen[compacted.String()] {
+			seen[compacted.String()] = true
+			entries = append(entries, compacted.Bytes())
+		}
+	}
+	entryTime := func(raw json.RawMessage) string {
+		var e struct {
+			Timestamp string `json:"timestamp"`
+		}
+		_ = json.Unmarshal(raw, &e)
+		return e.Timestamp
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entryTime(entries[i]) < entryTime(entries[j]) })
+
+	out := map[string]json.RawMessage{}
+	for k, v := range theirDoc {
+		out[k] = v
+	}
+	for k, v := range ourDoc {
+		out[k] = v
+	}
+	entriesData, err := json.Marshal(entries)
+	if err != nil {
+		return ours
+	}
+	out["entries"] = entriesData
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return ours
+	}
+	return append(data, '\n')
+}
+
 // sessionEntryNewer reports whether processed entry a is newer than b.
 // Handles both shapes: a bare RFC3339 string, or an object carrying an
 // "extracted" timestamp. Unparseable entries never win, so `ours` stands.
@@ -196,9 +282,14 @@ func sessionEntryTime(raw json.RawMessage) (time.Time, bool) {
 	}
 	var obj struct {
 		Extracted string `json:"extracted"`
+		At        string `json:"at"` // absorb-log entries
 	}
-	if json.Unmarshal(raw, &obj) == nil && obj.Extracted != "" {
-		t, err := time.Parse(time.RFC3339, obj.Extracted)
+	if json.Unmarshal(raw, &obj) == nil && obj.Extracted+obj.At != "" {
+		stamp := obj.Extracted
+		if stamp == "" {
+			stamp = obj.At
+		}
+		t, err := time.Parse(time.RFC3339, stamp)
 		return t, err == nil
 	}
 	return time.Time{}, false

@@ -153,7 +153,9 @@ func saveAbsorbLog(path string, log AbsorbLog) error {
 	if err != nil {
 		return fmt.Errorf("marshal absorb log: %w", err)
 	}
-	if err := writeFileAtomic(path, data, 0o644); err != nil {
+	// Trailing newline matches the conflict merger's output, so a merged
+	// file is not rewritten by the next save.
+	if err := writeFileAtomic(path, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write absorb log: %w", err)
 	}
 	return nil
