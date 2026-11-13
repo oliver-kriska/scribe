@@ -1,8 +1,10 @@
 ## {{.KBName}} Knowledge Base
 
-{{.OwnerName}} maintains a personal knowledge base at `{{.KBDir}}` indexed by qmd. It contains wiki articles, project insights, decisions, patterns, and solutions extracted from projects. The KB is LLM-managed — a `scribe` Go binary runs on cron to auto-extract from git repos, mine coding-agent sessions indexed by ccrider, discover Codex CLI projects, capture self-sent iMessage URLs, and absorb queued URLs. You don't need to run any of that yourself; it's already scheduled.
+{{.OwnerName}} maintains a knowledge base at `{{.KBDir}}` indexed by qmd. It contains wiki articles, project insights, decisions, patterns, and solutions extracted from projects. The KB is LLM-managed — a `scribe` Go binary runs on cron to auto-extract from git repos, mine coding-agent sessions indexed by ccrider, discover Codex CLI projects, capture self-sent iMessage URLs, and absorb queued URLs. You don't need to run any of that yourself; it's already scheduled.
 
 **Don't assume this thread gets mined.** scribe harvests coding-agent sessions through ccrider's index. Claude Code and Codex CLI transcripts are local files, so they're always there to read; Amp threads live on the Amp server and reach ccrider only through its opt-in Amp importer (`amp_enabled` in `~/.config/ccrider/config.toml`), which needs network and a live login. When that's off or the login lapses, an Amp session leaves no trace in the KB. So treat the drop-file step below as the reliable path from this session into the KB, not as a nicety.
+
+**Before your first file edit:** run one KB query that describes the task in one sentence. This applies to continuations, subagent hand-backs, code reviews and ship/release runs too. Skip it only if this session already ran one. Before you report a code-review finding, query the KB for a recorded decision on that code: cite it, or drop the finding. When you brief a subagent to explore or critique, tell it to query the KB first and return any hits with its findings.
 
 **When to search it:** Before making architectural decisions, when encountering a pattern that might exist elsewhere, when the user asks "have I done this before" or "what do I know about X", or when you need context about {{.OwnerName}}'s other projects.
 
@@ -10,12 +12,12 @@
 
 Use shell `qmd search "<keywords>"` for exact-term, no-model retrieval. If no qmd MCP query tool is available and semantic retrieval is necessary, fall back to `qmd query "<natural language question>"` via the shell. All qmd commands work from any directory because collections use absolute paths, so **never `cd` into {{.KBDir}} first**. For structural navigation once you're inside the KB, read `{{.KBDir}}/wiki/_index.md`.
 
-**When to search proactively — don't wait for {{.OwnerName}} to ask.** The KB is only valuable if it's consulted before decisions, not after. {{.OwnerName}} has spent research effort on every one of the situations below and the answers are on disk; skipping the search wastes that work. Query the KB at the start of any of these, without asking first:
+**When to search proactively — don't wait for the user to ask.** The KB is only valuable if it's consulted before decisions, not after. {{.OwnerName}} has spent research effort on every one of the situations below and the answers are on disk; skipping the search wastes that work. Query the KB at the start of any of these, without asking first:
 
 - **Before recommending a library, tool, or framework** — query `"<name> evaluation verdict"` or `"alternatives to <name>"`. {{.OwnerName}} has already graded tools (`tools/` directory uses `verdict: use | evaluate | skip`). Don't suggest something already rejected.
 - **Before proposing an architectural choice** — query `"<problem> decision reasoning"` or `"<pattern> tradeoffs"`. Past decisions live in `decisions/` with full context on what was considered and why. Cite the prior decision ("per [[Decision Title]], you chose X because Y — is that still current?") instead of reinventing it.
 - **Before writing code that smells familiar** — query `"<pattern> solution"` or describe the problem in one sentence. `patterns/` and `solutions/` exist specifically for reuse across projects.
-- **When {{.OwnerName}} references past work** — phrases like "have I done this before", "what do I know about X", "didn't we decide on X", "how did I solve this last time", "which tool did I use for X", "is there a pattern for this" — these are direct instructions to search. Don't answer from memory; search.
+- **When the user references past work** — phrases like "have I done this before", "what do I know about X", "didn't we decide on X", "how did I solve this last time", "which tool did I use for X", "is there a pattern for this" — these are direct instructions to search. Don't answer from memory; search.
 - **When hitting an error message that looks recognisable** — query the error text as a natural-language question. Debug outcomes are logged; the fix may be in `solutions/` or `projects/<name>/learnings.md`.
 - **When a session in a new-to-you project starts** — query `"<project name> overview"` and `"<project name> decisions"` before reading any code. `projects/<name>/` contains the orientation you need.
 - **Whenever the word "research" comes up — any context.** "research X", "have you researched Y", "this needs research", "let me do some research on Z", "old research on W", "there's research about this" — treat any of these as an instruction to run `qmd query` first. `{{.KBDir}}/research/` is the canonical home for deep dives.
@@ -30,9 +32,9 @@ Use shell `qmd search "<keywords>"` for exact-term, no-model retrieval. If no qm
 
 `scribe drop --title "..." --type <project|tool|person|decision|pattern|solution|research|idea> --domain {{.DomainsPipe}} --tags a,b --body file:<scratch-file>`
 
-This validates the frontmatter and writes to `.claude/{{.KBName}}/YYYY-MM-DD-{slug}.md` in the current project. If `scribe` isn't on PATH, write that file directly — schema in `.claude/skills/scribe-kb/references/DROP_FILES.md` if the skill is installed, or ask {{.OwnerName}}.
+This validates the frontmatter and writes to `.claude/{{.KBName}}/YYYY-MM-DD-{slug}.md` in the current project. If `scribe` isn't on PATH, write that file directly — schema in `.claude/skills/scribe-kb/references/DROP_FILES.md` if the skill is installed, or ask the user.
 
-The `.claude/{{.KBName}}/` directory is the **shared drop-file location every agent uses** — Amp, Claude Code, and Codex CLI alike. `scribe sync` scans it by path regardless of which agent wrote the file (or which agent's CLI ran `scribe drop`). The `.claude/` segment is just where the convention landed; it is not Claude-specific and you should write there from Amp sessions too. `scribe sync` running on cron in the KB will absorb these automatically. Add `--rolling-target learnings` or `--rolling-target decisions-log` when the insight belongs to a specific project's memory log. Tell {{.OwnerName}} what you filed and why — don't fabricate drop files for trivial facts.
+The `.claude/{{.KBName}}/` directory is the **shared drop-file location every agent uses** — Amp, Claude Code, and Codex CLI alike. `scribe sync` scans it by path regardless of which agent wrote the file (or which agent's CLI ran `scribe drop`). The `.claude/` segment is just where the convention landed; it is not Claude-specific and you should write there from Amp sessions too. `scribe sync` running on cron in the KB will absorb these automatically. Add `--rolling-target learnings` or `--rolling-target decisions-log` when the insight belongs to a specific project's memory log. Tell the user what you filed and why — don't fabricate drop files for trivial facts.
 
 ## Storage boundaries
 
