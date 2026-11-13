@@ -289,9 +289,22 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 	// hints (action: create/update/append, target path) that the LLM
 	// should honor verbatim.
 	var consumed []string
+	var titles map[string]string
+	titleIndex := func() map[string]string {
+		if titles == nil {
+			titles = kbTitlePaths(root)
+		}
+		return titles
+	}
 	for _, p := range stagedDrops(dropStaging) {
 		rel, _ := filepath.Rel(root, p)
-		if appendFile("DROP: "+rel, p) {
+		label := "DROP: " + rel
+		if data, err := readRegularFile(p); err == nil {
+			if target := dropMergeTarget(root, data, titleIndex); target != "" {
+				label += " (merges into the existing page `" + target + "`: emit `append` on that path with body text only, never `create`)"
+			}
+		}
+		if appendFile(label, p) {
 			consumed = append(consumed, p)
 		}
 	}

@@ -55,6 +55,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   9.3k-token prompt and four articles. Its `rolling_memory_append`
   example also named the field `entry` where the executor reads
   `content`, so every rolling-memory note from extraction was dropped.
+- **A drop that updates an existing page now reaches that page.** A drop
+  with `action: append` or `update` names its page by `target` or
+  `title`. Extraction never showed the model existing pages, and the
+  prompt allows `append` only on a path the model was shown. So the model
+  answered with `create`, the executor refused to overwrite the existing
+  file, and the update was lost (3 of 19 drops in one live run).
+  Extraction now looks up the drop's page and names it in the drop's
+  header, so the model appends to it. A title shared by two pages gets no
+  hint, so a drop is never merged into the wrong one.
 - **Extraction no longer loses learnings to an empty `domain` field.**
   Hosted models often leave `domain` off a `rolling_memory_append` op and
   leave the `log_append` line empty, and the executor rejected both (4 of

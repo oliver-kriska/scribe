@@ -155,3 +155,49 @@ func TestExtractEnvelope_FillsEmptyMetaFields(t *testing.T) {
 		t.Fatalf("log line must fall back to the content, log.md=%q", log)
 	}
 }
+
+// A drop that asks to append to an existing page must reach the model
+// with that page's path; without it the model answers `create`, the
+// executor refuses to overwrite, and the update is lost.
+func TestExtractEnvelope_DropNamesExistingMergeTarget(t *testing.T) {
+	root := stubHarnessKB(t, denseAbsorbYAML)
+	page := filepath.Join(root, "projects", "agentrix", "overview.md")
+	if err := os.MkdirAll(filepath.Dir(page), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(page, []byte("---\ntitle: Agentrix\ntype: project\n---\n\nBody.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	staging := dropStagingDir(root, "p")
+	writeDrop(t, staging, "a-update.md", "---\nscriptorium: true\naction: append\ntitle: \"Agentrix\"\n---\n\nScore 53.5.\n")
+	writeDrop(t, staging, "b-new.md", "---\nscriptorium: true\naction: create\ntitle: \"Agentrix\"\n---\n\nNew.\n")
+	writeDrop(t, staging, "c-missing.md", "---\nscriptorium: true\naction: append\ntitle: \"No Such Page\"\n---\n\nX.\n")
+	stub := &stubLLM{DefaultReply: extractEnvEmpty}
+	if _, _, err := runExtractInKB(t, stub, root); err != nil {
+		t.Fatal(err)
+	}
+	p := stub.Calls()[0].Prompt
+	hint := "merges into the existing page `projects/agentrix/overview.md`"
+	if !strings.Contains(p, "a-update.md ("+hint) {
+		t.Fatalf("append drop must name its existing page:\n%.600s", p)
+	}
+	if strings.Count(p, hint) != 1 {
+		t.Fatalf("only the append drop gets the hint, got %d", strings.Count(p, hint))
+	}
+}
+
+func TestKBTitlePathsAmbiguousTitleHasNoTarget(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"tools/a.md", "wiki/a.md"} {
+		abs := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte("---\ntitle: Same\n---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, ok := kbTitlePaths(root)["same"]; !ok || got != "" {
+		t.Fatalf("a shared title must map to \"\" (ambiguous), got %q ok=%v", got, ok)
+	}
+}
