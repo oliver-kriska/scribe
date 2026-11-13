@@ -4,6 +4,8 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-11-13
+
 ### Added
 
 - **`scribe sessions backfill-watermarks [-n] [--cap N] [--mode
