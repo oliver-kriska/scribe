@@ -41,6 +41,7 @@ func runDeepExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig,
 	if err != nil {
 		return errors.Is(err, ErrRateLimit), err
 	}
+	fillExtractMetaDefaults(&env, project, domain, time.Now().UTC().Format("2006-01-02"))
 	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
 	if err != nil {
 		return false, fmt.Errorf("deep: apply actions: %w", err)

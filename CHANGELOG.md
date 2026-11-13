@@ -55,6 +55,12 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   9.3k-token prompt and four articles. Its `rolling_memory_append`
   example also named the field `entry` where the executor reads
   `content`, so every rolling-memory note from extraction was dropped.
+- **Extraction no longer loses learnings to an empty `domain` field.**
+  Hosted models often leave `domain` off a `rolling_memory_append` op and
+  leave the `log_append` line empty, and the executor rejected both (4 of
+  8 ops in one live run, two of them learnings from a drop). Project
+  extraction and `scribe deep` now fill in the project's own domain and
+  fall back to the op's content, or a plain breadcrumb, for the log line.
 - **Projects too large for one sync pass no longer block every other
   project.** The `sync.max_extract_files` size check ran after the
   `--max` cap had picked which projects to extract. A project with staged

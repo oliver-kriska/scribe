@@ -130,3 +130,28 @@ func TestExtractEnvelopePromptRollingFieldMatchesExecutor(t *testing.T) {
 		t.Fatal(`rolling_memory_append example must carry "content", not "entry"`)
 	}
 }
+
+// Hosted models leave the rolling-memory domain and the log line empty,
+// and the executor rejected those ops (4 of 8 in one live run). The
+// extraction knows the project's domain, so it fills them in.
+func TestExtractEnvelope_FillsEmptyMetaFields(t *testing.T) {
+	root := stubHarnessKB(t, denseAbsorbYAML)
+	reply := `{"version":2,"actions":[],"meta":[` +
+		`{"op":"log_append","content":"## [2026-11-13] extract | p: one learning"},` +
+		`{"op":"rolling_memory_append","target":"learnings","content":"## 2026-11-13 | a learning\n\nContext: x."}]}`
+	stub := &stubLLM{DefaultReply: reply}
+	installStubLLM(t, stub)
+	proj := t.TempDir()
+	cfg := loadConfig(root)
+	if _, err := runExtractEnvelope(context.Background(), root, cfg, nil, "p", &ProjectEntry{Path: proj, Domain: "general"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "projects", "general", "learnings.md"))
+	if err != nil || !strings.Contains(string(got), "a learning") {
+		t.Fatalf("learning must land in projects/general/learnings.md: err=%v body=%q", err, got)
+	}
+	log, _ := os.ReadFile(filepath.Join(root, "log.md"))
+	if !strings.Contains(string(log), "extract | p: one learning") {
+		t.Fatalf("log line must fall back to the content, log.md=%q", log)
+	}
+}

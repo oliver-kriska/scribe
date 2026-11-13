@@ -67,6 +67,7 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	if err != nil {
 		return nil, err
 	}
+	fillExtractMetaDefaults(&env, pname, entry.Domain, time.Now().UTC().Format("2006-01-02"))
 	// Project extraction creates new project entities; it must not overwrite
 	// an existing curated doc with a reconstruction.
 	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
@@ -90,6 +91,36 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	addRunStat("envelope_actions_applied", len(res.Applied))
 	addRunStat("envelope_actions_errored", len(res.Errors))
 	return consumed, nil
+}
+
+// fillExtractMetaDefaults supplies the meta fields a project extraction
+// already knows, where the model left them empty. Hosted models drop the
+// rolling-memory domain and the log line (the strict schema can only
+// require `op`, since each op needs different fields), and the executor
+// then rejects the op: 4 of 8 ops failed in one live run, losing two
+// learnings from a user's drop. The domain is the project's own, which
+// the prompt told the model to use; the log line falls back to the
+// content, or to a plain breadcrumb.
+func fillExtractMetaDefaults(env *WikiActionEnvelope, pname, domain, today string) {
+	if env == nil {
+		return
+	}
+	for i := range env.Meta {
+		m := &env.Meta[i]
+		switch m.Op {
+		case "log_append":
+			if strings.TrimSpace(m.Line) == "" {
+				m.Line = strings.TrimSpace(firstLine(m.Content))
+			}
+			if strings.TrimSpace(m.Line) == "" {
+				m.Line = fmt.Sprintf("## [%s] extract | %s", today, pname)
+			}
+		case "rolling_memory_append":
+			if strings.TrimSpace(m.Domain) == "" {
+				m.Domain = domain
+			}
+		}
+	}
 }
 
 // extractEnvelopePrompt is the extract prompt that carries the gathered
