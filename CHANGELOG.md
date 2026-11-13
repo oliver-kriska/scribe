@@ -20,6 +20,25 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   error, so run records and `scribe doctor` show it instead of a bare
   `exit status 1` followed by a truncated JSON line.
 
+### Fixed
+
+- **`scribe tier write` no longer bumps `updated:`.** Filling in or
+  recomputing `index_tier` is derived metadata, not an edit, but every
+  write set `updated:` to today, so one `tier write --missing-only` sweep
+  made hundreds of untouched articles look freshly edited to `hot.md` and
+  the staleness checks.
+
+- **`wiki/_index.md` no longer contains broken UTF-8.** The index cut each
+  article summary at 80 bytes, which could land inside a multi-byte
+  character such as an en dash, and left an invalid byte before the "...".
+  The cut now backs up to a character boundary. The same fix applies to the
+  truncated text in `sessions`, `triage`, chapter titles and a relations
+  error message.
+
+## [0.6.3] — 2026-11-13
+
+### Added
+
 - **`scribe sessions backfill-watermarks [-n] [--cap N] [--mode
   tools|envelope] [--mined-before YYYY-MM-DD]`** (#146) gives entries mined before watermarks existed the
   watermark their mine most likely reached, so the remine pass can read
@@ -36,7 +55,84 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   whose mode or cap changed over time can backfill in passes with
   `--mode`, `--cap` and `--mined-before`.
 
+- **`scribe eval retrieval` measures whether KB search finds the right
+  article.** `--generate N` samples N articles across the KB's top-level
+  dirs and asks the configured contextualize model for two queries per
+  article:
+  - a *direct* one, in the article's own words
+  - an *indirect* one, which describes the situation without the title's
+    words. Questions that reuse a title word are dropped.
+
+  The set is written once to `eval/retrieval-fixture.json` in the KB, so
+  later runs measure the same questions. A plain run feeds it to
+  `qmd bench` and scores four backends (bm25, vector, hybrid, hybrid +
+  rerank) on hit@5, hit@10, MRR and p50 latency. It stores the result
+  under `output/eval/`, prints the change in MRR since the last run, and
+  lists questions the full pipeline missed with what it returned instead.
+  Questions whose article has since been removed are skipped and counted.
+  qmd before 2.5.0 ignores `bench --json` and prints a table, so scribe
+  also parses the table. In that mode the misses list can't name the wrong
+  top hit; upgrade qmd to get it.
+
 ### Fixed
+
+- **Project extraction on a hosted provider now sees the project.**
+  In envelope mode, every provider except Ollama loaded
+  `extract-anthropic.md`, the tool-mode prompt written for `claude -p`. It
+  tells the model to Read and Glob files and has no `{{FILES_CONTENT}}`,
+  so on Together, Groq or any OpenAI-compatible endpoint the model was
+  never shown a file. On the reference KB, all 96 project extractions
+  from 2026-10-19 to 2026-11-12 wrote nothing. Envelope extraction now
+  always uses the envelope prompt with the gathered files. In a live run
+  the same project went from a 1.3k-token prompt and no output to a
+  9.3k-token prompt and four articles. Its `rolling_memory_append`
+  example also named the field `entry` where the executor reads
+  `content`, so every rolling-memory note from extraction was dropped.
+- **A drop that updates an existing page now reaches that page.** A drop
+  with `action: append` or `update` names its page by `target` or
+  `title`. Extraction never showed the model existing pages, and the
+  prompt allows `append` only on a path the model was shown. So the model
+  answered with `create`, the executor refused to overwrite the existing
+  file, and the update was lost (3 of 19 drops in one live run).
+  Extraction now looks up the drop's page and names it in the drop's
+  header, so the model appends to it. A title shared by two pages gets no
+  hint, so a drop is never merged into the wrong one.
+- **Extraction no longer loses learnings to an empty `domain` field.**
+  Hosted models often leave `domain` off a `rolling_memory_append` op and
+  leave the `log_append` line empty, and the executor rejected both (4 of
+  8 ops in one live run, two of them learnings from a drop). Project
+  extraction and `scribe deep` now fill in the project's own domain and
+  fall back to the op's content, or a plain breadcrumb, for the log line.
+- **Projects too large for one sync pass no longer block every other
+  project.** The `sync.max_extract_files` size check ran after the
+  `--max` cap had picked which projects to extract. A project with staged
+  drops is always picked, so two large projects with drops took both
+  `sync --max 2` slots on every run, were then skipped, and no project
+  extracted at all (the reference KB ran that way for days). The size
+  check now runs first. A project over the limit takes no slot, unless
+  it has staged drops: then sync extracts just the drops and leaves
+  `last_sha` where it is, so `scribe deep <project>` still sees every
+  held commit.
+- **Drop files are no longer staged again and again, or deleted unread.**
+  A drop still staged from a failed or deferred extraction was collected
+  again on every sync as another suffixed copy: on the reference KB, 467
+  unique drops had become 172,031 staged files (about 1 GB), and the
+  per-drop duplicate scan made each sync spend two minutes collecting. A
+  byte-identical drop is now skipped, checked against one hash pass over
+  the staging folder. And when an
+  extraction shows the model drop files but writes nothing, those drops
+  move to `output/drops-unextracted/<project>/` for review instead of
+  being deleted (`extract_drops_parked` in run records).
+- **Project and deep extraction no longer fail every run on a bare `{}`.**
+  0.6.2 made envelope parsers reject the empty `{}` reply instead of
+  treating it as "nothing to extract". Project extraction and
+  `scribe deep` never got the strict schema and retry that session mining
+  got, so a small project with nothing new failed on every sync and
+  `scribe doctor` reported `sync` as failing. Both now request a strict
+  `json_schema` (`meta` must hold the `log_append` op) and retry an
+  unusable reply once with a corrective prompt. Run records count
+  `extract_envelope_corrective_retries` and
+  `deep_envelope_corrective_retries`.
 
 - **A mined session is no longer frozen at the moment it was mined
   (#146).** Sessions are admitted while still open, and envelope mode (and
@@ -52,6 +148,56 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   before this release carry no `through_seq` and are never re-mined, so
   an upgrade does not start re-mining old history. The sessions-log git
   merge keeps the higher `through_seq` of the two sides.
+
+- **The dream consolidates again.** On the reference KB, every weekly and
+  daily dream since at least 2026-10-26 applied only its log line. It saw
+  the 40 newest articles, which by construction are never stale, plus
+  contradiction pairs from elsewhere in the KB, as metadata only, so it
+  never had grounds to act. Each run now gets up to 4 *focus pairs* (2 for
+  `--hot`), with bounded body excerpts. Go picks them from near-duplicate
+  bodies (the `lint --duplicates` detector), then from same-type articles
+  sharing two or more specific tags. Pairs reviewed in the last 60 days
+  are skipped (`output/dream-focus-reviewed.json`). The model may mark one
+  side of a duplicate pair `status: superseded`; Go enforces that and adds
+  the `related` link to the kept article, keeping existing links. It may
+  also append a conflict note to an overlapping pair. It no longer rewrites
+  bodies it never saw. New run-record fields `dream_focus_pairs`,
+  `dream_content_actions` and `dream_superseded` show whether a run changed
+  anything. `envelope_actions_applied` read 1 on every no-op run.
+  Any dream `update_frontmatter` that sets `related` is merged with the
+  article's existing links; it can add links but never drop them.
+
+- **Re-absorbing a source no longer drops the page's `related` links.**
+  Pass-2 absorb regenerates a page from its source and overwrote it whole,
+  keeping only `created`. Every link added since, by other writers or by
+  hand, was lost: about 3,500 links to live articles on the reference KB
+  between May and November. The overwrite now keeps the existing links,
+  then adds the new page's links that aren't already there. Links to pages
+  that no longer exist are still cleaned up by `link --fix-broken`. A
+  regenerated page can no longer remove a link just by leaving it out.
+
+- **Re-absorbing a source keeps the page's title, owned fields and lost
+  sections.** Overwriting a page now also:
+  - keeps its title, so `[[links]]` to it keep resolving (even a
+    separator-only retitle broke them). The new title becomes an alias.
+  - restores `status`, `contributor`, `index_tier` and `authority` when the
+    new page omits them, so a dream supersede survives re-absorb.
+  - can re-add `## ` sections the new page dropped and doesn't cover
+    elsewhere (under half of the section's word trigrams found in the new
+    body). This is `absorb.carry_sections`, and it defaults to `report`:
+    it logs "would carry" and writes nothing. Set it to `on` to write them.
+    Carried sections are marked `<!-- scribe:carried DATE -->` and placed
+    before a trailing Sources / See Also block, with at most 8 KB of new
+    and 8 KB of earlier carries per overwrite. Rolling pages are exempt,
+    since compaction archives their old entries on purpose.
+
+  Replayed against the reference KB's 178 shrinking rewrites, section
+  carry would have restored 502 sections on 122 pages. In a hand-classified
+  sample of 20 of them, 10 were real losses, 4 were already covered under
+  another heading, 2 were stale (the new page corrected them) and 4 were
+  unclear. That's why it's opt-in. These guards cover the JSON pass-2 and
+  single-pass paths. Tools-mode pass-2 (`claude -p` writing files itself)
+  doesn't go through them.
 
 ## [0.6.2] — 2026-11-09
 

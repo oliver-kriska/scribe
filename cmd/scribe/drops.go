@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,20 @@ func stagedDrops(staging string) []string {
 	drops, _ := filepath.Glob(filepath.Join(staging, "*.md"))
 	sort.Strings(drops)
 	return drops
+}
+
+// stagedDropDigests hashes every staged drop once, so collection can
+// skip a drop whose bytes are already staged without re-reading the
+// whole staging dir per drop (the scan was quadratic: 85 drops against
+// 65k leftover copies made one sync spend two minutes collecting).
+func stagedDropDigests(staging string) map[[sha256.Size]byte]struct{} {
+	seen := map[[sha256.Size]byte]struct{}{}
+	for _, p := range stagedDrops(staging) {
+		if data, err := os.ReadFile(p); err == nil {
+			seen[sha256.Sum256(data)] = struct{}{}
+		}
+	}
+	return seen
 }
 
 // stagedDropDest picks a destination name for src inside staging that
@@ -73,4 +88,58 @@ func finishDropStaging(pname, staging string, consumed []string, entry *ProjectE
 		return
 	}
 	logMsg("sync", " [%s] %d drop file(s) deferred to the next extraction (files budget) — still staged in %s", pname, len(left), staging)
+}
+
+// dropMergeTarget returns the KB page (root-relative) a staged drop asks
+// to merge into, or "" when it asks for a new page or names no page that
+// exists. A drop with `action: append|update` names its page by `target`
+// or by `title`. The extract prompt allows `append` only on a path the
+// model was shown, and extraction never shows existing pages, so the
+// model answered such drops with `create`, which the executor refuses
+// on an existing file: the update was lost (3 of 19 drops on 2026-11-13).
+// titles is called only when a lookup by title is needed.
+func dropMergeTarget(root string, data []byte, titles func() map[string]string) string {
+	raw, err := parseFrontmatterRaw(data)
+	if err != nil {
+		return ""
+	}
+	action, _ := raw["action"].(string)
+	if action != "append" && action != "update" {
+		return ""
+	}
+	if t, _ := raw["target"].(string); t != "" {
+		if abs, err := validateActionPath(root, t); err == nil && fileExists(abs) {
+			return filepath.ToSlash(t)
+		}
+	}
+	title, _ := raw["title"].(string)
+	if title = strings.ToLower(strings.TrimSpace(title)); title == "" {
+		return ""
+	}
+	return titles()[title]
+}
+
+// kbTitlePaths maps each lowercased article title to its root-relative
+// path. A title shared by two pages maps to "" (ambiguous): merging a
+// drop into the wrong one is worse than letting the model create.
+func kbTitlePaths(root string) map[string]string {
+	out := map[string]string{}
+	_ = walkArticles(root, func(path string, content []byte) error {
+		fm, err := parseFrontmatter(content)
+		if err != nil || fm == nil || fm.Title == "" {
+			return nil //nolint:nilerr // unparseable article: skip it, keep walking
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil //nolint:nilerr // outside root: skip
+		}
+		key := strings.ToLower(strings.TrimSpace(fm.Title))
+		if _, dup := out[key]; dup {
+			out[key] = ""
+			return nil
+		}
+		out[key] = filepath.ToSlash(rel)
+		return nil
+	})
+	return out
 }

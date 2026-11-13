@@ -26,11 +26,11 @@ You are the LLM consolidation step inside Go's weekly Dream orchestrator. Emit o
 {{STALE}}
 <<<STALE_END>>>
 
-## Contradiction candidates (pre-filtered by Go)
+## Focus pairs picked by Go, with body excerpts. These are the only articles whose content you can see:
 
-<<<CONTRADICTIONS_BEGIN>>>
-{{CONTRADICTIONS}}
-<<<CONTRADICTIONS_END>>>
+<<<FOCUS_BEGIN>>>
+{{FOCUS}}
+<<<FOCUS_END>>>
 
 ## Output schema (v2 envelope)
 
@@ -54,8 +54,13 @@ You are the LLM consolidation step inside Go's weekly Dream orchestrator. Emit o
 
 - ALWAYS include one `log_append` in meta, even when actions is empty (`"actions": []`).
 - Path rooted in: wiki/, projects/, research/, solutions/, tools/, decisions/, patterns/, ideas/, people/, sessions/.
+- **Focus pairs**: judge each pair from its excerpts alone. Make one decision per pair:
+  - **duplicate**: one article already says what the other says and adds nothing the other lacks. Mark the weaker one, meaning older, thinner or lower confidence, with `update_frontmatter` `{"status": "superseded", "related": ["[[<title of the article you keep>]]"]}`. Supersede at most one side, and only in a pair flagged `duplicate`. The executor drops `status` anywhere else.
+  - **conflict**: the two make incompatible claims about the same thing. `append` to the older or less supported one: `"\n\n> **Conflict noted {{TODAY}}:** <one sentence naming what disagrees> (see [[<other title>]])\n"`. Do not pick a winner unless one is plainly the later correction. A passing remark is never the correction of a decision people recorded.
+  - **fine**: distinct or complementary. Do nothing.
+  Never rewrite either article's body, and never act on a pair you can't judge from the excerpts.
 - Use `update_frontmatter` for date bumps (cheapest action). Its `frontmatter` value MUST be a non-empty object, e.g. `{"updated": "{{TODAY}}"}` — the key is named `frontmatter`, never `set`/`fields`/`updates`. Nothing to set → omit the action entirely.
-- Use `append` for decay markers — content `"\n<!-- decay-candidate {{TODAY}} -->\n"` — and ONLY on a path listed verbatim under "Stale candidates" above. You are not shown link counts, so being on that list is not evidence of decay. Mark a listed article only when the inventory or contradiction candidates give a concrete reason it is obsolete (for example, it describes a tool, API or plan that the inventory or a contradiction candidate shows was since removed or abandoned). If unsure, do not mark it. If that list is empty, emit NO decay append. (The executor refuses a decay marker on any doc updated within 60 days, so an off-list guess is dropped.)
+- Use `append` for decay markers — content `"\n<!-- decay-candidate {{TODAY}} -->\n"` — and ONLY on a path listed verbatim under "Stale candidates" above. You are not shown link counts, so being on that list is not evidence of decay. Mark a listed article only when the inventory or focus pairs give a concrete reason it is obsolete (for example, it describes a tool, API or plan that the inventory or a focus pair shows was since removed or abandoned). If unsure, do not mark it. If that list is empty, emit NO decay append. (The executor refuses a decay marker on any doc updated within 60 days, so an off-list guess is dropped.)
 - Use `replace_section` to swap a body without rewriting frontmatter.
 - Use `create` for stub articles (entity referenced in 3+ articles but no wiki page yet).
 - NEVER target ANY file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json, _hot.md, _staleness.jsonl). Scribe generates these and writing one corrupts the KB. The executor rejects them. Use `create` for a new file; use `append` only for a file you were shown exists.

@@ -146,7 +146,7 @@ func truncateOutsideWikilink(s string, limit int) string {
 		return s
 	}
 	cut := max(limit-3, 0) // room for the trailing ellipsis
-	head := s[:cut]
+	head := truncateBytes(s, cut)
 	// If the tail opens a `[[` that never closes inside the cut, back up to
 	// just before that opener so the truncation stays outside the link.
 	if idx := strings.LastIndex(head, "[["); idx >= 0 {

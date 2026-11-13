@@ -283,6 +283,7 @@ absorb:
   pass2_parallel: 3               # default: 3 (chapters per pass2 run; drop to 1 for slow local models)
   single_pass_timeout_min: 5      # default: 5
   max_single_pass_chars: 60000    # default: 60000 (raw body chars inlined into the single-pass prompt; longer sources are cut, 0 = unbounded)
+  carry_sections: report          # default: report. On re-absorb overwrite, re-add ## sections the new page dropped: report = log only, on = write them (marked scribe:carried), off. json pass-2 / single-pass only.
 
   # Phase 3B atomic-fact extraction. Off by default — opt in once
   # chaptered absorb is verified on your corpus.

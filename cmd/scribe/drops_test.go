@@ -139,3 +139,26 @@ func TestCollectDropFilesWorktreeCollision(t *testing.T) {
 		t.Errorf("one copy overwrote the other: %v", bodies)
 	}
 }
+
+// TestCollectDropFilesDoesNotRestageSameDrop: a drop still staged from a
+// failed or deferred extraction is collected again (the stamp has not
+// advanced), but must not pile up as suffixed copies. scriptorium's
+// articles project had 3 drops staged as 133 files.
+func TestCollectDropFilesDoesNotRestageSameDrop(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "scribe.yaml"), []byte("kb_name: testkb\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	proj := t.TempDir()
+	writeDrop(t, filepath.Join(proj, ".claude", "testkb"), "note.md", "same body")
+	entry := &ProjectEntry{Name: "proj", Path: proj}
+	m := &Manifest{Projects: map[string]*ProjectEntry{proj: entry}}
+
+	s := &SyncCmd{}
+	for range 3 {
+		s.collectDropFiles(root, m)
+	}
+	if staged := stagedDrops(dropStagingDir(root, "proj")); len(staged) != 1 {
+		t.Fatalf("want 1 staged copy after 3 collections, got %v", staged)
+	}
+}
