@@ -195,7 +195,7 @@ func articleHasTOCSidecar(rawArticlePath string) bool {
 func fmtChapterTitle(t string) string {
 	t = strings.TrimSpace(t)
 	if len(t) > 60 {
-		return t[:57] + "..."
+		return truncateBytes(t, 57) + "..."
 	}
 	return t
 }

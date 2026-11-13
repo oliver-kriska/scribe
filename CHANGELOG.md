@@ -4,6 +4,15 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Fixed
+
+- **`wiki/_index.md` no longer contains broken UTF-8.** The index cut each
+  article summary at 80 bytes, which could land inside a multi-byte
+  character such as an en dash, and left an invalid byte before the "...".
+  The cut now backs up to a character boundary. The same fix applies to the
+  truncated text in `sessions`, `triage`, chapter titles and a relations
+  error message.
+
 ## [0.6.3] — 2026-11-13
 
 ### Added
