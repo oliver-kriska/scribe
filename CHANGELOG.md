@@ -55,10 +55,23 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   9.3k-token prompt and four articles. Its `rolling_memory_append`
   example also named the field `entry` where the executor reads
   `content`, so every rolling-memory note from extraction was dropped.
+- **Projects too large for one sync pass no longer block every other
+  project.** The `sync.max_extract_files` size check ran after the
+  `--max` cap had picked which projects to extract. A project with staged
+  drops is always picked, so two large projects with drops took both
+  `sync --max 2` slots on every run, were then skipped, and no project
+  extracted at all (the reference KB ran that way for days). The size
+  check now runs first. A project over the limit takes no slot, unless
+  it has staged drops: then sync extracts just the drops and leaves
+  `last_sha` where it is, so `scribe deep <project>` still sees every
+  held commit.
 - **Drop files are no longer staged again and again, or deleted unread.**
   A drop still staged from a failed or deferred extraction was collected
-  again on every sync as another suffixed copy: three drops became 133
-  staged files. A byte-identical drop is now skipped. And when an
+  again on every sync as another suffixed copy: on the reference KB, 467
+  unique drops had become 172,031 staged files (about 1 GB), and the
+  per-drop duplicate scan made each sync spend two minutes collecting. A
+  byte-identical drop is now skipped, checked against one hash pass over
+  the staging folder. And when an
   extraction shows the model drop files but writes nothing, those drops
   move to `output/drops-unextracted/<project>/` for review instead of
   being deleted (`extract_drops_parked` in run records).

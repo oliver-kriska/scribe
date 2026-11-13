@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,15 +33,18 @@ func stagedDrops(staging string) []string {
 	return drops
 }
 
-// dropAlreadyStaged reports whether staging already holds a file with
-// exactly these bytes.
-func dropAlreadyStaged(staging string, data []byte) bool {
+// stagedDropDigests hashes every staged drop once, so collection can
+// skip a drop whose bytes are already staged without re-reading the
+// whole staging dir per drop (the scan was quadratic: 85 drops against
+// 65k leftover copies made one sync spend two minutes collecting).
+func stagedDropDigests(staging string) map[[sha256.Size]byte]struct{} {
+	seen := map[[sha256.Size]byte]struct{}{}
 	for _, p := range stagedDrops(staging) {
-		if have, err := os.ReadFile(p); err == nil && bytes.Equal(have, data) {
-			return true
+		if data, err := os.ReadFile(p); err == nil {
+			seen[sha256.Sum256(data)] = struct{}{}
 		}
 	}
-	return false
+	return seen
 }
 
 // stagedDropDest picks a destination name for src inside staging that
