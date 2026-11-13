@@ -30,19 +30,19 @@ import (
 // envelope result (or nil envelope if the cycle was a no-op).
 func runDreamOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, today string) error {
 	logTail := dreamReadLogTail(root, 20)
-	inventory := dreamSampleInventory(root, "", 40)
+	focus := dreamFocusPairs(root, "", dreamFocusMaxPairs, time.Now())
+	inventory := dreamFocusInventory(root, "", focus, 40)
 	stale := dreamStaleCandidates(root, "", 60)
-	contradictions := dreamContradictionCandidates(root, "")
 
 	provider := newLLMProvider(cfg.Dream.Provider, cfg.Dream.Model, cfg.Dream.OllamaURL, root)
 	promptName := promptForProvider("dream", providerNameFor(provider))
 	prompt, err := loadPrompt(promptName, map[string]string{
-		"KB_DIR":         root,
-		"TODAY":          today,
-		"LOG_TAIL":       logTail,
-		"INVENTORY":      inventory,
-		"STALE":          stale,
-		"CONTRADICTIONS": contradictions,
+		"KB_DIR":    root,
+		"TODAY":     today,
+		"LOG_TAIL":  logTail,
+		"INVENTORY": inventory,
+		"STALE":     stale,
+		"FOCUS":     renderDreamFocus(focus),
 	})
 	if err != nil {
 		return fmt.Errorf("load dream prompt: %w", err)
@@ -73,10 +73,12 @@ func runDreamOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, t
 	// AllowOverwrite off (its only valid create is a new stub) and protects
 	// provenance frontmatter. See d06cc70 (0.2.18) for the same incident
 	// class on _-prefixed artifacts.
+	superseded := guardDreamFocusActions(root, &env, focus)
 	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
 	if err != nil {
 		return fmt.Errorf("dream: apply actions: %w", err)
 	}
+	markDreamFocusReviewed(root, focus, time.Now())
 	if len(res.Errors) > 0 {
 		logMsg("dream", "envelope: %d applied, %d errors: %v", len(res.Applied), len(res.Errors), res.Errors)
 	} else {
@@ -92,6 +94,9 @@ func runDreamOrchestrator(ctx context.Context, root string, cfg *ScribeConfig, t
 	setRunStat("envelope_actions_applied", len(res.Applied))
 	setRunStat("envelope_actions_errored", len(res.Errors))
 	setRunStat("envelope_meta_ops", len(env.Meta))
+	setRunStat("dream_focus_pairs", len(focus))
+	setRunStat("dream_content_actions", dreamContentActions(res.Applied))
+	setRunStat("dream_superseded", superseded)
 	return nil
 }
 
@@ -228,84 +233,6 @@ func dreamStaleCandidates(root, domain string, days int) string {
 		paths = paths[:60]
 	}
 	return strings.Join(paths, "\n")
-}
-
-// dreamContradictionCandidates returns groups of articles that share
-// tags or a domain. The LLM does the actual classification work
-// (solid-vs-solid, solid-vs-vague, vague-vs-vague). Go just narrows
-// the search space so the prompt doesn't have to scan everything.
-//
-// domain, when non-empty, restricts candidates to that domain — this
-// scopes contradiction pairs to the domain even though they're grouped
-// by tag, since a cross-domain tag collision isn't the hot pass's job.
-func dreamContradictionCandidates(root, domain string) string {
-	type article struct {
-		Path  string
-		Title string
-		Conf  string
-		Tags  []string
-	}
-	byTag := map[string][]article{}
-	_ = walkArticles(root, func(path string, content []byte) error {
-		fm, err := parseFrontmatter(content)
-		if err != nil || fm == nil {
-			return nil //nolint:nilerr // unparseable article: skip it, keep walking
-		}
-		if domain != "" && fm.Domain != domain {
-			return nil
-		}
-		// Superseded records stay on disk on purpose (Rule 12). Showing them
-		// as stale, contradiction or inventory candidates invites the model
-		// to decay-mark them or reopen a contradiction already resolved.
-		if isSuperseded(fm) {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		a := article{Path: filepath.ToSlash(rel), Title: fm.Title, Conf: fm.Confidence}
-		// Tags can be string-list or string; we only need the
-		// flat-list shape that yaml.v3 hands us.
-		if tags, ok := fm.Tags.([]any); ok {
-			for _, t := range tags {
-				if s, ok := t.(string); ok {
-					a.Tags = append(a.Tags, s)
-				}
-			}
-		}
-		if len(a.Tags) == 0 {
-			return nil
-		}
-		for _, t := range a.Tags {
-			byTag[t] = append(byTag[t], a)
-		}
-		return nil
-	})
-	var sb strings.Builder
-	tagsSorted := make([]string, 0, len(byTag))
-	for t := range byTag {
-		tagsSorted = append(tagsSorted, t)
-	}
-	sort.Strings(tagsSorted)
-	for _, t := range tagsSorted {
-		group := byTag[t]
-		if len(group) < 2 {
-			continue
-		}
-		// Cap each tag group at 5 articles to keep the packet small;
-		// runaway tags ("article", "essay") would dwarf focused tags
-		// otherwise.
-		if len(group) > 5 {
-			group = group[:5]
-		}
-		fmt.Fprintf(&sb, "## tag=%s\n", t)
-		for _, a := range group {
-			fmt.Fprintf(&sb, "- %s | %s | conf=%s\n", a.Path, a.Title, a.Conf)
-		}
-	}
-	out := sb.String()
-	if len(out) > 8000 {
-		out = out[:8000] + "\n…(truncated)\n"
-	}
-	return out
 }
 
 // stringFromAny is a small helper for frontmatter fields that arrive

@@ -191,8 +191,9 @@ func TestDeepRun_EnvelopeMode_ErrorContinuesToNextDir(t *testing.T) {
 	if err := d.Run(); err != nil {
 		t.Fatalf("DeepCmd.Run: %v", err)
 	}
-	if got := len(stub.CallsWithOp("deep-extract")); got != 2 {
-		t.Errorf("deep-extract calls = %d, want 2", got)
+	// alphadocs: first call + one corrective retry; betadocs: one call.
+	if got := len(stub.CallsWithOp("deep-extract")); got != 3 {
+		t.Errorf("deep-extract calls = %d, want 3", got)
 	}
 	if _, err := os.Stat(filepath.Join(root, "wiki", "deep-alphadocs.md")); !os.IsNotExist(err) {
 		t.Errorf("alphadocs page should not exist, stat err = %v", err)

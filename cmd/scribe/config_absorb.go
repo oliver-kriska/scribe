@@ -43,8 +43,14 @@ type AbsorbConfig struct {
 	// MaxSinglePassChars bounds the raw body inlined into the single-pass
 	// absorb prompt (bytes, cut on a rune boundary; 0 = unbounded). The
 	// dense-article fallback to single-pass is the usual offender.
-	MaxSinglePassChars int                 `yaml:"max_single_pass_chars"`
-	Contextualize      ContextualizeConfig `yaml:"contextualize"`
+	MaxSinglePassChars int `yaml:"max_single_pass_chars"`
+	// CarrySections: when re-absorb overwrites a page, re-add `##` sections
+	// the new page dropped and doesn't cover elsewhere. "report" (default)
+	// only logs what would be carried; "on" writes them; "off" skips the
+	// check. A 2026-11-10 hand-classified sample was 10 real losses, 4
+	// already merged, 2 stale, 4 unclear out of 20, so it stays opt-in.
+	CarrySections string              `yaml:"carry_sections"`
+	Contextualize ContextualizeConfig `yaml:"contextualize"`
 
 	// ChapterAware turns on the Phase 3A.5 chapter-iteration path:
 	// when a raw article has a TOC sidecar with at least

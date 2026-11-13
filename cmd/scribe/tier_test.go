@@ -125,7 +125,9 @@ func TestUpdateFrontmatterField_EmptyClearsKey(t *testing.T) {
 	}
 }
 
-func TestUpdateFrontmatterField_BumpsUpdatedOnTierWrite(t *testing.T) {
+// A tier write fills in derived metadata; it is not an edit, so it must
+// leave updated: alone (a sweep used to mark every touched article fresh).
+func TestUpdateFrontmatterField_TierWriteKeepsUpdated(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.md")
 	original := "---\ntitle: \"Foo\"\nupdated: 2026-01-01\n---\n\nbody\n"
@@ -136,8 +138,8 @@ func TestUpdateFrontmatterField_BumpsUpdatedOnTierWrite(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 	got, _ := os.ReadFile(path)
-	if strings.Contains(string(got), "updated: 2026-01-01") {
-		t.Errorf("updated: should be bumped on tier write; got:\n%s", got)
+	if !strings.Contains(string(got), "updated: 2026-01-01") || !strings.Contains(string(got), "index_tier: standard") {
+		t.Errorf("tier write must add index_tier and keep updated:; got:\n%s", got)
 	}
 }
 

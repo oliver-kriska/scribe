@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -33,7 +34,13 @@ import (
 // stay staged for the next extraction instead of being deleted unseen).
 func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *Manifest, pname string, entry *ProjectEntry, changed []string) ([]string, error) {
 	provider := newLLMProvider(cfg.Extract.Provider, cfg.Extract.Model, cfg.Extract.OllamaURL, root)
-	promptName := promptForProvider("extract", providerNameFor(provider))
+	// Always the envelope prompt. promptForProvider picks
+	// extract-anthropic.md for every non-Ollama provider, and that is the
+	// tool-mode prompt for `claude -p`: it tells the model to Read and
+	// Glob, and has no {{FILES_CONTENT}}. On a hosted provider the model
+	// never saw the project, and every extraction wrote nothing (96 of 96
+	// on the reference KB from 2026-10-19 to 2026-11-12).
+	const promptName = extractEnvelopePrompt
 
 	dropStaging := dropStagingDir(root, pname)
 	filesContent, consumed := gatherExtractFiles(root, entry, changed, dropStaging, cfg.Extract.MaxFileChars, cfg.Extract.MaxTotalChars)
@@ -45,15 +52,6 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 		"DOMAIN":        entry.Domain,
 		"TODAY":         time.Now().UTC().Format("2006-01-02"),
 		"FILES_CONTENT": filesContent,
-		// Legacy extract-anthropic.md uses these placeholders. Provide
-		// empty strings so it still loads when an admin has set
-		// extract.mode=envelope + extract.provider=anthropic (an
-		// unusual mix, but supported: the envelope path is provider-
-		// agnostic).
-		"STEP2":               "",
-		"FILELIST":            "",
-		"DROP_INSTRUCTION":    "",
-		"CLAUDE_TOOLING_DIRS": claudeToolingPromptList(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load extract prompt: %w", err)
@@ -65,21 +63,11 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	defer cancel()
 
 	logMsg("sync", " [%s] envelope: prompt %d chars, files %d chars, num_ctx=%d", pname, len(prompt), len(filesContent), cfg.Extract.NumCtx)
-	out, err := generateMaybeJSON(callCtx, provider, prompt)
+	env, err := runMetaEnvelopeWithRetry(callCtx, provider, prompt, "extract", pname)
 	if err != nil {
-		if errors.Is(err, ErrRateLimit) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("extract LLM: %w", err)
+		return nil, err
 	}
-	jsonText, ok := extractJSON(out)
-	if !ok {
-		return nil, fmt.Errorf("extract: no JSON envelope in provider output (%d bytes)", len(out))
-	}
-	env, err := parseEnvelopeV2(jsonText, "extract")
-	if err != nil {
-		return nil, fmt.Errorf("extract: parse envelope: %w", err)
-	}
+	fillExtractMetaDefaults(&env, pname, entry.Domain, time.Now().UTC().Format("2006-01-02"))
 	// Project extraction creates new project entities; it must not overwrite
 	// an existing curated doc with a reconstruction.
 	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
@@ -91,11 +79,159 @@ func runExtractEnvelope(ctx context.Context, root string, cfg *ScribeConfig, _ *
 	} else {
 		logMsg("sync", " [%s] envelope: applied %d action(s)", pname, len(res.Applied))
 	}
+	if len(consumed) > 0 && !wroteKnowledge(res) {
+		// The model saw these drops and wrote nothing from them. Deleting
+		// them (finishDropStaging) would lose a handoff to one empty
+		// reply; retrying them every run could loop forever. Park them
+		// where a person can look.
+		parkUnextractedDrops(root, pname, consumed)
+	}
 	setRunStatIfAbsent("mode", "envelope-extract")
 	setRunStatIfAbsent("project", pname)
 	addRunStat("envelope_actions_applied", len(res.Applied))
 	addRunStat("envelope_actions_errored", len(res.Errors))
 	return consumed, nil
+}
+
+// fillExtractMetaDefaults supplies the meta fields a project extraction
+// already knows, where the model left them empty. Hosted models drop the
+// rolling-memory domain and the log line (the strict schema can only
+// require `op`, since each op needs different fields), and the executor
+// then rejects the op: 4 of 8 ops failed in one live run, losing two
+// learnings from a user's drop. The domain is the project's own, which
+// the prompt told the model to use; the log line falls back to the
+// content, or to a plain breadcrumb.
+func fillExtractMetaDefaults(env *WikiActionEnvelope, pname, domain, today string) {
+	if env == nil {
+		return
+	}
+	for i := range env.Meta {
+		m := &env.Meta[i]
+		switch m.Op {
+		case "log_append":
+			if strings.TrimSpace(m.Line) == "" {
+				m.Line = strings.TrimSpace(firstLine(m.Content))
+			}
+			if strings.TrimSpace(m.Line) == "" {
+				m.Line = fmt.Sprintf("## [%s] extract | %s", today, pname)
+			}
+		case "rolling_memory_append":
+			if strings.TrimSpace(m.Domain) == "" {
+				m.Domain = domain
+			}
+		}
+	}
+}
+
+// extractEnvelopePrompt is the extract prompt that carries the gathered
+// files ({{FILES_CONTENT}}) and asks for an envelope. The "-ollama" name
+// is historical: it serves every provider in envelope mode.
+const extractEnvelopePrompt = "extract-ollama.md"
+
+// wroteKnowledge reports whether an apply wrote anything beyond the
+// bookkeeping log lines: a page, or a rolling-memory paragraph.
+func wroteKnowledge(res ApplyResult) bool {
+	for _, a := range res.Applied {
+		if a != "meta:log_append" && !strings.HasPrefix(a, "meta:sessions_log_append") {
+			return true
+		}
+	}
+	return false
+}
+
+// parkUnextractedDrops moves drops an extraction saw but wrote nothing
+// from into output/drops-unextracted/<project>/ instead of letting
+// finishDropStaging delete them.
+func parkUnextractedDrops(root, pname string, drops []string) {
+	dir := filepath.Join(root, "output", "drops-unextracted", pname)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		logPhaseDegraded("sync", "drop parking", " [%s] mkdir %s: %v", pname, dir, err)
+		return
+	}
+	moved := 0
+	for _, p := range drops {
+		if err := os.Rename(p, stagedDropDest(dir, p)); err != nil {
+			logPhaseDegraded("sync", "drop parking", " [%s] park %s: %v", pname, p, err)
+			continue
+		}
+		moved++
+	}
+	if moved > 0 {
+		logMsg("sync", " [%s] extraction wrote nothing from %d drop file(s) — parked in %s for review", pname, moved, dir)
+		addRunStat("extract_drops_parked", moved)
+	}
+}
+
+// errEnvelopeUnparsable marks a reply that came back but is not a usable
+// envelope (no JSON, or a bare "{}"): worth one corrective retry, unlike
+// a transport, rate-limit or model error.
+var errEnvelopeUnparsable = errors.New("reply is not a usable envelope")
+
+// runMetaEnvelopeOnce makes one extract/deep call: strict schema where
+// the provider supports it, then parse. label prefixes errors.
+func runMetaEnvelopeOnce(ctx context.Context, provider llmProviderGenerator, prompt, label string) (WikiActionEnvelope, error) {
+	out, err := generateWithSchema(ctx, provider, prompt, extractEnvelopeSchema())
+	if err != nil {
+		if errors.Is(err, ErrRateLimit) {
+			return WikiActionEnvelope{}, err
+		}
+		return WikiActionEnvelope{}, fmt.Errorf("%s LLM: %w", label, err)
+	}
+	jsonText, ok := extractJSON(out)
+	if !ok {
+		return WikiActionEnvelope{}, fmt.Errorf("%s: %w: no JSON envelope in provider output (%d bytes)", label, errEnvelopeUnparsable, len(out))
+	}
+	env, err := parseEnvelopeV2(jsonText, label)
+	if err != nil {
+		return WikiActionEnvelope{}, fmt.Errorf("%s: %w: parse envelope: %w", label, errEnvelopeUnparsable, err)
+	}
+	return env, nil
+}
+
+// runMetaEnvelopeWithRetry adds one corrective retry for an unusable
+// reply. A small project or directory with nothing new invites the bare
+// "{}" under json_object; strict json_schema closes that on
+// schema-capable providers, and the retry covers the rest. Without it
+// the item stayed pending and failed every run.
+func runMetaEnvelopeWithRetry(ctx context.Context, provider llmProviderGenerator, prompt, label, item string) (WikiActionEnvelope, error) {
+	env, err := runMetaEnvelopeOnce(ctx, provider, prompt, label)
+	if err == nil || !errors.Is(err, errEnvelopeUnparsable) {
+		return env, err
+	}
+	logMsg("sync", " [%s] envelope: %v — retrying with corrective prompt", item, err)
+	addRunStat(label+"_envelope_corrective_retries", 1)
+	return runMetaEnvelopeOnce(ctx, provider, prompt+envelopeCorrectiveSuffix, label)
+}
+
+// extractEnvelopeSchema constrains extract replies on schema-capable
+// providers. Empty actions are legal (nothing new in the project), so
+// the guard against the "{}" escape is meta minItems:1: the prompt's
+// always-present log_append op.
+func extractEnvelopeSchema() jsonSchemaSpec {
+	str := map[string]any{"type": "string"}
+	return jsonSchemaSpec{
+		Name: "WikiActionEnvelope",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"version": map[string]any{"type": "integer"},
+				"entity":  str,
+				"actions": map[string]any{"type": "array", "items": wikiActionItemSchema()},
+				"meta": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"op": str, "line": str, "domain": str, "target": str, "content": str,
+						},
+						"required": []any{"op"},
+					},
+				},
+			},
+			"required": []any{"version", "entity", "actions", "meta"},
+		},
+	}
 }
 
 // gatherExtractFiles assembles the FILES_CONTENT block. Reads in
@@ -153,9 +289,22 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 	// hints (action: create/update/append, target path) that the LLM
 	// should honor verbatim.
 	var consumed []string
+	var titles map[string]string
+	titleIndex := func() map[string]string {
+		if titles == nil {
+			titles = kbTitlePaths(root)
+		}
+		return titles
+	}
 	for _, p := range stagedDrops(dropStaging) {
 		rel, _ := filepath.Rel(root, p)
-		if appendFile("DROP: "+rel, p) {
+		label := "DROP: " + rel
+		if data, err := readRegularFile(p); err == nil {
+			if target := dropMergeTarget(root, data, titleIndex); target != "" {
+				label += " (merges into the existing page `" + target + "`: emit `append` on that path with body text only, never `create`)"
+			}
+		}
+		if appendFile(label, p) {
 			consumed = append(consumed, p)
 		}
 	}

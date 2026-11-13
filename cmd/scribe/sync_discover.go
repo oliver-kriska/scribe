@@ -4,6 +4,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -301,6 +302,7 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 			continue
 		}
 
+		staged := stagedDropDigests(staging)
 		for _, d := range unprocessed {
 			data, err := readRegularFile(d)
 			if err != nil {
@@ -309,10 +311,21 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 			// Collision-safe: a worktree and the main checkout can each
 			// carry a same-named drop, and a deferred drop from the
 			// previous run may still be staged.
+			// A drop still staged from an earlier run (deferred, or its
+			// extraction failed) is collected again, because the manifest
+			// stamp only advances when something is consumed. Without
+			// this check every such run added another suffixed copy:
+			// 3 drops became 133 staged files over ~45 failed syncs.
+			sum := sha256.Sum256(data)
+			if _, ok := staged[sum]; ok {
+				continue
+			}
 			dest := stagedDropDest(staging, d)
 			if err := os.WriteFile(dest, data, 0o644); err != nil {
 				logMsg("sync", " [%s] write %s: %v", pname, dest, err)
+				continue
 			}
+			staged[sum] = struct{}{}
 		}
 
 		logMsg("sync", " [%s] %d drop file(s) collected", pname, len(unprocessed))

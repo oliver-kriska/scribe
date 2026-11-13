@@ -356,11 +356,11 @@ func (t *TriageCmd) runScoring(db *sql.DB, _ string, excludeIDs []string) error 
 	for _, r := range results {
 		project := r.Project
 		if len(project) > 20 {
-			project = project[:17] + "..."
+			project = truncateBytes(project, 17) + "..."
 		}
 		summary := r.Summary
 		if len(summary) > 50 {
-			summary = summary[:47] + "..."
+			summary = truncateBytes(summary, 47) + "..."
 		}
 		fmt.Printf("%-38s %-20s %4d %5d %5.1f %3d %3d %3d %3d %3d %3d %-10s %s\n",
 			r.SessionID, project, r.Msgs, r.Score, r.Hours,

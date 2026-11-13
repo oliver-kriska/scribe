@@ -285,6 +285,7 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 		DisallowMetaRolling:   true,
 		RemapUnknownTopToWiki: true,
 		SanitizeContent:       true,
+		CarrySections:         cfg.Absorb.CarrySections,
 	})
 	if err != nil {
 		return fmt.Errorf("absorb-single: apply actions: %w", err)
@@ -400,6 +401,8 @@ type pass2Run struct {
 	rawBody     string // inlined raw article body (json mode only)
 	planJSON    string // inlined plan JSON (json mode only)
 	mergedFacts *MergedFacts
+	// carrySections is absorb.carry_sections (see carryOnOverwrite).
+	carrySections string
 }
 
 // preparePass2 resolves the pass-2 settings from config + the parsed plan.
@@ -433,7 +436,8 @@ func (s *SyncCmd) preparePass2(ctx context.Context, root, rawFile, rawName, plan
 		// path through llmProviderGenerator instead of `claude -p`. The
 		// inlined-everything prompt + envelope executor live in
 		// prompts/absorb-pass2-json.md and wiki_actions.go respectively.
-		jsonMode: strings.EqualFold(cfg.Absorb.Pass2Mode, "json"),
+		jsonMode:      strings.EqualFold(cfg.Absorb.Pass2Mode, "json"),
+		carrySections: cfg.Absorb.CarrySections,
 	}
 
 	if run.jsonMode {
@@ -714,6 +718,7 @@ func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent abs
 		RemapUnknownTopToWiki: true,
 		SanitizeContent:       true,
 		ValidFactIDs:          validIDs,
+		CarrySections:         run.carrySections,
 	})
 	if err != nil {
 		logPhaseDegraded("sync", "absorb entity", "pass2 entity %q dropped, apply actions: %v", ent.Label, err)

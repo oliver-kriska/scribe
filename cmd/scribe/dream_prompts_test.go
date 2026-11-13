@@ -11,10 +11,10 @@ import (
 // this set is silently stripped by loadPrompt, so it is a prompt bug.
 var dreamPromptVars = map[string][]string{
 	"dream.md":               {"KB_DIR", "DATE", "LINK_REPORT"},
-	"dream-anthropic.md":     {"KB_DIR", "TODAY", "LOG_TAIL", "INVENTORY", "STALE", "CONTRADICTIONS"},
-	"dream-ollama.md":        {"KB_DIR", "TODAY", "LOG_TAIL", "INVENTORY", "STALE", "CONTRADICTIONS"},
-	"dream-hot-anthropic.md": {"KB_DIR", "TODAY", "DOMAIN", "LOG_TAIL", "INVENTORY", "STALE", "CONTRADICTIONS"},
-	"dream-hot-ollama.md":    {"KB_DIR", "TODAY", "DOMAIN", "LOG_TAIL", "INVENTORY", "STALE", "CONTRADICTIONS"},
+	"dream-anthropic.md":     {"KB_DIR", "TODAY", "LOG_TAIL", "INVENTORY", "STALE", "FOCUS"},
+	"dream-ollama.md":        {"KB_DIR", "TODAY", "LOG_TAIL", "INVENTORY", "STALE", "FOCUS"},
+	"dream-hot-anthropic.md": {"KB_DIR", "TODAY", "DOMAIN", "LOG_TAIL", "INVENTORY", "STALE", "FOCUS"},
+	"dream-hot-ollama.md":    {"KB_DIR", "TODAY", "DOMAIN", "LOG_TAIL", "INVENTORY", "STALE", "FOCUS"},
 }
 
 // loadDreamPromptForTest loads a dream prompt the way its loader does and

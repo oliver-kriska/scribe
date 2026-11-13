@@ -36,42 +36,47 @@ func exceedsExtractFileCap(cfg *ScribeConfig, changedCount int) bool {
 // via the errgroup context; already-running extractions finish naturally.
 func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 	cfg := loadConfig(root)
-	toExtract := s.projectsNeedingExtraction(root, manifest)
+	jobs := planExtractions(root, cfg, manifest, s.projectsNeedingExtraction(root, manifest))
 
-	logMsg("sync", "%d projects need extraction (max: %d)", len(toExtract), s.Max)
-	if len(toExtract) == 0 {
+	logMsg("sync", "%d projects need extraction (max: %d)", len(jobs), s.Max)
+	if len(jobs) == 0 {
 		logMsg("sync", "nothing to extract")
 		return 0, nil
 	}
 
-	// Cap toExtract at s.Max so deferral logging is simple.
+	// Cap at s.Max so deferral logging is simple. The size gate already
+	// ran (planExtractions), so a project sync will skip anyway can no
+	// longer occupy a slot: two held projects with staged drops used to
+	// take both `--max 2` slots on every run and starve all the others.
 	deferred := 0
-	if len(toExtract) > s.Max {
-		for _, key := range toExtract[s.Max:] {
-			logMsg("sync", " [%s] deferred (max %d reached, will extract next run)", manifest.Projects[key].Name, s.Max)
+	if len(jobs) > s.Max {
+		for _, j := range jobs[s.Max:] {
+			logMsg("sync", " [%s] deferred (max %d reached, will extract next run)", j.entry.Name, s.Max)
 		}
-		deferred = len(toExtract) - s.Max
-		toExtract = toExtract[:s.Max]
+		deferred = len(jobs) - s.Max
+		jobs = jobs[:s.Max]
 	}
 
-	parallel := min(max(s.Parallel, 1), 5, len(toExtract))
+	parallel := min(max(s.Parallel, 1), 5, len(jobs))
 
 	if parallel > 1 {
-		logMsg("sync", "extracting %d projects (parallel=%d)", len(toExtract), parallel)
+		logMsg("sync", "extracting %d projects (parallel=%d)", len(jobs), parallel)
 	}
 
 	// DryRun bypasses goroutines entirely — the output ordering matters.
 	if s.DryRun {
-		for _, key := range toExtract {
-			entry := manifest.Projects[key]
-			changed := gitChangedFiles(entry.Path, entry.LastSHA, extractScanPatterns)
-			logMsg("sync", " [%s] DRY RUN -- changed files (%d):", entry.Name, len(changed))
-			limit := min(len(changed), 20)
-			for _, f := range changed[:limit] {
+		for _, j := range jobs {
+			if j.dropsOnly {
+				logMsg("sync", " [%s] DRY RUN -- staged drops only (%d changed files held for `scribe deep`)", j.entry.Name, j.held)
+				continue
+			}
+			logMsg("sync", " [%s] DRY RUN -- changed files (%d):", j.entry.Name, len(j.changed))
+			limit := min(len(j.changed), 20)
+			for _, f := range j.changed[:limit] {
 				fmt.Println(f)
 			}
 		}
-		return len(toExtract), nil
+		return len(jobs), nil
 	}
 
 	g, ctx := errgroup.WithContext(context.Background())
@@ -83,8 +88,8 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 		rateLimited bool
 	)
 
-	for _, key := range toExtract {
-		entry := manifest.Projects[key]
+	for _, j := range jobs {
+		entry := j.entry
 
 		g.Go(func() error {
 			// Bail early if another goroutine already hit a rate limit.
@@ -92,23 +97,13 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 				return err
 			}
 
-			changed := gitChangedFiles(entry.Path, entry.LastSHA, extractScanPatterns)
-
-			// Size gate: one `claude -p` pass reliably blows the 10-min
-			// timeout above ~100 changed files. Rather than eat the
-			// "signal: killed" error and defer the project to the next
-			// sync (where it will just fail again), skip the project in
-			// normal sync and point the user at `scribe deep <name>`,
-			// which batches-by-directory and fits in the timeout.
-			if exceedsExtractFileCap(cfg, len(changed)) {
-				logMsg("sync", " [%s] SKIP: %d files > sync.max_extract_files (%d). Run: scribe deep %s",
-					entry.Name, len(changed), cfg.Sync.MaxExtractFiles, entry.Name)
-				return nil
+			if j.dropsOnly {
+				logMsg("sync", " [%s] extracting staged drops only (%d changed files held — run `scribe deep %s` for those)", entry.Name, j.held, entry.Name)
+			} else {
+				logMsg("sync", " [%s] extracting (%d files to scan) from %s", entry.Name, len(j.changed), entry.Path)
 			}
 
-			logMsg("sync", " [%s] extracting (%d files to scan) from %s", entry.Name, len(changed), entry.Path)
-
-			if err := s.extractProject(root, manifest, entry.Name, entry, changed); err != nil { //nolint:contextcheck // errgroup cancellation is sufficient; extractProject shells out to runCmdErr wrappers
+			if err := s.extractProject(root, manifest, entry.Name, entry, j.changed, j.dropsOnly); err != nil { //nolint:contextcheck // errgroup cancellation is sufficient; extractProject shells out to runCmdErr wrappers
 				if errors.Is(err, ErrRateLimit) {
 					logMsg("sync", " [%s] rate limited — stopping extraction, will resume next run", entry.Name)
 					mu.Lock()
@@ -149,6 +144,43 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 	}
 
 	return extracted, nil
+}
+
+// extractJob is one planned project extraction.
+type extractJob struct {
+	entry   *ProjectEntry
+	changed []string
+	// dropsOnly marks a project over sync.max_extract_files that still
+	// has staged drops: the drops are extracted, the changed files are
+	// left for `scribe deep`, and last_sha does not move.
+	dropsOnly bool
+	held      int // changed files held back by the size gate
+}
+
+// planExtractions applies the sync.max_extract_files size gate before
+// the --max cap is taken. One `claude -p` pass reliably blows the
+// 10-min timeout above ~100 changed files, so such a project is skipped
+// with a pointer at `scribe deep <name>`, which batches by directory.
+// A held project with staged drops still gets a drops-only job:
+// handoffs are small, and leaving them staged until someone runs deep
+// is how they piled up unextracted for months.
+func planExtractions(root string, cfg *ScribeConfig, manifest *Manifest, keys []string) []extractJob {
+	var jobs []extractJob
+	for _, key := range keys {
+		entry := manifest.Projects[key]
+		changed := gitChangedFiles(entry.Path, entry.LastSHA, extractScanPatterns)
+		if !exceedsExtractFileCap(cfg, len(changed)) {
+			jobs = append(jobs, extractJob{entry: entry, changed: changed})
+			continue
+		}
+		if len(stagedDrops(dropStagingDir(root, entry.Name))) > 0 {
+			jobs = append(jobs, extractJob{entry: entry, dropsOnly: true, held: len(changed)})
+			continue
+		}
+		logMsg("sync", " [%s] SKIP: %d files > sync.max_extract_files (%d). Run: scribe deep %s",
+			entry.Name, len(changed), cfg.Sync.MaxExtractFiles, entry.Name)
+	}
+	return jobs
 }
 
 // projectsNeedingExtraction returns manifest keys (canonical paths) of
@@ -324,7 +356,7 @@ func (s *SyncCmd) hasNewerFiles(entry *ProjectEntry) bool {
 }
 
 // extractProject runs the full extraction pipeline for a single project.
-func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, entry *ProjectEntry, changed []string) error {
+func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, entry *ProjectEntry, changed []string, dropsOnly bool) error {
 	// Pre-scan: run scribe scan to produce a structured manifest.
 	scanOutput := filepath.Join(root, "output", "scan-"+pname+".md")
 	scribeExe, _ := os.Executable()
@@ -351,6 +383,9 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 	fileList := ""
 	if len(changed) > 0 && len(changed) <= 50 {
 		fileList = "Focus on these changed files since last extraction: " + strings.Join(changed, ", ")
+	}
+	if dropsOnly {
+		fileList = "This run processes only the staged drop files. Skip the project's own changed files: there are too many for one pass, and `scribe deep` extracts them."
 	}
 
 	// Detect drop files for this project.
@@ -444,14 +479,10 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 	manifestMu.Lock()
 	defer manifestMu.Unlock()
 
-	entry.LastSHA = currentSHA
-	entry.LastExtracted = timestamp
-	entry.LastMDScan = timestamp
-
 	// Record in the committed extraction ledger so teammates skip this
 	// revision. Load fresh under the lock — a parallel extraction of
 	// another project may have written its own entry meanwhile.
-	if currentSHA != "no-git" {
+	if markExtracted(entry, currentSHA, timestamp, dropsOnly) && currentSHA != "no-git" {
 		if key := repoLedgerKey(entry.Path); key != "" {
 			ledger := loadLedger(root)
 			ledger.record(key, currentSHA, resolveContributor(root))
@@ -465,4 +496,19 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 	finishDropStaging(pname, dropStaging, consumedDrops, entry, timestamp)
 
 	return manifest.save()
+}
+
+// markExtracted stamps a finished extraction on the manifest entry and
+// reports whether the revision counts as extracted (and so belongs in
+// the team ledger). A drops-only run saw none of the changed files:
+// moving last_sha would hide those commits from sync and from
+// `scribe deep` alike, which is how blind runs lost months of history.
+func markExtracted(entry *ProjectEntry, sha, timestamp string, dropsOnly bool) bool {
+	if dropsOnly {
+		return false
+	}
+	entry.LastSHA = sha
+	entry.LastExtracted = timestamp
+	entry.LastMDScan = timestamp
+	return true
 }
