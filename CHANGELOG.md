@@ -6,6 +6,12 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Fixed
 
+- **`scribe tier write` no longer bumps `updated:`.** Filling in or
+  recomputing `index_tier` is derived metadata, not an edit, but every
+  write set `updated:` to today, so one `tier write --missing-only` sweep
+  made hundreds of untouched articles look freshly edited to `hot.md` and
+  the staleness checks.
+
 - **`wiki/_index.md` no longer contains broken UTF-8.** The index cut each
   article summary at 80 bytes, which could land inside a multi-byte
   character such as an en dash, and left an invalid byte before the "...".
