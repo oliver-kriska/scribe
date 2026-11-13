@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // Phase 5B: tiered index hint.
@@ -446,40 +445,9 @@ func updateFrontmatterField(path, key, value string) error {
 	if newContent == s {
 		return nil
 	}
-	// Bump updated: when we touched the file, mirroring scribe's
-	// elsewhere-used convention. Skip when only updating the override
-	// to avoid noise on humans who pin a value.
-	if key == "index_tier" {
-		newContent = bumpUpdatedTo(newContent, time.Now().UTC().Format("2006-01-02"))
-	}
+	// No `updated:` bump: index_tier is derived from the body, not an edit
+	// to it. Bumping made a `tier write` sweep mark hundreds of untouched
+	// articles as freshly updated, which skewed hot.md and staleness
+	// checks. Git records the write.
 	return os.WriteFile(path, []byte(newContent), 0o644)
-}
-
-// bumpUpdatedTo replaces the `updated:` line in frontmatter with the
-// given date. No-op when the field is absent or already current. Used
-// by tier write so a sweep over a 1700-article KB doesn't silently
-// change file mtimes without recording the touch.
-func bumpUpdatedTo(content, date string) string {
-	if !strings.HasPrefix(content, "---") {
-		return content
-	}
-	end := strings.Index(content[3:], "\n---")
-	if end < 0 {
-		return content
-	}
-	fmBlock := content[3 : end+3]
-	rest := content[end+7:]
-	lines := strings.Split(fmBlock, "\n")
-	for i, line := range lines {
-		k, v, ok := splitFrontmatterLine(line)
-		if !ok || k != "updated" {
-			continue
-		}
-		if strings.Trim(v, `"' `) == date {
-			return content
-		}
-		lines[i] = "updated: " + date
-		return "---" + strings.Join(lines, "\n") + "\n---" + rest
-	}
-	return content
 }

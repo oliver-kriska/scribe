@@ -37,7 +37,7 @@ Extract reusable knowledge from project **{{PROJECT}}** (domain `{{DOMAIN}}`) in
   ],
   "meta": [
     {"op": "log_append", "line": "## [{{TODAY}}] extract | {{PROJECT}}: <one-line summary of what landed>"},
-    {"op": "rolling_memory_append", "domain": "{{DOMAIN}}", "target": "learnings", "entry": "## {{TODAY}} | <one-line insight>\n\nContext: <2-3 sentences>\nSource: {{P_PATH}}/<file>"}
+    {"op": "rolling_memory_append", "domain": "{{DOMAIN}}", "target": "learnings", "content": "## {{TODAY}} | <one-line insight>\n\nContext: <2-3 sentences>\nSource: {{P_PATH}}/<file>"}
   ]
 }
 ```
@@ -52,6 +52,7 @@ Extract reusable knowledge from project **{{PROJECT}}** (domain `{{DOMAIN}}`) in
 - One topic per article. If a file mentions three distinct decisions, that's three `create` actions, not one combined.
 - NEVER target a file whose basename starts with `_` (e.g. _index.md, _backlinks.json, _absorb_log.json) — scribe generates these and the executor rejects writes to them. Use `create` for a new file; `append` only for a file you were shown exists.
 
+- A `DROP:` header that names an existing page is a merge: emit one `append` op on exactly that path, with body text only (no frontmatter). A `create` on an existing path is rejected and the drop's content is lost.
 - One topic = one article: never two `create` ops with near-identical titles or slugs. If a relevant article is visible in the context you were given, `append` to it instead of creating a parallel page, and reuse its exact title in `related:` wikilinks.
 - Generic knowledge that almost certainly has a page already (well-known patterns, common tool facts) gets NO new stub — use rolling_memory_append or drop it. Near-duplicate pages split future updates and corrupt contradiction resolution.
 

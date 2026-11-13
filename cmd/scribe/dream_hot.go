@@ -262,20 +262,20 @@ func runHotDream(root string, cfg *ScribeConfig, domainOverride string, dryRun b
 	ctx := context.Background()
 
 	logTail := dreamReadLogTail(root, 20)
-	inventory := dreamSampleInventory(root, domain, 40)
+	focus := dreamFocusPairs(root, domain, dreamFocusHotMaxPairs, now)
+	inventory := dreamFocusInventory(root, domain, focus, 40)
 	stale := dreamStaleCandidates(root, domain, 60)
-	contradictions := dreamContradictionCandidates(root, domain)
 
 	provider := newLLMProvider(cfg.Dream.Provider, cfg.Dream.Model, cfg.Dream.OllamaURL, root)
 	promptName := promptForProvider("dream-hot", providerNameFor(provider))
 	prompt, err := loadPrompt(promptName, map[string]string{
-		"KB_DIR":         root,
-		"TODAY":          today,
-		"DOMAIN":         domain,
-		"LOG_TAIL":       logTail,
-		"INVENTORY":      inventory,
-		"STALE":          stale,
-		"CONTRADICTIONS": contradictions,
+		"KB_DIR":    root,
+		"TODAY":     today,
+		"DOMAIN":    domain,
+		"LOG_TAIL":  logTail,
+		"INVENTORY": inventory,
+		"STALE":     stale,
+		"FOCUS":     renderDreamFocus(focus),
 	})
 	if err != nil {
 		return fmt.Errorf("load dream-hot prompt: %w", err)
@@ -316,12 +316,17 @@ func runHotDream(root string, cfg *ScribeConfig, domainOverride string, dryRun b
 	if err != nil {
 		return fmt.Errorf("dream-hot: parse envelope: %w", err)
 	}
+	superseded := guardDreamFocusActions(root, &env, focus)
 	opts := entityWriterApplyOptions()
 	opts.AllowedDomains = []string{domain} // the packet held one domain; so does the write scope
 	res, err := applyWikiActions(root, env, opts)
 	if err != nil {
 		return fmt.Errorf("dream-hot: apply actions: %w", err)
 	}
+	markDreamFocusReviewed(root, focus, now)
+	setRunStat("dream_focus_pairs", len(focus))
+	setRunStat("dream_content_actions", dreamContentActions(res.Applied))
+	setRunStat("dream_superseded", superseded)
 	setRunStat("envelope_actions_applied", len(res.Applied))
 	setRunStat("envelope_actions_errored", len(res.Errors))
 	if len(res.Errors) > 0 {

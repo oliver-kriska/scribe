@@ -279,7 +279,7 @@ func (c *SessionsInspectCmd) Run() error {
 		if row.Summary != "" {
 			s := row.Summary
 			if len(s) > 200 {
-				s = s[:200] + "..."
+				s = truncateBytes(s, 200) + "..."
 			}
 			fmt.Printf("  summary        : %s\n", s)
 		}
@@ -317,7 +317,7 @@ func (c *SessionsInspectCmd) Run() error {
 			}
 			if s, _ := m["summary"].(string); s != "" {
 				if len(s) > 200 {
-					s = s[:200] + "..."
+					s = truncateBytes(s, 200) + "..."
 				}
 				fmt.Printf("  summary        : %s\n", s)
 			}

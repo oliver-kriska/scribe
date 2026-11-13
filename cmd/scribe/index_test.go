@@ -29,6 +29,14 @@ func TestTruncateOutsideWikilink(t *testing.T) {
 			limit: 30,
 			want:  "[[Short]] then a lot of ext...",
 		},
+		{
+			// The cut lands inside the 3-byte "—"; it must back up to the
+			// rune start, not leave \xe2 in wiki/_index.md.
+			name:  "cut never splits a multi-byte rune",
+			s:     "kids 4 & 6, value — comfort",
+			limit: 22,
+			want:  "kids 4 & 6, value ...",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

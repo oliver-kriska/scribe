@@ -117,9 +117,14 @@ func plainFrontmatterTitle(content []byte) (string, bool) {
 // related: key and its continuation lines (indented, "- " items, or a
 // flow list's closing "]"), or start = -1 when the key is absent.
 func relatedRegion(lines []string) (start, end int) {
+	return frontmatterKeyRegion(lines, "related")
+}
+
+// frontmatterKeyRegion is relatedRegion for any top-level key.
+func frontmatterKeyRegion(lines []string, want string) (start, end int) {
 	start = -1
 	for i, line := range lines {
-		if key, _, ok := splitFrontmatterLine(line); ok && key == "related" {
+		if key, _, ok := splitFrontmatterLine(line); ok && key == want {
 			start = i
 			break
 		}

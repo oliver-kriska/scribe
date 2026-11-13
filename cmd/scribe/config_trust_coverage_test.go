@@ -93,6 +93,7 @@ var nonSensitiveAllowlist = map[string]bool{
 	"Absorb.Strictness":               true,
 	"Absorb.SinglePassTimeoutMin":     true,
 	"Absorb.MaxSinglePassChars":       true, // prompt-size cap; a pushed change costs tokens, widens nothing
+	"Absorb.CarrySections":            true, // re-adds the page's own old sections on overwrite; no new input, no redirect
 	"Absorb.SinglePassNumCtx":         true,
 	"Absorb.Pass1TimeoutMin":          true,
 	"Absorb.Pass2Mode":                true,
