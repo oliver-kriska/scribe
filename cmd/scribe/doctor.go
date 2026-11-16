@@ -89,6 +89,7 @@ func (c *DoctorCmd) Run() error {
 			all = append(all, checkCron(root)...)
 		case "state":
 			all = append(all, checkState(root, cfg)...)
+			all = append(all, checkUnpushedWork(root, time.Now())...)
 		case "freshness":
 			all = append(all, checkFreshness(root, time.Now())...)
 			all = append(all, checkQMDIndex(root, time.Now())...)
