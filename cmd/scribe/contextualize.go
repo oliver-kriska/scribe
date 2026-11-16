@@ -91,7 +91,8 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 		return fmt.Errorf("read raw/articles: %w", err)
 	}
 
-	processed := 0
+	ownsArticle := rawArticleOwnership(rawDir)
+	processed, skippedNotOwned := 0, 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
@@ -116,6 +117,13 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 				logMap[e.Name()] = time.Now().UTC().Format(time.RFC3339)
 				continue
 			}
+		}
+
+		// A teammate's article is theirs to contextualize: two machines
+		// writing two different LLM auto lines always conflict.
+		if !ownsArticle(e.Name()) {
+			skippedNotOwned++
+			continue
 		}
 
 		if dryRun {
@@ -160,7 +168,55 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 		}
 		logMsg("contextualize", "%s %d raw article(s)", verb, processed)
 	}
+	if skippedNotOwned > 0 {
+		logMsg("contextualize", "skipped %d raw article(s) added by another git user", skippedNotOwned)
+	}
 	return nil
+}
+
+// rawArticleOwnership returns a predicate that reports whether this machine
+// owns a raw/articles basename: it is not committed yet, or the commit that
+// added it has this repo's user.email as author. The answer comes from shared
+// history, so every machine agrees, also after a push. Without git or a
+// user.email, every article counts as owned (the pre-team behavior).
+func rawArticleOwnership(rawDir string) func(name string) bool {
+	ownsAll := func(string) bool { return true }
+	email := runCmd(rawDir, "git", "config", "user.email")
+	if email == "" {
+		return ownsAll
+	}
+	// --no-renames: a renamed file counts as added at its new path, whatever
+	// diff.renames each machine sets.
+	out, err := runCmdRaw(rawDir, "git", "-c", "core.quotePath=false", "log",
+		"--no-renames", "--diff-filter=A", "--format=%x00%ae", "--name-only", "--relative", "--", ".")
+	if err != nil {
+		return ownsAll
+	}
+	adders := parseRawArticleAdders(out)
+	return func(name string) bool {
+		adder, committed := adders[name]
+		return !committed || strings.EqualFold(adder, email)
+	}
+}
+
+// parseRawArticleAdders maps each path in `git log --format=%x00%ae
+// --name-only` output to the author of its newest adding commit (git log
+// lists newest first).
+func parseRawArticleAdders(out []byte) map[string]string {
+	adders := map[string]string{}
+	for _, commit := range strings.Split(string(out), "\x00") {
+		lines := strings.Split(commit, "\n")
+		author := strings.TrimSpace(lines[0])
+		for _, name := range lines[1:] {
+			if name == "" {
+				continue
+			}
+			if _, seen := adders[name]; !seen {
+				adders[name] = author
+			}
+		}
+	}
+	return adders
 }
 
 // contextualizeWikiArticles walks curated wiki dirs (decisions/, solutions/,
