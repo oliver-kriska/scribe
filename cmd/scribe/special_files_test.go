@@ -2,20 +2,21 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
 // TestSpecialFileRegistryViews pins the three derived views to the one
 // registry, and the registry to its known contents — so a file can only
 // be added/moved by editing specialKBFiles, and each class keeps its
-// invariants (Merge set iff semantic-merge).
+// invariants (Merge set iff semantic-merge or append-only).
 func TestSpecialFileRegistryViews(t *testing.T) {
 	// Invariants per class.
 	for path, spec := range specialKBFiles {
 		hasMerge := spec.Merge != nil
-		wantMerge := spec.Class == classSemanticMerge
+		wantMerge := spec.Class == classSemanticMerge || spec.Class == classAppendOnly
 		if hasMerge != wantMerge {
-			t.Errorf("%s (class %s): Merge set = %v, want %v — Merge belongs to semantic-merge entries only",
+			t.Errorf("%s (class %s): Merge set = %v, want %v — Merge belongs to semantic-merge and append-only entries only",
 				path, spec.Class, hasMerge, wantMerge)
 		}
 		if spec.Class == classDerivedRegenerable && spec.AutoStage {
@@ -35,15 +36,13 @@ func TestSpecialFileRegistryViews(t *testing.T) {
 		}
 	}
 
-	// semanticMergers == exactly the semantic-merge entries.
+	// mergeFuncFor resolves every exact entry to its own Merge.
 	for path, spec := range specialKBFiles {
-		if (semanticMergers[path] != nil) != (spec.Class == classSemanticMerge) {
-			t.Errorf("semanticMergers[%s] present = %v, registry class = %s", path, semanticMergers[path] != nil, spec.Class)
+		if strings.Contains(path, "*") {
+			continue
 		}
-	}
-	for path := range semanticMergers {
-		if _, ok := specialKBFiles[path]; !ok {
-			t.Errorf("semanticMergers has %s but the registry does not", path)
+		if (mergeFuncFor(path) != nil) != (spec.Merge != nil) {
+			t.Errorf("mergeFuncFor(%s) present = %v, registry Merge set = %v", path, mergeFuncFor(path) != nil, spec.Merge != nil)
 		}
 	}
 
@@ -67,7 +66,7 @@ func TestSpecialFileRegistryViews(t *testing.T) {
 		"wiki/_digest.md":                classDerivedRegenerable,
 		"scripts/extraction-ledger.json": classSemanticMerge,
 		"scripts/dream-lease.json":       classSemanticMerge,
-		"log.md":                         classSemanticMerge,
+		"log.md":                         classAppendOnly,
 		"scripts/projects.json":          classMachineLocal,
 	}
 	for path, class := range want {

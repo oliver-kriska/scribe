@@ -76,6 +76,7 @@ func commitRun(root string) error {
 
 	// Stage everything except output/
 	runCmd(root, "git", "add", "--ignore-errors", "--", ".", ":!output/")
+	unstageConflictMarkers(root)
 
 	// Commit gate — secret scanner (team mode) + stop-words filter (all
 	// KBs), same funnel as gitAddWiki.

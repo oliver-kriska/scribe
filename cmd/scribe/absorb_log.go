@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -199,6 +201,34 @@ func checkAbsorbDecision(log AbsorbLog, name, sha string) absorbDecision {
 		}
 	}
 	return absorbDecisionRun
+}
+
+// absorbContentSHAs returns the sha256 of a raw article as stored and
+// with the contextualize auto block removed. Both are "" when the file
+// cannot be read.
+func absorbContentSHAs(path string) (full, stripped string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", ""
+	}
+	_, rest := splitRetrievalContext(string(data))
+	return sha256Hex(data), sha256Hex([]byte(rest))
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// checkAbsorbDecisionDual is checkAbsorbDecision on the stripped sha,
+// where a logged sha equal to the full-file sha also counts as
+// unchanged: entries written before SCRIBE-161 hashed the whole file.
+func checkAbsorbDecisionDual(log AbsorbLog, name, full, stripped string) absorbDecision {
+	decision := checkAbsorbDecision(log, name, stripped)
+	if decision == absorbDecisionRunRefresh && full != "" && log[name].SHA == full {
+		return absorbDecisionSkipSameContent
+	}
+	return decision
 }
 
 // findDupName returns the existing log entry name whose sha matches

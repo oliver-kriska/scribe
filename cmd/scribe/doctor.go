@@ -1280,6 +1280,10 @@ func checkState(root string, cfg *ScribeConfig) []check {
 		})
 	}
 
+	if ck, ok := mergeDriverCheck(root, cfg != nil && cfg.Team); ok {
+		out = append(out, ck)
+	}
+
 	// scribe.yaml scaffolded before an option existed never mentions it —
 	// no migration needed (absent keys default safely), but the user
 	// can't opt into what they can't see. OK-level: informational.
