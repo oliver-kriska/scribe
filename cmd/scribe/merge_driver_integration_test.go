@@ -28,7 +28,7 @@ func stubMergeDriverCommand(cmd string) func() {
 	return func() { mergeDriverCommand = prev }
 }
 
-func cloneAs(t *testing.T, origin, name string) string {
+func cloneKB(t *testing.T, origin, name string) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), name)
 	gitRun(t, t.TempDir(), "clone", "-q", origin, dir)
@@ -76,8 +76,8 @@ func TestMergeDriver_TwoClonesConverge(t *testing.T) {
 	gitRun(t, seed, "remote", "add", "origin", origin)
 	gitRun(t, seed, "push", "-q", "-u", "origin", "HEAD:main")
 
-	alice := cloneAs(t, origin, "alice")
-	bob := cloneAs(t, origin, "bob")
+	alice := cloneKB(t, origin, "alice")
+	bob := cloneKB(t, origin, "bob")
 
 	rawWith := func(p string) string {
 		out, err := insertRetrievalContext(rawBase, p)
@@ -155,8 +155,8 @@ func TestPullRebase_AutostashConflictOnDerivedFile(t *testing.T) {
 	gitRun(t, seed, "remote", "add", "origin", origin)
 	gitRun(t, seed, "push", "-q", "-u", "origin", "HEAD:main")
 
-	alice := cloneAs(t, origin, "alice")
-	bob := cloneAs(t, origin, "bob")
+	alice := cloneKB(t, origin, "alice")
+	bob := cloneKB(t, origin, "bob")
 	writeKBFile(t, alice, "wiki/_index.md", "index alice\n")
 	commitAll(t, alice, "alice")
 	gitRun(t, alice, "push", "-q", "origin", "HEAD:main")
