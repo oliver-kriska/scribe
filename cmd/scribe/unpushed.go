@@ -34,39 +34,63 @@ func (u unpushed) String() string {
 	return fmt.Sprintf("%d commit(s) not pushed, oldest %s old", u.Count, shortDuration(u.Now.Sub(u.Oldest)))
 }
 
-// unpushedWork reads branch..upstream for every local branch that tracks
-// one. ok is false when none does (a solo KB, or not a git repo): there is
-// nothing to push to. It reads refs, not HEAD, so a rebase left in progress
-// (detached HEAD) still counts — that is exactly when a machine is stuck.
+// unpushedWork reads branch..upstream for the branch HEAD is on. ok is
+// false when that branch has no upstream (a solo KB, a detached HEAD, or
+// not a git repo): there is nothing to push to. Mid-rebase HEAD is
+// detached, so the branch comes from the rebase state — that is exactly
+// when a machine is stuck.
 // Author date, not committer date: a rebase rewrites the committer date on
 // every retry, which would keep a stuck commit looking young forever.
 func unpushedWork(root string, now time.Time) (unpushed, bool) {
+	branch := currentBranchRef(root)
+	if branch == "" {
+		return unpushed{}, false
+	}
+	upstream := runCmd(root, "git", "for-each-ref", "--format=%(upstream)", branch)
+	if upstream == "" {
+		return unpushed{}, false
+	}
 	res := unpushed{Now: now}
-	tracked := false
-	refs := runCmd(root, "git", "for-each-ref", "--format=%(refname) %(upstream)", "refs/heads")
-	for _, line := range strings.Split(refs, "\n") {
-		branch, upstream, _ := strings.Cut(line, " ")
-		if upstream == "" {
+	for _, field := range strings.Fields(runCmd(root, "git", "log", "--format=%at", upstream+".."+branch)) {
+		secs, err := strconv.ParseInt(field, 10, 64)
+		if err != nil {
 			continue
 		}
-		tracked = true
-		for _, field := range strings.Fields(runCmd(root, "git", "log", "--format=%at", upstream+".."+branch)) {
-			secs, err := strconv.ParseInt(field, 10, 64)
-			if err != nil {
-				continue
+		at := time.Unix(secs, 0)
+		if res.Count == 0 || at.Before(res.Oldest) {
+			res.Oldest = at
+		}
+		res.Count++
+	}
+	return res, true
+}
+
+// currentBranchRef is HEAD's branch (refs/heads/...), or the branch being
+// rebased when a rebase stopped. "" when HEAD is detached for another reason.
+func currentBranchRef(root string) string {
+	if ref := runCmd(root, "git", "symbolic-ref", "-q", "HEAD"); ref != "" {
+		return ref
+	}
+	for _, state := range []string{"rebase-merge/head-name", "rebase-apply/head-name"} {
+		path := runCmd(root, "git", "rev-parse", "--git-path", state)
+		if path != "" && !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		if b, err := os.ReadFile(path); err == nil {
+			if ref := strings.TrimSpace(string(b)); strings.HasPrefix(ref, "refs/heads/") {
+				return ref
 			}
-			at := time.Unix(secs, 0)
-			if res.Count == 0 || at.Before(res.Oldest) {
-				res.Oldest = at
-			}
-			res.Count++
 		}
 	}
-	return res, tracked
+	return ""
 }
 
 // checkUnpushedWork is the doctor row. A FAIL row also lands in
 // NEEDS-ATTENTION.md through the daily `doctor --write-attention` job.
+// Old commits alone are not enough for FAIL: after a night asleep, doctor
+// and sync start together at wake, and the sync may push them a moment
+// later. FAIL needs a sync that ran after the work turned stuck and still
+// left it unpushed; until then the row is a warn, which the report skips.
 func checkUnpushedWork(root string, now time.Time) []check {
 	u, ok := unpushedWork(root, now)
 	if !ok {
@@ -76,12 +100,29 @@ func checkUnpushedWork(root string, now time.Time) []check {
 	if u.Count > 0 {
 		row.Detail = u.String()
 	}
-	if u.stuck() {
-		row.Status = statusFail
-		row.Detail += " — teammates do not get this machine's knowledge"
-		row.Fix = "see the sync log (`pull` or `push` errors); fix the cause, then `scribe sync` — a conflict may need `git pull --rebase` by hand"
+	if !u.stuck() {
+		return []check{row}
 	}
+	if !syncRanSince(root, u.Oldest.Add(unpushedStuckAfter)) {
+		row.Status = statusWarn
+		row.Detail += " — no sync has tried to push since; the next one may"
+		return []check{row}
+	}
+	row.Status = statusFail
+	row.Detail += " — teammates do not get this machine's knowledge"
+	row.Fix = "see the sync log (`pull` or `push` errors); fix the cause, then `scribe sync` — a conflict may need `git pull --rebase` by hand"
 	return []check{row}
+}
+
+// syncRanSince reports whether any sync run (plain or --sessions; both pull
+// and push) finished after t. Unreadable run records count as "ran", so a
+// broken runs dir cannot hide a stuck machine.
+func syncRanSince(root string, t time.Time) bool {
+	records, err := loadRunRecords(root)
+	if err != nil {
+		return true
+	}
+	return records["sync"].After(t) || records["sync --sessions"].After(t)
 }
 
 // reportUnpushedWork writes one sync-log line per run and, when the work is
