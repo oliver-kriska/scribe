@@ -19,7 +19,7 @@ import (
 // unseen) is flagged the same day.
 const unpushedStuckAfter = 6 * time.Hour
 
-// unpushed is the local work in @{u}..HEAD at a point in time.
+// unpushed is the local work in branch..upstream at a point in time.
 type unpushed struct {
 	Count  int
 	Oldest time.Time // author date of the oldest unpushed commit
