@@ -190,6 +190,10 @@ func (s *SyncCmd) Run() error {
 	})
 	mergeRunStats(adoptionFields)
 
+	if !s.DryRun {
+		reportUnpushedWork(root, time.Now())
+	}
+
 	logMsg("sync", "done (discovered: %d, extracted: %d, sessions: %d, absorbed: %d)",
 		counters.discovered, counters.extracted, counters.sessionsScanned, counters.absorbed)
 	return nil
