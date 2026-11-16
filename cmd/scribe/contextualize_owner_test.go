@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,15 +77,21 @@ func TestContextualizeRawArticles_OnlyOwnArticles(t *testing.T) {
 	}
 
 	// B skips A's article and contextualizes only its own uncommitted file.
-	before, _ := os.ReadFile(pathBShared)
+	before, err := os.ReadFile(pathBShared)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := contextualizeRawArticles(cloneB, 0, "haiku", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if n := len(stub.Calls()); n != 2 {
 		t.Fatalf("after clone B: LLM called %d times in total, want 2", n)
 	}
-	after, _ := os.ReadFile(pathBShared)
-	if string(before) != string(after) {
+	after, err := os.ReadFile(pathBShared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
 		t.Error("clone B rewrote an article that clone A added")
 	}
 	if !fileHasMarker(pathBLocal, retrievalContextMarker) {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,7 +48,7 @@ type ContextualizeCmd struct {
 	Limit  int    `help:"Process at most N articles (0 = no limit)." default:"0"`
 	Model  string `help:"Model to use for context generation." default:"haiku"`
 	DryRun bool   `help:"Show what would be processed without writing." short:"n"`
-	Force  bool   `help:"Re-contextualize even if already done." short:"f"`
+	Force  bool   `help:"Re-contextualize even if already done (raw: only articles this machine added)." short:"f"`
 }
 
 const retrievalContextMarker = "<!-- scribe:retrieval-context -->"
@@ -91,7 +92,8 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 		return fmt.Errorf("read raw/articles: %w", err)
 	}
 
-	ownsArticle := rawArticleOwnership(rawDir)
+	// Built on first need: most runs find every article already marked.
+	ownsArticle := sync.OnceValue(func() func(string) bool { return rawArticleOwnership(rawDir) })
 	processed, skippedNotOwned := 0, 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
@@ -121,7 +123,7 @@ func contextualizeRawArticles(root string, limit int, model string, dryRun, forc
 
 		// A teammate's article is theirs to contextualize: two machines
 		// writing two different LLM auto lines always conflict.
-		if !ownsArticle(e.Name()) {
+		if !ownsArticle()(e.Name()) {
 			skippedNotOwned++
 			continue
 		}
@@ -190,6 +192,7 @@ func rawArticleOwnership(rawDir string) func(name string) bool {
 	out, err := runCmdRaw(rawDir, "git", "-c", "core.quotePath=false", "log",
 		"--no-renames", "--diff-filter=A", "--format=%x00%ae", "--name-only", "--relative", "--", ".")
 	if err != nil {
+		logPhaseDegraded("contextualize", "ownership", "git log failed, contextualizing every raw article: %v", err)
 		return ownsAll
 	}
 	adders := parseRawArticleAdders(out)
