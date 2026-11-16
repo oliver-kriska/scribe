@@ -129,3 +129,27 @@ func TestParseRawArticleAdders_NewestAddWins(t *testing.T) {
 		t.Errorf("got %v", got)
 	}
 }
+
+// TestContextualizeRawArticles_NoGitContextualizesAll: a KB that is not a git
+// repo has no shared history to decide ownership, so git log fails and every
+// article is contextualized, as before.
+func TestContextualizeRawArticles_NoGitContextualizesAll(t *testing.T) {
+	isolateGitConfig(t)
+	if err := os.WriteFile(os.Getenv("GIT_CONFIG_GLOBAL"), []byte("[user]\n\temail = me@example.com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	path := writeRawArticle(t, root, "solo.md", "Body in a KB with no git.")
+
+	stub := &stubLLM{DefaultReply: ownerTestReply}
+	installStubLLM(t, stub)
+	if err := contextualizeRawArticles(root, 0, "haiku", false, false); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(stub.Calls()); n != 1 {
+		t.Fatalf("LLM called %d times, want 1", n)
+	}
+	if !fileHasMarker(path, retrievalContextMarker) {
+		t.Error("article was not contextualized in a KB without git")
+	}
+}
