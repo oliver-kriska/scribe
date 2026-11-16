@@ -142,35 +142,73 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 	if gitRemoteURL(repoPath) == "" {
 		return false, false, nil
 	}
+	if dErr := ensureMergeDriver(repoPath); dErr != nil {
+		logMsg("git", "merge driver not configured (git falls back to its built-in merge): %v", dErr)
+	}
+	// One resolver round per replayed commit: count local commits before
+	// the pull rewrites HEAD.
+	maxRounds := max(minRebaseRounds, localAheadCount(repoPath)+1)
 	beforeSHA := gitSHA(repoPath)
-	cmd := exec.Command("git", "pull", "--rebase", "--autostash") //nolint:noctx // git subprocess, network-bound
+	// commit.gpgsign=false: the rebase re-commits every replayed commit,
+	// and a scheduled job cannot reach a signing agent (2026-11-07).
+	cmd := exec.Command("git", "-c", "commit.gpgsign=false", "pull", "--rebase", "--autostash") //nolint:noctx // git subprocess, network-bound
 	cmd.Dir = repoPath
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if runErr := cmd.Run(); runErr != nil {
-		msg := strings.TrimSpace(stderr.String())
+	runErr := cmd.Run()
+	relayMergeDriverLines(stderr.String())
+	// Conflicts the merge driver did not settle — derived files, team
+	// coordination files, delete/modify, autostash leftovers — are
+	// resolved here without a human. Any other conflict aborts the
+	// rebase, so a cron-driven sync never leaves the repo mid-rebase with
+	// conflict markers on disk. This also runs after a successful pull:
+	// --autostash re-applies local edits after the rebase and can
+	// conflict with no rebase in progress.
+	resolved, rErr := autoResolveDerivedConflicts(repoPath, maxRounds)
+	invalidateRepoTrackedCache()
+	if runErr != nil && !resolved {
+		msg := firstLine(withoutMergeDriverLines(stderr.String()))
 		if msg == "" {
 			msg = runErr.Error()
 		}
-		// Conflicts confined to derived/regenerable files (index,
-		// backlinks, digest) are resolved without a human — and any
-		// other conflict aborts the rebase, so a cron-driven sync never
-		// leaves the repo mid-rebase with conflict markers on disk.
-		resolved, rErr := autoResolveDerivedConflicts(repoPath)
-		if resolved {
-			logMsg("git", "pull conflict on derived file(s) auto-resolved — content regenerates after pull")
-			invalidateRepoTrackedCache()
-			afterSHA := gitSHA(repoPath)
-			return true, beforeSHA != "" && afterSHA != "" && beforeSHA != afterSHA, nil
-		}
 		if rErr != nil {
-			return false, false, fmt.Errorf("%s; %w", firstLine(msg), rErr)
+			return false, false, fmt.Errorf("%s; %w", msg, rErr)
 		}
-		return false, false, fmt.Errorf("%s", firstLine(msg))
+		return false, false, fmt.Errorf("%s", msg)
 	}
-	invalidateRepoTrackedCache()
+	if rErr != nil {
+		return false, false, rErr
+	}
+	if resolved {
+		logMsg("git", "pull conflict auto-resolved (derived, coordination or delete/modify files)")
+	}
 	afterSHA := gitSHA(repoPath)
 	return true, beforeSHA != "" && afterSHA != "" && beforeSHA != afterSHA, nil
+}
+
+// minRebaseRounds is the resolver's round cap when few commits replay.
+const minRebaseRounds = 20
+
+// localAheadCount counts local commits the upstream does not have (0 when
+// there is no upstream).
+func localAheadCount(repoPath string) int {
+	n, err := strconv.Atoi(runCmd(repoPath, "git", "rev-list", "--count", "@{u}..HEAD"))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// withoutMergeDriverLines drops the driver's per-file lines from git
+// output, so an error message shows git's own reason.
+func withoutMergeDriverLines(out string) string {
+	var kept []string
+	for line := range strings.SplitSeq(strings.ReplaceAll(out, "\r", "\n"), "\n") {
+		if !strings.HasPrefix(line, mergeDriverLogPrefix) && strings.TrimSpace(line) != "" {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // rebaseInProgress reports whether repoPath has a rebase mid-flight.
@@ -206,49 +244,38 @@ func conflictedFiles(repoPath string) []string {
 }
 
 // autoResolveDerivedConflicts finishes a conflicted rebase when every
-// conflicted file is derived/regenerable (either side wins) or a team
-// coordination file with a semantic merger (sides are merged — see
-// gitmerge.go), returning true once the rebase completed. Any other
-// conflict — or failure to converge — aborts the rebase so the working
-// tree is restored; the error then names the file a human must merge.
-func autoResolveDerivedConflicts(repoPath string) (bool, error) {
+// conflicted file is derived/regenerable (either side wins), has a
+// merger in specialKBFiles (sides are merged — see gitmerge.go), or is a
+// delete/modify conflict (the modified side is kept). It returns true
+// once the conflicts are gone. Any other conflict — or failure to
+// converge within maxRounds — aborts the rebase so the working tree is
+// restored; the error then names every file a human must merge.
+//
+// With no rebase in progress it resolves conflicts that --autostash left
+// when it re-applied local edits after the pull.
+func autoResolveDerivedConflicts(repoPath string, maxRounds int) (bool, error) {
 	if !rebaseInProgress(repoPath) {
-		return false, nil
-	}
-	for round := 0; round < 20 && rebaseInProgress(repoPath); round++ {
 		conflicted := conflictedFiles(repoPath)
-		for _, f := range conflicted {
-			if !derivedRegenerable[f] && semanticMergers[f] == nil {
-				_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
-				return false, fmt.Errorf("conflict in %s needs manual resolution (rebase aborted, working tree restored)", f)
-			}
+		if len(conflicted) == 0 {
+			return false, nil
 		}
-		for _, f := range conflicted {
-			if semanticMergers[f] != nil {
-				if !semanticResolve(repoPath, f) {
-					_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
-					return false, fmt.Errorf("semantic merge of %s failed (rebase aborted)", f)
-				}
-				continue
-			}
-			// Either side works — the file regenerates right after the
-			// pull. --theirs picks the local-commit version during a
-			// rebase; a delete/modify conflict has no blob to check out,
-			// so fall back to removing (regeneration recreates it).
-			if _, err := runCmdErr(repoPath, "git", "checkout", "--theirs", "--", f); err != nil {
-				_, _ = runCmdErr(repoPath, "git", "rm", "-q", "--", f)
-				continue
-			}
-			if _, err := runCmdErr(repoPath, "git", "add", "--", f); err != nil {
-				_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
-				return false, fmt.Errorf("staging %s during auto-resolve failed: %w (rebase aborted)", f, err)
-			}
+		if err := resolveConflictedFiles(repoPath, conflicted); err != nil {
+			return false, fmt.Errorf("autostash: %w (local edits are kept in the stash: git stash list)", err)
+		}
+		return true, nil
+	}
+	for round := 0; round < maxRounds && rebaseInProgress(repoPath); round++ {
+		if err := resolveConflictedFiles(repoPath, conflictedFiles(repoPath)); err != nil {
+			_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
+			return false, fmt.Errorf("%w (rebase aborted, working tree restored)", err)
 		}
 		// A resolution identical to the upstream side empties the
 		// replayed commit; `rebase --continue` refuses an empty commit,
 		// so skip it instead (the remote already has the content).
 		if !gitHasStagedChanges(repoPath) && len(conflictedFiles(repoPath)) == 0 {
-			if _, err := runCmdErr(repoPath, "git", "rebase", "--skip"); err != nil {
+			out, err := runCmdErr(repoPath, "git", "-c", "commit.gpgsign=false", "rebase", "--skip")
+			relayMergeDriverLines(out)
+			if err != nil {
 				if rebaseInProgress(repoPath) {
 					continue
 				}
@@ -256,7 +283,9 @@ func autoResolveDerivedConflicts(repoPath string) (bool, error) {
 			}
 			continue
 		}
-		if _, err := runCmdErr(repoPath, "git", "-c", "core.editor=true", "rebase", "--continue"); err != nil {
+		out, err := runCmdErr(repoPath, "git", "-c", "core.editor=true", "-c", "commit.gpgsign=false", "rebase", "--continue")
+		relayMergeDriverLines(out)
+		if err != nil {
 			if rebaseInProgress(repoPath) {
 				continue // stopped on the next commit's conflicts — next round
 			}
@@ -265,9 +294,100 @@ func autoResolveDerivedConflicts(repoPath string) (bool, error) {
 	}
 	if rebaseInProgress(repoPath) {
 		_, _ = runCmdErr(repoPath, "git", "rebase", "--abort")
-		return false, errors.New("rebase did not converge while auto-resolving derived files (aborted)")
+		return false, fmt.Errorf("rebase did not converge in %d rounds while auto-resolving (aborted)", maxRounds)
 	}
 	return true, nil
+}
+
+// resolveConflictedFiles resolves every file or none: when any file needs
+// a human, nothing is touched and the error names all of them.
+func resolveConflictedFiles(repoPath string, files []string) error {
+	var manual []string
+	for _, f := range files {
+		if _, ok := conflictResolution(repoPath, f); !ok {
+			manual = append(manual, f)
+		}
+	}
+	if len(manual) > 0 {
+		return fmt.Errorf("conflict in %s needs manual resolution", strings.Join(manual, ", "))
+	}
+	for _, f := range files {
+		if err := resolveConflictedFile(repoPath, f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// conflictResolve names how resolveConflictedFile settles a file.
+type conflictResolve int
+
+const (
+	resolveKeepModified conflictResolve = iota
+	resolveMerge
+	resolveEitherSide
+)
+
+// conflictResolution picks the rule for one conflicted file; ok is false
+// when only a human can merge it.
+func conflictResolution(repoPath, rel string) (conflictResolve, bool) {
+	ours, theirs := conflictSidesPresent(repoPath, rel)
+	switch {
+	case ours != theirs:
+		return resolveKeepModified, true
+	case mergeFuncFor(rel) != nil:
+		return resolveMerge, true
+	case derivedRegenerable[rel]:
+		return resolveEitherSide, true
+	}
+	return 0, false
+}
+
+// conflictSidesPresent reports which index stages hold rel: stage 2
+// (ours — upstream during a rebase) and stage 3 (theirs — the local commit).
+func conflictSidesPresent(repoPath, rel string) (ours, theirs bool) {
+	out := runCmd(repoPath, "git", "ls-files", "-u", "--", rel)
+	for line := range strings.SplitSeq(out, "\n") {
+		meta, _, _ := strings.Cut(line, "\t")
+		fields := strings.Fields(meta)
+		if len(fields) == 3 {
+			ours = ours || fields[2] == "2"
+			theirs = theirs || fields[2] == "3"
+		}
+	}
+	return ours, theirs
+}
+
+// resolveConflictedFile settles and stages one file by conflictResolution.
+func resolveConflictedFile(repoPath, rel string) error {
+	rule, _ := conflictResolution(repoPath, rel)
+	switch rule {
+	case resolveKeepModified:
+		// The driver is not called for delete/modify. Keep the edit: a
+		// deletion loses nothing that the kept file does not still hold.
+		side := "--theirs"
+		if ours, _ := conflictSidesPresent(repoPath, rel); ours {
+			side = "--ours"
+		}
+		if out, err := runCmdErr(repoPath, "git", "checkout", side, "--", rel); err != nil {
+			return fmt.Errorf("keeping the modified side of %s failed: %s", rel, out)
+		}
+	case resolveMerge:
+		if !semanticResolve(repoPath, rel) {
+			return fmt.Errorf("semantic merge of %s failed", rel)
+		}
+		return nil
+	case resolveEitherSide:
+		// Either side works — the file regenerates right after the pull.
+		// --theirs picks the local-commit version during a rebase.
+		if out, err := runCmdErr(repoPath, "git", "checkout", "--theirs", "--", rel); err != nil {
+			return fmt.Errorf("checking out %s failed: %s", rel, out)
+		}
+	}
+	if out, err := runCmdErr(repoPath, "git", "add", "--", rel); err != nil {
+		return fmt.Errorf("staging %s during auto-resolve failed: %s", rel, out)
+	}
+	return nil
 }
 
 func firstLine(s string) string {
@@ -358,10 +478,30 @@ func gitAddWiki(root string) bool {
 	cmd := exec.Command("git", args...) //nolint:noctx // git add subprocess
 	cmd.Dir = root
 	_ = cmd.Run()
+	unstageConflictMarkers(root)
 	// Commit gate: anything staged above that contains a real-shaped
 	// secret (team mode) or a configured held word is unstaged again,
 	// loudly; masked words are redacted in place.
 	return commitGate(root, loadConfig(root))
+}
+
+// unstageConflictMarkers takes back out of the index every staged file
+// that holds git conflict markers, so a half-finished merge (an autostash
+// leftover, a manual merge) never reaches a commit and the team remote.
+func unstageConflictMarkers(root string) {
+	out, _ := runCmdRaw(root, "git", "diff", "--cached", "--name-only", "-z", "--diff-filter=AM")
+	for rel := range strings.SplitSeq(string(out), "\x00") {
+		if rel == "" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil || firstConflictMarkerLine(data) == 0 {
+			continue
+		}
+		if _, err := runCmdErr(root, "git", "reset", "-q", "--", rel); err == nil {
+			logMsg("git", "not staging %s: it contains git conflict markers (resolve by hand, see `scribe doctor`)", rel)
+		}
+	}
 }
 
 // gitCommit creates a commit with the given message. Captures stderr so callers

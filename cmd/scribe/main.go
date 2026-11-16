@@ -135,6 +135,8 @@ type CLI struct {
 	Promote PromoteCmd `cmd:"" group:"team" help:"Copy an article into another scribe KB with provenance (personal → team promotion)."`
 	Config  ConfigCmd  `cmd:"" group:"team" help:"Review/approve shared-KB config trust (sensitive scribe.yaml keys)."`
 	Digest  DigestCmd  `cmd:"" group:"team" help:"Regenerate wiki/_digest.md — deterministic team dashboard (activity, findings, owners)."`
+	// Called by git, not by people: `merge=scribe` in .gitattributes.
+	MergeFile MergeFileCmd `cmd:"" name:"merge-file" group:"team" help:"Git merge driver for KB files (git runs it: scribe merge-file %O %A %B %P). No LLM, no network."`
 
 	// System — installation and host integration.
 	Init         InitCmd         `cmd:"" group:"system" help:"Check dependencies, verify config, and prep a KB checkout."`

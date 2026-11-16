@@ -65,9 +65,11 @@ func (s *SyncCmd) absorbRaw(root string) (int, error) {
 		// Phase 3C: hash content + decide. A sha read error falls back
 		// to filename-only behavior (skip if seen, absorb if new) so a
 		// transient I/O hiccup can't strand an article.
-		sha, _ := sha256File(rawFile)
+		// sha excludes the contextualize auto block: rewriting that
+		// block on another machine must not re-absorb (SCRIBE-161).
+		fullSHA, sha := absorbContentSHAs(rawFile)
 		refresh := false
-		decision := checkAbsorbDecision(absorbLog, entry.Name(), sha)
+		decision := checkAbsorbDecisionDual(absorbLog, entry.Name(), fullSHA, sha)
 		switch decision {
 		case absorbDecisionSkipSameContent:
 			continue

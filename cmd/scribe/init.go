@@ -273,9 +273,19 @@ func (c *InitCmd) runBootstrap() error {
 	if err := createKBSkeleton(abs); err != nil {
 		return err
 	}
+	if c.Team {
+		// Before initGit, so the first commit carries the merge=scribe lines.
+		if _, err := ensureGitattributes(abs); err != nil {
+			fmt.Printf("  warning: could not write .gitattributes: %v\n", err)
+		} else {
+			fmt.Println("  wrote .gitattributes (scribe merge driver)")
+		}
+	}
 	if !c.NoGit {
 		if err := initGit(abs); err != nil {
 			fmt.Printf("  git init skipped: %v\n", err)
+		} else if err := ensureMergeDriver(abs); err != nil {
+			fmt.Printf("  warning: merge driver not configured: %v\n", err)
 		}
 	}
 	switch {
@@ -692,6 +702,10 @@ func (c *InitCmd) runStatus(root string) error {
 		fmt.Println("                            (one-time: `brew install ollama`; scribe auto-pulls the model on first run)")
 	}
 
+	if !c.Check {
+		initMergeDriver(root, cfg.Team)
+	}
+
 	fmt.Println("\nUser config (~/.config/scribe/config.yaml):")
 	if err := installUserConfig(root, c.Check, c.Yes, c.Bind); err != nil {
 		fmt.Printf("  warning: %s\n", err)
@@ -1049,6 +1063,29 @@ func installUserConfig(root string, check, yes, bound bool) error {
 	}
 	fmt.Printf("  wrote %s\n", path)
 	return nil
+}
+
+// initMergeDriver sets merge.scribe.driver in the KB's .git/config and,
+// for a team KB, adds the merge=scribe lines to .gitattributes.
+func initMergeDriver(root string, team bool) {
+	if !hasGit(root) {
+		return
+	}
+	fmt.Println("\nMerge driver:")
+	if err := ensureMergeDriver(root); err != nil {
+		fmt.Printf("  warning: %v\n", err)
+	} else {
+		fmt.Println("  merge.scribe.driver set in .git/config")
+	}
+	if !team {
+		return
+	}
+	switch wrote, err := ensureGitattributes(root); {
+	case err != nil:
+		fmt.Printf("  warning: could not write .gitattributes: %v\n", err)
+	case wrote:
+		fmt.Println("  added merge=scribe lines to .gitattributes — commit and push it so every member uses the driver")
+	}
 }
 
 // --- prompt helpers ---
