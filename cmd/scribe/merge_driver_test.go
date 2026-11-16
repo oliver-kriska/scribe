@@ -316,6 +316,9 @@ func TestEnsureGitattributes_Idempotent(t *testing.T) {
 	if strings.Count(s, "*.md merge=scribe") != 1 || !strings.Contains(s, "scripts/extraction-ledger.json merge=scribe") {
 		t.Errorf("unexpected .gitattributes:\n%s", s)
 	}
+	if strings.Contains(s, "dream-lease.json") {
+		t.Errorf("the dream lease must stay with the rebase fallback (remote wins):\n%s", s)
+	}
 	if strings.Contains(s, "projects.json") {
 		t.Errorf("machine-local files must not get the driver:\n%s", s)
 	}

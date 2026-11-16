@@ -488,7 +488,15 @@ func mergeRawArticle(base, a, b string) (string, bool) {
 // point git at the test binary. The absolute path matters: LaunchAgents
 // run with a short PATH.
 var mergeDriverCommand = func() string {
-	return shellQuote(resolveScribeBinary()) + " merge-file %O %A %B %P"
+	binary := resolveScribeBinary()
+	if !fileExists(binary) {
+		// Under launchd a Homebrew install is off the short PATH, and
+		// resolveScribeBinary then names a missing ~/.local/bin/scribe.
+		if self, err := os.Executable(); err == nil {
+			binary = self
+		}
+	}
+	return shellQuote(binary) + " merge-file %O %A %B %P"
 }
 
 // ensureMergeDriver writes merge.scribe.driver into the KB's .git/config
@@ -511,13 +519,18 @@ func ensureMergeDriver(root string) error {
 	return nil
 }
 
+// dreamLeaseRel is the dream lease file (special_files.go).
+const dreamLeaseRel = "scripts/dream-lease.json"
+
 // gitattributesLines lists the .gitattributes lines a team KB needs: one
 // for markdown (the driver picks the class) and one per registered
-// non-markdown file it can merge.
+// non-markdown file it can merge. The dream lease stays out: its
+// "remote wins" rule needs to know which side is upstream, which only
+// the rebase fallback knows (in a manual `git merge` %A is the local side).
 func gitattributesLines() []string {
 	lines := []string{"*.md merge=scribe"}
 	for rel, spec := range specialKBFiles {
-		if strings.HasSuffix(rel, ".md") || strings.Contains(rel, "*") || spec.Class == classMachineLocal {
+		if strings.HasSuffix(rel, ".md") || strings.Contains(rel, "*") || spec.Class == classMachineLocal || rel == dreamLeaseRel {
 			continue
 		}
 		lines = append(lines, rel+" merge=scribe")

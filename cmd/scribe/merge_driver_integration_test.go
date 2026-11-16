@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -191,5 +192,40 @@ func TestPullRebase_AbortNamesEveryConflictedFile(t *testing.T) {
 	}
 	if rebaseInProgress(clone) {
 		t.Error("rebase left in progress")
+	}
+}
+
+// TestPullRebase_IgnoresCommitSigning: a global commit.gpgsign=true made
+// every replayed commit fail on 2026-11-07. Scribe's pull and rebase
+// steps must not sign, even when signing cannot work.
+func TestPullRebase_IgnoresCommitSigning(t *testing.T) {
+	clone := setupCloneWithConflict(t, "wiki/_index.md")
+	gitRun(t, clone, "config", "commit.gpgsign", "true")
+	gitRun(t, clone, "config", "gpg.program", "false")
+	if ok, _, err := pullRebase(clone); !ok || err != nil {
+		t.Fatalf("pullRebase with unusable signing: ok=%v err=%v", ok, err)
+	}
+	if rebaseInProgress(clone) {
+		t.Error("rebase left in progress")
+	}
+}
+
+// TestPullRebase_LeavesManualMergeAlone: a failed pull with no rebase
+// running did not create the conflicts on disk, so the resolver must
+// not touch them (a person may be mid-merge).
+func TestPullRebase_LeavesManualMergeAlone(t *testing.T) {
+	clone := setupCloneWithConflict(t, "wiki/_index.md")
+	gitRun(t, clone, "fetch", "-q")
+	cmd := exec.Command("git", "merge", "origin/main") //nolint:noctx // test fixture, expected to conflict
+	cmd.Dir = clone
+	_ = cmd.Run()
+	if len(conflictedFiles(clone)) == 0 {
+		t.Fatal("fixture: expected a manual merge conflict")
+	}
+	if ok, _, _ := pullRebase(clone); ok {
+		t.Error("pull during an unfinished merge must fail")
+	}
+	if got := conflictedFiles(clone); len(got) != 1 {
+		t.Errorf("resolver touched the manual merge; unmerged = %v", got)
 	}
 }

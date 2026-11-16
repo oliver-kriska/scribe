@@ -164,7 +164,14 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 	// conflict markers on disk. This also runs after a successful pull:
 	// --autostash re-applies local edits after the rebase and can
 	// conflict with no rebase in progress.
-	resolved, rErr := autoResolveDerivedConflicts(repoPath, maxRounds)
+	// A failed pull with no rebase running did not create these
+	// conflicts (a manual merge or cherry-pick may be in progress), so
+	// the resolver leaves them alone.
+	var resolved bool
+	var rErr error
+	if runErr == nil || rebaseInProgress(repoPath) {
+		resolved, rErr = autoResolveDerivedConflicts(repoPath, maxRounds)
+	}
 	invalidateRepoTrackedCache()
 	if runErr != nil && !resolved {
 		msg := firstLine(withoutMergeDriverLines(stderr.String()))
@@ -302,17 +309,20 @@ func autoResolveDerivedConflicts(repoPath string, maxRounds int) (bool, error) {
 // resolveConflictedFiles resolves every file or none: when any file needs
 // a human, nothing is touched and the error names all of them.
 func resolveConflictedFiles(repoPath string, files []string) error {
+	rules := make([]conflictRule, 0, len(files))
 	var manual []string
 	for _, f := range files {
-		if _, ok := conflictResolution(repoPath, f); !ok {
+		rule, ok := conflictResolution(repoPath, f)
+		if !ok {
 			manual = append(manual, f)
 		}
+		rules = append(rules, rule)
 	}
 	if len(manual) > 0 {
 		return fmt.Errorf("conflict in %s needs manual resolution", strings.Join(manual, ", "))
 	}
-	for _, f := range files {
-		if err := resolveConflictedFile(repoPath, f); err != nil {
+	for i, f := range files {
+		if err := resolveConflictedFile(repoPath, f, rules[i]); err != nil {
 			return err
 		}
 	}
@@ -328,45 +338,48 @@ const (
 	resolveEitherSide
 )
 
-// conflictResolution picks the rule for one conflicted file; ok is false
-// when only a human can merge it.
-func conflictResolution(repoPath, rel string) (conflictResolve, bool) {
-	ours, theirs := conflictSidesPresent(repoPath, rel)
-	switch {
-	case ours != theirs:
-		return resolveKeepModified, true
-	case mergeFuncFor(rel) != nil:
-		return resolveMerge, true
-	case derivedRegenerable[rel]:
-		return resolveEitherSide, true
-	}
-	return 0, false
+// conflictRule is the chosen resolution plus which index stages exist:
+// stage 2 (ours — upstream during a rebase) and stage 3 (theirs — the
+// local commit).
+type conflictRule struct {
+	resolve      conflictResolve
+	ours, theirs bool
 }
 
-// conflictSidesPresent reports which index stages hold rel: stage 2
-// (ours — upstream during a rebase) and stage 3 (theirs — the local commit).
-func conflictSidesPresent(repoPath, rel string) (ours, theirs bool) {
+// conflictResolution picks the rule for one conflicted file; ok is false
+// when only a human can merge it.
+func conflictResolution(repoPath, rel string) (conflictRule, bool) {
+	rule := conflictRule{}
 	out := runCmd(repoPath, "git", "ls-files", "-u", "--", rel)
 	for line := range strings.SplitSeq(out, "\n") {
 		meta, _, _ := strings.Cut(line, "\t")
 		fields := strings.Fields(meta)
 		if len(fields) == 3 {
-			ours = ours || fields[2] == "2"
-			theirs = theirs || fields[2] == "3"
+			rule.ours = rule.ours || fields[2] == "2"
+			rule.theirs = rule.theirs || fields[2] == "3"
 		}
 	}
-	return ours, theirs
+	switch {
+	case rule.ours != rule.theirs:
+		rule.resolve = resolveKeepModified
+	case mergeFuncFor(rel) != nil:
+		rule.resolve = resolveMerge
+	case derivedRegenerable[rel]:
+		rule.resolve = resolveEitherSide
+	default:
+		return rule, false
+	}
+	return rule, true
 }
 
-// resolveConflictedFile settles and stages one file by conflictResolution.
-func resolveConflictedFile(repoPath, rel string) error {
-	rule, _ := conflictResolution(repoPath, rel)
-	switch rule {
+// resolveConflictedFile settles and stages one file by its rule.
+func resolveConflictedFile(repoPath, rel string, rule conflictRule) error {
+	switch rule.resolve {
 	case resolveKeepModified:
 		// The driver is not called for delete/modify. Keep the edit: a
 		// deletion loses nothing that the kept file does not still hold.
 		side := "--theirs"
-		if ours, _ := conflictSidesPresent(repoPath, rel); ours {
+		if rule.ours {
 			side = "--ours"
 		}
 		if out, err := runCmdErr(repoPath, "git", "checkout", side, "--", rel); err != nil {
@@ -489,7 +502,7 @@ func gitAddWiki(root string) bool {
 // that holds git conflict markers, so a half-finished merge (an autostash
 // leftover, a manual merge) never reaches a commit and the team remote.
 func unstageConflictMarkers(root string) {
-	out, _ := runCmdRaw(root, "git", "diff", "--cached", "--name-only", "-z", "--diff-filter=AM")
+	out, _ := runCmdRaw(root, "git", "diff", "--cached", "--name-only", "-z", "--no-renames", "--diff-filter=AM")
 	for rel := range strings.SplitSeq(string(out), "\x00") {
 		if rel == "" {
 			continue
