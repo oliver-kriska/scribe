@@ -60,10 +60,13 @@ func (c *MergeFileCmd) Run() error {
 	rel := filepath.ToSlash(c.Path)
 	merged, class, ok := mergeKBFile(rel, base, current, other)
 	if !ok {
+		if class == "" {
+			class = "unclassified"
+		}
 		// Leave git's usual conflict result so the pull fallback (or a
 		// person) sees exactly what the built-in merge would have left.
 		_, _ = runCmdErr("", "git", "merge-file", "-L", "current", "-L", "base", "-L", "other", c.Current, c.Base, c.Other)
-		fmt.Fprintf(os.Stderr, "%s%s %s unresolved\n", mergeDriverLogPrefix, classOrUnclassified(class), rel)
+		fmt.Fprintf(os.Stderr, "%s%s %s unresolved\n", mergeDriverLogPrefix, class, rel)
 		return errMergeUnresolved
 	}
 	if err := os.WriteFile(c.Current, merged, 0o644); err != nil {
@@ -78,22 +81,21 @@ func (c *MergeFileCmd) Run() error {
 // into the sync log.
 const mergeDriverLogPrefix = "merge-file: "
 
-func classOrUnclassified(class specialFileClass) specialFileClass {
-	if class == "" {
-		return "unclassified"
-	}
-	return class
-}
-
 // relayMergeDriverLines logs the driver's per-file lines from captured git
-// output, so the sync log records what the driver resolved.
-func relayMergeDriverLines(gitOutput string) {
+// output, so the sync log records what the driver resolved, and returns
+// git's other non-empty lines, so an error message shows git's own reason.
+func relayMergeDriverLines(gitOutput string) string {
+	var rest []string
 	// git's progress lines end in \r, so a driver line can follow one.
 	for line := range strings.SplitSeq(strings.ReplaceAll(gitOutput, "\r", "\n"), "\n") {
-		if strings.HasPrefix(line, mergeDriverLogPrefix) {
+		switch {
+		case strings.HasPrefix(line, mergeDriverLogPrefix):
 			logMsg("git", "%s", strings.TrimSpace(line))
+		case strings.TrimSpace(line) != "":
+			rest = append(rest, line)
 		}
 	}
+	return strings.Join(rest, "\n")
 }
 
 // mergeKBFile merges one conflicted file by its path class. ok is false
@@ -539,6 +541,9 @@ func gitattributesLines() []string {
 	return lines
 }
 
+// gitattributesHeader is the comment line above the merge=scribe lines.
+const gitattributesHeader = "# scribe merge driver (scribe merge-file); see `scribe doctor`"
+
 // ensureGitattributes appends the missing merge=scribe lines to the KB's
 // .gitattributes. Returns true when it wrote the file.
 func ensureGitattributes(root string) (bool, error) {
@@ -564,8 +569,8 @@ func ensureGitattributes(root string) (bool, error) {
 	if content != "" && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	if !have["# scribe merge driver (scribe merge-file); see `scribe doctor`"] {
-		content += "# scribe merge driver (scribe merge-file); see `scribe doctor`\n"
+	if !have[gitattributesHeader] {
+		content += gitattributesHeader + "\n"
 	}
 	content += strings.Join(missing, "\n") + "\n"
 	return true, os.WriteFile(path, []byte(content), 0o644)

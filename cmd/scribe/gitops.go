@@ -156,7 +156,7 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
-	relayMergeDriverLines(stderr.String())
+	gitMessage := relayMergeDriverLines(stderr.String())
 	// Conflicts the merge driver did not settle — derived files, team
 	// coordination files, delete/modify, autostash leftovers — are
 	// resolved here without a human. Any other conflict aborts the
@@ -174,7 +174,7 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 	}
 	invalidateRepoTrackedCache()
 	if runErr != nil && !resolved {
-		msg := firstLine(withoutMergeDriverLines(stderr.String()))
+		msg := firstLine(gitMessage)
 		if msg == "" {
 			msg = runErr.Error()
 		}
@@ -204,18 +204,6 @@ func localAheadCount(repoPath string) int {
 		return 0
 	}
 	return n
-}
-
-// withoutMergeDriverLines drops the driver's per-file lines from git
-// output, so an error message shows git's own reason.
-func withoutMergeDriverLines(out string) string {
-	var kept []string
-	for line := range strings.SplitSeq(strings.ReplaceAll(out, "\r", "\n"), "\n") {
-		if !strings.HasPrefix(line, mergeDriverLogPrefix) && strings.TrimSpace(line) != "" {
-			kept = append(kept, line)
-		}
-	}
-	return strings.Join(kept, "\n")
 }
 
 // rebaseInProgress reports whether repoPath has a rebase mid-flight.

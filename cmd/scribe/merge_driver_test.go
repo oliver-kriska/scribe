@@ -358,9 +358,9 @@ func TestMergeDriverCheck(t *testing.T) {
 	}
 }
 
-func TestWithoutMergeDriverLines(t *testing.T) {
+func TestRelayMergeDriverLines_ReturnsGitLines(t *testing.T) {
 	in := "Rebasing (1/1)\rmerge-file: article x.md resolved\nerror: could not apply abc\n"
-	if got := withoutMergeDriverLines(in); got != "Rebasing (1/1)\nerror: could not apply abc" {
+	if got := relayMergeDriverLines(in); got != "Rebasing (1/1)\nerror: could not apply abc" {
 		t.Errorf("got %q", got)
 	}
 }
