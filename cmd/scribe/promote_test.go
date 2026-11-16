@@ -136,7 +136,7 @@ func TestPromoteRefusesDerivedFiles(t *testing.T) {
 	// derived-regenerable ones and the semantic-merge ledgers.
 	for _, rel := range []string{
 		"wiki/_index.md", "wiki/_backlinks.json", "wiki/_digest.md", "wiki/_hot.md",
-		"wiki/_sessions_log.json", "wiki/_codex_sessions_log.json",
+		"wiki/_sessions_log.json", "wiki/_codex_sessions_log.json", "wiki/_identity-proposals.md",
 	} {
 		writeKBFile(t, src, rel, "stale derived content\n")
 		c := &PromoteCmd{Article: rel, To: target, Force: true, NoGit: true}
@@ -146,7 +146,7 @@ func TestPromoteRefusesDerivedFiles(t *testing.T) {
 	}
 
 	// Underscore convention beyond the registry.
-	for _, rel := range []string{"wiki/_identity-proposals.md", "patterns/_scratch.md"} {
+	for _, rel := range []string{"wiki/_scratch-notes.md", "patterns/_scratch.md"} {
 		writeKBFile(t, src, rel, "derived\n")
 		c := &PromoteCmd{Article: rel, To: target, Force: true, NoGit: true}
 		if err := c.Run(); err == nil || !strings.Contains(err.Error(), "must not be promoted") {

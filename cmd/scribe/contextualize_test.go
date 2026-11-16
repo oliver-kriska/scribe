@@ -255,4 +255,9 @@ func TestContextualizeRawArticles_MarkerIsSourceOfTruth(t *testing.T) {
 	if strings.Count(string(a), m) != 1 {
 		t.Errorf("marker-bearing a.md should be untouched; marker count = %d", strings.Count(string(a), m))
 	}
+	// Re-stamping an already-logged article churns the committed log on
+	// every run, which conflicts between machines in a team KB.
+	if got := loadJSONMap(filepath.Join(root, "wiki", "_contextualized_log.json"))["a.md"]; got != "2026-06-01T00:00:00Z" {
+		t.Errorf("a.md log entry = %v, want the original timestamp kept", got)
+	}
 }

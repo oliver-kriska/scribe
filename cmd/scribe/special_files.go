@@ -50,6 +50,9 @@ var specialKBFiles = map[string]specialFileSpec{
 	// Regenerated wholesale by `scribe hot` on every sync, so a
 	// conflict here carries no information either.
 	"wiki/_hot.md": {Class: classDerivedRegenerable},
+	// Weekly lint reports, rewritten wholesale on each scan.
+	"wiki/_duplicates.md":         {Class: classDerivedRegenerable},
+	"wiki/_identity-proposals.md": {Class: classDerivedRegenerable},
 
 	"scripts/extraction-ledger.json": {Class: classSemanticMerge, Merge: mergeLedgerContent, AutoStage: true},
 	"scripts/dream-lease.json":       {Class: classSemanticMerge, Merge: mergeLeaseContent},
@@ -59,6 +62,10 @@ var specialKBFiles = map[string]specialFileSpec{
 	// the colliding line is `last_scan`, rewritten every run.
 	"wiki/_sessions_log.json":       {Class: classSemanticMerge, Merge: mergeSessionsLogContent},
 	"wiki/_codex_sessions_log.json": {Class: classSemanticMerge, Merge: mergeSessionsLogContent},
+	// Per-file processing logs written by every machine's sync.
+	"wiki/_contextualized_log.json":  {Class: classSemanticMerge, Merge: mergeTimestampMapContent},
+	"wiki/_absorb_log.json":          {Class: classSemanticMerge, Merge: mergeTimestampMapContent},
+	"wiki/_extraction_outcomes.json": {Class: classSemanticMerge, Merge: mergeOutcomesContent},
 
 	"scripts/projects.json": {Class: classMachineLocal, AutoStage: true},
 }

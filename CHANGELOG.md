@@ -6,6 +6,17 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Fixed
 
+- **Team KBs no longer stall on five shared `wiki/_` files** (#153).
+  `wiki/_contextualized_log.json` and `wiki/_absorb_log.json` union their
+  entries (newer wins per key), `wiki/_extraction_outcomes.json` unions
+  its entries oldest first, and `wiki/_duplicates.md` /
+  `wiki/_identity-proposals.md` resolve as regenerable reports. Before,
+  two members writing one of them between pulls aborted the rebase on
+  every later sync until someone merged by hand. Contextualize also stops
+  re-stamping already-logged raw articles, which changed the log (and
+  conflicted) on every run. Each auto-resolved pull conflict now logs one
+  line naming the file and whether both sides were merged or one was kept.
+
 - **`scribe tier write` no longer bumps `updated:`.** Filling in or
   recomputing `index_tier` is derived metadata, not an edit, but every
   write set `updated:` to today, so one `tier write --missing-only` sweep

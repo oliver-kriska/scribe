@@ -69,6 +69,11 @@ func TestSpecialFileRegistryViews(t *testing.T) {
 		"scripts/dream-lease.json":       classSemanticMerge,
 		"log.md":                         classSemanticMerge,
 		"scripts/projects.json":          classMachineLocal,
+		"wiki/_duplicates.md":            classDerivedRegenerable,
+		"wiki/_identity-proposals.md":    classDerivedRegenerable,
+		"wiki/_contextualized_log.json":  classSemanticMerge,
+		"wiki/_absorb_log.json":          classSemanticMerge,
+		"wiki/_extraction_outcomes.json": classSemanticMerge,
 	}
 	for path, class := range want {
 		if spec, ok := specialKBFiles[path]; !ok || spec.Class != class {
