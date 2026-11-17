@@ -616,7 +616,7 @@ func initialScaffoldCommit(root string) error {
 	if !gitIdentityConfigured(root) {
 		args = append(args, "-c", "user.name=scribe", "-c", "user.email=scribe@localhost")
 	}
-	args = append(args, "commit", "-q", "-m", "chore: initial KB scaffold (scribe init)")
+	args = append(args, "commit", "-q", "-m", "chore: initial KB scaffold (scribe init)", "-m", versionTrailer())
 	if out, err := exec.Command("git", args...).CombinedOutput(); err != nil { //nolint:noctx // one-shot
 		return fmt.Errorf("git commit: %w\n%s", err, strings.TrimSpace(string(out)))
 	}

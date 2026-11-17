@@ -92,6 +92,7 @@ func TestAcquireDreamLease(t *testing.T) {
 	if out := runCmd(root, "git", "log", "--oneline", "--", "scripts/dream-lease.json"); !strings.Contains(out, "lease claim") {
 		t.Errorf("lease claim not committed; log:\n%s", out)
 	}
+	assertVersionTrailer(t, root)
 
 	// Re-entrant: same host re-acquires its own active lease.
 	if acquired, _ := acquireDreamLease(root, now); !acquired {
