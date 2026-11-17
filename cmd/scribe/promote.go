@@ -145,7 +145,7 @@ func (c *PromoteCmd) Run() error {
 			fmt.Println("note: the promoted file was held back from commit by the secret gate — resolve it in the target KB")
 		default:
 			msg := fmt.Sprintf("promote: %s from %s", fm.Title, kbName(root))
-			if _, err := runCmdErr(target, "git", "commit", "--no-gpg-sign", "-m", msg, "--", destRel); err != nil {
+			if _, err := runCmdErr(target, "git", "commit", "--no-gpg-sign", "-m", msg, "-m", versionTrailer(), "--", destRel); err != nil {
 				fmt.Printf("warning: target commit failed: %v — commit manually\n", err)
 			} else {
 				fmt.Printf("committed in target: %s\n", msg)
