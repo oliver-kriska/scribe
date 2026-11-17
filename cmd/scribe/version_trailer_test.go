@@ -29,7 +29,7 @@ func TestLatestVersionsByAuthor(t *testing.T) {
 		},
 		{
 			name:   "no trailer at all is pre-trailer",
-			gitLog: "b@x\x00\x1e\nb@x\x00\x1e",
+			gitLog: "b@x\x00\x1e" + "\nb@x\x00\x1e",
 			want:   []committerVersion{{"b@x", ""}},
 			wantOK: true,
 		},
