@@ -114,10 +114,7 @@ func TestGitCommitAddsVersionTrailer(t *testing.T) {
 	if err := gitCommit(root, "sync: test"); err != nil {
 		t.Fatal(err)
 	}
-	got := runCmd(root, "git", "log", "-1", "--format=%(trailers:key="+scribeVersionTrailerKey+",valueonly)")
-	if got != version {
-		t.Fatalf("trailer = %q, want %q", got, version)
-	}
+	assertVersionTrailer(t, root)
 	if subject := runCmd(root, "git", "log", "-1", "--format=%s"); subject != "sync: test" {
 		t.Fatalf("subject = %q", subject)
 	}
@@ -125,5 +122,27 @@ func TestGitCommitAddsVersionTrailer(t *testing.T) {
 	checks := checkTeamVersions(root)
 	if len(checks) != 1 || checks[0].Status != statusOK {
 		t.Fatalf("doctor row = %+v, want one ok row", checks)
+	}
+}
+
+func TestInitialScaffoldCommitAddsVersionTrailer(t *testing.T) {
+	root := t.TempDir()
+	gitRun(t, root, "init", "-q", "-b", "main")
+	gitRun(t, root, "config", "commit.gpgsign", "false")
+	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := initialScaffoldCommit(root); err != nil {
+		t.Fatal(err)
+	}
+	assertVersionTrailer(t, root)
+}
+
+// assertVersionTrailer checks that HEAD carries this binary's Scribe-Version.
+func assertVersionTrailer(t *testing.T, root string) {
+	t.Helper()
+	got := runCmd(root, "git", "log", "-1", "--format=%(trailers:key="+scribeVersionTrailerKey+",valueonly)")
+	if got != version {
+		t.Fatalf("Scribe-Version trailer = %q, want %q", got, version)
 	}
 }

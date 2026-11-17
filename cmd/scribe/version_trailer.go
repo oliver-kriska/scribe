@@ -30,7 +30,7 @@ type committerVersion struct {
 	Version string
 }
 
-// latestVersionsByAuthor parses `git log --format=%ae%x00%(trailers:...)%x1e`
+// latestVersionsByAuthor parses `git log --format=%aE%x00%(trailers:...)%x1e`
 // output (newest first). Per email it keeps the newest commit WITH a trailer:
 // a manual commit or a pull merge has none and must not hide the person's
 // real scribe version. ok is false when git was too old to expand the
@@ -111,7 +111,7 @@ func checkTeamVersions(root string) []check {
 		return nil
 	}
 	gitLog, err := runCmdRaw(root, "git", "log", "--no-merges", "--since="+teamVersionWindow,
-		"--format=%ae%x00%(trailers:key="+scribeVersionTrailerKey+",valueonly)%x1e")
+		"--format=%aE%x00%(trailers:key="+scribeVersionTrailerKey+",valueonly)%x1e")
 	if err != nil {
 		return nil
 	}

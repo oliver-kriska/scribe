@@ -56,6 +56,7 @@ func TestPromoteCopiesWithProvenance(t *testing.T) {
 	if !strings.Contains(log, "promote: Cool Trick from srckb") {
 		t.Errorf("target commit missing; log:\n%s", log)
 	}
+	assertVersionTrailer(t, target)
 
 	// Source untouched.
 	src, _ := os.ReadFile(filepath.Join(os.Getenv("SCRIBE_KB"), "patterns", "cool-trick.md"))
