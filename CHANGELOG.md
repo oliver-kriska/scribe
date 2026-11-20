@@ -6,6 +6,16 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ### Fixed
 
+- **`scribe drop --rolling-target` no longer needs `--action append`
+  (#167).** The agent handshake blocks tell agents to add
+  `--rolling-target learnings`, but `drop` rejected it unless `--action
+  append` was also given, so a drop that followed the instructions was lost.
+  `--rolling-target` now implies `--action append` when `--action` is
+  omitted, which fixes the handshake blocks users already have without a
+  re-init. An explicit `--action create` or `--action update` with a rolling
+  target is still an error. The templates and `DROP_FILES.md` now show the
+  full form.
+
 - **`scribe tier write` no longer bumps `updated:`.** Filling in or
   recomputing `index_tier` is derived metadata, not an edit, but every
   write set `updated:` to today, so one `tier write --missing-only` sweep
