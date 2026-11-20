@@ -35,9 +35,9 @@ type DropCmd struct {
 	Title         string   `help:"Article title (required)." short:"T"`
 	Type          string   `help:"Article type: project | tool | person | decision | pattern | solution | research | idea." short:"t"`
 	Domain        string   `help:"Domain tag. Validated against the resolved KB's scribe.yaml when one is found." short:"d"`
-	Action        string   `help:"create | update | append." default:"create"`
+	Action        string   `help:"create | update | append. Default: create, or append when --rolling-target is set."`
 	Tags          []string `help:"Tags (repeatable or comma-separated)." short:"g"`
-	RollingTarget string   `help:"learnings | decisions-log. Requires --action append." name:"rolling-target"`
+	RollingTarget string   `help:"learnings | decisions-log. Implies --action append; any other --action is an error." name:"rolling-target"`
 	Body          string   `help:"Body source: '-' for stdin, 'file:path' for file, or inline string." default:"-"`
 	Slug          string   `help:"Override the filename slug (default: derived from --title)."`
 	Date          string   `help:"Override the YYYY-MM-DD date prefix (default: today)."`
@@ -138,21 +138,35 @@ func (d *DropCmd) validateStatic() error {
 	if d.Domain == "" {
 		return errors.New("--domain is required")
 	}
-	if !dropValidActions[d.Action] {
-		return fmt.Errorf("invalid --action %q (expected: create, update, append)", d.Action)
+	action := d.effectiveAction()
+	if !dropValidActions[action] {
+		return fmt.Errorf("invalid --action %q (expected: create, update, append)", action)
 	}
 	if d.RollingTarget != "" {
 		if !dropValidRollingTargets[d.RollingTarget] {
 			return fmt.Errorf("invalid --rolling-target %q (expected: learnings, decisions-log)", d.RollingTarget)
 		}
-		if d.Action != "append" {
-			return fmt.Errorf("--rolling-target requires --action append (got --action %s)", d.Action)
+		if action != "append" {
+			return fmt.Errorf("--rolling-target requires --action append (got --action %s)", action)
 		}
 	}
 	if d.Date != "" && !dateRE.MatchString(d.Date) {
 		return fmt.Errorf("--date %q not in YYYY-MM-DD format", d.Date)
 	}
 	return nil
+}
+
+// effectiveAction resolves an unset --action: append when --rolling-target
+// is set (the only valid pairing, so agents can omit it), create otherwise.
+func (d *DropCmd) effectiveAction() string {
+	switch {
+	case d.Action != "":
+		return d.Action
+	case d.RollingTarget != "":
+		return "append"
+	default:
+		return "create"
+	}
 }
 
 // validateDropNames keeps --slug and the KB name to single path
@@ -211,7 +225,7 @@ func (d *DropCmd) buildFrontmatter(kbNameKey string) string {
 	var b strings.Builder
 	b.WriteString("---\n")
 	fmt.Fprintf(&b, "%s: true\n", key)
-	fmt.Fprintf(&b, "action: %s\n", d.Action)
+	fmt.Fprintf(&b, "action: %s\n", d.effectiveAction())
 	fmt.Fprintf(&b, "title: %q\n", d.Title)
 	fmt.Fprintf(&b, "type: %s\n", d.Type)
 	fmt.Fprintf(&b, "domain: %s\n", d.Domain)

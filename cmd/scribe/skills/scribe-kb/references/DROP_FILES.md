@@ -81,7 +81,7 @@ tags: [postgres]
 (your appended entry here)
 ```
 
-`rolling_target: learnings` appends to `projects/<project>/learnings.md` instead of writing a new article. Same for `decisions-log`. This is how cross-project sessions feed per-project memory without creating new article files. `scribe drop` requires `--action append` whenever `--rolling-target` is set — it refuses `create`/`update` combined with a rolling target.
+`rolling_target: learnings` appends to `projects/<project>/learnings.md` instead of writing a new article. Same for `decisions-log`. This is how cross-project sessions feed per-project memory without creating new article files. `--rolling-target` implies `--action append`, so `scribe drop` fills it in when `--action` is omitted; it refuses an explicit `create` or `update` combined with a rolling target.
 
 ## Body content
 
