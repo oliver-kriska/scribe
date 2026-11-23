@@ -18,6 +18,12 @@ import (
 // discipline before; this makes it the package floor. Tests that need
 // their own isolated HOME still override via t.Setenv.
 func TestMain(m *testing.M) {
+	// The merge-driver integration tests point git at this binary; act as
+	// the scribe CLI for those calls (merge_driver_integration_test.go).
+	if os.Getenv("SCRIBE_TEST_RUN_CLI") == "1" {
+		main()
+		os.Exit(0)
+	}
 	captureLiveProbeEnv() // before HOME and SCRIBE_* are scrubbed below
 	scratch, err := os.MkdirTemp("", "scribe-test-home-")
 	if err != nil {

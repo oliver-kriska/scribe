@@ -22,7 +22,7 @@ import (
 // other clone permanently failing its pulls (rebase aborts on the
 // same conflict forever while local commits pile up).
 
-// semanticMergers (special_files.go) maps repo-relative paths to
+// mergeFuncFor (special_files.go) maps repo-relative paths to
 // functions that produce merged content from a conflict's two sides.
 // `ours` is the upstream (remote) side during a rebase, `theirs` the
 // local commit being replayed; either may be nil on a delete/modify
@@ -32,7 +32,7 @@ import (
 // the result. Returns false when the blobs can't be read or written —
 // the caller aborts the rebase.
 func semanticResolve(repoPath, rel string) bool {
-	merge := semanticMergers[rel]
+	merge := mergeFuncFor(rel)
 	if merge == nil {
 		return false
 	}

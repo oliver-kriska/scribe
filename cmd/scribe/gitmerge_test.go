@@ -324,11 +324,11 @@ func TestLedgerEntryNewer(t *testing.T) {
 }
 
 func TestAutoResolveNoopOnCleanRepo(t *testing.T) {
-	if resolved, err := autoResolveDerivedConflicts(t.TempDir()); resolved || err != nil {
+	if resolved, err := autoResolveDerivedConflicts(t.TempDir(), minRebaseRounds); resolved || err != nil {
 		t.Errorf("auto-resolve on non-repo = (%v, %v), want (false, nil)", resolved, err)
 	}
 	repo := initTestGitRepo(t, "Clean")
-	if resolved, err := autoResolveDerivedConflicts(repo); resolved || err != nil {
+	if resolved, err := autoResolveDerivedConflicts(repo, minRebaseRounds); resolved || err != nil {
 		t.Errorf("auto-resolve on clean repo = (%v, %v), want (false, nil)", resolved, err)
 	}
 }
