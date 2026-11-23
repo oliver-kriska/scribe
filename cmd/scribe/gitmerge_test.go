@@ -58,6 +58,7 @@ func setupCloneWithConflict(t *testing.T, rels ...string) string {
 
 func TestPullRebaseAutoResolvesDerivedConflict(t *testing.T) {
 	clone := setupCloneWithConflict(t, "wiki/_index.md")
+	logs := captureSlog(t)
 
 	ok, pulled, err := pullRebase(clone)
 	if err != nil {
@@ -78,6 +79,9 @@ func TestPullRebaseAutoResolvesDerivedConflict(t *testing.T) {
 	}
 	if got := conflictedFiles(clone); len(got) != 0 {
 		t.Errorf("unmerged files remain: %v", got)
+	}
+	if !strings.Contains(logs.String(), "pull conflict in wiki/_index.md: kept local side") {
+		t.Errorf("log does not name the resolved file and how:\n%s", logs.String())
 	}
 }
 
@@ -341,10 +345,14 @@ func TestPullRebaseMergesSessionsLogConflict(t *testing.T) {
 		`{"last_scan":"2026-06-10T09:00:00Z","processed":{}}`+"\n",
 		`{"last_scan":"2026-06-10T10:00:00Z","processed":{"sess-a":{"extracted":"2026-06-10T10:00:00Z","project":"alpha"}}}`+"\n",
 		`{"last_scan":"2026-06-10T11:00:00Z","processed":{"sess-b":{"extracted":"2026-06-10T11:00:00Z","project":"beta"}}}`+"\n")
+	logs := captureSlog(t)
 
 	ok, _, err := pullRebase(clone)
 	if err != nil {
 		t.Fatalf("sessions-log conflict must merge, got: %v", err)
+	}
+	if !strings.Contains(logs.String(), "pull conflict in wiki/_sessions_log.json: merged both sides") {
+		t.Errorf("log does not name the merged file:\n%s", logs.String())
 	}
 	if !ok || rebaseInProgress(clone) {
 		t.Fatalf("pull did not complete cleanly (ok=%v)", ok)
@@ -431,4 +439,112 @@ func TestMergeSessionsLogContent(t *testing.T) {
 			t.Errorf("merge is not deterministic:\n%s\n---\n%s", first, second)
 		}
 	})
+}
+
+func TestPullRebaseMergesTimestampMapConflict(t *testing.T) {
+	for _, rel := range []string{"wiki/_contextualized_log.json", "wiki/_absorb_log.json"} {
+		t.Run(rel, func(t *testing.T) {
+			clone := setupCloneContentConflict(t, rel,
+				`{}`+"\n",
+				`{"a.md":{"sha":"aa","at":"2026-06-10T10:00:00Z"}}`+"\n",
+				`{"b.md":"2026-06-10T11:00:00Z"}`+"\n")
+
+			ok, _, err := pullRebase(clone)
+			if err != nil {
+				t.Fatalf("%s conflict must merge, got: %v", rel, err)
+			}
+			if !ok || rebaseInProgress(clone) {
+				t.Fatalf("pull did not complete cleanly (ok=%v)", ok)
+			}
+			merged := loadJSONMap(filepath.Join(clone, rel))
+			if merged["a.md"] == nil || merged["b.md"] == nil {
+				t.Errorf("merge lost an entry: %v", merged)
+			}
+		})
+	}
+}
+
+func TestMergeTimestampMapContent(t *testing.T) {
+	t.Run("same key keeps the newer string timestamp", func(t *testing.T) {
+		out := mergeTimestampMapContent(
+			[]byte(`{"x.md":"2026-01-01T00:00:00Z"}`),
+			[]byte(`{"x.md":"2026-03-01T00:00:00Z"}`))
+		if !strings.Contains(string(out), "2026-03-01") {
+			t.Errorf("newer timestamp did not win: %s", out)
+		}
+	})
+
+	t.Run("same key keeps the newer at field", func(t *testing.T) {
+		out := mergeTimestampMapContent(
+			[]byte(`{"x.md":{"sha":"new","at":"2026-03-01T00:00:00Z"}}`),
+			[]byte(`{"x.md":{"sha":"old","at":"2026-01-01T00:00:00Z"}}`))
+		if !strings.Contains(string(out), `"new"`) {
+			t.Errorf("newer absorb entry did not win: %s", out)
+		}
+	})
+
+	t.Run("garbage on one side does not lose the other", func(t *testing.T) {
+		out := mergeTimestampMapContent([]byte(`{"keep.md":"2026-01-01T00:00:00Z"}`), []byte(`not json`))
+		var doc map[string]json.RawMessage
+		if err := json.Unmarshal(out, &doc); err != nil || doc["keep.md"] == nil {
+			t.Errorf("valid side lost: %s (err %v)", out, err)
+		}
+	})
+}
+
+func TestMergeOutcomesContent(t *testing.T) {
+	shared := `{"timestamp":"2026-06-01T00:00:00Z","label":"session","commit_sha":"base"}`
+	remote := `{"timestamp":"2026-06-03T00:00:00Z","label":"session","commit_sha":"remote"}`
+	local := `{"timestamp":"2026-06-02T00:00:00Z","label":"session","commit_sha":"local"}`
+	out := mergeOutcomesContent(
+		[]byte(`{"entries":[`+shared+`,`+remote+`]}`),
+		[]byte(`{"entries":[`+shared+`,`+local+`]}`))
+
+	var doc struct {
+		Entries []struct {
+			CommitSHA string `json:"commit_sha"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("merged output is not valid JSON: %v", err)
+	}
+	shas := make([]string, 0, len(doc.Entries))
+	for _, e := range doc.Entries {
+		shas = append(shas, e.CommitSHA)
+	}
+	if got, want := strings.Join(shas, ","), "base,local,remote"; got != want {
+		t.Errorf("entries = %s, want %s (deduped, oldest first)", got, want)
+	}
+}
+
+func TestMergeOutcomesContentEdgeCases(t *testing.T) {
+	t.Run("shared entry indented differently is kept once", func(t *testing.T) {
+		out := mergeOutcomesContent(
+			[]byte(`{"entries":[{"timestamp":"2026-06-01T00:00:00Z","commit_sha":"base"}]}`),
+			[]byte("{\n  \"entries\": [\n    {\n      \"timestamp\": \"2026-06-01T00:00:00Z\",\n      \"commit_sha\": \"base\"\n    }\n  ]\n}\n"))
+		if n := strings.Count(string(out), `"base"`); n != 1 {
+			t.Errorf("shared entry appears %d times, want 1: %s", n, out)
+		}
+	})
+
+	t.Run("unknown top-level keys are preserved", func(t *testing.T) {
+		out := mergeOutcomesContent([]byte(`{"entries":[],"future_field":1}`), []byte(`{"entries":[]}`))
+		if !strings.Contains(string(out), "future_field") {
+			t.Errorf("unknown key dropped: %s", out)
+		}
+	})
+
+	t.Run("garbage on one side does not lose the other", func(t *testing.T) {
+		out := mergeOutcomesContent([]byte(`not json`), []byte(`{"entries":[{"commit_sha":"keep"}]}`))
+		if !strings.Contains(string(out), `"keep"`) {
+			t.Errorf("valid side lost: %s", out)
+		}
+	})
+}
+
+func TestMergeTimestampMapContentGarbageOurs(t *testing.T) {
+	out := mergeTimestampMapContent([]byte(`not json`), []byte(`{"keep.md":"2026-01-01T00:00:00Z"}`))
+	if !strings.Contains(string(out), "keep.md") {
+		t.Errorf("valid side lost when ours is corrupt: %s", out)
+	}
 }
