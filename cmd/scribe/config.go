@@ -953,7 +953,8 @@ type userConfig struct {
 	// for the others. Zero = disabled. See budget.go.
 	DailyOutputTokenCeiling int64 `yaml:"daily_output_token_ceiling,omitempty"`
 	// IntegrationTokens maps a pull-adapter name (pinboard, …) to its API
-	// token. It lives HERE — the per-machine user config — and never in a
+	// token, and `claude` to a `claude setup-token` OAuth token for cron runs
+	// (claudeCommandEnv). It lives HERE — the per-machine user config — and never in a
 	// KB's scribe.yaml, so a token can't be committed to a shared KB (same
 	// rule as LLMAPIKeys). Env SCRIBE_<NAME>_TOKEN overrides an entry.
 	IntegrationTokens map[string]string `yaml:"integration_tokens,omitempty"`
