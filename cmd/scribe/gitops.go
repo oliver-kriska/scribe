@@ -367,7 +367,7 @@ func gitAddWiki(root string) bool {
 // gitCommit creates a commit with the given message. Captures stderr so callers
 // see the real reason (pre-commit hook failure, signing issue, nothing staged).
 func gitCommit(root, message string) error {
-	cmd := exec.Command("git", "commit", "-m", message, "--no-gpg-sign") //nolint:noctx // git commit subprocess
+	cmd := exec.Command("git", "commit", "-m", message, "-m", versionTrailer(), "--no-gpg-sign") //nolint:noctx // git commit subprocess
 	cmd.Dir = root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

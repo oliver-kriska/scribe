@@ -183,7 +183,7 @@ func commitDreamLease(root string, msg string) {
 		logMsg("dream", "lease stage failed: %v", err)
 		return
 	}
-	if _, err := runCmdErr(root, "git", "commit", "--no-gpg-sign", "-m", msg, "--", "scripts/dream-lease.json"); err != nil {
+	if _, err := runCmdErr(root, "git", "commit", "--no-gpg-sign", "-m", msg, "-m", versionTrailer(), "--", "scripts/dream-lease.json"); err != nil {
 		logMsg("dream", "lease commit failed: %v", err)
 	}
 }
