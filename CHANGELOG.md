@@ -4,6 +4,18 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **Agent blocks and the scribe-kb skill ask for one KB query before
+  the first file edit** (#150), including continuations, hand-backs,
+  reviews and ship runs; review findings are checked against recorded
+  decisions, and subagent briefs carry the same instruction. On one KB,
+  sessions that queried before their first edit went from 32% to 79%
+  over 7 days. The blocks now say "knowledge base" rather than "personal
+  knowledge base", and address "the user" where they meant the person in
+  the session, so a team KB reads correctly for every member. Existing
+  installs pick it up on the next `scribe init --yes`.
+
 ### Fixed
 
 - **`scribe tier write` no longer bumps `updated:`.** Filling in or

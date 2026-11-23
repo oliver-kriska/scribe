@@ -51,6 +51,14 @@ When the user asks you to write inside the KB itself (not a drop file):
 3. **Cross-link** with `[[Article Title]]` to existing articles. Search first with qmd; don't invent neighbors.
 4. **Commit** with a clear message. The user's pre-commit hook runs `scribe lint`.
 
+## Workflow: query before the first edit
+
+Before your first file edit in a session, run one KB query that describes the task in one sentence.
+
+- This applies to continuations, subagent hand-backs, code reviews and ship/release runs too. Skip it only if this session already ran one.
+- Before you report a code-review finding, query the KB for a recorded decision on that code. Cite it, or drop the finding.
+- When you brief a subagent to explore or critique, tell it to query the KB first and return any hits with its findings.
+
 ## Workflow: search before recommending
 
 Before recommending a tool, library, decision, or pattern, search the KB:
