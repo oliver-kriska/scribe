@@ -28,7 +28,7 @@ Use Bash `qmd search "<keywords>"` for exact-term, no-model retrieval. If no qmd
 
 `scribe drop --title "..." --type <project|tool|person|decision|pattern|solution|research|idea> --domain {{.DomainsPipe}} --tags a,b --body file:<scratch-file>`
 
-This validates the frontmatter and writes to `.claude/{{.KBName}}/YYYY-MM-DD-{slug}.md` in the current project. If `scribe` isn't on PATH, write that file directly — schema in `.claude/skills/scribe-kb/references/DROP_FILES.md` if the skill is installed, or ask {{.OwnerName}}. Add `--rolling-target learnings` or `--rolling-target decisions-log` when the insight belongs to a specific project's memory log. `scribe sync` running on cron in the KB will absorb these automatically. Tell {{.OwnerName}} what you filed and why — don't fabricate drop files for trivial facts.
+This validates the frontmatter and writes to `.claude/{{.KBName}}/YYYY-MM-DD-{slug}.md` in the current project. If `scribe` isn't on PATH, write that file directly — schema in `.claude/skills/scribe-kb/references/DROP_FILES.md` if the skill is installed, or ask {{.OwnerName}}. Add `--action append --rolling-target learnings` or `--action append --rolling-target decisions-log` when the insight belongs to a specific project's memory log. `scribe sync` running on cron in the KB will absorb these automatically. Tell {{.OwnerName}} what you filed and why — don't fabricate drop files for trivial facts.
 
 ## Storage boundaries
 

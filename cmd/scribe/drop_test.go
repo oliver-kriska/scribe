@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/alecthomas/kong"
 )
 
 // dropTestEnv builds a KB (testKBRoot) plus a distinct "project" tempdir
@@ -191,12 +193,68 @@ func TestDropRun_KBUnresolvedNoKBName(t *testing.T) {
 	}
 }
 
-func TestDropRun_RollingTargetRequiresAppend(t *testing.T) {
-	dropTestEnv(t)
-	d := &DropCmd{Title: "T", Type: "project", Domain: "acme", Action: "create", RollingTarget: "learnings", Body: "body"}
-	err := d.Run()
-	if err == nil || !strings.Contains(err.Error(), "requires --action append") {
-		t.Errorf("expected rolling-target/action mismatch error, got: %v", err)
+func TestDropRun_RollingTargetAction(t *testing.T) {
+	cases := []struct {
+		name    string
+		action  string
+		wantErr string // "" means the drop is written
+	}{
+		{name: "no action implies append", action: ""},
+		{name: "explicit append", action: "append"},
+		{name: "explicit create errors", action: "create", wantErr: "requires --action append (got --action create)"},
+		{name: "explicit update errors", action: "update", wantErr: "requires --action append (got --action update)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, projectDir := dropTestEnv(t)
+			d := &DropCmd{Title: "Rolling Note", Type: "project", Domain: "acme", Action: tc.action, RollingTarget: "learnings", KBName: "kb", Body: "body"}
+			err := d.Run()
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("want error containing %q, got: %v", tc.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			today := time.Now().UTC().Format("2006-01-02")
+			data, err := os.ReadFile(dropTarget(projectDir, "kb", today, "rolling-note"))
+			if err != nil {
+				t.Fatalf("read drop: %v", err)
+			}
+			raw, err := parseFrontmatterRaw(data)
+			if err != nil {
+				t.Fatalf("parse frontmatter: %v\n%s", err, data)
+			}
+			if raw["action"] != "append" || raw["rolling_target"] != "learnings" {
+				t.Errorf("action=%v rolling_target=%v, want append/learnings", raw["action"], raw["rolling_target"])
+			}
+		})
+	}
+}
+
+// TestDropParse_ActionUnsetByDefault pins the Kong side of the implied
+// append: --action must parse to "" when omitted, or effectiveAction can
+// never tell an explicit create from the default.
+func TestDropParse_ActionUnsetByDefault(t *testing.T) {
+	var cli CLI
+	parser, err := kong.New(&cli, kongOptions()...)
+	if err != nil {
+		t.Fatalf("kong.New: %v", err)
+	}
+	if _, err := parser.Parse([]string{"drop", "--title", "t", "--type", "solution", "--domain", "general", "--rolling-target", "learnings"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cli.Drop.Action != "" {
+		t.Fatalf("Action = %q after parse, want empty", cli.Drop.Action)
+	}
+	if got := cli.Drop.effectiveAction(); got != "append" {
+		t.Errorf("effectiveAction = %q, want append", got)
+	}
+	cli.Drop.RollingTarget = ""
+	if got := cli.Drop.effectiveAction(); got != "create" {
+		t.Errorf("effectiveAction without rolling target = %q, want create", got)
 	}
 }
 
